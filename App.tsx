@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Navbar from './components/Navbar';
 import MatchRow from './components/MatchCard';
 import MatchDetail from './components/MatchDetail';
@@ -65,37 +65,51 @@ const App: React.FC = () => {
   }, [currentLeague, isLiveMode, currentUser, currentView]);
 
 
-  // --- REAL TIME CLOCK ENGINE ---
+  // --- OPTIMIZED REAL TIME ODDS ENGINE ---
   useEffect(() => {
     if (matches.length === 0) return;
 
     const interval = setInterval(() => {
         setMatches(prevMatches => {
-            return prevMatches.map(match => {
+            let hasChanges = false;
+            const nextMatches = prevMatches.map(match => {
                 if (match.status === MatchStatus.LIVE) {
-                    let newMinute = match.currentMinute;
-                    let minNum = parseInt(newMinute?.replace("'", "") || "0");
-                    if (!isNaN(minNum) && minNum < 90 && !newMinute?.includes('+')) {
-                        minNum++;
-                        newMinute = `${minNum}'`;
-                    }
-                    return {
-                        ...match,
-                        currentMinute: newMinute,
-                        // Micro-fluctuation for "Alive" feel
-                        markets: match.markets.map(market => ({
-                            ...market,
-                            options: market.options.map(opt => ({
-                                ...opt,
-                                odds: Math.max(1.01, Number((opt.odds + (Math.random() * 0.04 - 0.02)).toFixed(2)))
+                    // Update odds with 30% probability per second per match for "Alive" feel
+                    // This prevents re-rendering every single row every second
+                    const shouldUpdate = Math.random() < 0.3;
+
+                    if (shouldUpdate) {
+                         hasChanges = true;
+                         // Clock tick simulation (very slow, 1% chance per second ~ 1 min per 100s)
+                         let newMinute = match.currentMinute;
+                         if (Math.random() < 0.02) {
+                             let minNum = parseInt(newMinute?.replace("'", "") || "0");
+                             if (!isNaN(minNum) && minNum < 90 && !newMinute?.includes('+')) {
+                                 minNum++;
+                                 newMinute = `${minNum}'`;
+                             }
+                         }
+
+                         return {
+                            ...match,
+                            currentMinute: newMinute,
+                            markets: match.markets.map(market => ({
+                                ...market,
+                                options: market.options.map(opt => ({
+                                    ...opt,
+                                    // Micro fluctuation
+                                    odds: Math.max(1.01, Number((opt.odds + (Math.random() * 0.04 - 0.02)).toFixed(2)))
+                                }))
                             }))
-                        }))
-                    };
+                         };
+                    }
                 }
+                // Return same reference if no update
                 return match;
             });
+            return hasChanges ? nextMatches : prevMatches;
         });
-    }, 5000); 
+    }, 1000); // 1 Second Interval for responsiveness
 
     return () => clearInterval(interval);
   }, [matches.length]);
@@ -142,9 +156,13 @@ const App: React.FC = () => {
       return Array.from(new Set([...standardLeagues, ...fetchedLeagues])).sort();
   }, [matches]);
 
-  // --- Handlers ---
+  // --- Handlers & Memoization ---
+  
+  // Memoize selected IDs to prevent unnecessary MatchRow re-renders
   const uniqueId = (matchId: string, marketId: string, selId: string) => `${matchId}-${marketId}-${selId}`;
-  const selectedIds = selections.map(s => uniqueId(s.matchId, s.marketId, s.selectionId));
+  const selectedIds = useMemo(() => 
+    selections.map(s => uniqueId(s.matchId, s.marketId, s.selectionId)), 
+  [selections]);
 
   const handleLogin = (u: string, p: string) => {
     const user = users.find(user => user.username === u && user.password === p);
@@ -187,6 +205,15 @@ const App: React.FC = () => {
       return u;
     }));
   };
+  
+  const handleResetPassword = (userId: string, newPass: string) => {
+      setUsers(prevUsers => prevUsers.map(u => {
+          if (u.id === userId) {
+              return { ...u, password: newPass };
+          }
+          return u;
+      }));
+  };
 
   const handleUpdateBalance = (amount: number) => {
     if (!currentUser) return;
@@ -197,8 +224,8 @@ const App: React.FC = () => {
     setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
   };
 
-  // --- Betting Handlers ---
-  const handleToggleSelection = (match: Match, marketId: string, selectionId: string) => {
+  // --- Betting Handlers (Memoized) ---
+  const handleToggleSelection = useCallback((match: Match, marketId: string, selectionId: string) => {
     if (!currentUser) return;
     
     const market = match.markets.find(m => m.id === marketId);
@@ -207,30 +234,38 @@ const App: React.FC = () => {
 
     const uId = uniqueId(match.id, marketId, selectionId);
     
-    if (selectedIds.includes(uId)) {
-        setSelections(prev => prev.filter(s => uniqueId(s.matchId, s.marketId, s.selectionId) !== uId));
-    } else {
-        const newSel: BetSelectionItem = {
-            matchId: match.id,
-            matchHome: match.homeTeam,
-            matchAway: match.awayTeam,
-            marketId: market.id,
-            marketName: market.name,
-            selectionId: option.id,
-            selectionName: option.name,
-            odds: option.odds,
-            status: BetStatus.PENDING
-        };
-        setSelections(prev => [...prev, newSel]);
-    }
-  };
+    setSelections(prev => {
+        // Check if exists in current state (using the previous state to be safe, though uId calc used closure)
+        // Re-calculating uniqueness check inside setter for correctness with prev state
+        const exists = prev.some(s => uniqueId(s.matchId, s.marketId, s.selectionId) === uId);
+        
+        if (exists) {
+            return prev.filter(s => uniqueId(s.matchId, s.marketId, s.selectionId) !== uId);
+        } else {
+            const newSel: BetSelectionItem = {
+                matchId: match.id,
+                matchHome: match.homeTeam,
+                matchAway: match.awayTeam,
+                marketId: market.id,
+                marketName: market.name,
+                selectionId: option.id,
+                selectionName: option.name,
+                odds: option.odds,
+                status: BetStatus.PENDING
+            };
+            return [...prev, newSel];
+        }
+    });
+  }, [currentUser]);
 
-  const handleRemoveSelection = (uId: string) => {
+  const handleRemoveSelection = useCallback((uId: string) => {
     setSelections(prev => prev.filter(s => uniqueId(s.matchId, s.marketId, s.selectionId) !== uId));
-  };
+  }, []);
 
-  const handlePlaceBet = (stake: number, type: 'SINGLE' | 'ACCUMULATOR') => {
+  const handlePlaceBet = useCallback((stake: number, type: 'SINGLE' | 'ACCUMULATOR') => {
     if (!currentUser || selections.length === 0) return;
+    
+    // Optimistic update
     const updatedUser = { ...currentUser, balance: currentUser.balance - stake };
     setCurrentUser(updatedUser);
     setUsers(prevUsers => prevUsers.map(u => u.id === currentUser.id ? updatedUser : u));
@@ -254,7 +289,7 @@ const App: React.FC = () => {
 
     setBets(prev => [newBet, ...prev]);
     setSelections([]); 
-  };
+  }, [currentUser, selections]);
 
   // --- Settlement Logic ---
   const checkSelectionOutcome = (sel: BetSelectionItem, score: MatchScore): BetStatus => {
@@ -274,7 +309,7 @@ const App: React.FC = () => {
     return Math.random() > 0.5 ? BetStatus.WON : BetStatus.LOST; 
   };
 
-  const handleSettleMatch = async (match: Match) => {
+  const handleSettleMatch = useCallback(async (match: Match) => {
     if (simulatingMatchId) return;
     setSimulatingMatchId(match.id);
 
@@ -343,7 +378,7 @@ const App: React.FC = () => {
     } finally {
       setSimulatingMatchId(null);
     }
-  };
+  }, [currentUser, simulatingMatchId]);
 
   // --- Render ---
 
@@ -423,6 +458,7 @@ const App: React.FC = () => {
                 onCreateUser={handleCreateUser}
                 onDeleteUser={handleDeleteUser}
                 onAddCredit={handleAddCredit}
+                onResetPassword={handleResetPassword}
             />
           ) : currentView === 'casino' ? (
               <CasinoHub userBalance={currentUser.balance} onUpdateBalance={handleUpdateBalance} />

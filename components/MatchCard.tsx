@@ -131,4 +131,4 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
   );
 };
 
-export default MatchRow;
+export default React.memo(MatchRow);

@@ -7,9 +7,10 @@ interface AdminPanelProps {
   onCreateUser: (u: Omit<User, 'id' | 'role' | 'avatar'>) => void;
   onDeleteUser: (userId: string) => void;
   onAddCredit: (userId: string, amount: number) => void;
+  onResetPassword: (userId: string, newPass: string) => void;
 }
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, onDeleteUser, onAddCredit }) => {
+const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, onDeleteUser, onAddCredit, onResetPassword }) => {
   const [activeTab, setActiveTab] = useState<'users' | 'tickets'>('users');
   
   // Create User State
@@ -37,6 +38,34 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
       onAddCredit(id, amount);
       setCreditAmounts(prev => ({ ...prev, [id]: '' }));
     }
+  };
+
+  // Helper to calculate user statistics
+  const getUserStats = (userId: string) => {
+    const userBets = allBets.filter(b => b.userId === userId);
+    
+    // Gjiro (Turnover) - Total amount staked regardless of result
+    const turnover = userBets.reduce((acc, b) => acc + b.stake, 0);
+    
+    // Fituar (Won) - Total returns from won bets
+    const won = userBets
+        .filter(b => b.status === BetStatus.WON)
+        .reduce((acc, b) => acc + b.potentialReturn, 0);
+
+    // Humbur (Lost) - Total stakes of lost bets
+    const lost = userBets
+        .filter(b => b.status === BetStatus.LOST)
+        .reduce((acc, b) => acc + b.stake, 0);
+
+    return { turnover, won, lost };
+  };
+
+  const handlePasswordResetClick = (userId: string, username: string) => {
+      const newPass = prompt(`Enter new password for ${username}:`);
+      if (newPass && newPass.trim() !== "") {
+          onResetPassword(userId, newPass);
+          alert(`Password for ${username} has been updated.`);
+      }
   };
 
   return (
@@ -92,7 +121,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
 
             {/* User List Table */}
             <div>
-              <h3 className="text-brand-yellow font-bold mb-4 uppercase text-xs tracking-wider">Existing Users</h3>
+              <h3 className="text-brand-yellow font-bold mb-4 uppercase text-xs tracking-wider">Existing Users & Stats</h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm text-brand-text">
                   <thead className="bg-brand-bg text-brand-textMuted text-xs uppercase">
@@ -100,12 +129,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                       <th className="p-3">User</th>
                       <th className="p-3">Role</th>
                       <th className="p-3">Balance</th>
+                      <th className="p-3">Turnover (Gjiro)</th>
+                      <th className="p-3">Won (Fituar)</th>
+                      <th className="p-3">Lost (Humbur)</th>
                       <th className="p-3">Manage Credit</th>
                       <th className="p-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-brand-divider">
-                    {users.map(u => (
+                    {users.map(u => {
+                      const stats = getUserStats(u.id);
+                      return (
                       <tr key={u.id} className="hover:bg-brand-bg/50">
                         <td className="p-3">
                           <div className="flex items-center gap-2">
@@ -113,6 +147,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                             <div>
                               <div className="font-bold">{u.name}</div>
                               <div className="text-xs text-brand-textMuted">@{u.username}</div>
+                              {/* Show current password for easy admin debugging in simulation */}
+                              <div className="text-[10px] text-brand-textMuted opacity-50">pw: {u.password}</div>
                             </div>
                           </div>
                         </td>
@@ -121,12 +157,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                             {u.role}
                           </span>
                         </td>
-                        <td className="p-3 font-mono text-brand-yellow">{u.balance.toFixed(2)} L</td>
+                        <td className="p-3 font-mono text-brand-yellow font-bold">{u.balance.toFixed(2)} L</td>
+                        
+                        {/* Stats Columns */}
+                        <td className="p-3 font-mono text-white">{stats.turnover.toFixed(2)} L</td>
+                        <td className="p-3 font-mono text-brand-accent">{stats.won.toFixed(2)} L</td>
+                        <td className="p-3 font-mono text-red-400">{stats.lost.toFixed(2)} L</td>
+                        
                         <td className="p-3">
                           <div className="flex items-center gap-2">
                             <input 
                               type="number" 
-                              className="w-24 bg-brand-bg border border-brand-divider rounded p-1 text-xs text-white"
+                              className="w-20 bg-brand-bg border border-brand-divider rounded p-1 text-xs text-white"
                               placeholder="Amount"
                               value={creditAmounts[u.id] || ''}
                               onChange={(e) => handleCreditChange(u.id, e.target.value)}
@@ -140,17 +182,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                           </div>
                         </td>
                         <td className="p-3 text-right">
-                          {u.role !== UserRole.ADMIN && (
-                            <button 
-                              onClick={() => { if(confirm('Delete user?')) onDeleteUser(u.id) }}
-                              className="text-red-400 hover:text-red-300 text-xs underline"
-                            >
-                              Delete
-                            </button>
-                          )}
+                          <div className="flex flex-col gap-1 items-end">
+                              <button 
+                                onClick={() => handlePasswordResetClick(u.id, u.username)}
+                                className="text-blue-400 hover:text-blue-300 text-xs underline"
+                              >
+                                Reset Pass
+                              </button>
+                              
+                              {u.role !== UserRole.ADMIN && (
+                                <button 
+                                  onClick={() => { if(confirm('Delete user?')) onDeleteUser(u.id) }}
+                                  className="text-red-400 hover:text-red-300 text-xs underline"
+                                >
+                                  Delete
+                                </button>
+                              )}
+                          </div>
                         </td>
                       </tr>
-                    ))}
+                    )})}
                   </tbody>
                 </table>
               </div>
@@ -199,10 +250,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                                             )}
                                         </div>
                                     </td>
-                                    <td className="p-3 text-xs">{bet.matchDetails.homeTeam} v {bet.matchDetails.awayTeam}</td>
-                                    <td className="p-3 font-bold text-white">{bet.selection}</td>
+                                    <td className="p-3 text-xs">
+                                        {bet.type === 'ACCUMULATOR' 
+                                            ? `${bet.selections.length} Matches` 
+                                            : (bet.matchDetails ? `${bet.matchDetails.homeTeam} v ${bet.matchDetails.awayTeam}` : 'Match')}
+                                    </td>
+                                    <td className="p-3 font-bold text-white">
+                                        {bet.type === 'ACCUMULATOR' 
+                                            ? `${bet.selections.length}-Fold` 
+                                            : bet.selections[0]?.selectionName}
+                                    </td>
                                     <td className="p-3 text-brand-textMuted">{bet.stake.toFixed(2)} L</td>
-                                    <td className="p-3 text-brand-yellow">@{bet.odds.toFixed(2)}</td>
+                                    <td className="p-3 text-brand-yellow">@{bet.totalOdds.toFixed(2)}</td>
                                     <td className="p-3">{bet.potentialReturn.toFixed(2)} L</td>
                                     <td className="p-3">
                                         <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
