@@ -310,6 +310,67 @@ const App: React.FC = () => {
     setSelections([]); 
   }, [currentUser, selections]);
 
+  // --- Ticket Cancellation Logic ---
+  const handleCancelBet = useCallback((betId: string, origin: 'USER' | 'ADMIN') => {
+      const bet = bets.find(b => b.id === betId);
+      if (!bet) return;
+
+      // Logic for User cancellation
+      if (origin === 'USER') {
+          // Check time limit (10 minutes)
+          const timeDiff = Date.now() - bet.timestamp;
+          if (timeDiff > 10 * 60 * 1000) {
+              alert("Tickets can only be deleted within 10 minutes of placement.");
+              return;
+          }
+          // Only pending bets
+          if (bet.status !== BetStatus.PENDING) {
+              alert("Cannot delete settled tickets.");
+              return;
+          }
+          if (!confirm("Are you sure you want to cancel this ticket? Stake will be refunded.")) return;
+      }
+      
+      // Logic for Admin cancellation (always allowed)
+      if (origin === 'ADMIN') {
+          if (!confirm("Admin Delete: This will remove the ticket and revert balance impact. Continue?")) return;
+      }
+
+      // Calculate Balance Reversion
+      let balanceAdjustment = 0;
+      if (bet.status === BetStatus.PENDING) {
+          balanceAdjustment = bet.stake; // Give back stake
+      } else if (bet.status === BetStatus.WON) {
+          // Revert win: Deduct winnings, give back stake? Or just deduct net win? 
+          // Standard revert: return to state before bet.
+          // User has (OldBal + Returns). We want (OldBal).
+          // Adjustment = -Returns + Stake. (Basically deduct Profit). 
+          // Wait, actually user PAID stake. 
+          // If they WON, they got Returns. Net change was +Profit.
+          // To revert, we subtract Profit and give back Stake? No.
+          // Simplest: Balance = Balance - Returns + Stake.
+          balanceAdjustment = bet.stake - bet.potentialReturn;
+      } else if (bet.status === BetStatus.LOST) {
+          // User lost stake. Revert means give back stake.
+          balanceAdjustment = bet.stake;
+      }
+
+      // Update Users
+      setUsers(prevUsers => prevUsers.map(u => {
+          if (u.id === bet.userId) {
+              const updatedUser = { ...u, balance: u.balance + balanceAdjustment };
+              if (currentUser?.id === u.id) setCurrentUser(updatedUser);
+              return updatedUser;
+          }
+          return u;
+      }));
+
+      // Remove Bet
+      setBets(prev => prev.filter(b => b.id !== betId));
+
+  }, [bets, currentUser]);
+
+
   // --- Settlement Logic ---
   const checkSelectionOutcome = (sel: BetSelectionItem, score: MatchScore): BetStatus => {
     // 1X2
@@ -478,6 +539,7 @@ const App: React.FC = () => {
                 onDeleteUser={handleDeleteUser}
                 onAddCredit={handleAddCredit}
                 onResetPassword={handleResetPassword}
+                onCancelBet={handleCancelBet}
             />
           ) : currentView === 'casino' ? (
               <CasinoHub userBalance={currentUser.balance} onUpdateBalance={handleUpdateBalance} />
@@ -578,6 +640,7 @@ const App: React.FC = () => {
                         onRemoveSelection={handleRemoveSelection}
                         onClearAll={() => setSelections([])}
                         onPlaceBet={handlePlaceBet}
+                        onCancelBet={handleCancelBet}
                         userBalance={currentUser.balance}
                         myBets={myBets}
                     />

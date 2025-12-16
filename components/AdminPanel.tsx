@@ -8,9 +8,10 @@ interface AdminPanelProps {
   onDeleteUser: (userId: string) => void;
   onAddCredit: (userId: string, amount: number) => void;
   onResetPassword: (userId: string, newPass: string) => void;
+  onCancelBet: (betId: string, origin: 'USER' | 'ADMIN') => void;
 }
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, onDeleteUser, onAddCredit, onResetPassword }) => {
+const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet }) => {
   const [activeTab, setActiveTab] = useState<'users' | 'tickets'>('users');
   
   // Create User State
@@ -227,11 +228,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                       <th className="p-3">Odds</th>
                       <th className="p-3">Potential Return</th>
                       <th className="p-3">Status</th>
+                      <th className="p-3 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-brand-divider">
                     {allBets.length === 0 ? (
-                        <tr><td colSpan={8} className="p-8 text-center text-brand-textMuted">No bets placed yet.</td></tr>
+                        <tr><td colSpan={9} className="p-8 text-center text-brand-textMuted">No bets placed yet.</td></tr>
                     ) : (
                         allBets.sort((a,b) => b.timestamp - a.timestamp).map(bet => {
                             const user = users.find(u => u.id === bet.userId);
@@ -271,6 +273,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                                         }`}>
                                             {bet.status}
                                         </span>
+                                    </td>
+                                    <td className="p-3 text-right">
+                                        <button 
+                                            onClick={() => onCancelBet(bet.id, 'ADMIN')}
+                                            className="text-red-400 hover:text-white bg-red-900/30 hover:bg-red-900 px-2 py-1 rounded text-xs transition-colors"
+                                        >
+                                            Delete
+                                        </button>
                                     </td>
                                 </tr>
                             );
