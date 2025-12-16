@@ -127,8 +127,8 @@ const App: React.FC = () => {
                          let newAwayScore = match.liveAwayScore || 0;
 
                          // GOAL SIMULATION Logic
-                         // Approx 1 goal every 2000 ticks per match (~once per real match duration if tick=1s)
-                         if (Math.random() < 0.0005) {
+                         // Approx 1 goal every ~500 ticks (8 mins) for higher excitement in demo
+                         if (Math.random() < 0.002) {
                              if (Math.random() > 0.5) {
                                  newHomeScore++;
                              } else {

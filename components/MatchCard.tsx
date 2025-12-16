@@ -55,21 +55,26 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
         </div>
         
         <div className="flex-1 ml-3 border-l border-brand-divider pl-3 py-1">
-           <div className={`flex justify-between items-center mb-1 ${isFinished ? 'opacity-80' : ''}`}>
-             <span className="text-brand-text font-bold text-sm">{match.homeTeam}</span>
-             {(isFinished || isLive) && (
-                <span className={`font-bold ${isLive ? 'text-brand-yellow' : 'text-brand-accent'}`}>
-                    {isLive ? (match.liveHomeScore ?? 0) : match.score?.home}
-                </span>
-             )}
-           </div>
-           <div className={`flex justify-between items-center ${isFinished ? 'opacity-80' : ''}`}>
-             <span className="text-brand-text font-bold text-sm">{match.awayTeam}</span>
-             {(isFinished || isLive) && (
-                <span className={`font-bold ${isLive ? 'text-brand-yellow' : 'text-brand-accent'}`}>
-                    {isLive ? (match.liveAwayScore ?? 0) : match.score?.away}
-                </span>
-             )}
+           <div className="flex flex-col gap-1">
+               {/* Home Team */}
+               <div className={`flex justify-between items-center ${isFinished ? 'opacity-80' : ''}`}>
+                 <span className="text-brand-text font-bold text-sm truncate pr-2">{match.homeTeam}</span>
+                 {(isFinished || isLive) && (
+                    <span className={`font-mono font-bold text-lg w-8 text-right leading-none ${isLive ? 'text-brand-yellow drop-shadow-md' : 'text-brand-accent'}`}>
+                        {isLive ? (match.liveHomeScore ?? 0) : match.score?.home}
+                    </span>
+                 )}
+               </div>
+               
+               {/* Away Team */}
+               <div className={`flex justify-between items-center ${isFinished ? 'opacity-80' : ''}`}>
+                 <span className="text-brand-text font-bold text-sm truncate pr-2">{match.awayTeam}</span>
+                 {(isFinished || isLive) && (
+                    <span className={`font-mono font-bold text-lg w-8 text-right leading-none ${isLive ? 'text-brand-yellow drop-shadow-md' : 'text-brand-accent'}`}>
+                        {isLive ? (match.liveAwayScore ?? 0) : match.score?.away}
+                    </span>
+                 )}
+               </div>
            </div>
            
            {/* Grounding Source Indicator */}
