@@ -112,26 +112,31 @@ export const fetchLiveMatches = async (): Promise<Match[]> => {
             const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
             const sourceUrls = groundingChunks.map(chunk => chunk.web?.uri).filter((uri): uri is string => !!uri);
 
-            return rawData.map((item: any, idx: number) => ({
-                id: `live_${Date.now()}_${idx}`,
-                league: item.league || 'Global Live',
-                homeTeam: item.homeTeam,
-                awayTeam: item.awayTeam,
-                startTime: new Date().toISOString(),
-                status: MatchStatus.LIVE,
-                isLive: true,
-                currentMinute: item.currentMinute || "LIVE",
-                liveHomeScore: item.liveScore?.home || 0,
-                liveAwayScore: item.liveScore?.away || 0,
-                markets: generateMarketsForMatch(
-                    item.homeTeam,
-                    item.awayTeam,
-                    item.odds?.home || 2.0,
-                    item.odds?.away || 2.0,
-                    item.odds?.draw || 3.0
-                ),
-                sourceUrls: sourceUrls.slice(0, 3)
-            }));
+            return rawData.map((item: any, idx: number) => {
+                // Generate a stable ID based on team names to allow polling updates without full re-mounts
+                const stableId = `live_${item.homeTeam.replace(/\s+/g, '')}_${item.awayTeam.replace(/\s+/g, '')}`;
+                
+                return {
+                    id: stableId,
+                    league: item.league || 'Global Live',
+                    homeTeam: item.homeTeam,
+                    awayTeam: item.awayTeam,
+                    startTime: new Date().toISOString(),
+                    status: MatchStatus.LIVE,
+                    isLive: true,
+                    currentMinute: item.currentMinute || "LIVE",
+                    liveHomeScore: item.liveScore?.home || 0,
+                    liveAwayScore: item.liveScore?.away || 0,
+                    markets: generateMarketsForMatch(
+                        item.homeTeam,
+                        item.awayTeam,
+                        item.odds?.home || 2.0,
+                        item.odds?.away || 2.0,
+                        item.odds?.draw || 3.0
+                    ),
+                    sourceUrls: sourceUrls.slice(0, 3)
+                };
+            });
         }
         return [];
     } catch (e) {
@@ -201,7 +206,7 @@ export const fetchUpcomingMatches = async (queryContext: string): Promise<Match[
       const rawData = JSON.parse(jsonMatch[1]);
       
       return rawData.map((item: any, idx: number) => ({
-        id: `up_${Date.now()}_${idx}`,
+        id: `up_${Date.now()}_${idx}`, // Unique ID is fine for upcoming
         league: item.league || queryContext,
         homeTeam: item.homeTeam,
         awayTeam: item.awayTeam,

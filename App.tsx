@@ -52,13 +52,15 @@ const App: React.FC = () => {
       localStorage.setItem('betsim_bets', JSON.stringify(bets));
   }, [bets]);
 
-  // Load Data
+  // Load Data & Polling
   useEffect(() => {
     if (currentView !== 'sports') return;
+    
+    let isMounted = true;
 
     const loadRealData = async () => {
-      setIsLoading(true);
-      if(isLiveMode) setMatches([]); 
+      // Show loader only on initial fetch, not on polling updates
+      if (matches.length === 0 && isMounted) setIsLoading(true);
       
       try {
         let realMatches: Match[] = [];
@@ -68,23 +70,36 @@ const App: React.FC = () => {
              realMatches = await fetchUpcomingMatches(currentLeague);
         }
 
-        if (realMatches.length > 0) {
+        if (isMounted && realMatches.length > 0) {
             setMatches(realMatches);
         }
       } catch (e) {
         console.error("Failed to load real data", e);
       } finally {
-        setIsLoading(false);
+        if (isMounted) setIsLoading(false);
       }
     };
 
     if (currentUser) {
+        // Clear matches when switching modes to prevent stale data
+        if (isLiveMode) setMatches([]); 
         loadRealData();
     }
+    
+    // Polling Interval for Live Mode (45 Seconds)
+    let pollInterval: ReturnType<typeof setInterval>;
+    if (isLiveMode && currentUser) {
+        pollInterval = setInterval(loadRealData, 45000);
+    }
+
+    return () => {
+        isMounted = false;
+        if (pollInterval) clearInterval(pollInterval);
+    };
   }, [currentLeague, isLiveMode, currentUser, currentView]);
 
 
-  // --- OPTIMIZED REAL TIME ODDS ENGINE ---
+  // --- OPTIMIZED REAL TIME ODDS ENGINE & GOAL SIMULATION ---
   useEffect(() => {
     if (matches.length === 0) return;
 
@@ -94,7 +109,6 @@ const App: React.FC = () => {
             const nextMatches = prevMatches.map(match => {
                 if (match.status === MatchStatus.LIVE) {
                     // Update odds with 30% probability per second per match for "Alive" feel
-                    // This prevents re-rendering every single row every second
                     const shouldUpdate = Math.random() < 0.3;
 
                     if (shouldUpdate) {
@@ -109,9 +123,24 @@ const App: React.FC = () => {
                              }
                          }
 
+                         let newHomeScore = match.liveHomeScore || 0;
+                         let newAwayScore = match.liveAwayScore || 0;
+
+                         // GOAL SIMULATION Logic
+                         // Approx 1 goal every 2000 ticks per match (~once per real match duration if tick=1s)
+                         if (Math.random() < 0.0005) {
+                             if (Math.random() > 0.5) {
+                                 newHomeScore++;
+                             } else {
+                                 newAwayScore++;
+                             }
+                         }
+
                          return {
                             ...match,
                             currentMinute: newMinute,
+                            liveHomeScore: newHomeScore,
+                            liveAwayScore: newAwayScore,
                             markets: match.markets.map(market => ({
                                 ...market,
                                 options: market.options.map(opt => ({
