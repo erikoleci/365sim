@@ -12,27 +12,19 @@ import { simulateMatchResult, fetchUpcomingMatches, fetchLiveMatches } from './s
 
 const App: React.FC = () => {
   // --- Data State ---
-  // Load users with robust Error Handling to prevent data loss on parse error
   const [users, setUsers] = useState<User[]>(() => {
       try {
           const savedUsers = localStorage.getItem('betsim_users');
           if (savedUsers) {
               const parsed = JSON.parse(savedUsers);
-              // Simple validation to ensure we have an array
-              if (Array.isArray(parsed) && parsed.length > 0) {
-                  return parsed;
-              }
+              if (Array.isArray(parsed) && parsed.length > 0) return parsed;
           }
-      } catch (error) {
-          console.error("Storage corrupted, reverting to defaults", error);
-      }
+      } catch (error) {}
       return INITIAL_USERS;
   });
 
-  // Matches start empty to satisfy "No fake matches" request
   const [matches, setMatches] = useState<Match[]>([]);
   
-  // Load bets from local storage
   const [bets, setBets] = useState<Bet[]>(() => {
       try {
           const savedBets = localStorage.getItem('betsim_bets');
@@ -49,31 +41,24 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [currentView, setCurrentView] = useState<'sports' | 'casino'>('sports');
-  
-  // Search State
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Mobile Bet Slip State
+  const [isMobileSlipOpen, setIsMobileSlipOpen] = useState(false);
 
   // Bet Slip State
   const [selections, setSelections] = useState<BetSelectionItem[]>([]);
 
-  // --- PERSISTENCE EFFECTS ---
-  // We keep this, but we ALSO force save in critical handlers to be safe
-  useEffect(() => {
-      localStorage.setItem('betsim_users', JSON.stringify(users));
-  }, [users]);
+  // --- PERSISTENCE ---
+  useEffect(() => { localStorage.setItem('betsim_users', JSON.stringify(users)); }, [users]);
+  useEffect(() => { localStorage.setItem('betsim_bets', JSON.stringify(bets)); }, [bets]);
 
-  useEffect(() => {
-      localStorage.setItem('betsim_bets', JSON.stringify(bets));
-  }, [bets]);
-
-  // Load Data & Polling
+  // Load Data
   useEffect(() => {
     if (currentView !== 'sports') return;
     
     let isMounted = true;
-
     const loadRealData = async () => {
-      // Show loader only on initial fetch, not on polling updates
       if (matches.length === 0 && isMounted) setIsLoading(true);
       
       try {
@@ -84,9 +69,7 @@ const App: React.FC = () => {
              realMatches = await fetchUpcomingMatches(currentLeague);
         }
 
-        if (isMounted && realMatches.length > 0) {
-            setMatches(realMatches);
-        }
+        if (isMounted) setMatches(realMatches.length > 0 ? realMatches : []);
       } catch (e) {
         console.error("Failed to load real data", e);
       } finally {
@@ -95,12 +78,10 @@ const App: React.FC = () => {
     };
 
     if (currentUser) {
-        // Clear matches when switching modes to prevent stale data
         if (isLiveMode) setMatches([]); 
         loadRealData();
     }
     
-    // Polling Interval for Live Mode (45 Seconds)
     let pollInterval: ReturnType<typeof setInterval>;
     if (isLiveMode && currentUser) {
         pollInterval = setInterval(loadRealData, 45000);
@@ -113,7 +94,7 @@ const App: React.FC = () => {
   }, [currentLeague, isLiveMode, currentUser, currentView]);
 
 
-  // --- OPTIMIZED REAL TIME ODDS ENGINE & GOAL SIMULATION ---
+  // --- ODDS ENGINE ---
   useEffect(() => {
     if (matches.length === 0) return;
 
@@ -122,12 +103,10 @@ const App: React.FC = () => {
             let hasChanges = false;
             const nextMatches = prevMatches.map(match => {
                 if (match.status === MatchStatus.LIVE) {
-                    // Update odds with 30% probability per second per match for "Alive" feel
                     const shouldUpdate = Math.random() < 0.3;
 
                     if (shouldUpdate) {
                          hasChanges = true;
-                         // Clock tick simulation (very slow, 1% chance per second ~ 1 min per 100s)
                          let newMinute = match.currentMinute;
                          if (Math.random() < 0.02) {
                              let minNum = parseInt(newMinute?.replace("'", "") || "0");
@@ -140,14 +119,8 @@ const App: React.FC = () => {
                          let newHomeScore = match.liveHomeScore || 0;
                          let newAwayScore = match.liveAwayScore || 0;
 
-                         // GOAL SIMULATION Logic
-                         // Approx 1 goal every ~500 ticks (8 mins) for higher excitement in demo
                          if (Math.random() < 0.002) {
-                             if (Math.random() > 0.5) {
-                                 newHomeScore++;
-                             } else {
-                                 newAwayScore++;
-                             }
+                             if (Math.random() > 0.5) newHomeScore++; else newAwayScore++;
                          }
 
                          return {
@@ -159,19 +132,17 @@ const App: React.FC = () => {
                                 ...market,
                                 options: market.options.map(opt => ({
                                     ...opt,
-                                    // Micro fluctuation
                                     odds: Math.max(1.01, Number((opt.odds + (Math.random() * 0.04 - 0.02)).toFixed(2)))
                                 }))
                             }))
                          };
                     }
                 }
-                // Return same reference if no update
                 return match;
             });
             return hasChanges ? nextMatches : prevMatches;
         });
-    }, 1000); // 1 Second Interval for responsiveness
+    }, 1000);
 
     return () => clearInterval(interval);
   }, [matches.length]);
@@ -180,17 +151,9 @@ const App: React.FC = () => {
   // Filtering
   const filteredMatches = matches.filter(m => {
       const q = searchQuery.toLowerCase();
-      
       const leagueMatch = currentLeague === 'All Top Football' ? true : m.league === currentLeague;
       const liveMatch = isLiveMode ? m.status === MatchStatus.LIVE : true;
-
-      return (
-          leagueMatch &&
-          liveMatch &&
-          (m.homeTeam.toLowerCase().includes(q) ||
-          m.awayTeam.toLowerCase().includes(q) ||
-          m.league.toLowerCase().includes(q))
-      );
+      return leagueMatch && liveMatch && (m.homeTeam.toLowerCase().includes(q) || m.awayTeam.toLowerCase().includes(q) || m.league.toLowerCase().includes(q));
   });
 
   const detailMatch = matches.find(m => m.id === detailMatchId);
@@ -200,39 +163,18 @@ const App: React.FC = () => {
     return acc;
   }, {} as Record<string, Match[]>);
 
-  // --- Dynamic League List for Sidebar ---
   const dynamicLeagues = useMemo(() => {
       const fetchedLeagues = Array.from(new Set(matches.map(m => m.league)));
-      const standardLeagues = [
-        'All Top Football',
-        'Champions League',
-        'Premier League',
-        'La Liga',
-        'Serie A',
-        'Bundesliga',
-        'Ligue 1',
-        'Europa League',
-        'Albanian Superliga'
-      ];
-      // Merge unique leagues and sort
+      const standardLeagues = ['All Top Football', 'Champions League', 'Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Ligue 1', 'Europa League'];
       return Array.from(new Set([...standardLeagues, ...fetchedLeagues])).sort();
   }, [matches]);
 
-  // --- Handlers & Memoization ---
-  
-  // Memoize selected IDs to prevent unnecessary MatchRow re-renders
   const uniqueId = (matchId: string, marketId: string, selId: string) => `${matchId}-${marketId}-${selId}`;
-  const selectedIds = useMemo(() => 
-    selections.map(s => uniqueId(s.matchId, s.marketId, s.selectionId)), 
-  [selections]);
+  const selectedIds = useMemo(() => selections.map(s => uniqueId(s.matchId, s.marketId, s.selectionId)), [selections]);
 
   const handleLogin = (u: string, p: string) => {
-    // Always refresh users from state (which is synced with LS) before login
     const user = users.find(user => user.username === u && user.password === p);
-    if (user) {
-      setCurrentUser(user);
-      return true;
-    }
+    if (user) { setCurrentUser(user); return true; }
     return false;
   };
 
@@ -251,76 +193,50 @@ const App: React.FC = () => {
       role: UserRole.USER,
       avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(newUser.name)}&background=random`
     };
-    
-    setUsers(prevUsers => {
-        // Create new array
-        const updatedUsers = [...prevUsers, u];
-        // FORCE SAVE TO STORAGE IMMEDIATELY
-        // This ensures that even if page reloads before useEffect, data is there.
-        localStorage.setItem('betsim_users', JSON.stringify(updatedUsers));
-        return updatedUsers;
+    setUsers(prev => {
+        const u2 = [...prev, u];
+        localStorage.setItem('betsim_users', JSON.stringify(u2));
+        return u2;
     });
   };
 
   const handleDeleteUser = (userId: string) => {
-    setUsers(prevUsers => {
-        const updatedUsers = prevUsers.filter(u => u.id !== userId);
-        localStorage.setItem('betsim_users', JSON.stringify(updatedUsers));
-        return updatedUsers;
+    setUsers(prev => {
+        const u = prev.filter(u => u.id !== userId);
+        localStorage.setItem('betsim_users', JSON.stringify(u));
+        return u;
     });
   };
 
   const handleAddCredit = (userId: string, amount: number) => {
-    setUsers(prevUsers => {
-        const updatedUsers = prevUsers.map(u => {
-            if (u.id === userId) {
-                const updated = { ...u, balance: u.balance + amount };
-                if (currentUser?.id === u.id) setCurrentUser(updated);
-                return updated;
-            }
-            return u;
-        });
-        localStorage.setItem('betsim_users', JSON.stringify(updatedUsers));
-        return updatedUsers;
+    setUsers(prev => {
+        const u = prev.map(u => u.id === userId ? { ...u, balance: u.balance + amount } : u);
+        localStorage.setItem('betsim_users', JSON.stringify(u));
+        if (currentUser?.id === userId) setCurrentUser(u.find(x => x.id === userId)!);
+        return u;
     });
   };
   
   const handleResetPassword = (userId: string, newPass: string) => {
-      setUsers(prevUsers => {
-          const updatedUsers = prevUsers.map(u => {
-              if (u.id === userId) {
-                  return { ...u, password: newPass };
-              }
-              return u;
-          });
-          localStorage.setItem('betsim_users', JSON.stringify(updatedUsers));
-          return updatedUsers;
+      setUsers(prev => {
+          const u = prev.map(u => u.id === userId ? { ...u, password: newPass } : u);
+          localStorage.setItem('betsim_users', JSON.stringify(u));
+          return u;
       });
   };
 
   const handleUpdateBalance = (amount: number) => {
     if (!currentUser) return;
-    
-    setUsers(prevUsers => {
-        const updatedUsers = prevUsers.map(u => {
-            if (u.id === currentUser.id) {
-                 return { ...u, balance: u.balance + amount };
-            }
-            return u;
-        });
-        // Update current user to match
-        const me = updatedUsers.find(u => u.id === currentUser.id);
-        if (me) setCurrentUser(me);
-        
-        localStorage.setItem('betsim_users', JSON.stringify(updatedUsers));
-        return updatedUsers;
+    setUsers(prev => {
+        const u = prev.map(u => u.id === currentUser.id ? { ...u, balance: u.balance + amount } : u);
+        if (currentUser) setCurrentUser(u.find(x => x.id === currentUser.id)!);
+        localStorage.setItem('betsim_users', JSON.stringify(u));
+        return u;
     });
   };
 
-  // --- Betting Handlers (Memoized) ---
   const handleToggleSelection = useCallback((match: Match, marketId: string, selectionId: string) => {
     if (!currentUser) return;
-    
     const market = match.markets.find(m => m.id === marketId);
     const option = market?.options.find(o => o.id === selectionId);
     if (!market || !option) return;
@@ -329,48 +245,24 @@ const App: React.FC = () => {
     
     setSelections(prev => {
         const exists = prev.some(s => uniqueId(s.matchId, s.marketId, s.selectionId) === uId);
-        
-        if (exists) {
-            return prev.filter(s => uniqueId(s.matchId, s.marketId, s.selectionId) !== uId);
-        } else {
-            const newSel: BetSelectionItem = {
-                matchId: match.id,
-                matchHome: match.homeTeam,
-                matchAway: match.awayTeam,
-                marketId: market.id,
-                marketName: market.name,
-                selectionId: option.id,
-                selectionName: option.name,
-                odds: option.odds,
-                status: BetStatus.PENDING
-            };
-            return [...prev, newSel];
-        }
+        if (exists) return prev.filter(s => uniqueId(s.matchId, s.marketId, s.selectionId) !== uId);
+        return [...prev, {
+            matchId: match.id,
+            matchHome: match.homeTeam,
+            matchAway: match.awayTeam,
+            marketId: market.id,
+            marketName: market.name,
+            selectionId: option.id,
+            selectionName: option.name,
+            odds: option.odds,
+            status: BetStatus.PENDING
+        }];
     });
   }, [currentUser]);
 
-  const handleRemoveSelection = useCallback((uId: string) => {
-    setSelections(prev => prev.filter(s => uniqueId(s.matchId, s.marketId, s.selectionId) !== uId));
-  }, []);
-
   const handlePlaceBet = useCallback((stake: number, type: 'SINGLE' | 'ACCUMULATOR') => {
     if (!currentUser || selections.length === 0) return;
-    
-    // Optimistic update for UI + Direct Save for Persistence
-    setUsers(prevUsers => {
-        const updatedUsers = prevUsers.map(u => {
-            if (u.id === currentUser.id) {
-                return { ...u, balance: u.balance - stake };
-            }
-            return u;
-        });
-        // Sync local current user
-        const me = updatedUsers.find(u => u.id === currentUser.id);
-        if (me) setCurrentUser(me);
-        
-        localStorage.setItem('betsim_users', JSON.stringify(updatedUsers));
-        return updatedUsers;
-    });
+    handleUpdateBalance(-stake);
 
     const totalOdds = selections.reduce((acc, curr) => acc * curr.odds, 1);
     const newBet: Bet = {
@@ -383,103 +275,42 @@ const App: React.FC = () => {
       potentialReturn: stake * totalOdds,
       status: BetStatus.PENDING,
       timestamp: Date.now(),
-      matchDetails: {
-          homeTeam: selections[0].matchHome, 
-          awayTeam: selections[0].matchAway
-      }
+      matchDetails: { homeTeam: selections[0].matchHome, awayTeam: selections[0].matchAway }
     };
 
     setBets(prev => {
-        const updatedBets = [newBet, ...prev];
-        localStorage.setItem('betsim_bets', JSON.stringify(updatedBets));
-        return updatedBets;
+        const b = [newBet, ...prev];
+        localStorage.setItem('betsim_bets', JSON.stringify(b));
+        return b;
     });
     setSelections([]); 
+    setIsMobileSlipOpen(false); // Close mobile slip after bet
   }, [currentUser, selections]);
 
-  // --- Ticket Cancellation Logic (REFACTORED) ---
   const handleCancelBet = useCallback((betId: string, origin: 'USER' | 'ADMIN') => {
       const bet = bets.find(b => b.id === betId);
       if (!bet) return;
 
-      // Logic for User cancellation
       if (origin === 'USER') {
-          // Check time limit (10 minutes) - 600000 ms
-          const timeDiff = Date.now() - bet.timestamp;
-          if (timeDiff > 600000) {
-              alert("Tickets can only be deleted within 10 minutes of placement.");
-              return;
-          }
-          // Only pending bets
-          if (bet.status !== BetStatus.PENDING) {
-              alert("Cannot delete settled tickets.");
-              return;
-          }
-          if (!window.confirm("Are you sure you want to cancel this ticket? Stake will be refunded.")) return;
-      }
-      
-      // Logic for Admin cancellation (always allowed)
-      if (origin === 'ADMIN') {
-          if (!window.confirm("Admin Delete: This will remove the ticket and revert balance impact. Continue?")) return;
+          if (Date.now() - bet.timestamp > 600000) return alert("Too late to cancel.");
+          if (bet.status !== BetStatus.PENDING) return alert("Cannot cancel settled bets.");
+          if (!window.confirm("Cancel ticket?")) return;
+      } else {
+          if (!window.confirm("Admin delete?")) return;
       }
 
-      // Calculate Balance Reversion
-      let balanceAdjustment = 0;
-      if (bet.status === BetStatus.PENDING) {
-          balanceAdjustment = bet.stake; // Give back stake
-      } else if (bet.status === BetStatus.WON) {
-          // Simplest: Balance = Balance - Returns + Stake (Revert to pre-bet state)
-          balanceAdjustment = bet.stake - bet.potentialReturn;
-      } else if (bet.status === BetStatus.LOST) {
-          // User lost stake. Revert means give back stake.
-          balanceAdjustment = bet.stake;
-      }
+      let adjustment = 0;
+      if (bet.status === BetStatus.PENDING || bet.status === BetStatus.LOST) adjustment = bet.stake;
+      else if (bet.status === BetStatus.WON) adjustment = bet.stake - bet.potentialReturn;
 
-      // 1. Update Persistent Users List with Force Save
-      setUsers(prevUsers => {
-          const updatedUsers = prevUsers.map(u => {
-              if (u.id === bet.userId) {
-                  return { ...u, balance: u.balance + balanceAdjustment };
-              }
-              return u;
-          });
-          
-          if (currentUser && currentUser.id === bet.userId) {
-               const me = updatedUsers.find(u => u.id === currentUser.id);
-               if (me) setCurrentUser(me);
-          }
-          
-          localStorage.setItem('betsim_users', JSON.stringify(updatedUsers));
-          return updatedUsers;
-      });
+      if (adjustment !== 0) handleUpdateBalance(adjustment);
 
-      // 3. Remove Bet from State
       setBets(prev => {
-          const updatedBets = prev.filter(b => b.id !== betId);
-          localStorage.setItem('betsim_bets', JSON.stringify(updatedBets));
-          return updatedBets;
+          const b = prev.filter(x => x.id !== betId);
+          localStorage.setItem('betsim_bets', JSON.stringify(b));
+          return b;
       });
-
   }, [bets, currentUser]);
-
-
-  // --- Settlement Logic ---
-  const checkSelectionOutcome = (sel: BetSelectionItem, score: MatchScore): BetStatus => {
-    // 1X2
-    if (sel.marketId === 'm_res') {
-        if (sel.selectionId === '1') return score.home > score.away ? BetStatus.WON : BetStatus.LOST;
-        if (sel.selectionId === '2') return score.away > score.home ? BetStatus.WON : BetStatus.LOST;
-        if (sel.selectionId === 'X') return score.home === score.away ? BetStatus.WON : BetStatus.LOST;
-    }
-    // Simple goals logic
-    if (sel.marketId === 'm_goals_25') {
-        const total = score.home + score.away;
-        if (sel.selectionId === 'O2.5') return total > 2.5 ? BetStatus.WON : BetStatus.LOST;
-        if (sel.selectionId === 'U2.5') return total < 2.5 ? BetStatus.WON : BetStatus.LOST;
-    }
-    // Fallback simulation for other markets
-    return Math.random() > 0.5 ? BetStatus.WON : BetStatus.LOST; 
-  };
 
   const handleSettleMatch = useCallback(async (match: Match) => {
     if (simulatingMatchId) return;
@@ -487,13 +318,7 @@ const App: React.FC = () => {
 
     try {
       const result = await simulateMatchResult(match);
-
-      const finishedMatch: Match = {
-        ...match,
-        status: MatchStatus.FINISHED,
-        score: result.score,
-        summary: result.summary
-      };
+      const finishedMatch: Match = { ...match, status: MatchStatus.FINISHED, score: result.score, summary: result.summary };
 
       setMatches(prev => prev.map(m => m.id === match.id ? finishedMatch : m));
       
@@ -508,7 +333,17 @@ const App: React.FC = () => {
 
                  const updatedSelections = bet.selections.map(leg => {
                      if (leg.matchId === match.id) {
-                         const outcome = checkSelectionOutcome(leg, result.score);
+                         let outcome = BetStatus.LOST;
+                         // Logic check
+                         if (leg.marketId === 'm_res') {
+                             const s = result.score;
+                             if (leg.selectionId === '1' && s.home > s.away) outcome = BetStatus.WON;
+                             else if (leg.selectionId === '2' && s.away > s.home) outcome = BetStatus.WON;
+                             else if (leg.selectionId === 'X' && s.home === s.away) outcome = BetStatus.WON;
+                         } else {
+                             // Simple Mock
+                             outcome = Math.random() > 0.5 ? BetStatus.WON : BetStatus.LOST;
+                         }
                          if (outcome === BetStatus.LOST) anyLegLost = true;
                          return { ...leg, status: outcome };
                      }
@@ -519,57 +354,35 @@ const App: React.FC = () => {
 
                  updatedBets[betIdx] = { ...bet, selections: updatedSelections };
 
-                 if (anyLegLost) {
-                     updatedBets[betIdx].status = BetStatus.LOST;
-                 } else if (allLegsWon) {
+                 if (anyLegLost) updatedBets[betIdx].status = BetStatus.LOST;
+                 else if (allLegsWon) {
                      updatedBets[betIdx].status = BetStatus.WON;
                      usersToUpdate[bet.userId] = (usersToUpdate[bet.userId] || 0) + bet.potentialReturn;
                  }
              }
         });
         
-        // Save bets immediately
         localStorage.setItem('betsim_bets', JSON.stringify(updatedBets));
 
         if (Object.keys(usersToUpdate).length > 0) {
             setUsers(currentUsers => {
-                const nextUsers = currentUsers.map(u => {
-                    if (usersToUpdate[u.id]) return { ...u, balance: u.balance + usersToUpdate[u.id] };
-                    return u;
-                });
-                
-                // Sync current user
-                if (currentUser && usersToUpdate[currentUser.id]) {
-                    const fresh = nextUsers.find(u => u.id === currentUser.id);
-                    if (fresh) setCurrentUser(fresh);
-                }
-                
-                // Force Save Users
-                localStorage.setItem('betsim_users', JSON.stringify(nextUsers));
-                return nextUsers;
+                const next = currentUsers.map(u => usersToUpdate[u.id] ? { ...u, balance: u.balance + usersToUpdate[u.id] } : u);
+                if (currentUser && usersToUpdate[currentUser.id]) setCurrentUser(next.find(u => u.id === currentUser.id)!);
+                localStorage.setItem('betsim_users', JSON.stringify(next));
+                return next;
             });
         }
-
         return updatedBets;
       });
-
-    } catch (error) {
-      console.error("Failed to settle", error);
-    } finally {
-      setSimulatingMatchId(null);
-    }
+    } catch (e) { console.error(e); } finally { setSimulatingMatchId(null); }
   }, [currentUser, simulatingMatchId]);
 
-  // --- Render ---
-
-  if (!currentUser) {
-    return <Login onLogin={handleLogin} />;
-  }
+  if (!currentUser) return <Login onLogin={handleLogin} />;
 
   const myBets = bets.filter(b => b.userId === currentUser.id).sort((a,b) => b.timestamp - a.timestamp);
 
   return (
-    <div className="min-h-screen bg-brand-bg text-brand-text flex flex-col font-sans selection:bg-brand-header selection:text-white">
+    <div className="min-h-screen bg-brand-bg text-brand-text flex flex-col font-sans selection:bg-brand-header selection:text-white pb-16 md:pb-0">
       <Navbar 
         currentUser={currentUser} 
         onLogout={handleLogout} 
@@ -578,67 +391,46 @@ const App: React.FC = () => {
         onNavigate={setCurrentView}
       />
 
-      <div className="flex-1 flex max-w-[1450px] mx-auto w-full pt-4 px-2 gap-2">
+      <div className="flex-1 flex max-w-[1450px] mx-auto w-full pt-4 px-2 gap-2 relative">
         
-        {/* Left Sidebar - Navigation */}
+        {/* Left Sidebar - Desktop Only */}
         {currentView === 'sports' && (
             <aside className="hidden lg:block w-60 flex-shrink-0">
-            <div className="bg-brand-panel rounded overflow-hidden shadow-sm">
-                <div className="bg-[#383838] px-3 py-2 text-xs font-bold text-brand-text border-b border-[#444] uppercase flex justify-between">
-                    <span>Leagues</span>
-                    <span className="text-[10px] bg-brand-yellow text-black px-1.5 rounded font-bold">SOCCER</span>
-                </div>
-                
-                {/* Live Button */}
-                <button
-                    onClick={() => {
-                        setIsLiveMode(true);
-                        setDetailMatchId(null);
-                    }}
-                    className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors ${isLiveMode ? 'bg-[#444] text-brand-yellow font-bold border-l-4 border-l-brand-accent' : 'hover:bg-[#444] hover:text-white'}`}
-                >
-                    <div className="flex items-center gap-2">
-                        <span className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-accent opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-accent"></span>
-                        </span>
-                        <span className="uppercase tracking-wider">In-Play / Live</span>
+                <div className="bg-brand-panel rounded overflow-hidden shadow-sm">
+                    <div className="bg-[#383838] px-3 py-2 text-xs font-bold text-brand-text border-b border-[#444] uppercase flex justify-between">
+                        <span>Leagues</span>
+                        <span className="text-[10px] bg-brand-yellow text-black px-1.5 rounded font-bold">SOCCER</span>
                     </div>
-                    <span className="text-[10px] text-brand-textMuted group-hover:text-white">›</span>
-                </button>
+                    
+                    <button onClick={() => { setIsLiveMode(true); setDetailMatchId(null); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors ${isLiveMode ? 'bg-[#444] text-brand-yellow font-bold border-l-4 border-l-brand-accent' : 'hover:bg-[#444] hover:text-white'}`}>
+                        <div className="flex items-center gap-2">
+                            <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-accent opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-accent"></span>
+                            </span>
+                            <span className="uppercase tracking-wider">In-Play / Live</span>
+                        </div>
+                    </button>
 
-                <div className="flex flex-col text-xs text-brand-textMuted max-h-[80vh] overflow-y-auto custom-scrollbar">
-                    {dynamicLeagues.map((league) => (
-                        <button 
-                            key={league} 
-                            onClick={() => {
-                                if (currentLeague !== league || isLiveMode) {
-                                    setIsLiveMode(false);
-                                    setCurrentLeague(league);
-                                    setDetailMatchId(null);
-                                }
-                            }}
-                            className={`px-3 py-2.5 hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 flex justify-between items-center group text-left w-full ${currentLeague === league && !isLiveMode ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : 'pl-4'}`}
-                        >
-                            {league}
-                            <span className="hidden group-hover:block text-[10px] text-brand-textMuted">›</span>
-                        </button>
-                    ))}
+                    <div className="flex flex-col text-xs text-brand-textMuted max-h-[80vh] overflow-y-auto custom-scrollbar">
+                        {dynamicLeagues.map((league) => (
+                            <button key={league} onClick={() => { setIsLiveMode(false); setCurrentLeague(league); setDetailMatchId(null); }} className={`px-3 py-2.5 hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 flex justify-between items-center group text-left w-full ${currentLeague === league && !isLiveMode ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : 'pl-4'}`}>
+                                {league}
+                                <span className="hidden group-hover:block text-[10px] text-brand-textMuted">›</span>
+                            </button>
+                        ))}
+                    </div>
                 </div>
-            </div>
             </aside>
         )}
 
         {/* Center Content */}
-        <main className="flex-1 min-w-0">
+        <main className="flex-1 min-w-0 mb-20 md:mb-0">
           {showAdmin && currentUser.role === UserRole.ADMIN ? (
             <AdminPanel 
-                users={users} 
-                allBets={bets}
-                onCreateUser={handleCreateUser}
-                onDeleteUser={handleDeleteUser}
-                onAddCredit={handleAddCredit}
-                onResetPassword={handleResetPassword}
+                users={users} allBets={bets}
+                onCreateUser={handleCreateUser} onDeleteUser={handleDeleteUser}
+                onAddCredit={handleAddCredit} onResetPassword={handleResetPassword}
                 onCancelBet={handleCancelBet}
             />
           ) : currentView === 'casino' ? (
@@ -652,59 +444,32 @@ const App: React.FC = () => {
              />
           ) : (
               <div className="space-y-4">
-                {/* Search Bar Area */}
+                {/* Mobile League Selector (Visible only on Mobile) */}
+                <div className="lg:hidden flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                    <button onClick={() => setIsLiveMode(true)} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${isLiveMode ? 'bg-brand-accent text-black' : 'bg-brand-panel text-white'}`}>LIVE</button>
+                    {dynamicLeagues.map(l => (
+                         <button key={l} onClick={() => { setIsLiveMode(false); setCurrentLeague(l); }} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${currentLeague === l && !isLiveMode ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>{l}</button>
+                    ))}
+                </div>
+
                 <div className="bg-brand-panel p-3 rounded flex items-center gap-2 border border-brand-divider">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-brand-textMuted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                    <input 
-                        type="text" 
-                        placeholder="Search teams or leagues..." 
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="bg-transparent text-white text-sm w-full outline-none placeholder-brand-textMuted"
-                    />
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-brand-textMuted" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                    <input type="text" placeholder="Search teams..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="bg-transparent text-white text-sm w-full outline-none placeholder-brand-textMuted" />
                 </div>
 
-                {/* Promo / Hero Banner */}
-                <div className="bg-gradient-to-r from-brand-headerDark to-[#0e4e3b] p-4 rounded text-white shadow-sm flex justify-between items-center relative overflow-hidden">
-                    <div className="z-10 relative">
-                        <div className="text-brand-yellow text-xs font-bold uppercase mb-1 animate-pulse">
-                            {isLiveMode ? '● LIVE NOW' : 'Next 14 Days Schedule'}
-                        </div>
-                        <div className="text-xl font-bold italic">
-                            {isLiveMode ? 'In-Play Global' : currentLeague}
-                        </div>
-                        <div className="text-xs opacity-80 mt-1">
-                            {isLiveMode ? '+1100 Leagues covered via Live API.' : 'Focus on Top 5 Leagues & Major Cups.'}
-                        </div>
-                    </div>
-                    {/* Abstract background element */}
-                    <div className="absolute right-0 top-0 h-full w-1/3 bg-white/5 skew-x-12 transform origin-bottom-left"></div>
-                </div>
-
-                {/* Loading / Empty States */}
                 {isLoading ? (
                     <div className="flex flex-col justify-center items-center h-64 bg-brand-panel rounded border border-brand-divider">
                         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-brand-yellow mb-4"></div>
-                        <div className="text-brand-textMuted text-xs animate-pulse">
-                            {isLiveMode ? 'Scanning Live Games...' : 'Fetching 14-Day Schedule...'}
-                        </div>
-                    </div>
-                ) : matchesByLeague && Object.keys(matchesByLeague).length === 0 ? (
-                    <div className="bg-brand-panel p-8 rounded text-center text-brand-textMuted border border-brand-divider">
-                        {isLiveMode ? 'No live matches found right now.' : `No upcoming matches found for ${currentLeague}.`}
-                        <br/>Try searching for a different league.
+                        <div className="text-brand-textMuted text-xs animate-pulse">Scanning...</div>
                     </div>
                 ) : (
                     Object.entries(matchesByLeague).map(([league, leagueMatches]: [string, Match[]]) => (
                         <div key={league} className="bg-brand-panel rounded overflow-hidden shadow-sm">
-                            <div className="bg-[#383838] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex justify-between items-center group cursor-pointer hover:bg-[#404040]">
+                            <div className="bg-[#383838] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex justify-between items-center">
                                 <div className="flex items-center gap-2">
                                     <span className={`w-1 h-3 rounded-full ${isLiveMode ? 'bg-brand-accent animate-pulse' : 'bg-brand-yellow'}`}></span>
                                     <span>{league}</span>
                                 </div>
-                                <span className="text-[10px] text-brand-textMuted font-normal bg-black/20 px-2 py-0.5 rounded-full">Match Winner</span>
                             </div>
                             <div className="divide-y divide-brand-divider">
                                 {leagueMatches.map(match => (
@@ -723,21 +488,17 @@ const App: React.FC = () => {
                         </div>
                     ))
                 )}
-                
-                <div className="text-[10px] text-brand-textMuted text-center mt-4">
-                    Data Source: Google Grounding (Global Sports Feed).
-                </div>
               </div>
           )}
         </main>
 
-        {/* Right Sidebar: Bet Slip */}
+        {/* Right Sidebar: Bet Slip (Desktop) */}
         {currentView === 'sports' && (
             <aside className="w-80 hidden md:flex flex-col flex-shrink-0">
                 <div className="bg-brand-panel rounded overflow-hidden shadow-sm flex-1 max-h-[calc(100vh-100px)] sticky top-20">
                     <BetSlip 
                         selections={selections}
-                        onRemoveSelection={handleRemoveSelection}
+                        onRemoveSelection={(id) => setSelections(p => p.filter(x => uniqueId(x.matchId, x.marketId, x.selectionId) !== id))}
                         onClearAll={() => setSelections([])}
                         onPlaceBet={handlePlaceBet}
                         onCancelBet={handleCancelBet}
@@ -748,6 +509,52 @@ const App: React.FC = () => {
             </aside>
         )}
       </div>
+
+      {/* MOBILE BET SLIP TOGGLE & DRAWER */}
+      {currentView === 'sports' && (
+          <>
+            {/* Floating Action Button (Mobile Only) */}
+            <div className="fixed bottom-4 right-4 md:hidden z-40">
+                <button 
+                    onClick={() => setIsMobileSlipOpen(true)}
+                    className="bg-brand-yellow text-black font-bold rounded-full w-14 h-14 shadow-2xl flex items-center justify-center relative border-2 border-white"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                    {selections.length > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                            {selections.length}
+                        </span>
+                    )}
+                </button>
+            </div>
+
+            {/* Mobile Drawer */}
+            {isMobileSlipOpen && (
+                <div className="fixed inset-0 z-50 md:hidden bg-black/50 backdrop-blur-sm flex justify-end animate-in slide-in-from-bottom">
+                    <div className="w-full h-full bg-brand-panel flex flex-col">
+                        <div className="flex justify-between items-center p-4 bg-brand-header text-white shadow-lg">
+                            <span className="font-bold">Bet Slip</span>
+                            <button onClick={() => setIsMobileSlipOpen(false)} className="text-white font-bold p-2">Close ✕</button>
+                        </div>
+                        <div className="flex-1 overflow-hidden">
+                            <BetSlip 
+                                selections={selections}
+                                onRemoveSelection={(id) => setSelections(p => p.filter(x => uniqueId(x.matchId, x.marketId, x.selectionId) !== id))}
+                                onClearAll={() => setSelections([])}
+                                onPlaceBet={handlePlaceBet}
+                                onCancelBet={handleCancelBet}
+                                userBalance={currentUser.balance}
+                                myBets={myBets}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
+          </>
+      )}
+
     </div>
   );
 };
