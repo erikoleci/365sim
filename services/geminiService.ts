@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Match, MatchScore, MatchStatus, Market } from "../types";
 
-// KEY FROM USER
+// KEY FROM USER - Full Access to +1100 Leagues
 const ai = new GoogleGenAI({ apiKey: 'e561350dff9c15fe7ab62157b6198913' });
 
 export interface SimulatedMatchResult {
@@ -9,12 +9,9 @@ export interface SimulatedMatchResult {
   summary: string;
 }
 
-// Helper: Real-feeling odds generator based on base probabilities
+// Helper: Generates detailed markets for any match found
 const generateMarketsForMatch = (home: string, away: string, baseHomeOdds: number, baseAwayOdds: number, baseDrawOdds: number): Market[] => {
-  const isHomeFav = baseHomeOdds < baseAwayOdds;
-  
   return [
-    // --- MAIN ---
     {
       id: 'm_res',
       name: 'Full Time Result',
@@ -30,18 +27,18 @@ const generateMarketsForMatch = (home: string, away: string, baseHomeOdds: numbe
       name: 'Double Chance',
       category: 'Main',
       options: [
-        { id: '1X', name: `${home} or Draw`, odds: Number((1 + (1/(1/baseHomeOdds + 1/baseDrawOdds))).toFixed(2)) - 0.15 },
-        { id: '12', name: `${home} or ${away}`, odds: 1.25 },
-        { id: 'X2', name: `Draw or ${away}`, odds: Number((1 + (1/(1/baseAwayOdds + 1/baseDrawOdds))).toFixed(2)) - 0.15 },
+        { id: '1X', name: `${home}/Draw`, odds: Number((1 + (1/(1/baseHomeOdds + 1/baseDrawOdds))).toFixed(2)) - 0.1 },
+        { id: '12', name: `${home}/${away}`, odds: 1.22 },
+        { id: 'X2', name: `Draw/${away}`, odds: Number((1 + (1/(1/baseAwayOdds + 1/baseDrawOdds))).toFixed(2)) - 0.1 },
       ]
     },
     {
       id: 'm_goals_25',
-      name: 'Total Goals Over/Under 2.5',
+      name: 'Total Goals 2.5',
       category: 'Goals',
       options: [
-        { id: 'O2.5', name: 'Over 2.5', odds: 1.90 },
-        { id: 'U2.5', name: 'Under 2.5', odds: 1.90 },
+        { id: 'O2.5', name: 'Over 2.5', odds: 1.85 },
+        { id: 'U2.5', name: 'Under 2.5', odds: 1.85 },
       ]
     },
     {
@@ -49,7 +46,7 @@ const generateMarketsForMatch = (home: string, away: string, baseHomeOdds: numbe
       name: 'Both Teams To Score',
       category: 'Goals',
       options: [
-        { id: 'Yes', name: 'Yes', odds: 1.75 },
+        { id: 'Yes', name: 'Yes', odds: 1.70 },
         { id: 'No', name: 'No', odds: 2.05 },
       ]
     },
@@ -58,44 +55,41 @@ const generateMarketsForMatch = (home: string, away: string, baseHomeOdds: numbe
       name: 'Half Time Result',
       category: 'Half',
       options: [
-        { id: 'HT1', name: home, odds: Number((baseHomeOdds * 1.55).toFixed(2)) },
-        { id: 'HTX', name: 'Draw', odds: 2.15 },
-        { id: 'HT2', name: away, odds: Number((baseAwayOdds * 1.55).toFixed(2)) },
+        { id: 'HT1', name: home, odds: Number((baseHomeOdds * 1.5).toFixed(2)) },
+        { id: 'HTX', name: 'Draw', odds: 2.10 },
+        { id: 'HT2', name: away, odds: Number((baseAwayOdds * 1.5).toFixed(2)) },
       ]
-    },
-    {
-        id: 'm_corn_tot',
-        name: 'Total Corners',
-        category: 'Corners',
-        options: [
-            { id: 'C_O9.5', name: 'Over 9.5', odds: 1.85 },
-            { id: 'C_U9.5', name: 'Under 9.5', odds: 1.85 },
-        ]
     }
   ];
 };
 
 /**
- * Fetches currently LIVE matches with GLOBAL scope.
+ * Fetches currently LIVE matches with GLOBAL scope (+1100 Leagues).
  */
 export const fetchLiveMatches = async (): Promise<Match[]> => {
     try {
         const prompt = `
-            TASK: Fetch currently LIVE (in-play) football matches from ANY active league in the world right now.
-            SCOPE: Global (Europe, Asia, South America, Lower Divisions, Youth Leagues).
+            ACT AS A GLOBAL SPORTS DATA API (Bet365/Flashscore Style).
+            TASK: Fetch ALL currently LIVE (in-play) football matches from +1100 leagues worldwide.
             
-            STRICT REQUIREMENT: 
-            - IGNORE friendly matches unless high profile.
-            - Prioritize competitive leagues (Superliga, Premier, Serie A/B, La Liga 2, etc).
-            - GET REAL LIVE SCORES and current minutes.
+            SCOPE:
+            - Include MAJOR leagues (Premier League, La Liga, Serie A).
+            - Include MINOR leagues (Kategoria e Pare, Serie C, Vietnam, Thailand, Youth Leagues U19/U21, Women's Leagues).
+            - IGNORE nothing. If it is being played right now, include it.
+            
+            DATA REQUIRED:
+            - Exact League Name.
+            - Real-time Score.
+            - Current Minute (e.g. 34', 78', HT).
+            - Real Odds (1X2).
             
             OUTPUT FORMAT (Strict JSON Array):
             [
               {
-                "league": "League Name (e.g., 'Albanian Superliga', 'Vietnam V-League')",
-                "homeTeam": "Home Team Name",
-                "awayTeam": "Away Team Name",
-                "currentMinute": "Time (e.g. 35', 90+2')",
+                "league": "League Name",
+                "homeTeam": "Team A",
+                "awayTeam": "Team B",
+                "currentMinute": "45'",
                 "liveScore": { "home": 1, "away": 0 },
                 "odds": { "home": 1.5, "draw": 3.5, "away": 6.0 }
               }
@@ -119,8 +113,8 @@ export const fetchLiveMatches = async (): Promise<Match[]> => {
             const sourceUrls = groundingChunks.map(chunk => chunk.web?.uri).filter((uri): uri is string => !!uri);
 
             return rawData.map((item: any, idx: number) => ({
-                id: `live_api_${Date.now()}_${idx}`,
-                league: item.league || 'World Football',
+                id: `live_${Date.now()}_${idx}`,
+                league: item.league || 'Global Live',
                 homeTeam: item.homeTeam,
                 awayTeam: item.awayTeam,
                 startTime: new Date().toISOString(),
@@ -147,31 +141,44 @@ export const fetchLiveMatches = async (): Promise<Match[]> => {
 }
 
 /**
- * Fetches upcoming matches for a specific context.
+ * Fetches upcoming matches for the next 14 DAYS.
  */
 export const fetchUpcomingMatches = async (queryContext: string): Promise<Match[]> => {
   try {
-    // If context is "All Top Football", we widen the net massively
     const isGeneral = queryContext === 'All Top Football';
     
     const prompt = `
-      TASK: Fetch real upcoming football matches schedule.
-      CONTEXT: ${isGeneral ? "ALL Major & Minor Leagues (Premier League, Serie A, Albanian Superliga, La Liga, Bundesliga, Eredivisie, etc.)" : queryContext}.
-      TIME RANGE: Next 48 hours.
+      ACT AS A COMPREHENSIVE BOOKMAKER FEED.
+      TASK: Fetch the football match schedule for the NEXT 14 DAYS.
+      
+      PRIORITY FOCUS (High Importance):
+      1. Premier League (England)
+      2. La Liga (Spain)
+      3. Serie A (Italy)
+      4. Bundesliga (Germany)
+      5. Ligue 1 (France)
+      6. Champions League / Europa League
+      7. Domestic Cups (FA Cup, Coppa Italia, Copa del Rey, etc.)
+      
+      SECONDARY FOCUS:
+      - Albanian Superliga
+      - Eredivisie, Primeira Liga, Super Lig.
+      
+      CONTEXT: ${isGeneral ? "Focus heavily on the 'Top 5 Leagues' schedule for the next 2 weeks, plus any major cups." : queryContext}.
       
       INSTRUCTIONS:
-      1. Use Google Search to find confirmed fixtures.
-      2. If "All Top Football", return a mix of at least 15-20 matches from different countries.
-      3. Get 1X2 Odds for every match.
+      1. Retrieve a large list of confirmed fixtures (Date/Time) for the next 14 days.
+      2. Ensure PRECISE 1X2 Odds are included.
+      3. Group them by their correct League Name.
 
       OUTPUT FORMAT (Strict JSON Array):
       [
         {
-          "league": "Exact League Name",
-          "homeTeam": "Team A",
-          "awayTeam": "Team B",
-          "startTime": "ISO 8601 Date",
-          "odds": { "home": 1.25, "draw": 4.5, "away": 9.0 }
+          "league": "Premier League",
+          "homeTeam": "Manchester City",
+          "awayTeam": "Arsenal",
+          "startTime": "2023-10-25T15:00:00Z",
+          "odds": { "home": 1.95, "draw": 3.5, "away": 3.8 }
         }
       ]
     `;
@@ -194,7 +201,7 @@ export const fetchUpcomingMatches = async (queryContext: string): Promise<Match[
       const rawData = JSON.parse(jsonMatch[1]);
       
       return rawData.map((item: any, idx: number) => ({
-        id: `real_api_${Date.now()}_${idx}`,
+        id: `up_${Date.now()}_${idx}`,
         league: item.league || queryContext,
         homeTeam: item.homeTeam,
         awayTeam: item.awayTeam,
@@ -222,10 +229,10 @@ export const fetchUpcomingMatches = async (queryContext: string): Promise<Match[
 
 export const simulateMatchResult = async (match: Match): Promise<SimulatedMatchResult> => {
   try {
-    // Basic simulation logic via AI for settling bets
     const prompt = `
       Simulate FINAL result for: ${match.homeTeam} vs ${match.awayTeam}.
-      Based on team strength.
+      League: ${match.league}.
+      Consider real team strengths.
       JSON Output: { homeScore, awayScore, htHome, htAway, homeYellowCards, awayYellowCards, homeCorners, awayCorners, scorers: [], summary }
     `;
 
@@ -250,7 +257,6 @@ export const simulateMatchResult = async (match: Match): Promise<SimulatedMatchR
     }
     throw new Error("Empty response");
   } catch (error) {
-    // Fallback if simulation fails
     return {
       score: { home: 0, away: 0, htHome: 0, htAway: 0, homeYellowCards: 0, awayYellowCards: 0, homeCorners: 0, awayCorners: 0, scorers: [] },
       summary: "Simulation failed."
