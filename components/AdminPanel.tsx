@@ -20,6 +20,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
   // Credit State
   const [creditAmounts, setCreditAmounts] = useState<Record<string, string>>({});
 
+  // Reset Password Modal State
+  const [resetTarget, setResetTarget] = useState<{id: string, username: string} | null>(null);
+  const [resetPassInput, setResetPassInput] = useState('');
+
   const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (newUser.name && newUser.username && newUser.password) {
@@ -61,16 +65,57 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
     return { turnover, won, lost };
   };
 
-  const handlePasswordResetClick = (userId: string, username: string) => {
-      const newPass = prompt(`Enter new password for ${username}:`);
-      if (newPass && newPass.trim() !== "") {
-          onResetPassword(userId, newPass);
-          alert(`Password for ${username} has been updated.`);
+  const openResetModal = (userId: string, username: string) => {
+      setResetTarget({ id: userId, username });
+      setResetPassInput('');
+  };
+
+  const confirmResetPassword = () => {
+      if (resetTarget && resetPassInput.trim()) {
+          onResetPassword(resetTarget.id, resetPassInput);
+          setResetTarget(null);
+          setResetPassInput('');
       }
   };
 
   return (
-    <div className="bg-brand-panel rounded border border-brand-divider shadow-lg mb-6 overflow-hidden">
+    <div className="bg-brand-panel rounded border border-brand-divider shadow-lg mb-6 overflow-hidden relative">
+      
+      {/* Password Reset Modal Overlay */}
+      {resetTarget && (
+          <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+              <div className="bg-brand-bg border border-brand-divider p-6 rounded shadow-xl w-full max-w-sm">
+                  <h3 className="text-brand-yellow font-bold text-lg mb-4">Reset Password</h3>
+                  <p className="text-sm text-brand-textMuted mb-4">Enter new password for <span className="text-white font-bold">{resetTarget.username}</span>:</p>
+                  
+                  <input 
+                    type="text" 
+                    value={resetPassInput}
+                    onChange={(e) => setResetPassInput(e.target.value)}
+                    className="w-full bg-brand-panel border border-brand-divider rounded p-2 text-white mb-4 outline-none focus:border-brand-yellow"
+                    placeholder="New Password"
+                    autoFocus
+                  />
+                  
+                  <div className="flex justify-end gap-2">
+                      <button 
+                        onClick={() => setResetTarget(null)}
+                        className="px-4 py-2 rounded text-brand-textMuted hover:text-white"
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        onClick={confirmResetPassword}
+                        disabled={!resetPassInput.trim()}
+                        className="bg-brand-header hover:bg-brand-headerDark text-white px-4 py-2 rounded font-bold disabled:opacity-50"
+                      >
+                        Save Password
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* Header Tabs */}
       <div className="flex border-b border-brand-divider bg-brand-bg">
         <button
@@ -185,7 +230,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                         <td className="p-3 text-right">
                           <div className="flex flex-col gap-1 items-end">
                               <button 
-                                onClick={() => handlePasswordResetClick(u.id, u.username)}
+                                onClick={() => openResetModal(u.id, u.username)}
                                 className="text-blue-400 hover:text-blue-300 text-xs underline"
                               >
                                 Reset Pass

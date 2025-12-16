@@ -12,10 +12,21 @@ import { simulateMatchResult, fetchUpcomingMatches, fetchLiveMatches } from './s
 
 const App: React.FC = () => {
   // --- Data State ---
-  // Load users from local storage to ensure they are not deleted on reload
+  // Load users with robust Error Handling to prevent data loss on parse error
   const [users, setUsers] = useState<User[]>(() => {
-      const savedUsers = localStorage.getItem('betsim_users');
-      return savedUsers ? JSON.parse(savedUsers) : INITIAL_USERS;
+      try {
+          const savedUsers = localStorage.getItem('betsim_users');
+          if (savedUsers) {
+              const parsed = JSON.parse(savedUsers);
+              // Simple validation to ensure we have an array
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                  return parsed;
+              }
+          }
+      } catch (error) {
+          console.error("Storage corrupted, reverting to defaults", error);
+      }
+      return INITIAL_USERS;
   });
 
   // Matches start empty to satisfy "No fake matches" request
@@ -23,8 +34,10 @@ const App: React.FC = () => {
   
   // Load bets from local storage
   const [bets, setBets] = useState<Bet[]>(() => {
-      const savedBets = localStorage.getItem('betsim_bets');
-      return savedBets ? JSON.parse(savedBets) : [];
+      try {
+          const savedBets = localStorage.getItem('betsim_bets');
+          return savedBets ? JSON.parse(savedBets) : [];
+      } catch (e) { return []; }
   });
   
   // --- UI/Auth State ---
@@ -44,6 +57,7 @@ const App: React.FC = () => {
   const [selections, setSelections] = useState<BetSelectionItem[]>([]);
 
   // --- PERSISTENCE EFFECTS ---
+  // We keep this, but we ALSO force save in critical handlers to be safe
   useEffect(() => {
       localStorage.setItem('betsim_users', JSON.stringify(users));
   }, [users]);
@@ -213,6 +227,7 @@ const App: React.FC = () => {
   [selections]);
 
   const handleLogin = (u: string, p: string) => {
+    // Always refresh users from state (which is synced with LS) before login
     const user = users.find(user => user.username === u && user.password === p);
     if (user) {
       setCurrentUser(user);
@@ -236,40 +251,70 @@ const App: React.FC = () => {
       role: UserRole.USER,
       avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(newUser.name)}&background=random`
     };
-    setUsers([...users, u]);
+    
+    setUsers(prevUsers => {
+        // Create new array
+        const updatedUsers = [...prevUsers, u];
+        // FORCE SAVE TO STORAGE IMMEDIATELY
+        // This ensures that even if page reloads before useEffect, data is there.
+        localStorage.setItem('betsim_users', JSON.stringify(updatedUsers));
+        return updatedUsers;
+    });
   };
 
   const handleDeleteUser = (userId: string) => {
-    setUsers(users.filter(u => u.id !== userId));
+    setUsers(prevUsers => {
+        const updatedUsers = prevUsers.filter(u => u.id !== userId);
+        localStorage.setItem('betsim_users', JSON.stringify(updatedUsers));
+        return updatedUsers;
+    });
   };
 
   const handleAddCredit = (userId: string, amount: number) => {
-    setUsers(prevUsers => prevUsers.map(u => {
-      if (u.id === userId) {
-        const updated = { ...u, balance: u.balance + amount };
-        if (currentUser?.id === u.id) setCurrentUser(updated);
-        return updated;
-      }
-      return u;
-    }));
+    setUsers(prevUsers => {
+        const updatedUsers = prevUsers.map(u => {
+            if (u.id === userId) {
+                const updated = { ...u, balance: u.balance + amount };
+                if (currentUser?.id === u.id) setCurrentUser(updated);
+                return updated;
+            }
+            return u;
+        });
+        localStorage.setItem('betsim_users', JSON.stringify(updatedUsers));
+        return updatedUsers;
+    });
   };
   
   const handleResetPassword = (userId: string, newPass: string) => {
-      setUsers(prevUsers => prevUsers.map(u => {
-          if (u.id === userId) {
-              return { ...u, password: newPass };
-          }
-          return u;
-      }));
+      setUsers(prevUsers => {
+          const updatedUsers = prevUsers.map(u => {
+              if (u.id === userId) {
+                  return { ...u, password: newPass };
+              }
+              return u;
+          });
+          localStorage.setItem('betsim_users', JSON.stringify(updatedUsers));
+          return updatedUsers;
+      });
   };
 
   const handleUpdateBalance = (amount: number) => {
     if (!currentUser) return;
-    const newBalance = currentUser.balance + amount;
-    const updatedUser = { ...currentUser, balance: newBalance };
     
-    setCurrentUser(updatedUser);
-    setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
+    setUsers(prevUsers => {
+        const updatedUsers = prevUsers.map(u => {
+            if (u.id === currentUser.id) {
+                 return { ...u, balance: u.balance + amount };
+            }
+            return u;
+        });
+        // Update current user to match
+        const me = updatedUsers.find(u => u.id === currentUser.id);
+        if (me) setCurrentUser(me);
+        
+        localStorage.setItem('betsim_users', JSON.stringify(updatedUsers));
+        return updatedUsers;
+    });
   };
 
   // --- Betting Handlers (Memoized) ---
@@ -283,8 +328,6 @@ const App: React.FC = () => {
     const uId = uniqueId(match.id, marketId, selectionId);
     
     setSelections(prev => {
-        // Check if exists in current state (using the previous state to be safe, though uId calc used closure)
-        // Re-calculating uniqueness check inside setter for correctness with prev state
         const exists = prev.some(s => uniqueId(s.matchId, s.marketId, s.selectionId) === uId);
         
         if (exists) {
@@ -313,10 +356,21 @@ const App: React.FC = () => {
   const handlePlaceBet = useCallback((stake: number, type: 'SINGLE' | 'ACCUMULATOR') => {
     if (!currentUser || selections.length === 0) return;
     
-    // Optimistic update
-    const updatedUser = { ...currentUser, balance: currentUser.balance - stake };
-    setCurrentUser(updatedUser);
-    setUsers(prevUsers => prevUsers.map(u => u.id === currentUser.id ? updatedUser : u));
+    // Optimistic update for UI + Direct Save for Persistence
+    setUsers(prevUsers => {
+        const updatedUsers = prevUsers.map(u => {
+            if (u.id === currentUser.id) {
+                return { ...u, balance: u.balance - stake };
+            }
+            return u;
+        });
+        // Sync local current user
+        const me = updatedUsers.find(u => u.id === currentUser.id);
+        if (me) setCurrentUser(me);
+        
+        localStorage.setItem('betsim_users', JSON.stringify(updatedUsers));
+        return updatedUsers;
+    });
 
     const totalOdds = selections.reduce((acc, curr) => acc * curr.odds, 1);
     const newBet: Bet = {
@@ -335,20 +389,24 @@ const App: React.FC = () => {
       }
     };
 
-    setBets(prev => [newBet, ...prev]);
+    setBets(prev => {
+        const updatedBets = [newBet, ...prev];
+        localStorage.setItem('betsim_bets', JSON.stringify(updatedBets));
+        return updatedBets;
+    });
     setSelections([]); 
   }, [currentUser, selections]);
 
-  // --- Ticket Cancellation Logic ---
+  // --- Ticket Cancellation Logic (REFACTORED) ---
   const handleCancelBet = useCallback((betId: string, origin: 'USER' | 'ADMIN') => {
       const bet = bets.find(b => b.id === betId);
       if (!bet) return;
 
       // Logic for User cancellation
       if (origin === 'USER') {
-          // Check time limit (10 minutes)
+          // Check time limit (10 minutes) - 600000 ms
           const timeDiff = Date.now() - bet.timestamp;
-          if (timeDiff > 10 * 60 * 1000) {
+          if (timeDiff > 600000) {
               alert("Tickets can only be deleted within 10 minutes of placement.");
               return;
           }
@@ -357,12 +415,12 @@ const App: React.FC = () => {
               alert("Cannot delete settled tickets.");
               return;
           }
-          if (!confirm("Are you sure you want to cancel this ticket? Stake will be refunded.")) return;
+          if (!window.confirm("Are you sure you want to cancel this ticket? Stake will be refunded.")) return;
       }
       
       // Logic for Admin cancellation (always allowed)
       if (origin === 'ADMIN') {
-          if (!confirm("Admin Delete: This will remove the ticket and revert balance impact. Continue?")) return;
+          if (!window.confirm("Admin Delete: This will remove the ticket and revert balance impact. Continue?")) return;
       }
 
       // Calculate Balance Reversion
@@ -370,32 +428,37 @@ const App: React.FC = () => {
       if (bet.status === BetStatus.PENDING) {
           balanceAdjustment = bet.stake; // Give back stake
       } else if (bet.status === BetStatus.WON) {
-          // Revert win: Deduct winnings, give back stake? Or just deduct net win? 
-          // Standard revert: return to state before bet.
-          // User has (OldBal + Returns). We want (OldBal).
-          // Adjustment = -Returns + Stake. (Basically deduct Profit). 
-          // Wait, actually user PAID stake. 
-          // If they WON, they got Returns. Net change was +Profit.
-          // To revert, we subtract Profit and give back Stake? No.
-          // Simplest: Balance = Balance - Returns + Stake.
+          // Simplest: Balance = Balance - Returns + Stake (Revert to pre-bet state)
           balanceAdjustment = bet.stake - bet.potentialReturn;
       } else if (bet.status === BetStatus.LOST) {
           // User lost stake. Revert means give back stake.
           balanceAdjustment = bet.stake;
       }
 
-      // Update Users
-      setUsers(prevUsers => prevUsers.map(u => {
-          if (u.id === bet.userId) {
-              const updatedUser = { ...u, balance: u.balance + balanceAdjustment };
-              if (currentUser?.id === u.id) setCurrentUser(updatedUser);
-              return updatedUser;
+      // 1. Update Persistent Users List with Force Save
+      setUsers(prevUsers => {
+          const updatedUsers = prevUsers.map(u => {
+              if (u.id === bet.userId) {
+                  return { ...u, balance: u.balance + balanceAdjustment };
+              }
+              return u;
+          });
+          
+          if (currentUser && currentUser.id === bet.userId) {
+               const me = updatedUsers.find(u => u.id === currentUser.id);
+               if (me) setCurrentUser(me);
           }
-          return u;
-      }));
+          
+          localStorage.setItem('betsim_users', JSON.stringify(updatedUsers));
+          return updatedUsers;
+      });
 
-      // Remove Bet
-      setBets(prev => prev.filter(b => b.id !== betId));
+      // 3. Remove Bet from State
+      setBets(prev => {
+          const updatedBets = prev.filter(b => b.id !== betId);
+          localStorage.setItem('betsim_bets', JSON.stringify(updatedBets));
+          return updatedBets;
+      });
 
   }, [bets, currentUser]);
 
@@ -464,6 +527,9 @@ const App: React.FC = () => {
                  }
              }
         });
+        
+        // Save bets immediately
+        localStorage.setItem('betsim_bets', JSON.stringify(updatedBets));
 
         if (Object.keys(usersToUpdate).length > 0) {
             setUsers(currentUsers => {
@@ -471,10 +537,15 @@ const App: React.FC = () => {
                     if (usersToUpdate[u.id]) return { ...u, balance: u.balance + usersToUpdate[u.id] };
                     return u;
                 });
+                
+                // Sync current user
                 if (currentUser && usersToUpdate[currentUser.id]) {
                     const fresh = nextUsers.find(u => u.id === currentUser.id);
                     if (fresh) setCurrentUser(fresh);
                 }
+                
+                // Force Save Users
+                localStorage.setItem('betsim_users', JSON.stringify(nextUsers));
                 return nextUsers;
             });
         }
