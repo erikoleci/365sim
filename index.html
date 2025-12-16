@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BetSim 365</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                header: '#126e51', // Signature Green
+                headerDark: '#0e553f',
+                bg: '#333333', // Main background
+                panel: '#3b3b3b', // Card/Panel background
+                text: '#e4e4e4',
+                textMuted: '#a3a3a3',
+                yellow: '#ffdf1b', // Odds/Action color
+                accent: '#26ffbe', // Highlights
+                divider: '#4e4e4e'
+              }
+            },
+            fontFamily: {
+              sans: ['Verdana', 'sans-serif'], // 365 often uses Verdana-ish fonts
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        background-color: #282828;
+        color: #e4e4e4;
+        font-family: Verdana, sans-serif;
+        font-size: 13px;
+      }
+      /* Custom scrollbar */
+      ::-webkit-scrollbar {
+        width: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #282828; 
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #555; 
+        border-radius: 3px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #666; 
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://esm.sh/@google/genai@^1.33.0",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
