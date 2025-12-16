@@ -12,10 +12,20 @@ import { simulateMatchResult, fetchUpcomingMatches, fetchLiveMatches } from './s
 
 const App: React.FC = () => {
   // --- Data State ---
-  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
+  // Load users from local storage to ensure they are not deleted on reload
+  const [users, setUsers] = useState<User[]>(() => {
+      const savedUsers = localStorage.getItem('betsim_users');
+      return savedUsers ? JSON.parse(savedUsers) : INITIAL_USERS;
+  });
+
   // Matches start empty to satisfy "No fake matches" request
   const [matches, setMatches] = useState<Match[]>([]);
-  const [bets, setBets] = useState<Bet[]>([]);
+  
+  // Load bets from local storage
+  const [bets, setBets] = useState<Bet[]>(() => {
+      const savedBets = localStorage.getItem('betsim_bets');
+      return savedBets ? JSON.parse(savedBets) : [];
+  });
   
   // --- UI/Auth State ---
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -32,6 +42,15 @@ const App: React.FC = () => {
 
   // Bet Slip State
   const [selections, setSelections] = useState<BetSelectionItem[]>([]);
+
+  // --- PERSISTENCE EFFECTS ---
+  useEffect(() => {
+      localStorage.setItem('betsim_users', JSON.stringify(users));
+  }, [users]);
+
+  useEffect(() => {
+      localStorage.setItem('betsim_bets', JSON.stringify(bets));
+  }, [bets]);
 
   // Load Data
   useEffect(() => {
