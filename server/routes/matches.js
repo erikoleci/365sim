@@ -53,7 +53,10 @@ async function refreshLeagueOdds(leagueKey) {
   if (now - last < ODDS_REFRESH_MS) return; // still fresh, skip external call
   oddsRefreshTimers.set(leagueKey, now);
 
-  const url = `${ODDS_API_BASE}/sports/${leagueKey}/odds/?apiKey=${ODDS_API_KEY}&regions=eu,uk&markets=${MARKETS}&oddsFormat=decimal`;
+  // regions=eu -> vetëm bookmakers evropianë (jo UK/US)
+  // oddsFormat=decimal -> koeficient evropian (p.sh. 2.50), JO fractional
+  // anglez (3/2) dhe JO american/moneyline (+150)
+  const url = `${ODDS_API_BASE}/sports/${leagueKey}/odds/?apiKey=${ODDS_API_KEY}&regions=eu&markets=${MARKETS}&oddsFormat=decimal`;
   let events;
   try {
     events = await fetchJson(url);
