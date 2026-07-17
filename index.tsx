@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import './index.css';
 
 const startApp = () => {
   const rootElement = document.getElementById('root');
@@ -17,9 +18,4 @@ const startApp = () => {
   );
 };
 
-// Wait for DOM to be fully ready to avoid MutationObserver race conditions with Tailwind CDN
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', startApp);
-} else {
-  startApp();
-}
+startApp();
