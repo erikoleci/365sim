@@ -1,5 +1,5 @@
 {
-  "name": "BetSim AI",
-  "description": "A risk-free sports betting simulation platform features an admin dashboard for credit management and AI-powered match settlement.",
+  "name": "bet365sim",
+  "description": "Platformë simulimi bastesh sportive për qëllime edukative/demo, me kuota reale nga The Odds API, backend Node.js + Express + SQLite, autentikim JWT, dhe panel administrimi.",
   "requestFramePermissions": []
 }

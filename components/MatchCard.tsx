@@ -6,7 +6,7 @@ interface MatchRowProps {
   onBetClick: (match: Match, marketId: string, selectionId: string) => void;
   onOpenDetail: (match: Match) => void;
   isAdmin: boolean;
-  onSettleMatch: (match: Match) => void;
+  onSettleMatch: (match: Match, homeScore: number, awayScore: number) => void;
   isSimulating: boolean;
   selectedIds: string[]; 
 }
@@ -14,7 +14,7 @@ interface MatchRowProps {
 const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, isAdmin, onSettleMatch, isSimulating, selectedIds }) => {
   const isFinished = match.status === MatchStatus.FINISHED;
   const isLive = match.status === MatchStatus.LIVE;
-  const matchWinnerMarket = match.markets.find(m => m.id === 'm_res');
+  const matchWinnerMarket = match.markets.find(m => m.id.endsWith('-h2h'));
 
   const getButtonClass = (marketId: string, selectionId: string) => {
     const uniqueId = `${match.id}-${marketId}-${selectionId}`;
@@ -84,11 +84,24 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
       {isAdmin && !isFinished && !isLive && (
          <div className="flex items-center justify-end md:justify-center md:px-2 md:border-r md:border-brand-divider mb-2 md:mb-0">
             <button 
-                onClick={(e) => { e.stopPropagation(); onSettleMatch(match); }}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    const homeStr = window.prompt(`Gola ${match.homeTeam} (shtëpi):`);
+                    if (homeStr === null) return;
+                    const awayStr = window.prompt(`Gola ${match.awayTeam} (mysafir):`);
+                    if (awayStr === null) return;
+                    const homeScore = parseInt(homeStr, 10);
+                    const awayScore = parseInt(awayStr, 10);
+                    if (Number.isNaN(homeScore) || Number.isNaN(awayScore) || homeScore < 0 || awayScore < 0) {
+                        window.alert('Rezultat i pavlefshëm.');
+                        return;
+                    }
+                    onSettleMatch(match, homeScore, awayScore);
+                }}
                 disabled={isSimulating}
                 className="text-[10px] bg-brand-headerDark hover:bg-brand-header text-white px-2 py-1 rounded border border-brand-header w-full md:w-auto"
             >
-                {isSimulating ? '...' : 'Sim Result'}
+                {isSimulating ? '...' : 'Settle (Real Score)'}
             </button>
          </div>
       )}
