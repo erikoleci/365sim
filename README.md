@@ -45,7 +45,7 @@ npm run dev         # frontend -> http://localhost:5173 (proxy /api -> backend)
 Hapi faqen te `http://localhost:5173`.
 
 **Admin i parazgjedhur** (krijohet automatikisht herën e parë që niset serveri):
-`username: admin` / `password: admin123` — **ndërroje menjëherë nga vetë admin panel-i** (Reset Password).
+`username: root` / `password: root` (dhe një user test: `user` / `user`) — **ndërroji menjëherë nga vetë admin panel-i** (Reset Password), këto janë kredenciale të dobëta vetëm për testim lokal.
 
 ## Çfarë është reale tani
 
@@ -68,7 +68,28 @@ Hapi faqen te `http://localhost:5173`.
 
 ```bash
 npm run build      # frontend -> dist/
-npm run server      # backend, i pandryshuar (Express, jo Vite)
+npm run server      # backend + serve i dist/ (i njëjti proces Express)
 ```
 
-Për deploy, backend-i (`server/`) duhet të xhirojë si proces Node.js i vazhdueshëm (jo si funksion serverless pa gjendje, sepse SQLite është skedar lokal) — p.sh. Railway, Render, Fly.io, ose një VPS. Frontend-i (`dist/`) mund të shkojë në Vercel/Netlify me `VITE_API_TARGET` të vendosur te URL-ja e backend-it.
+`server/server.js` tani shërben edhe API-në (`/api/*`) edhe skedarët statikë të `dist/` (me SPA fallback) nga i njëjti proces. Kjo është metoda e rekomanduar për deploy sepse:
+
+- Shmang problemin e URL-së së API-së midis dy domain-eve (frontend-i thërret `/api/...` relativisht — funksionon vetëm nëse janë në të njëjtin origin).
+- Shmang konfigurime shtesë CORS.
+- SQLite (`server/data/betsim.db`) është skedar lokal, pra backend-i **duhet** të xhirojë si proces Node.js i vazhdueshëm me disk të qëndrueshëm (jo serverless/pa gjendje).
+
+**Platforma të rekomanduara**: Railway, Render, Fly.io, ose një VPS (p.sh. Hetzner/DigitalOcean) — të gjitha mbështesin proces Node.js afatgjatë + volume të qëndrueshëm për `server/data/`.
+
+**Hapat për deploy** (p.sh. Railway/Render):
+1. Sigurohu që `server/data/` ekziston (ose krijohet automatikisht para nisjes — shiko `Dockerfile`).
+2. Vendos variablat e mjedisit: `JWT_SECRET`, `ODDS_API_KEY`, `PORT` (zakonisht vendoset automatikisht nga platforma).
+3. Build command: `npm install && npm run build`
+4. Start command: `npm run server` (ose `node server/server.js`)
+5. Monto një **volume të qëndrueshëm** te `server/data/` — përndryshe baza e të dhënave (userat, bastet) humbet në çdo redeploy/restart.
+
+Alternativë me Docker (ka `Dockerfile` gati në repo):
+```bash
+docker build -t 365sim .
+docker run -p 3001:3001 --env-file .env -v $(pwd)/server/data:/app/server/data 365sim
+```
+
+Nëse prapë preferohet ndarja frontend/backend (Vercel/Netlify + Railway), duhet së pari të modifikohet `services/api.ts` që të lexojë një bazë URL nga `import.meta.env.VITE_API_TARGET` në vend të path-it relativ `/api`, dhe të kufizohet `cors()` te domain-i specifik i frontend-it.
