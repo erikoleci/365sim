@@ -11,12 +11,41 @@ const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 // includes: h2h (1X2), totals (over/under goals), btts, double_chance,
 // draw_no_bet, spreads (Asian handicap) — availability varies by league/plan.
 const MARKETS = 'h2h,totals,btts,double_chance,draw_no_bet,spreads';
+const MARKET_COUNT = MARKETS.split(',').length; // used for credit-budget math below
 
-// How often we refresh from the external API. This is the main lever
-// against burning through your monthly request quota — do NOT lower this
-// without checking your plan's remaining-requests header (logged below).
-const LEAGUES_REFRESH_MS = 6 * 60 * 60 * 1000; // sport list changes rarely -> 6h
-const ODDS_REFRESH_MS = 5 * 60 * 1000;          // 5 min is a reasonable default
+// COST MATH (The Odds API): every /odds call costs (markets × regions) credits,
+// NOT 1 credit. With 6 markets × 1 region (eu) = 6 credits per league per refresh.
+// On the free plan (500 credits/month) that is only ~83 refreshes for a SINGLE
+// league — refreshing "every soccer league the provider offers" every 5 minutes
+// (the old defaults) can burn the whole month's quota in well under an hour.
+//
+// Two levers control spend, both tuned conservatively for the free tier:
+//  1) ODDS_REFRESH_MS — how often any given league is allowed to hit the API again.
+//  2) TOP_LEAGUES — the default "All Top Football" view only refreshes THIS curated
+//     list, not every competition the provider has. Picking a specific league from
+//     the dropdown still works for any league (fetched on demand, same interval).
+const LEAGUES_REFRESH_MS = 6 * 60 * 60 * 1000;   // sport list changes rarely -> 6h
+const ODDS_REFRESH_MS = 4 * 60 * 60 * 1000;      // was 5 min -> now 4h (see cost math above)
+
+// Curated set for the default (no-filter) view. At 6 credits/league/refresh, 8
+// leagues = 48 credits per refresh cycle -> with a 4h interval that's ~48 x 6/day
+// = 288 credits/day MAX if hit constantly, but in practice only the first request
+// after the interval elapses actually calls out, so real usage is far lower.
+// Adjust this list to whichever leagues matter most for your audience.
+const TOP_LEAGUES = [
+  'soccer_epl',
+  'soccer_spain_la_liga',
+  'soccer_italy_serie_a',
+  'soccer_germany_bundesliga',
+  'soccer_france_ligue_one',
+  'soccer_uefa_champs_league',
+];
+
+// Safety net: if the provider tells us we're nearly out of monthly credits,
+// stop calling out entirely and just serve whatever is already cached, so a
+// traffic spike can't lock the key out for the rest of the month.
+const MIN_REMAINING_CREDITS_BUFFER = 20;
+let lastKnownRemaining = Infinity;
 
 let leaguesCache = { data: [], fetchedAt: 0 };
 let oddsRefreshTimers = new Map(); // leagueKey -> last fetch timestamp
@@ -26,7 +55,11 @@ async function fetchJson(url) {
   const remaining = resp.headers.get('x-requests-remaining');
   const used = resp.headers.get('x-requests-used');
   if (remaining !== null) {
+    lastKnownRemaining = Number(remaining);
     console.log(`[the-odds-api] requests used=${used} remaining=${remaining}`);
+    if (lastKnownRemaining <= MIN_REMAINING_CREDITS_BUFFER) {
+      console.warn(`[the-odds-api] WARNING: only ${remaining} credits left this month — throttling further refreshes.`);
+    }
   }
   if (!resp.ok) {
     const body = await resp.text();
@@ -51,6 +84,10 @@ async function refreshLeagueOdds(leagueKey) {
   const now = Date.now();
   const last = oddsRefreshTimers.get(leagueKey) || 0;
   if (now - last < ODDS_REFRESH_MS) return; // still fresh, skip external call
+  if (lastKnownRemaining <= MIN_REMAINING_CREDITS_BUFFER) {
+    console.warn(`[the-odds-api] Skipping refresh of ${leagueKey}: low on monthly credits (${lastKnownRemaining} left).`);
+    return; // serve stale cache rather than risk exhausting the plan
+  }
   oddsRefreshTimers.set(leagueKey, now);
 
   // regions=eu -> vetëm bookmakers evropianë (jo UK/US)
@@ -94,7 +131,8 @@ router.get('/leagues', async (req, res) => {
   }
 });
 
-// GET /api/matches?league=soccer_epl (optional filter, default: all cached leagues)
+// GET /api/matches?league=soccer_epl (optional filter, default: curated TOP_LEAGUES only —
+// see cost-math comment near TOP_LEAGUES above for why "all provider leagues" isn't the default)
 router.get('/', async (req, res) => {
   if (!ODDS_API_KEY) {
     return res.json({ matches: [], hasLiveApiKey: false });
@@ -104,7 +142,7 @@ router.get('/', async (req, res) => {
     const leagues = await getSoccerLeagues();
     const targetLeagues = req.query.league
       ? leagues.filter((l) => l.key === req.query.league)
-      : leagues; // ALL soccer leagues currently offered by the provider
+      : leagues.filter((l) => TOP_LEAGUES.includes(l.key));
 
     for (const l of targetLeagues) {
       await refreshLeagueOdds(l.key);
@@ -116,7 +154,7 @@ router.get('/', async (req, res) => {
 
   const rows = req.query.league
     ? db.prepare('SELECT * FROM matches_cache WHERE league = ? ORDER BY start_time ASC').all(req.query.league)
-    : db.prepare('SELECT * FROM matches_cache ORDER BY start_time ASC').all();
+    : db.prepare('SELECT * FROM matches_cache WHERE league IN (' + TOP_LEAGUES.map(() => '?').join(',') + ') ORDER BY start_time ASC').all(...TOP_LEAGUES);
 
   res.json({ matches: rows.map(mapEventToMatch), hasLiveApiKey: true });
 });
