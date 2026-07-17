@@ -65,6 +65,15 @@ CREATE TABLE IF NOT EXISTS bet_selections (
   status TEXT NOT NULL DEFAULT 'PENDING',
   FOREIGN KEY (bet_id) REFERENCES bets(id)
 );
+
+-- Small generic key-value store for state that must survive process restarts
+-- and redeploys (e.g. The Odds API refresh throttling / remaining-credits
+-- tracking) — without this, every redeploy wiped in-memory throttle state
+-- and re-triggered a full-cost refresh of every league.
+CREATE TABLE IF NOT EXISTS kv_store (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `);
 
 // Seed test accounts if the table is empty. These are for LOCAL TESTING
@@ -84,6 +93,23 @@ if (userCount === 0) {
   console.log('  admin -> username: root / password: root');
   console.log('  user  -> username: user / password: user');
   console.log('WARNING: these are weak credentials for local testing — do not use in production.');
+}
+
+export function getKV(key, fallback = null) {
+  const row = db.prepare('SELECT value FROM kv_store WHERE key = ?').get(key);
+  if (!row) return fallback;
+  try {
+    return JSON.parse(row.value);
+  } catch {
+    return fallback;
+  }
+}
+
+export function setKV(key, value) {
+  db.prepare(
+    `INSERT INTO kv_store (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+  ).run(key, JSON.stringify(value));
 }
 
 export default db;

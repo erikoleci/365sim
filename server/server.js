@@ -15,6 +15,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distPath = path.join(__dirname, '..', 'dist');
 
 const app = express();
+// Render (and most PaaS hosts) sit behind a reverse proxy that sets
+// X-Forwarded-For. Without this, express-rate-limit throws
+// ERR_ERL_UNEXPECTED_X_FORWARDED_FOR because it can't safely trust that
+// header. `1` = trust exactly one hop (Render's own proxy), not arbitrary
+// client-supplied headers.
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 
 app.use(

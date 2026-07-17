@@ -7,10 +7,12 @@ const router = express.Router();
 const ODDS_API_KEY = process.env.ODDS_API_KEY || '';
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 
-// Markets we ask for per match. The Odds API soccer coverage typically
-// includes: h2h (1X2), totals (over/under goals), btts, double_chance,
-// draw_no_bet, spreads (Asian handicap) — availability varies by league/plan.
-const MARKETS = 'h2h,totals,btts,double_chance,draw_no_bet,spreads';
+// Markets we ask for per match. NOTE: btts / double_chance / draw_no_bet are
+// NOT included here because they returned "422 Markets not supported by this
+// endpoint" on this account's plan tier (confirmed via Render runtime logs).
+// Only request markets your plan actually supports, or every single refresh
+// fails outright and no matches ever get cached.
+const MARKETS = 'h2h,totals,spreads';
 const MARKET_COUNT = MARKETS.split(',').length; // used for credit-budget math below
 
 // COST MATH (The Odds API): every /odds call costs (markets × regions) credits,
