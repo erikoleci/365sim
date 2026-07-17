@@ -131,6 +131,31 @@ const App: React.FC = () => {
     .filter((m) => currentLeague === 'All Top Football' || m.league === currentLeague)
     .filter((m) => selectedDate === 'ALL' || toLocalDateKey(m.startTime) === selectedDate);
 
+  // Raw sport_keys (e.g. "soccer_brazil_campeonato") are what we store/compare
+  // internally, but users should see readable names. This maps known keys to
+  // Albanian display labels; anything unmapped falls back to a prettified
+  // version of the key so a new/unexpected league never shows the raw slug.
+  const LEAGUE_LABELS: Record<string, string> = {
+    'soccer_epl': 'Anglia - Premier League',
+    'soccer_spain_la_liga': 'Spanja - La Liga',
+    'soccer_italy_serie_a': 'Italia - Serie A',
+    'soccer_germany_bundesliga': 'Gjermania - Bundesliga',
+    'soccer_france_ligue_one': 'Franca - Ligue 1',
+    'soccer_uefa_champs_league': 'UEFA Champions League',
+    'soccer_uefa_champs_league_qualification': 'UEFA Champions League - Kualifikuese',
+    'soccer_uefa_europa_league': 'UEFA Europa League',
+    'soccer_uefa_europa_conference_league': 'UEFA Conference League',
+    'soccer_fifa_world_cup': 'Kampionati Botëror',
+    'soccer_fifa_world_cup_qualifiers_europe': 'Kualifikueset Botërore - Evropa',
+    'soccer_usa_mls': 'SHBA - MLS',
+    'soccer_brazil_campeonato': 'Brazil - Serie A',
+  };
+  const leagueLabel = (key: string) =>
+    key === 'All Top Football'
+      ? 'Të Gjitha Kampionatet'
+      : LEAGUE_LABELS[key] ||
+        key.replace(/^soccer_/, '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
   const detailMatch = matches.find((m) => m.id === detailMatchId);
   const matchesByLeague = upcomingMatches.reduce((acc, match) => {
     if (!acc[match.league]) acc[match.league] = [];
@@ -332,8 +357,7 @@ const App: React.FC = () => {
               <div className="flex flex-col text-xs text-brand-textMuted max-h-[80vh] overflow-y-auto custom-scrollbar">
                 {dynamicLeagues.map((league) => (
                   <button key={league} onClick={() => { setCurrentLeague(league); setDetailMatchId(null); }} className={`px-3 py-2.5 hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 flex justify-between items-center group text-left w-full ${currentLeague === league ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : 'pl-4'}`}>
-                    {league}
-                    <span className="hidden group-hover:block text-[10px] text-brand-textMuted">&rsaquo;</span>
+                    {leagueLabel(league)}
                   </button>
                 ))}
               </div>
@@ -366,7 +390,7 @@ const App: React.FC = () => {
                   LIVE {liveMatches.length > 0 && `(${liveMatches.length})`}
                 </button>
                 {dynamicLeagues.map((l) => (
-                  <button key={l} onClick={() => setCurrentLeague(l)} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${currentLeague === l ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>{l}</button>
+                  <button key={l} onClick={() => setCurrentLeague(l)} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${currentLeague === l ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>{leagueLabel(l)}</button>
                 ))}
               </div>
 
@@ -444,7 +468,7 @@ const App: React.FC = () => {
                         <div className="bg-[#383838] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex justify-between items-center">
                           <div className="flex items-center gap-2">
                             <span className="w-1 h-3 rounded-full bg-brand-yellow"></span>
-                            <span>{league}</span>
+                            <span>{leagueLabel(league)}</span>
                           </div>
                         </div>
                         <div className="divide-y divide-brand-divider">
