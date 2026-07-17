@@ -26,7 +26,6 @@ const App: React.FC = () => {
   const [detailMatchId, setDetailMatchId] = useState<string | null>(null);
   const [currentLeague, setCurrentLeague] = useState('All Top Football');
   const [isLoading, setIsLoading] = useState(false);
-  const [isLiveMode, setIsLiveMode] = useState(false);
   const [currentView, setCurrentView] = useState<'sports' | 'casino'>('sports');
   const [searchQuery, setSearchQuery] = useState('');
   const [isMobileSlipOpen, setIsMobileSlipOpen] = useState(false);
@@ -43,25 +42,28 @@ const App: React.FC = () => {
   }, []);
 
   // --- Load matches from the real backend ---
+  // Fetch the FULL set (no league filter) so the LIVE section can show live
+  // matches from any league, and the league sidebar has the complete list.
+  // All filtering (live / league / search) happens client-side below.
   const loadMatches = useCallback(async () => {
     if (!currentUser || currentView !== 'sports') return;
     setIsLoading((prev) => (matches.length === 0 ? true : prev));
     try {
-      const { matches: fresh } = await api.fetchMatches(isLiveMode ? undefined : currentLeague);
+      const { matches: fresh } = await api.fetchMatches();
       setMatches(fresh);
     } catch (e) {
       console.error('Failed to load matches', e);
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser, currentView, currentLeague, isLiveMode, matches.length]);
+  }, [currentUser, currentView, matches.length]);
 
   useEffect(() => {
     loadMatches();
     const interval = setInterval(loadMatches, 60000); // refresh odds every minute
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, currentView, currentLeague, isLiveMode]);
+  }, [currentUser, currentView]);
 
   // --- Load my bets ---
   const loadMyBets = useCallback(async () => {
@@ -91,14 +93,20 @@ const App: React.FC = () => {
   useEffect(() => { if (showAdmin) loadAdminData(); }, [showAdmin, loadAdminData]);
 
   // --- Filtering ---
-  const filteredMatches = matches.filter((m) => {
+  // Search applies everywhere. LIVE is always its own section at the top
+  // (like a real bookmaker site), not a toggle that hides everything else.
+  const searchFiltered = matches.filter((m) => {
     const q = searchQuery.toLowerCase();
-    const liveMatch = isLiveMode ? m.status === MatchStatus.LIVE : true;
-    return liveMatch && (m.homeTeam.toLowerCase().includes(q) || m.awayTeam.toLowerCase().includes(q) || m.league.toLowerCase().includes(q));
+    return m.homeTeam.toLowerCase().includes(q) || m.awayTeam.toLowerCase().includes(q) || m.league.toLowerCase().includes(q);
   });
 
+  const liveMatches = searchFiltered.filter((m) => m.status === MatchStatus.LIVE);
+  const upcomingMatches = searchFiltered
+    .filter((m) => m.status === MatchStatus.UPCOMING)
+    .filter((m) => currentLeague === 'All Top Football' || m.league === currentLeague);
+
   const detailMatch = matches.find((m) => m.id === detailMatchId);
-  const matchesByLeague = filteredMatches.reduce((acc, match) => {
+  const matchesByLeague = upcomingMatches.reduce((acc, match) => {
     if (!acc[match.league]) acc[match.league] = [];
     acc[match.league].push(match);
     return acc;
@@ -281,19 +289,20 @@ const App: React.FC = () => {
                 <span className="text-[10px] bg-brand-yellow text-black px-1.5 rounded font-bold">SOCCER</span>
               </div>
 
-              <button onClick={() => { setIsLiveMode(true); setDetailMatchId(null); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors ${isLiveMode ? 'bg-[#444] text-brand-yellow font-bold border-l-4 border-l-brand-accent' : 'hover:bg-[#444] hover:text-white'}`}>
+              <button onClick={() => { setDetailMatchId(null); document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' }); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors hover:bg-[#444] hover:text-white ${liveMatches.length === 0 ? 'opacity-40 cursor-not-allowed' : ''}`}>
                 <div className="flex items-center gap-2">
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-accent opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-accent"></span>
                   </span>
                   <span className="uppercase tracking-wider">In-Play / Live</span>
+                  {liveMatches.length > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveMatches.length}</span>}
                 </div>
               </button>
 
               <div className="flex flex-col text-xs text-brand-textMuted max-h-[80vh] overflow-y-auto custom-scrollbar">
                 {dynamicLeagues.map((league) => (
-                  <button key={league} onClick={() => { setIsLiveMode(false); setCurrentLeague(league); setDetailMatchId(null); }} className={`px-3 py-2.5 hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 flex justify-between items-center group text-left w-full ${currentLeague === league && !isLiveMode ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : 'pl-4'}`}>
+                  <button key={league} onClick={() => { setCurrentLeague(league); setDetailMatchId(null); }} className={`px-3 py-2.5 hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 flex justify-between items-center group text-left w-full ${currentLeague === league ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : 'pl-4'}`}>
                     {league}
                     <span className="hidden group-hover:block text-[10px] text-brand-textMuted">&rsaquo;</span>
                   </button>
@@ -323,15 +332,18 @@ const App: React.FC = () => {
           ) : (
             <div className="space-y-4">
               <div className="lg:hidden flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-                <button onClick={() => setIsLiveMode(true)} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${isLiveMode ? 'bg-brand-accent text-black' : 'bg-brand-panel text-white'}`}>LIVE</button>
+                <button onClick={() => document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' })} className="whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold bg-brand-panel text-white flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse"></span>
+                  LIVE {liveMatches.length > 0 && `(${liveMatches.length})`}
+                </button>
                 {dynamicLeagues.map((l) => (
-                  <button key={l} onClick={() => { setIsLiveMode(false); setCurrentLeague(l); }} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${currentLeague === l && !isLiveMode ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>{l}</button>
+                  <button key={l} onClick={() => setCurrentLeague(l)} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${currentLeague === l ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>{l}</button>
                 ))}
               </div>
 
               <div className="bg-brand-panel p-3 rounded flex items-center gap-2 border border-brand-divider">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-brand-textMuted" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                <input type="text" placeholder="Search teams..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="bg-transparent text-white text-sm w-full outline-none placeholder-brand-textMuted" />
+                <input type="text" placeholder="Kërko skuadra..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="bg-transparent text-white text-sm w-full outline-none placeholder-brand-textMuted" />
               </div>
 
               {isLoading ? (
@@ -339,38 +351,71 @@ const App: React.FC = () => {
                   <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-brand-yellow mb-4"></div>
                   <div className="text-brand-textMuted text-xs animate-pulse">Duke ngarkuar ndeshjet...</div>
                 </div>
-              ) : Object.keys(matchesByLeague).length === 0 ? (
-                <div className="flex flex-col justify-center items-center h-64 bg-brand-panel rounded border border-brand-divider text-center px-6">
-                  <div className="text-brand-textMuted text-sm mb-2">Asnjë ndeshje e disponueshme.</div>
-                  <div className="text-brand-textMuted text-xs opacity-70">
-                    Nëse sapo e ke konfiguruar, kontrollo që ODDS_API_KEY është vendosur në server/.env dhe se serveri (npm run server) është duke xhiruar.
-                  </div>
-                </div>
               ) : (
-                Object.entries(matchesByLeague).map(([league, leagueMatches]: [string, Match[]]) => (
-                  <div key={league} className="bg-brand-panel rounded overflow-hidden shadow-sm">
-                    <div className="bg-[#383838] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex justify-between items-center">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-1 h-3 rounded-full ${isLiveMode ? 'bg-brand-accent animate-pulse' : 'bg-brand-yellow'}`}></span>
-                        <span>{league}</span>
+                <>
+                  {/* LIVE — always its own section, independent of the league filter */}
+                  {liveMatches.length > 0 && (
+                    <div id="live-section" className="bg-brand-panel rounded overflow-hidden shadow-sm border border-brand-accent/30 scroll-mt-4">
+                      <div className="bg-[#2a1f1f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex items-center gap-2">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-accent opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-accent"></span>
+                        </span>
+                        <span className="text-brand-accent uppercase tracking-wider">Live Tani</span>
+                        <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveMatches.length}</span>
+                      </div>
+                      <div className="divide-y divide-brand-divider">
+                        {liveMatches.map((match) => (
+                          <MatchRow
+                            key={match.id}
+                            match={match}
+                            onBetClick={handleToggleSelection}
+                            onOpenDetail={(m) => setDetailMatchId(m.id)}
+                            isAdmin={currentUser.role === UserRole.ADMIN}
+                            onSettleMatch={handleSettleMatch}
+                            isSimulating={simulatingMatchId === match.id}
+                            selectedIds={selectedIds}
+                          />
+                        ))}
                       </div>
                     </div>
-                    <div className="divide-y divide-brand-divider">
-                      {leagueMatches.map((match) => (
-                        <MatchRow
-                          key={match.id}
-                          match={match}
-                          onBetClick={handleToggleSelection}
-                          onOpenDetail={(m) => setDetailMatchId(m.id)}
-                          isAdmin={currentUser.role === UserRole.ADMIN}
-                          onSettleMatch={handleSettleMatch}
-                          isSimulating={simulatingMatchId === match.id}
-                          selectedIds={selectedIds}
-                        />
-                      ))}
+                  )}
+
+                  {/* Upcoming, grouped by league, filtered by sidebar selection + search */}
+                  {Object.keys(matchesByLeague).length === 0 && liveMatches.length === 0 ? (
+                    <div className="flex flex-col justify-center items-center h-64 bg-brand-panel rounded border border-brand-divider text-center px-6">
+                      <div className="text-brand-textMuted text-sm mb-2">Asnjë ndeshje e disponueshme.</div>
+                      <div className="text-brand-textMuted text-xs opacity-70">
+                        Nëse sapo e ke konfiguruar, kontrollo që ODDS_API_KEY është vendosur në server/.env dhe se serveri (npm run server) është duke xhiruar.
+                      </div>
                     </div>
-                  </div>
-                ))
+                  ) : (
+                    Object.entries(matchesByLeague).map(([league, leagueMatches]: [string, Match[]]) => (
+                      <div key={league} className="bg-brand-panel rounded overflow-hidden shadow-sm">
+                        <div className="bg-[#383838] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                            <span className="w-1 h-3 rounded-full bg-brand-yellow"></span>
+                            <span>{league}</span>
+                          </div>
+                        </div>
+                        <div className="divide-y divide-brand-divider">
+                          {leagueMatches.map((match) => (
+                            <MatchRow
+                              key={match.id}
+                              match={match}
+                              onBetClick={handleToggleSelection}
+                              onOpenDetail={(m) => setDetailMatchId(m.id)}
+                              isAdmin={currentUser.role === UserRole.ADMIN}
+                              onSettleMatch={handleSettleMatch}
+                              isSimulating={simulatingMatchId === match.id}
+                              selectedIds={selectedIds}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </>
               )}
             </div>
           )}

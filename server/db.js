@@ -62,15 +62,23 @@ CREATE TABLE IF NOT EXISTS bet_selections (
 );
 `);
 
-// Seed a default admin user if the table is empty (password: admin123 — change immediately)
+// Seed test accounts if the table is empty. These are for LOCAL TESTING
+// ONLY — weak, predictable credentials. Never deploy this seed as-is to a
+// public/production environment; change or remove it first.
 const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
 if (userCount === 0) {
-  const hash = bcrypt.hashSync('admin123', 10);
-  db.prepare(
+  const insertUser = db.prepare(
     `INSERT INTO users (id, name, username, password_hash, balance, role, avatar, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run('admin-1', 'Administrator', 'admin', hash, 100000, 'ADMIN', '', Date.now());
-  console.log('Seeded default admin user -> username: admin / password: admin123 (CHANGE THIS)');
+  );
+
+  insertUser.run('admin-1', 'Administrator', 'root', bcrypt.hashSync('root', 10), 100000, 'ADMIN', '', Date.now());
+  insertUser.run('user-1', 'Test User', 'user', bcrypt.hashSync('user', 10), 1000, 'USER', '', Date.now());
+
+  console.log('Seeded TEST accounts (local use only):');
+  console.log('  admin -> username: root / password: root');
+  console.log('  user  -> username: user / password: user');
+  console.log('WARNING: these are weak credentials for local testing — do not use in production.');
 }
 
 export default db;
