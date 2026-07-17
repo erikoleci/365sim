@@ -7,9 +7,12 @@ interface NavbarProps {
   onOpenAdmin: () => void;
   currentView: 'sports' | 'casino';
   onNavigate: (view: 'sports' | 'casino') => void;
+  onGoHome: () => void;
+  onGoLive: () => void;
+  liveCount: number;
 }
 
-const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, currentView, onNavigate }) => {
+const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, currentView, onNavigate, onGoHome, onGoLive, liveCount }) => {
   return (
     <nav className="bg-brand-header text-brand-text text-sm sticky top-0 z-50 shadow-md flex flex-col">
       {/* Top Bar */}
@@ -67,11 +70,14 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
       <div className="bg-[#282828] border-b border-brand-divider h-8 flex items-center px-4 max-w-[1450px] mx-auto w-full overflow-x-auto no-scrollbar">
          {currentView === 'sports' ? (
              <div className="flex gap-6 text-xs text-brand-textMuted whitespace-nowrap">
-                 <span className="hover:text-brand-accent cursor-pointer font-bold text-white">Home</span>
-                 <span className="hover:text-brand-accent cursor-pointer">Live In-Play</span>
-                 <span className="hover:text-brand-accent cursor-pointer">Soccer</span>
-                 <span className="hover:text-brand-accent cursor-pointer">Tennis</span>
-                 <span className="hover:text-brand-accent cursor-pointer">Basketball</span>
+                 <span onClick={onGoHome} className="hover:text-brand-accent cursor-pointer font-bold text-white">Home</span>
+                 <span onClick={onGoLive} className="hover:text-brand-accent cursor-pointer flex items-center gap-1">
+                   Live In-Play
+                   {liveCount > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveCount}</span>}
+                 </span>
+                 <span className="text-brand-accent cursor-default font-bold">Soccer</span>
+                 <span className="opacity-40 cursor-not-allowed" title="Së shpejti">Tennis</span>
+                 <span className="opacity-40 cursor-not-allowed" title="Së shpejti">Basketball</span>
              </div>
          ) : (
              <div className="flex gap-6 text-xs text-brand-textMuted whitespace-nowrap">

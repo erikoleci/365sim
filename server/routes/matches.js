@@ -39,6 +39,10 @@ const TOP_LEAGUES = [
   'soccer_germany_bundesliga',
   'soccer_france_ligue_one',
   'soccer_uefa_champs_league',
+  // The big-5 European leagues are on their summer break roughly June-August,
+  // so without these two there can be zero matches for weeks at a time.
+  'soccer_usa_mls',
+  'soccer_brazil_campeonato',
 ];
 
 // Safety net: if the provider tells us we're nearly out of monthly credits,

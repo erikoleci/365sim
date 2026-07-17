@@ -16,6 +16,7 @@ const App: React.FC = () => {
 
   // --- Data State (from backend, not localStorage) ---
   const [matches, setMatches] = useState<Match[]>([]);
+  const [hasApiKey, setHasApiKey] = useState(true); // assume true until first load tells us otherwise
   const [myBets, setMyBets] = useState<Bet[]>([]);
   const [adminUsers, setAdminUsers] = useState<User[]>([]);
   const [adminAllBets, setAdminAllBets] = useState<any[]>([]);
@@ -49,8 +50,9 @@ const App: React.FC = () => {
     if (!currentUser || currentView !== 'sports') return;
     setIsLoading((prev) => (matches.length === 0 ? true : prev));
     try {
-      const { matches: fresh } = await api.fetchMatches();
+      const { matches: fresh, hasLiveApiKey } = await api.fetchMatches();
       setMatches(fresh);
+      setHasApiKey(hasLiveApiKey);
     } catch (e) {
       console.error('Failed to load matches', e);
     } finally {
@@ -277,6 +279,9 @@ const App: React.FC = () => {
         onOpenAdmin={() => setShowAdmin(!showAdmin)}
         currentView={currentView}
         onNavigate={setCurrentView}
+        onGoHome={() => { setCurrentLeague('All Top Football'); setDetailMatchId(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+        onGoLive={() => { setDetailMatchId(null); document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' }); }}
+        liveCount={liveMatches.length}
       />
 
       <div className="flex-1 flex max-w-[1450px] mx-auto w-full pt-4 px-2 gap-2 relative">
@@ -386,7 +391,9 @@ const App: React.FC = () => {
                     <div className="flex flex-col justify-center items-center h-64 bg-brand-panel rounded border border-brand-divider text-center px-6">
                       <div className="text-brand-textMuted text-sm mb-2">Asnjë ndeshje e disponueshme.</div>
                       <div className="text-brand-textMuted text-xs opacity-70">
-                        Nëse sapo e ke konfiguruar, kontrollo që ODDS_API_KEY është vendosur në server/.env dhe se serveri (npm run server) është duke xhiruar.
+                        {hasApiKey
+                          ? 'Kampionatet kryesore mund të jenë pushim veror (pa ndeshje të planifikuara), ose kredia mujore e The Odds API mund të jetë konsumuar. Provo përsëri më vonë.'
+                          : 'ODDS_API_KEY s\u2019është konfiguruar në server — vendose te .env (lokal) ose te Environment Variables (Render/hosting) dhe rinis serverin.'}
                       </div>
                     </div>
                   ) : (
