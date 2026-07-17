@@ -46,12 +46,18 @@ app.get('/api/health', (req, res) => res.json({ ok: true }));
 // as the API. This avoids CORS and cross-domain /api URL issues in production.
 // If dist/ doesn't exist (e.g. pure API-only deploy), this is skipped silently.
 if (fs.existsSync(distPath)) {
+  const indexHtmlPath = path.join(distPath, 'index.html');
+  console.log(`[static] Serving frontend from ${distPath} (index.html present: ${fs.existsSync(indexHtmlPath)})`);
   app.use(express.static(distPath));
   app.get(/^(?!\/api\/).*/, (req, res) => {
-    res.sendFile(path.join(distPath, 'index.html'));
+    if (!fs.existsSync(indexHtmlPath)) {
+      console.error(`[static] index.html missing at ${indexHtmlPath} — did "npm run build" actually run?`);
+      return res.status(500).send('Frontend build not found on server (dist/index.html missing). Check build logs.');
+    }
+    res.sendFile(indexHtmlPath);
   });
 } else {
-  console.warn('WARNING: dist/ not found — run "npm run build" to serve the frontend from this server.');
+  console.error(`[static] dist/ not found at ${distPath} — run "npm run build" before starting the server, or check your Build Command.`);
 }
 
 app.listen(PORT, () => {
