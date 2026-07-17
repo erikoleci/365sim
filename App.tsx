@@ -26,6 +26,7 @@ const App: React.FC = () => {
   const [showAdmin, setShowAdmin] = useState(false);
   const [detailMatchId, setDetailMatchId] = useState<string | null>(null);
   const [currentLeague, setCurrentLeague] = useState('All Top Football');
+  const [selectedDate, setSelectedDate] = useState('ALL'); // 'ALL' or 'YYYY-MM-DD' (local date)
   const [isLoading, setIsLoading] = useState(false);
   const [currentView, setCurrentView] = useState<'sports' | 'casino'>('sports');
   const [searchQuery, setSearchQuery] = useState('');
@@ -94,6 +95,28 @@ const App: React.FC = () => {
 
   useEffect(() => { if (showAdmin) loadAdminData(); }, [showAdmin, loadAdminData]);
 
+  // --- Date picker helpers (bet365-style: Sot / Nesër / next few days) ---
+  // Always compare using LOCAL calendar date (not UTC) so "today" lines up
+  // with the user's own day, even though the API gives UTC timestamps.
+  const toLocalDateKey = (iso: string) => {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const dateOptions = useMemo(() => {
+    const dayNames = ['Die', 'Hën', 'Mar', 'Mër', 'Enj', 'Pre', 'Sht'];
+    const monthNames = ['Jan', 'Shk', 'Mar', 'Pri', 'Maj', 'Qer', 'Kor', 'Gus', 'Sht', 'Tet', 'Nën', 'Dhj'];
+    const opts: { value: string; label: string }[] = [{ value: 'ALL', label: 'Të gjitha' }];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const label = i === 0 ? 'Sot' : i === 1 ? 'Nesër' : `${dayNames[d.getDay()]} ${d.getDate()} ${monthNames[d.getMonth()]}`;
+      opts.push({ value, label });
+    }
+    return opts;
+  }, []);
+
   // --- Filtering ---
   // Search applies everywhere. LIVE is always its own section at the top
   // (like a real bookmaker site), not a toggle that hides everything else.
@@ -105,7 +128,8 @@ const App: React.FC = () => {
   const liveMatches = searchFiltered.filter((m) => m.status === MatchStatus.LIVE);
   const upcomingMatches = searchFiltered
     .filter((m) => m.status === MatchStatus.UPCOMING)
-    .filter((m) => currentLeague === 'All Top Football' || m.league === currentLeague);
+    .filter((m) => currentLeague === 'All Top Football' || m.league === currentLeague)
+    .filter((m) => selectedDate === 'ALL' || toLocalDateKey(m.startTime) === selectedDate);
 
   const detailMatch = matches.find((m) => m.id === detailMatchId);
   const matchesByLeague = upcomingMatches.reduce((acc, match) => {
@@ -279,7 +303,7 @@ const App: React.FC = () => {
         onOpenAdmin={() => setShowAdmin(!showAdmin)}
         currentView={currentView}
         onNavigate={setCurrentView}
-        onGoHome={() => { setCurrentLeague('All Top Football'); setDetailMatchId(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+        onGoHome={() => { setCurrentLeague('All Top Football'); setSelectedDate('ALL'); setDetailMatchId(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
         onGoLive={() => { setDetailMatchId(null); document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' }); }}
         liveCount={liveMatches.length}
       />
@@ -346,6 +370,22 @@ const App: React.FC = () => {
                 ))}
               </div>
 
+              <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                {dateOptions.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setSelectedDate(opt.value)}
+                    className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                      selectedDate === opt.value
+                        ? 'bg-brand-yellow text-black border-brand-yellow'
+                        : 'bg-brand-panel text-white border-brand-divider hover:border-brand-yellow/50'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
               <div className="bg-brand-panel p-3 rounded flex items-center gap-2 border border-brand-divider">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-brand-textMuted" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                 <input type="text" placeholder="Kërko skuadra..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="bg-transparent text-white text-sm w-full outline-none placeholder-brand-textMuted" />
@@ -391,9 +431,11 @@ const App: React.FC = () => {
                     <div className="flex flex-col justify-center items-center h-64 bg-brand-panel rounded border border-brand-divider text-center px-6">
                       <div className="text-brand-textMuted text-sm mb-2">Asnjë ndeshje e disponueshme.</div>
                       <div className="text-brand-textMuted text-xs opacity-70">
-                        {hasApiKey
-                          ? 'Kampionatet kryesore mund të jenë pushim veror (pa ndeshje të planifikuara), ose kredia mujore e The Odds API mund të jetë konsumuar. Provo përsëri më vonë.'
-                          : 'ODDS_API_KEY s\u2019është konfiguruar në server — vendose te .env (lokal) ose te Environment Variables (Render/hosting) dhe rinis serverin.'}
+                        {!hasApiKey
+                          ? 'ODDS_API_KEY s\u2019është konfiguruar në server — vendose te .env (lokal) ose te Environment Variables (Render/hosting) dhe rinis serverin.'
+                          : selectedDate !== 'ALL'
+                            ? 'Nuk ka ndeshje të planifikuara për këtë datë në kampionatet e mbuluara. Provo "Të gjitha" ose një datë tjetër.'
+                            : 'Kampionatet kryesore mund të jenë pushim veror (pa ndeshje të planifikuara), ose kredia mujore e The Odds API mund të jetë konsumuar. Provo përsëri më vonë.'}
                       </div>
                     </div>
                   ) : (

@@ -39,11 +39,27 @@ const TOP_LEAGUES = [
   'soccer_germany_bundesliga',
   'soccer_france_ligue_one',
   'soccer_uefa_champs_league',
+  'soccer_uefa_europa_league',
+  'soccer_uefa_europa_conference_league',
+  'soccer_fifa_world_cup',
+  'soccer_fifa_world_cup_qualifiers_europe',
   // The big-5 European leagues are on their summer break roughly June-August,
   // so without these two there can be zero matches for weeks at a time.
   'soccer_usa_mls',
   'soccer_brazil_campeonato',
 ];
+
+// The provider occasionally renames/adds sport_keys (World Cup qualifiers
+// per confederation, cup rebrands, etc). Exact keys above can go stale, so
+// also match by title keywords as a fallback net — this is why "world cup"
+// and "conference league" show up even if we didn't hardcode the exact key.
+const TOP_LEAGUE_KEYWORDS = ['world cup', 'conference league', 'europa league', 'champions league'];
+
+function isTopLeague(l) {
+  if (TOP_LEAGUES.includes(l.key)) return true;
+  const title = (l.title || '').toLowerCase();
+  return TOP_LEAGUE_KEYWORDS.some((kw) => title.includes(kw));
+}
 
 // Safety net: if the provider tells us we're nearly out of monthly credits,
 // stop calling out entirely and just serve whatever is already cached, so a
@@ -53,6 +69,7 @@ let lastKnownRemaining = Infinity;
 
 let leaguesCache = { data: [], fetchedAt: 0 };
 let oddsRefreshTimers = new Map(); // leagueKey -> last fetch timestamp
+let lastTopLeagueKeys = []; // keys matched by isTopLeague() on the most recent refresh cycle
 
 async function fetchJson(url) {
   const resp = await fetch(url);
@@ -146,10 +163,17 @@ router.get('/', async (req, res) => {
     const leagues = await getSoccerLeagues();
     const targetLeagues = req.query.league
       ? leagues.filter((l) => l.key === req.query.league)
-      : leagues.filter((l) => TOP_LEAGUES.includes(l.key));
+      : leagues.filter(isTopLeague);
 
     for (const l of targetLeagues) {
       await refreshLeagueOdds(l.key);
+    }
+
+    if (!req.query.league) {
+      // Remember exactly which keys matched this cycle (title-keyword matches
+      // can vary as the provider's list changes) so the SELECT below stays
+      // in sync with what was actually just refreshed.
+      lastTopLeagueKeys = targetLeagues.map((l) => l.key);
     }
   } catch (err) {
     console.error('Error refreshing odds:', err.message);
@@ -158,7 +182,9 @@ router.get('/', async (req, res) => {
 
   const rows = req.query.league
     ? db.prepare('SELECT * FROM matches_cache WHERE league = ? ORDER BY start_time ASC').all(req.query.league)
-    : db.prepare('SELECT * FROM matches_cache WHERE league IN (' + TOP_LEAGUES.map(() => '?').join(',') + ') ORDER BY start_time ASC').all(...TOP_LEAGUES);
+    : lastTopLeagueKeys.length
+      ? db.prepare(`SELECT * FROM matches_cache WHERE league IN (${lastTopLeagueKeys.map(() => '?').join(',')}) ORDER BY start_time ASC`).all(...lastTopLeagueKeys)
+      : db.prepare('SELECT * FROM matches_cache ORDER BY start_time ASC').all();
 
   res.json({ matches: rows.map(mapEventToMatch), hasLiveApiKey: true });
 });
