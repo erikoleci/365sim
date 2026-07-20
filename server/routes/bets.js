@@ -2,7 +2,7 @@ import express from 'express';
 import { randomUUID } from 'crypto';
 import db from '../db.js';
 import { requireAuth } from './auth.js';
-import { resolveCurrentOdds } from '../oddsUtils.js';
+import { afResolveCurrentOdds } from '../afMapper.js';
 
 const router = express.Router();
 
@@ -47,7 +47,7 @@ router.post('/', (req, res) => {
     if (matchRow.status === 'FINISHED') {
       return res.status(400).json({ error: `Match ${matchRow.home_team} vs ${matchRow.away_team} has already finished — betting is closed.` });
     }
-    const currentOdds = resolveCurrentOdds(matchRow, sel.marketId, sel.selectionId);
+    const currentOdds = afResolveCurrentOdds(matchRow, sel.marketId, sel.selectionId);
     if (currentOdds === null) {
       return res.status(400).json({ error: `Selection ${sel.selectionId} in market ${sel.marketId} not found in current odds — it may have closed or moved` });
     }
