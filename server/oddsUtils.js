@@ -101,6 +101,7 @@ export function mapEventToMatch(row) {
             name: translateOutcomeName(market.key, id, outcome, ev),
             odds: outcome.price,
             bookmaker: bookmaker.title,
+            point: outcome.point,
           });
         }
       }
@@ -112,7 +113,7 @@ export function mapEventToMatch(row) {
     marketKey: key,
     name: MARKET_LABELS[key].name,
     category: MARKET_LABELS[key].category,
-    options: Array.from(outMap.values()),
+    options: sortOptions(key, Array.from(outMap.values())),
   }));
 
   return {
@@ -125,6 +126,29 @@ export function mapEventToMatch(row) {
     markets,
     bookmakerCount: (ev.bookmakers || []).length,
   };
+}
+
+// Bookmakers don't report outcomes in a consistent order (some list Draw
+// first, some list Away first, etc.). Force a fixed, predictable order per
+// market so "1 / X / 2" always renders left-to-right as Home / Draw / Away
+// — never scrambled — and so totals/handicap lines read naturally too.
+function sortOptions(marketKey, options) {
+  if (marketKey === 'h2h') {
+    const order = { HOME: 0, DRAW: 1, AWAY: 2 };
+    return [...options].sort((a, b) => (order[a.id] ?? 99) - (order[b.id] ?? 99));
+  }
+  if (marketKey === 'totals') {
+    // Keep grouped by line, Over before Under: "Mbi 2.5" then "Nën 2.5"
+    return [...options].sort((a, b) => {
+      const pointDiff = (a.point ?? 0) - (b.point ?? 0);
+      if (pointDiff !== 0) return pointDiff;
+      return a.id.startsWith('Over') ? -1 : b.id.startsWith('Over') ? 1 : 0;
+    });
+  }
+  if (marketKey === 'spreads') {
+    return [...options].sort((a, b) => (a.point ?? 0) - (b.point ?? 0));
+  }
+  return options;
 }
 
 // Look up the current BEST price for a specific marketId + selectionId
