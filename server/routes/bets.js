@@ -44,6 +44,9 @@ router.post('/', (req, res) => {
     if (!matchRow) {
       return res.status(400).json({ error: `Match ${sel.matchId} not found or no longer available` });
     }
+    if (matchRow.status === 'FINISHED') {
+      return res.status(400).json({ error: `Match ${matchRow.home_team} vs ${matchRow.away_team} has already finished — betting is closed.` });
+    }
     const currentOdds = resolveCurrentOdds(matchRow, sel.marketId, sel.selectionId);
     if (currentOdds === null) {
       return res.status(400).json({ error: `Selection ${sel.selectionId} in market ${sel.marketId} not found in current odds — it may have closed or moved` });
@@ -88,6 +91,31 @@ router.post('/', (req, res) => {
     bet: { id: betId, totalOdds, potentialReturn, stake },
     balance: updatedUser.balance,
   });
+});
+
+const CANCEL_WINDOW_MS = 10 * 60 * 1000; // must match the window shown in BetSlip.tsx
+
+// A user can cancel their OWN bet while it's still PENDING and within the
+// cancellation window — enforced server-side (not just hidden in the UI
+// after 10 minutes), since the client's clock/timer can't be trusted.
+router.post('/:id/cancel', (req, res) => {
+  const bet = db.prepare('SELECT * FROM bets WHERE id = ?').get(req.params.id);
+  if (!bet) return res.status(404).json({ error: 'Bet not found' });
+  if (bet.user_id !== req.user.id) return res.status(403).json({ error: 'Not your bet' });
+  if (bet.status !== 'PENDING') return res.status(400).json({ error: 'Only pending bets can be cancelled' });
+  if (Date.now() - bet.created_at > CANCEL_WINDOW_MS) {
+    return res.status(400).json({ error: 'Cancellation window has expired' });
+  }
+
+  const tx = db.transaction(() => {
+    db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(bet.stake, bet.user_id);
+    db.prepare('DELETE FROM bet_selections WHERE bet_id = ?').run(bet.id);
+    db.prepare('DELETE FROM bets WHERE id = ?').run(bet.id);
+  });
+  tx();
+
+  const updatedUser = db.prepare('SELECT balance FROM users WHERE id = ?').get(req.user.id);
+  res.json({ ok: true, balance: updatedUser.balance });
 });
 
 export default router;

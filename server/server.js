@@ -23,12 +23,7 @@ const app = express();
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 
-app.use(
-  helmet({
-    // Allow the SPA's own inline/loaded assets when served from this same process.
-    contentSecurityPolicy: false,
-  })
-);
+app.use(helmet());
 app.use(cors());
 app.use(express.json());
 
@@ -70,5 +65,12 @@ app.listen(PORT, () => {
   console.log(`365sim backend listening on http://localhost:${PORT}`);
   if (!process.env.ODDS_API_KEY) {
     console.warn('WARNING: ODDS_API_KEY is not set — /api/matches will return an empty list until you add one in .env');
+  }
+  if (!process.env.JWT_SECRET) {
+    console.error(
+      'SECURITY WARNING: JWT_SECRET is not set. Using an insecure hardcoded fallback ' +
+      'means ANYONE can forge a valid admin login token. Set JWT_SECRET in your ' +
+      'environment (Render: Environment tab -> Generate) before letting real users in.'
+    );
   }
 });

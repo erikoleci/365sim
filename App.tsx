@@ -278,18 +278,15 @@ const App: React.FC = () => {
       }
       return;
     }
-    // Regular users cancelling their own pending ticket is not yet exposed
-    // as a dedicated endpoint (kept out of scope) — route through admin cancel
-    // only when the acting user is actually an admin viewing their own bets.
-    if (currentUser?.role === UserRole.ADMIN) {
-      try {
-        await api.adminCancelBet(betId);
-        await loadMyBets();
-      } catch (e: any) {
-        alert(e.message || 'Failed to cancel bet');
-      }
+    // Regular user cancelling their own still-pending ticket.
+    try {
+      const { balance } = await api.cancelMyBet(betId);
+      setCurrentUser((u) => (u ? { ...u, balance } : u));
+      await loadMyBets();
+    } catch (e: any) {
+      alert(e.message || 'Anulimi dështoi.');
     }
-  }, [currentUser, loadAdminData, loadMyBets]);
+  }, [loadAdminData, loadMyBets]);
 
   const handleSettleMatch = useCallback(async (match: Match, homeScore: number, awayScore: number) => {
     if (simulatingMatchId) return;
