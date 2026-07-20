@@ -1,6 +1,7 @@
 import express from 'express';
-import db from '../db.js';
+import db, { getKV, setKV } from '../db.js';
 import { mapEventToMatch } from '../oddsUtils.js';
+import { settleMatch } from '../matchSettlement.js';
 
 const router = express.Router();
 
@@ -13,27 +14,25 @@ const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 // Only request markets your plan actually supports, or every single refresh
 // fails outright and no matches ever get cached.
 const MARKETS = 'h2h,totals,spreads';
-const MARKET_COUNT = MARKETS.split(',').length; // used for credit-budget math below
 
-// COST MATH (The Odds API): every /odds call costs (markets × regions) credits,
-// NOT 1 credit. With 6 markets × 1 region (eu) = 6 credits per league per refresh.
-// On the free plan (500 credits/month) that is only ~83 refreshes for a SINGLE
-// league — refreshing "every soccer league the provider offers" every 5 minutes
-// (the old defaults) can burn the whole month's quota in well under an hour.
+// COST MATH (The Odds API): every /odds call costs (markets × regions) credits.
+// With 3 markets × 1 region (eu) = 3 credits per league per refresh. The
+// /scores endpoint is separate: 2 credits per league per call (with daysFrom,
+// needed to catch recently-finished matches, not just currently-live ones).
 //
-// Two levers control spend, both tuned conservatively for the free tier:
-//  1) ODDS_REFRESH_MS — how often any given league is allowed to hit the API again.
-//  2) TOP_LEAGUES — the default "All Top Football" view only refreshes THIS curated
-//     list, not every competition the provider has. Picking a specific league from
-//     the dropdown still works for any league (fetched on demand, same interval).
+// Levers, all persisted to kv_store so a redeploy doesn't reset them and
+// re-trigger a full-cost refresh of every league (see PERSISTED STATE below):
+//  1) ODDS_REFRESH_MS — how often any given league's ODDS are allowed to refresh.
+//  2) SCORES_REFRESH_MS — how often any given league's SCORES are checked.
+//  3) TOP_LEAGUES — the default "All Top Football" view only refreshes THIS
+//     curated list (+ keyword matches), not every competition the provider has.
 const LEAGUES_REFRESH_MS = 6 * 60 * 60 * 1000;   // sport list changes rarely -> 6h
-const ODDS_REFRESH_MS = 4 * 60 * 60 * 1000;      // was 5 min -> now 4h (see cost math above)
+const ODDS_REFRESH_MS = 4 * 60 * 60 * 1000;      // odds/lines move slowly -> 4h
+const SCORES_REFRESH_MS = 15 * 60 * 1000;        // scores -> check every 15 min so
+                                                  // finished matches settle same-day
+                                                  // without polling constantly
 
-// Curated set for the default (no-filter) view. At 6 credits/league/refresh, 8
-// leagues = 48 credits per refresh cycle -> with a 4h interval that's ~48 x 6/day
-// = 288 credits/day MAX if hit constantly, but in practice only the first request
-// after the interval elapses actually calls out, so real usage is far lower.
-// Adjust this list to whichever leagues matter most for your audience.
+// Curated set for the default (no-filter) view.
 const TOP_LEAGUES = [
   'soccer_epl',
   'soccer_spain_la_liga',
@@ -67,11 +66,13 @@ function isTopLeague(l) {
 // stop calling out entirely and just serve whatever is already cached, so a
 // traffic spike can't lock the key out for the rest of the month.
 const MIN_REMAINING_CREDITS_BUFFER = 20;
-let lastKnownRemaining = Infinity;
 
-let leaguesCache = { data: [], fetchedAt: 0 };
-let oddsRefreshTimers = new Map(); // leagueKey -> last fetch timestamp
-let lastTopLeagueKeys = []; // keys matched by isTopLeague() on the most recent refresh cycle
+// --- PERSISTED STATE (survives restarts/redeploys via kv_store) ---
+let leaguesCache = getKV('leaguesCache', { data: [], fetchedAt: 0 });
+let oddsRefreshTimers = new Map(Object.entries(getKV('oddsRefreshTimers', {})));
+let scoresRefreshTimers = new Map(Object.entries(getKV('scoresRefreshTimers', {})));
+let lastKnownRemaining = getKV('lastKnownRemaining', Infinity);
+let lastTopLeagueKeys = getKV('lastTopLeagueKeys', []);
 
 async function fetchJson(url) {
   const resp = await fetch(url);
@@ -79,6 +80,7 @@ async function fetchJson(url) {
   const used = resp.headers.get('x-requests-used');
   if (remaining !== null) {
     lastKnownRemaining = Number(remaining);
+    setKV('lastKnownRemaining', lastKnownRemaining);
     console.log(`[the-odds-api] requests used=${used} remaining=${remaining}`);
     if (lastKnownRemaining <= MIN_REMAINING_CREDITS_BUFFER) {
       console.warn(`[the-odds-api] WARNING: only ${remaining} credits left this month — throttling further refreshes.`);
@@ -100,6 +102,7 @@ async function getSoccerLeagues() {
   const all = await fetchJson(`${ODDS_API_BASE}/sports/?apiKey=${ODDS_API_KEY}`);
   const soccer = all.filter((s) => s.group === 'Soccer' && s.active);
   leaguesCache = { data: soccer, fetchedAt: now };
+  setKV('leaguesCache', leaguesCache);
   return soccer;
 }
 
@@ -108,10 +111,11 @@ async function refreshLeagueOdds(leagueKey) {
   const last = oddsRefreshTimers.get(leagueKey) || 0;
   if (now - last < ODDS_REFRESH_MS) return; // still fresh, skip external call
   if (lastKnownRemaining <= MIN_REMAINING_CREDITS_BUFFER) {
-    console.warn(`[the-odds-api] Skipping refresh of ${leagueKey}: low on monthly credits (${lastKnownRemaining} left).`);
+    console.warn(`[the-odds-api] Skipping odds refresh of ${leagueKey}: low on monthly credits (${lastKnownRemaining} left).`);
     return; // serve stale cache rather than risk exhausting the plan
   }
   oddsRefreshTimers.set(leagueKey, now);
+  setKV('oddsRefreshTimers', Object.fromEntries(oddsRefreshTimers));
 
   // regions=eu -> vetëm bookmakers evropianë (jo UK/US)
   // oddsFormat=decimal -> koeficient evropian (p.sh. 2.50), JO fractional
@@ -121,7 +125,7 @@ async function refreshLeagueOdds(leagueKey) {
   try {
     events = await fetchJson(url);
   } catch (err) {
-    console.error(`Failed refreshing ${leagueKey}:`, err.message);
+    console.error(`Failed refreshing odds for ${leagueKey}:`, err.message);
     return;
   }
 
@@ -129,7 +133,8 @@ async function refreshLeagueOdds(leagueKey) {
     INSERT INTO matches_cache (id, league, home_team, away_team, start_time, status, raw_json, fetched_at)
     VALUES (@id, @league, @home_team, @away_team, @start_time, @status, @raw_json, @fetched_at)
     ON CONFLICT(id) DO UPDATE SET
-      status=excluded.status, raw_json=excluded.raw_json, fetched_at=excluded.fetched_at
+      status=CASE WHEN matches_cache.status = 'FINISHED' THEN matches_cache.status ELSE excluded.status END,
+      raw_json=excluded.raw_json, fetched_at=excluded.fetched_at
   `);
   const tx = db.transaction((rows) => rows.forEach((r) => insert.run(r)));
   tx(events.map((ev) => ({
@@ -142,6 +147,60 @@ async function refreshLeagueOdds(leagueKey) {
     raw_json: JSON.stringify(ev),
     fetched_at: now,
   })));
+}
+
+// Pulls real scores (in-play + completed within the last day) and:
+//  - auto-settles any match the provider reports as completed (real result,
+//    real win/loss on every pending bet) via the shared settleMatch()
+//  - flips still-in-progress matches to LIVE with a live scoreline
+// This is what makes "matches that already happened" disappear from the
+// upcoming list (they become FINISHED with a result) instead of sitting
+// there forever marked LIVE with no score, which is what was happening before.
+async function refreshLeagueScores(leagueKey) {
+  const now = Date.now();
+  const last = scoresRefreshTimers.get(leagueKey) || 0;
+  if (now - last < SCORES_REFRESH_MS) return;
+  if (lastKnownRemaining <= MIN_REMAINING_CREDITS_BUFFER) {
+    console.warn(`[the-odds-api] Skipping scores refresh of ${leagueKey}: low on monthly credits (${lastKnownRemaining} left).`);
+    return;
+  }
+  scoresRefreshTimers.set(leagueKey, now);
+  setKV('scoresRefreshTimers', Object.fromEntries(scoresRefreshTimers));
+
+  // daysFrom=2 -> also catch matches that finished up to 2 days ago (e.g. the
+  // server was asleep / no traffic when a match actually ended).
+  const url = `${ODDS_API_BASE}/sports/${leagueKey}/scores/?apiKey=${ODDS_API_KEY}&daysFrom=2&dateFormat=iso`;
+  let events;
+  try {
+    events = await fetchJson(url);
+  } catch (err) {
+    console.error(`Failed refreshing scores for ${leagueKey}:`, err.message);
+    return;
+  }
+
+  const updateLive = db.prepare(`
+    UPDATE matches_cache SET status = 'LIVE', live_home_score = ?, live_away_score = ?
+    WHERE id = ? AND status != 'FINISHED'
+  `);
+
+  for (const ev of events) {
+    const existing = db.prepare('SELECT * FROM matches_cache WHERE id = ?').get(ev.id);
+    if (!existing || existing.status === 'FINISHED') continue; // not tracked, or already settled
+
+    if (!Array.isArray(ev.scores)) continue; // not started yet / no score data
+
+    const homeEntry = ev.scores.find((s) => s.name === ev.home_team);
+    const awayEntry = ev.scores.find((s) => s.name === ev.away_team);
+    const homeScore = homeEntry ? parseInt(homeEntry.score, 10) : null;
+    const awayScore = awayEntry ? parseInt(awayEntry.score, 10) : null;
+    if (homeScore === null || awayScore === null || Number.isNaN(homeScore) || Number.isNaN(awayScore)) continue;
+
+    if (ev.completed) {
+      settleMatch(ev.id, homeScore, awayScore);
+    } else {
+      updateLive.run(homeScore, awayScore, ev.id);
+    }
+  }
 }
 
 // GET /api/matches/leagues -> list of available competitions for a filter dropdown
@@ -169,6 +228,7 @@ router.get('/', async (req, res) => {
 
     for (const l of targetLeagues) {
       await refreshLeagueOdds(l.key);
+      await refreshLeagueScores(l.key);
     }
 
     if (!req.query.league) {
@@ -176,6 +236,7 @@ router.get('/', async (req, res) => {
       // can vary as the provider's list changes) so the SELECT below stays
       // in sync with what was actually just refreshed.
       lastTopLeagueKeys = targetLeagues.map((l) => l.key);
+      setKV('lastTopLeagueKeys', lastTopLeagueKeys);
     }
   } catch (err) {
     console.error('Error refreshing odds:', err.message);

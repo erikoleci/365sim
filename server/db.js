@@ -36,7 +36,9 @@ CREATE TABLE IF NOT EXISTS matches_cache (
   fetched_at INTEGER NOT NULL,
   result_home INTEGER,
   result_away INTEGER,
-  settled_at INTEGER
+  settled_at INTEGER,
+  live_home_score INTEGER,
+  live_away_score INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS bets (
@@ -75,6 +77,17 @@ CREATE TABLE IF NOT EXISTS kv_store (
   value TEXT NOT NULL
 );
 `);
+
+// Defensive migration: CREATE TABLE IF NOT EXISTS above does nothing for a
+// database that already existed before these columns were added. Adding
+// them again on a fresh DB just throws "duplicate column", which we ignore.
+for (const col of ['live_home_score INTEGER', 'live_away_score INTEGER']) {
+  try {
+    db.exec(`ALTER TABLE matches_cache ADD COLUMN ${col}`);
+  } catch {
+    // already exists — fine
+  }
+}
 
 // Seed test accounts if the table is empty. These are for LOCAL TESTING
 // ONLY — weak, predictable credentials. Never deploy this seed as-is to a

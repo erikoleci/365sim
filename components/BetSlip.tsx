@@ -162,15 +162,16 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
           </>
         ) : (
             <div className="space-y-3">
-                {myBets.length === 0 && <div className="text-center text-brand-textMuted mt-10">No bets history</div>}
+                {myBets.length === 0 && <div className="text-center text-brand-textMuted mt-10">Nuk ka histori tiketash.</div>}
                 {myBets.map(bet => {
                     const canCancel = bet.status === BetStatus.PENDING && (Date.now() - bet.timestamp < 10 * 60 * 1000);
+                    const statusLabel = bet.status === BetStatus.PENDING ? 'Hapur' : bet.status === BetStatus.WON ? 'Fituar' : 'Humbur';
                     return (
                         <div key={bet.id} className="bg-brand-bg border border-brand-divider rounded p-2 text-xs relative">
                             <div className="flex justify-between mb-2 border-b border-brand-divider pb-1">
-                                <span className="text-brand-textMuted">{new Date(bet.timestamp).toLocaleDateString()} {new Date(bet.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                <span className="text-brand-textMuted">{new Date(bet.timestamp).toLocaleDateString('sq-AL', { timeZone: 'Europe/Tirane' })} {new Date(bet.timestamp).toLocaleTimeString('sq-AL', { timeZone: 'Europe/Tirane', hour: '2-digit', minute: '2-digit' })}</span>
                                 <span className={`font-bold ${bet.status === BetStatus.WON ? 'text-brand-accent' : bet.status === BetStatus.LOST ? 'text-red-400' : 'text-brand-textMuted'}`}>
-                                    {bet.status === BetStatus.PENDING ? 'Open' : bet.status}
+                                    {statusLabel}
                                 </span>
                             </div>
                             
@@ -185,7 +186,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                                         <div className="text-[10px]">
                                             {bet.status !== BetStatus.PENDING && (
                                                 <span className={leg.status === BetStatus.WON ? 'text-brand-accent' : leg.status === BetStatus.LOST ? 'text-red-400' : 'text-gray-500'}>
-                                                    {leg.status === BetStatus.PENDING ? '' : leg.status}
+                                                    {leg.status === BetStatus.PENDING ? '' : leg.status === BetStatus.WON ? 'Fituar' : 'Humbur'}
                                                 </span>
                                             )}
                                         </div>

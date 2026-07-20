@@ -1,5 +1,6 @@
 import React from 'react';
 import { Match, MatchStatus } from '../types';
+import { formatMatchTime, formatMatchDayMonth, isSameAlbaniaDay, albaniaTodayKey } from '../utils/albaniaTime';
 
 interface MatchRowProps {
   match: Match;
@@ -25,8 +26,7 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
     return `${base} bg-[#444] hover:bg-[#555] text-brand-yellow`;
   };
 
-  const matchDate = new Date(match.startTime);
-  const isToday = new Date().toDateString() === matchDate.toDateString();
+  const isToday = isSameAlbaniaDay(match.startTime, albaniaTodayKey());
 
   return (
     <div className={`flex flex-col md:flex-row border-b border-brand-divider bg-brand-panel hover:bg-[#3f3f3f] transition-colors group py-3 px-3 ${isLive ? 'border-l-4 border-l-brand-accent' : ''}`}>
@@ -41,9 +41,9 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
            ) : (
                <>
                 <div className={isToday ? "text-brand-text" : "text-brand-textMuted"}>
-                    {matchDate.getHours()}:{matchDate.getMinutes().toString().padStart(2, '0')}
+                    {formatMatchTime(match.startTime)}
                 </div>
-                {!isToday && <div className="text-[10px]">{matchDate.getDate()}/{matchDate.getMonth() + 1}</div>}
+                {!isToday && <div className="text-[10px]">{formatMatchDayMonth(match.startTime)}</div>}
                </>
            )}
         </div>

@@ -8,6 +8,7 @@ import Login from './components/Login';
 import CasinoHub from './components/CasinoHub';
 import { User, Match, Bet, UserRole, BetSelectionItem, MatchStatus } from './types';
 import * as api from './services/api';
+import { albaniaDateKey, albaniaTodayKey } from './utils/albaniaTime';
 
 const App: React.FC = () => {
   // --- Auth State ---
@@ -96,21 +97,15 @@ const App: React.FC = () => {
   useEffect(() => { if (showAdmin) loadAdminData(); }, [showAdmin, loadAdminData]);
 
   // --- Date picker helpers (bet365-style: Sot / Nesër / next few days) ---
-  // Always compare using LOCAL calendar date (not UTC) so "today" lines up
-  // with the user's own day, even though the API gives UTC timestamps.
-  const toLocalDateKey = (iso: string) => {
-    const d = new Date(iso);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  };
-
+  // Always compare using Albania's calendar date (Europe/Tirane), not the
+  // visitor's device timezone, so "today" is correct for the target audience.
   const dateOptions = useMemo(() => {
     const dayNames = ['Die', 'Hën', 'Mar', 'Mër', 'Enj', 'Pre', 'Sht'];
     const monthNames = ['Jan', 'Shk', 'Mar', 'Pri', 'Maj', 'Qer', 'Kor', 'Gus', 'Sht', 'Tet', 'Nën', 'Dhj'];
     const opts: { value: string; label: string }[] = [{ value: 'ALL', label: 'Të gjitha' }];
     for (let i = 0; i < 7; i++) {
-      const d = new Date();
-      d.setDate(d.getDate() + i);
-      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const value = albaniaTodayKey(i);
+      const d = new Date(value + 'T12:00:00'); // noon avoids any DST-edge day-shift when re-deriving weekday/day/month
       const label = i === 0 ? 'Sot' : i === 1 ? 'Nesër' : `${dayNames[d.getDay()]} ${d.getDate()} ${monthNames[d.getMonth()]}`;
       opts.push({ value, label });
     }
@@ -126,10 +121,15 @@ const App: React.FC = () => {
   });
 
   const liveMatches = searchFiltered.filter((m) => m.status === MatchStatus.LIVE);
+  const finishedMatches = searchFiltered
+    .filter((m) => m.status === MatchStatus.FINISHED)
+    .slice() // matches array is start_time ASC; show most recently finished first
+    .reverse()
+    .slice(0, 15);
   const upcomingMatches = searchFiltered
     .filter((m) => m.status === MatchStatus.UPCOMING)
     .filter((m) => currentLeague === 'All Top Football' || m.league === currentLeague)
-    .filter((m) => selectedDate === 'ALL' || toLocalDateKey(m.startTime) === selectedDate);
+    .filter((m) => selectedDate === 'ALL' || albaniaDateKey(m.startTime) === selectedDate);
 
   // Raw sport_keys (e.g. "soccer_brazil_campeonato") are what we store/compare
   // internally, but users should see readable names. This maps known keys to
@@ -435,6 +435,30 @@ const App: React.FC = () => {
                       </div>
                       <div className="divide-y divide-brand-divider">
                         {liveMatches.map((match) => (
+                          <MatchRow
+                            key={match.id}
+                            match={match}
+                            onBetClick={handleToggleSelection}
+                            onOpenDetail={(m) => setDetailMatchId(m.id)}
+                            isAdmin={currentUser.role === UserRole.ADMIN}
+                            onSettleMatch={handleSettleMatch}
+                            isSimulating={simulatingMatchId === match.id}
+                            selectedIds={selectedIds}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Recently finished matches with the real final score — auto-settled via the scores poller */}
+                  {finishedMatches.length > 0 && (
+                    <div className="bg-brand-panel rounded overflow-hidden shadow-sm">
+                      <div className="bg-[#383838] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex items-center gap-2">
+                        <span className="w-1 h-3 rounded-full bg-brand-textMuted"></span>
+                        <span className="uppercase tracking-wider">Rezultatet e Fundit</span>
+                      </div>
+                      <div className="divide-y divide-brand-divider">
+                        {finishedMatches.map((match) => (
                           <MatchRow
                             key={match.id}
                             match={match}

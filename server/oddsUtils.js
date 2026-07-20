@@ -125,6 +125,11 @@ export function mapEventToMatch(row) {
     status: row.status,
     markets,
     bookmakerCount: (ev.bookmakers || []).length,
+    liveHomeScore: row.live_home_score ?? undefined,
+    liveAwayScore: row.live_away_score ?? undefined,
+    score: row.status === 'FINISHED' && row.result_home !== null && row.result_away !== null
+      ? { home: row.result_home, away: row.result_away, htHome: 0, htAway: 0, homeYellowCards: 0, awayYellowCards: 0, homeCorners: 0, awayCorners: 0, scorers: [] }
+      : undefined,
   };
 }
 
