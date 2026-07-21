@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { settleMatch, recomputeBetStatus } from '../matchSettlement.js';
+import { logAudit } from '../auditLog.js';
 
 const router = express.Router();
 
@@ -45,6 +46,7 @@ router.post('/users', async (req, res) => {
   );
 
   const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+  await logAudit(req.user, 'USER_CREATE', id, { username, balance: Number(balance) || 0 });
   res.status(201).json({ user: toPublicUser(rows[0]) });
 });
 
@@ -54,6 +56,7 @@ router.delete('/users/:id', async (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found' });
   if (user.role === 'ADMIN') return res.status(400).json({ error: 'Cannot delete an admin user' });
   await pool.query('DELETE FROM users WHERE id = $1', [req.params.id]);
+  await logAudit(req.user, 'USER_DELETE', req.params.id, { username: user.username });
   res.json({ ok: true });
 });
 
@@ -66,6 +69,7 @@ router.post('/users/:id/credit', async (req, res) => {
   if (!rows[0]) return res.status(404).json({ error: 'User not found' });
   await pool.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [amount, req.params.id]);
   const { rows: updated } = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
+  await logAudit(req.user, 'BALANCE_CREDIT', req.params.id, { amount, username: rows[0].username });
   res.json({ user: toPublicUser(updated[0]) });
 });
 
@@ -78,6 +82,7 @@ router.post('/users/:id/reset-password', async (req, res) => {
   if (!rows[0]) return res.status(404).json({ error: 'User not found' });
   const hash = bcrypt.hashSync(password, 10);
   await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, req.params.id]);
+  await logAudit(req.user, 'PASSWORD_RESET', req.params.id, {});
   res.json({ ok: true });
 });
 
@@ -119,6 +124,7 @@ router.post('/bets/:id/cancel', async (req, res) => {
   } finally {
     client.release();
   }
+  await logAudit(req.user, 'BET_CANCEL', bet.id, { userId: bet.user_id, stake: bet.stake, wasStatus: bet.status });
   res.json({ ok: true });
 });
 
@@ -136,6 +142,7 @@ router.patch('/bet-selections/:id', async (req, res) => {
 
   await pool.query('UPDATE bet_selections SET status = $1 WHERE id = $2', [status, selection.id]);
   await recomputeBetStatus(selection.bet_id);
+  await logAudit(req.user, 'SELECTION_OVERRIDE', String(selection.id), { betId: selection.bet_id, status, matchId: selection.match_id });
   res.json({ ok: true });
 });
 
@@ -157,7 +164,15 @@ router.post('/matches/:id/settle', async (req, res) => {
   if (!rows[0]) return res.status(404).json({ error: 'Match not found' });
 
   const result = await settleMatch(req.params.id, homeScore, awayScore, { force: true });
+  await logAudit(req.user, 'MATCH_SETTLE', req.params.id, { homeScore, awayScore, ...result });
   res.json({ ok: true, ...result });
+});
+
+// --- AUDIT LOG ---
+router.get('/audit-log', async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 200, 500);
+  const { rows } = await pool.query('SELECT * FROM audit_log ORDER BY created_at DESC LIMIT $1', [limit]);
+  res.json({ entries: rows });
 });
 
 export default router;

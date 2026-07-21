@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, UserRole, Bet, BetStatus } from '../types';
+import * as api from '../services/api';
 
 interface AdminPanelProps {
   users: User[];
@@ -12,7 +13,19 @@ interface AdminPanelProps {
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet }) => {
-  const [activeTab, setActiveTab] = useState<'users' | 'tickets'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'tickets' | 'audit'>('users');
+  const [auditEntries, setAuditEntries] = useState<any[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === 'audit') {
+      setAuditLoading(true);
+      api.adminFetchAuditLog()
+        .then(setAuditEntries)
+        .catch(() => setAuditEntries([]))
+        .finally(() => setAuditLoading(false));
+    }
+  }, [activeTab]);
   
   // Create User State
   const [newUser, setNewUser] = useState({ name: '', username: '', password: '', balance: 0 });
@@ -129,6 +142,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
           className={`px-6 py-3 text-sm font-bold ${activeTab === 'tickets' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
         >
           All Tickets ({allBets.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('audit')}
+          className={`px-6 py-3 text-sm font-bold ${activeTab === 'audit' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
+        >
+          Audit Log
         </button>
       </div>
 
@@ -253,7 +272,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
               </div>
             </div>
           </div>
-        ) : (
+        ) : activeTab === 'tickets' ? (
           <div>
             {/* Global Tickets Table */}
             <div className="flex justify-between items-center mb-4">
@@ -334,6 +353,40 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                   </tbody>
                 </table>
             </div>
+          </div>
+        ) : (
+          <div>
+            <h3 className="text-brand-yellow font-bold uppercase text-xs tracking-wider mb-4">Audit Log (last 200 actions)</h3>
+            {auditLoading ? (
+              <div className="text-brand-textMuted text-sm">Loading...</div>
+            ) : auditEntries.length === 0 ? (
+              <div className="text-brand-textMuted text-sm">No audit entries yet.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-brand-textMuted border-b border-brand-divider">
+                      <th className="p-2">Time</th>
+                      <th className="p-2">Admin</th>
+                      <th className="p-2">Action</th>
+                      <th className="p-2">Target</th>
+                      <th className="p-2">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditEntries.map((e) => (
+                      <tr key={e.id} className="border-b border-brand-divider/50">
+                        <td className="p-2 whitespace-nowrap text-brand-textMuted">{new Date(Number(e.created_at)).toLocaleString('sq-AL', { timeZone: 'Europe/Tirane' })}</td>
+                        <td className="p-2 font-bold text-white">{e.actor_username}</td>
+                        <td className="p-2"><span className="bg-brand-header px-2 py-0.5 rounded text-[10px] font-bold">{e.action}</span></td>
+                        <td className="p-2 text-brand-textMuted">{e.target || '—'}</td>
+                        <td className="p-2 text-brand-textMuted font-mono text-[10px]">{e.details || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </div>

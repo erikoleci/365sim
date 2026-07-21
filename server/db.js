@@ -84,6 +84,19 @@ export async function initDb() {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    -- Audit trail of every admin action (settlement, credit adjustments,
+    -- password resets, user deletion, manual bet-leg overrides). Nothing is
+    -- ever deleted from this table.
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id SERIAL PRIMARY KEY,
+      actor_id TEXT NOT NULL,
+      actor_username TEXT NOT NULL,
+      action TEXT NOT NULL,
+      target TEXT,
+      details TEXT,
+      created_at BIGINT NOT NULL
+    );
   `);
 
   // Seed test accounts if the table is empty. These are for LOCAL TESTING

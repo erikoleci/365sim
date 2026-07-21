@@ -169,6 +169,11 @@ export async function adminFetchAllBets(): Promise<any[]> {
   return data.bets.map((b) => ({ ...mapServerBet(b), user: b.user }));
 }
 
+export async function adminFetchAuditLog(): Promise<any[]> {
+  const data = await request<{ entries: any[] }>('/admin/audit-log');
+  return data.entries;
+}
+
 export async function adminCancelBet(betId: string) {
   return request<{ ok: true }>(`/admin/bets/${betId}/cancel`, { method: 'POST' });
 }

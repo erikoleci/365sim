@@ -37,6 +37,18 @@ const authLimiter = rateLimit({
   message: { error: 'Shumë përpjekje. Provo përsëri pas disa minutash.' },
 });
 
+// General API protection: generous enough for normal browsing/polling, but
+// stops scripted abuse (e.g. spam bet placement, scraping matches on a tight
+// loop) from one IP.
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Shumë kërkesa. Provo përsëri pas pak.' },
+});
+
+app.use('/api', apiLimiter);
 app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/matches', matchesRouter);
 app.use('/api/bets', betsRouter);

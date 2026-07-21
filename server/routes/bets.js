@@ -8,6 +8,17 @@ const router = express.Router();
 
 router.use(requireAuth);
 
+// --- Ticket rules (kept simple & proportional to a play-money simulator,
+// not a full enterprise risk-limits system) ---
+const MIN_STAKE = 10;
+const MAX_STAKE = 50000;
+const MAX_SELECTIONS_PER_TICKET = 20;
+const MAX_POTENTIAL_RETURN = 1000000;
+// How much worse the current odds are allowed to be vs. what the user saw
+// when they built the slip, before we reject instead of silently accepting
+// a worse price. 2% tolerance absorbs normal rounding/timing noise.
+const ODDS_WORSENING_TOLERANCE = 0.02;
+
 router.get('/', async (req, res) => {
   const { rows: bets } = await pool.query('SELECT * FROM bets WHERE user_id = $1 ORDER BY created_at DESC', [req.user.id]);
   const withSelections = await Promise.all(
@@ -25,8 +36,35 @@ router.post('/', async (req, res) => {
   if (!Array.isArray(selections) || selections.length === 0) {
     return res.status(400).json({ error: 'At least one selection is required' });
   }
-  if (typeof stake !== 'number' || stake <= 0) {
+  if (selections.length > MAX_SELECTIONS_PER_TICKET) {
+    return res.status(400).json({ error: `Maximum ${MAX_SELECTIONS_PER_TICKET} selections per ticket` });
+  }
+  if (typeof stake !== 'number' || !Number.isFinite(stake) || stake <= 0) {
     return res.status(400).json({ error: 'Stake must be a positive number' });
+  }
+  if (stake < MIN_STAKE) {
+    return res.status(400).json({ error: `Minimum stake is ${MIN_STAKE}` });
+  }
+  if (stake > MAX_STAKE) {
+    return res.status(400).json({ error: `Maximum stake is ${MAX_STAKE}` });
+  }
+
+  // --- Conflict detection: reject mutually exclusive / duplicate selections
+  // from the same market on the same match (e.g. Home + Draw from the same
+  // 1X2 market, or Over 2.5 + Under 2.5 from the same totals market — both
+  // share the same marketId, just a different selectionId). A single ticket
+  // backing two outcomes of the same market on the same match is either a
+  // mistake or a guaranteed-outcome exploit; either way, reject it clearly
+  // rather than silently accepting it. ---
+  const seenMarkets = new Map(); // `${matchId}::${marketId}` -> selectionId already used
+  for (const sel of selections) {
+    const key = `${sel.matchId}::${sel.marketId}`;
+    if (seenMarkets.has(key)) {
+      return res.status(400).json({
+        error: `Conflicting selections: "${seenMarkets.get(key)}" and "${sel.selectionId}" are both from the same market on the same match.`,
+      });
+    }
+    seenMarkets.set(key, sel.selectionId);
   }
 
   const { rows: userRows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
@@ -36,7 +74,9 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'Insufficient balance' });
   }
 
-  // Re-verify each selection's odds against the current cache instead of trusting the client
+  // Re-verify each selection's odds against the current cache instead of
+  // trusting the client, and reject if odds moved unfavorably beyond
+  // tolerance (odds protection) instead of silently booking a worse price.
   let totalOdds = 1;
   const verifiedSelections = [];
 
@@ -53,16 +93,34 @@ router.post('/', async (req, res) => {
     if (currentOdds === null) {
       return res.status(400).json({ error: `Selection ${sel.selectionId} in market ${sel.marketId} not found in current odds — it may have closed or moved` });
     }
+    if (typeof sel.odds === 'number' && currentOdds < sel.odds * (1 - ODDS_WORSENING_TOLERANCE)) {
+      return res.status(409).json({
+        error: `Odds for ${sel.selectionName} changed (was ${sel.odds}, now ${currentOdds}). Please review and resubmit.`,
+        code: 'ODDS_CHANGED',
+        newOdds: currentOdds,
+      });
+    }
     totalOdds *= currentOdds;
     verifiedSelections.push({ ...sel, odds: currentOdds });
   }
 
   const betId = randomUUID();
   const potentialReturn = Number((stake * totalOdds).toFixed(2));
+  if (potentialReturn > MAX_POTENTIAL_RETURN) {
+    return res.status(400).json({ error: `Maximum potential payout is ${MAX_POTENTIAL_RETURN}. Reduce your stake or selections.` });
+  }
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // Re-check balance inside the transaction to close the race window
+    // between the SELECT above and this UPDATE (two simultaneous requests
+    // from the same user could otherwise both pass the earlier check).
+    const { rows: lockedUser } = await client.query('SELECT balance FROM users WHERE id = $1 FOR UPDATE', [user.id]);
+    if (!lockedUser[0] || lockedUser[0].balance < stake) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Insufficient balance' });
+    }
     await client.query('UPDATE users SET balance = balance - $1 WHERE id = $2', [stake, user.id]);
     await client.query(
       `INSERT INTO bets (id, user_id, type, stake, total_odds, potential_return, status, created_at)
