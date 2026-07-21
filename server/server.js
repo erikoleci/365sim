@@ -67,8 +67,8 @@ async function start() {
 
   app.listen(PORT, () => {
     console.log(`365sim backend listening on http://localhost:${PORT}`);
-    if (!process.env.API_FOOTBALL_KEY) {
-      console.warn('WARNING: API_FOOTBALL_KEY is not set — /api/matches will return an empty list until you add one in .env');
+    if (!process.env.ODDS_API_KEY) {
+      console.warn('WARNING: ODDS_API_KEY is not set — /api/matches will return an empty list until you add one in .env');
     }
     if (!process.env.JWT_SECRET) {
       console.error(

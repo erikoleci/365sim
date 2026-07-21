@@ -136,22 +136,25 @@ const App: React.FC = () => {
   // Albanian display labels; anything unmapped falls back to a prettified
   // version of the key so a new/unexpected league never shows the raw slug.
   const LEAGUE_LABELS: Record<string, string> = {
-    '39': 'Anglia - Premier League',
-    '140': 'Spanja - La Liga',
-    '135': 'Italia - Serie A',
-    '78': 'Gjermania - Bundesliga',
-    '61': 'Franca - Ligue 1',
-    '2': 'UEFA Champions League',
-    '3': 'UEFA Europa League',
-    '848': 'UEFA Conference League',
-    '1': 'Kampionati Botëror',
-    '253': 'SHBA - MLS',
-    '71': 'Brazil - Serie A',
+    'soccer_epl': 'Anglia - Premier League',
+    'soccer_spain_la_liga': 'Spanja - La Liga',
+    'soccer_italy_serie_a': 'Italia - Serie A',
+    'soccer_germany_bundesliga': 'Gjermania - Bundesliga',
+    'soccer_france_ligue_one': 'Franca - Ligue 1',
+    'soccer_uefa_champs_league': 'UEFA Champions League',
+    'soccer_uefa_champs_league_qualification': 'UEFA Champions League - Kualifikuese',
+    'soccer_uefa_europa_league': 'UEFA Europa League',
+    'soccer_uefa_europa_conference_league': 'UEFA Conference League',
+    'soccer_fifa_world_cup': 'Kampionati Botëror',
+    'soccer_fifa_world_cup_qualifiers_europe': 'Kualifikueset Botërore - Evropa',
+    'soccer_usa_mls': 'SHBA - MLS',
+    'soccer_brazil_campeonato': 'Brazil - Serie A',
   };
   const leagueLabel = (key: string) =>
     key === 'All Top Football'
       ? 'Të Gjitha Kampionatet'
-      : LEAGUE_LABELS[key] || `Kampionat ${key}`;
+      : LEAGUE_LABELS[key] ||
+        key.replace(/^soccer_/, '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
   const detailMatch = matches.find((m) => m.id === detailMatchId);
   const matchesByLeague = upcomingMatches.reduce((acc, match) => {
@@ -474,7 +477,7 @@ const App: React.FC = () => {
                       <div className="text-brand-textMuted text-sm mb-2">Asnjë ndeshje e disponueshme.</div>
                       <div className="text-brand-textMuted text-xs opacity-70">
                         {!hasApiKey
-                          ? 'API_FOOTBALL_KEY s\u2019është konfiguruar në server — vendose te .env (lokal) ose te Environment Variables (Render/hosting) dhe rinis serverin.'
+                          ? 'ODDS_API_KEY s\u2019është konfiguruar në server — vendose te .env (lokal) ose te Environment Variables (Render/hosting) dhe rinis serverin.'
                           : selectedDate !== 'ALL'
                             ? 'Nuk ka ndeshje të planifikuara për këtë datë në kampionatet e mbuluara. Provo "Të gjitha" ose një datë tjetër.'
                             : 'Kampionatet kryesore mund të jenë pushim veror (pa ndeshje të planifikuara), ose kredia mujore e The Odds API mund të jetë konsumuar. Provo përsëri më vonë.'}
