@@ -17,26 +17,28 @@ const MARKETS = 'h2h,totals,spreads';
 // With 3 markets × 1 region (eu) = 3 credits per league per refresh. The
 // /scores endpoint is separate: 2 credits per league per call (with daysFrom,
 // needed to catch recently-finished matches, not just currently-live ones).
-const LEAGUES_REFRESH_MS = 6 * 60 * 60 * 1000;   // sport list changes rarely -> 6h
-const ODDS_REFRESH_MS = 4 * 60 * 60 * 1000;      // odds/lines move slowly -> 4h
-const SCORES_REFRESH_MS = 15 * 60 * 1000;        // scores -> check every 15 min
+const LEAGUES_REFRESH_MS = 24 * 60 * 60 * 1000;  // sport list changes rarely -> 24h
+const ODDS_REFRESH_MS = 24 * 60 * 60 * 1000;      // once/day keeps ~4 leagues comfortably under 500 credits/month
+const SCORES_REFRESH_MS = 24 * 60 * 60 * 1000;    // same cadence — see budget math in comment below
 
+// CREDIT BUDGET (500/month on The Odds API free plan): each league costs
+// 3 credits/odds-refresh + 2 credits/scores-refresh = 5 credits per full
+// cycle. At a 24h cycle, N leagues costs N*5*30 credits/month. With N=4
+// that's 600/month — still tight, so we trimmed the list to the leagues
+// that matter most rather than trying to cover everything. If you want
+// MORE leagues, increase ODDS_REFRESH_MS/SCORES_REFRESH_MS proportionally
+// (e.g. 12 leagues needs roughly a 3-4 day cycle to stay under budget).
 const TOP_LEAGUES = [
   'soccer_epl',
-  'soccer_spain_la_liga',
-  'soccer_italy_serie_a',
-  'soccer_germany_bundesliga',
-  'soccer_france_ligue_one',
   'soccer_uefa_champs_league',
-  'soccer_uefa_europa_league',
-  'soccer_uefa_europa_conference_league',
+  'soccer_spain_la_liga',
   'soccer_fifa_world_cup',
-  'soccer_fifa_world_cup_qualifiers_europe',
-  'soccer_usa_mls',
-  'soccer_brazil_campeonato',
 ];
 
-const TOP_LEAGUE_KEYWORDS = ['world cup', 'conference league', 'europa league', 'champions league'];
+// Keyword matching still catches World Cup / Champions League / Europa /
+// Conference League fixtures under any sport_key the provider uses,
+// without needing every exact key hardcoded above.
+const TOP_LEAGUE_KEYWORDS = ['world cup', 'champions league'];
 
 function isTopLeague(l) {
   if (TOP_LEAGUES.includes(l.key)) return true;

@@ -116,7 +116,7 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
                 onClick={() => !isFinished && onBetClick(match, matchWinnerMarket.id, opt.id)}
                 className={getButtonClass(matchWinnerMarket.id, opt.id)}
             >
-                <span className="text-brand-textMuted text-[10px] font-normal leading-none mb-0.5">{opt.name === 'Draw' ? 'X' : opt.name === match.homeTeam ? '1' : '2'}</span>
+                <span className="text-brand-textMuted text-[10px] font-normal leading-none mb-0.5">{opt.id === 'DRAW' ? 'X' : opt.id === 'HOME' ? '1' : opt.id === 'AWAY' ? '2' : ''}</span>
                 <span className="leading-none">{opt.odds.toFixed(2)}</span>
             </div>
             )
