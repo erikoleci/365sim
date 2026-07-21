@@ -119,7 +119,7 @@ function mapServerBet(b: any): Bet {
     totalOdds: b.total_odds,
     potentialReturn: b.potential_return,
     status: b.status,
-    timestamp: b.created_at,
+    timestamp: Number(b.created_at),
     selections: (b.selections || []).map((s: any) => ({
       matchId: s.match_id,
       matchHome: s.match_home,

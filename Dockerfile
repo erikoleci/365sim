@@ -2,22 +2,17 @@ FROM node:22-slim
 
 WORKDIR /app
 
-# Install deps (better-sqlite3 needs build tools to compile its native binding)
-RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
-
 COPY package*.json ./
-RUN npm install --omit=dev=false
+RUN npm install
 
 COPY . .
 
 # Build the frontend into dist/, served statically by server/server.js
 RUN npm run build
 
-# Persisted SQLite database lives here — mount a volume to this path in production
-RUN mkdir -p server/data
-VOLUME ["/app/server/data"]
-
 ENV PORT=3001
 EXPOSE 3001
 
+# Data now lives in PostgreSQL (DATABASE_URL env var, e.g. a free Neon.tech
+# database) instead of a local SQLite file — no volume/mount needed here.
 CMD ["node", "server/server.js"]

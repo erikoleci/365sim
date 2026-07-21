@@ -1,5 +1,5 @@
 import express from 'express';
-import db from '../db.js';
+import pool from '../db.js';
 import { afMapRowToMatch } from '../afMapper.js';
 import { settleMatch } from '../matchSettlement.js';
 import {
@@ -15,14 +15,14 @@ const router = express.Router();
 
 // Maps API-Football's status code to our status, and auto-settles the match
 // via the shared settlement module the moment it's reported finished.
-function mapAndSettleIfNeeded(id, fx) {
+async function mapAndSettleIfNeeded(id, fx) {
   const code = fx.fixture.status.short;
   const FINISHED_CODES = new Set(['FT', 'AET', 'PEN', 'AWD', 'WO']);
   const LIVE_CODES = new Set(['1H', 'HT', '2H', 'ET', 'BT', 'P', 'SUSP', 'INT', 'LIVE']);
 
   if (FINISHED_CODES.has(code)) {
-    if (fx.goals?.home !== null && fx.goals?.away !== null && fx.goals?.home !== undefined) {
-      settleMatch(id, fx.goals.home, fx.goals.away);
+    if (fx.goals?.home != null && fx.goals?.away != null) {
+      await settleMatch(id, fx.goals.home, fx.goals.away);
     }
     return 'FINISHED';
   }
@@ -37,8 +37,8 @@ function mapAndSettleIfNeeded(id, fx) {
 // "matches that already happened" get a real result instead of hanging
 // around forever, and what pays out every ticket automatically.
 async function refreshLeagueFixtures(league) {
-  if (!canRefreshFixtures(league.id)) return;
-  if (shouldSkipForBudget()) {
+  if (!(await canRefreshFixtures(league.id))) return;
+  if (await shouldSkipForBudget()) {
     console.warn(`[api-football] Skipping fixtures refresh for ${league.name}: low on today's request budget.`);
     return;
   }
@@ -55,42 +55,32 @@ async function refreshLeagueFixtures(league) {
     return;
   }
 
-  const existingStmt = db.prepare('SELECT raw_json, status FROM matches_cache WHERE id = ?');
-  const insert = db.prepare(`
-    INSERT INTO matches_cache (id, league, home_team, away_team, start_time, status, raw_json, fetched_at)
-    VALUES (@id, @league, @home_team, @away_team, @start_time, @status, @raw_json, @fetched_at)
-    ON CONFLICT(id) DO UPDATE SET
-      status=CASE WHEN matches_cache.status = 'FINISHED' THEN matches_cache.status ELSE excluded.status END,
-      raw_json=excluded.raw_json, fetched_at=excluded.fetched_at
-  `);
-  const updateLive = db.prepare(`
-    UPDATE matches_cache SET live_home_score = ?, live_away_score = ? WHERE id = ? AND status != 'FINISHED'
-  `);
-
   const now = Date.now();
   for (const fx of fixtures) {
     const id = String(fx.fixture.id);
-    const status = mapAndSettleIfNeeded(id, fx);
+    const status = await mapAndSettleIfNeeded(id, fx);
 
-    const existing = existingStmt.get(id);
+    const { rows: existingRows } = await pool.query('SELECT raw_json FROM matches_cache WHERE id = $1', [id]);
     let bookmakers = [];
     try {
-      bookmakers = existing ? (JSON.parse(existing.raw_json).bookmakers || []) : [];
+      bookmakers = existingRows[0] ? (JSON.parse(existingRows[0].raw_json).bookmakers || []) : [];
     } catch { /* corrupt/old row shape, just start fresh */ }
 
-    insert.run({
-      id,
-      league: String(league.id),
-      home_team: fx.teams.home.name,
-      away_team: fx.teams.away.name,
-      start_time: fx.fixture.date,
-      status,
-      raw_json: JSON.stringify({ fixture: fx, bookmakers }),
-      fetched_at: now,
-    });
+    await pool.query(
+      `INSERT INTO matches_cache (id, league, home_team, away_team, start_time, status, raw_json, fetched_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (id) DO UPDATE SET
+         status = CASE WHEN matches_cache.status = 'FINISHED' THEN matches_cache.status ELSE excluded.status END,
+         raw_json = excluded.raw_json, fetched_at = excluded.fetched_at`,
+      [id, String(league.id), fx.teams.home.name, fx.teams.away.name, fx.fixture.date, status,
+       JSON.stringify({ fixture: fx, bookmakers }), now]
+    );
 
     if (status === 'LIVE' && fx.goals?.home != null && fx.goals?.away != null) {
-      updateLive.run(fx.goals.home, fx.goals.away, id);
+      await pool.query(
+        `UPDATE matches_cache SET live_home_score = $1, live_away_score = $2 WHERE id = $3 AND status != 'FINISHED'`,
+        [fx.goals.home, fx.goals.away, id]
+      );
     }
   }
 }
@@ -98,8 +88,8 @@ async function refreshLeagueFixtures(league) {
 // Pulls pre-match odds for a league's fixtures in one bulk call (cheaper than
 // one request per fixture) and merges them into each cached fixture's row.
 async function refreshLeagueOdds(league) {
-  if (!canRefreshOdds(league.id)) return;
-  if (shouldSkipForBudget()) {
+  if (!(await canRefreshOdds(league.id))) return;
+  if (await shouldSkipForBudget()) {
     console.warn(`[api-football] Skipping odds refresh for ${league.name}: low on today's request budget.`);
     return;
   }
@@ -115,22 +105,19 @@ async function refreshLeagueOdds(league) {
     return;
   }
 
-  const updateOdds = db.prepare(`UPDATE matches_cache SET raw_json = ?, fetched_at = ? WHERE id = ?`);
-  const existingStmt = db.prepare('SELECT raw_json FROM matches_cache WHERE id = ?');
   const now = Date.now();
-
   for (const entry of oddsResponses) {
     const id = String(entry.fixture.id);
-    const existing = existingStmt.get(id);
-    if (!existing) continue; // fixture not in our cache (outside the from/to window we track) — skip
+    const { rows } = await pool.query('SELECT raw_json FROM matches_cache WHERE id = $1', [id]);
+    if (!rows[0]) continue; // fixture not in our cache (outside the from/to window we track) — skip
     let parsed;
     try {
-      parsed = JSON.parse(existing.raw_json);
+      parsed = JSON.parse(rows[0].raw_json);
     } catch {
       continue;
     }
     parsed.bookmakers = entry.bookmakers || [];
-    updateOdds.run(JSON.stringify(parsed), now, id);
+    await pool.query('UPDATE matches_cache SET raw_json = $1, fetched_at = $2 WHERE id = $3', [JSON.stringify(parsed), now, id]);
   }
 }
 
@@ -154,17 +141,20 @@ router.get('/', async (req, res) => {
   }
 
   const leagueIds = targetLeagues.map((l) => String(l.id));
-  const rows = leagueIds.length
-    ? db.prepare(`SELECT * FROM matches_cache WHERE league IN (${leagueIds.map(() => '?').join(',')}) ORDER BY start_time ASC`).all(...leagueIds)
-    : db.prepare('SELECT * FROM matches_cache ORDER BY start_time ASC').all();
+  const { rows } = leagueIds.length
+    ? await pool.query(
+        `SELECT * FROM matches_cache WHERE league = ANY($1::text[]) ORDER BY start_time ASC`,
+        [leagueIds]
+      )
+    : await pool.query('SELECT * FROM matches_cache ORDER BY start_time ASC');
 
   res.json({ matches: rows.map(afMapRowToMatch), hasLiveApiKey: true });
 });
 
-router.get('/:id', (req, res) => {
-  const row = db.prepare('SELECT * FROM matches_cache WHERE id = ?').get(req.params.id);
-  if (!row) return res.status(404).json({ error: 'Match not found' });
-  res.json({ match: afMapRowToMatch(row) });
+router.get('/:id', async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM matches_cache WHERE id = $1', [req.params.id]);
+  if (!rows[0]) return res.status(404).json({ error: 'Match not found' });
+  res.json({ match: afMapRowToMatch(rows[0]) });
 });
 
 export default router;

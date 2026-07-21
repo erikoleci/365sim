@@ -10,6 +10,7 @@ import authRouter from './routes/auth.js';
 import matchesRouter from './routes/matches.js';
 import betsRouter from './routes/bets.js';
 import adminRouter from './routes/admin.js';
+import { initDb } from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distPath = path.join(__dirname, '..', 'dist');
@@ -61,16 +62,25 @@ if (fs.existsSync(distPath)) {
   console.error(`[static] dist/ not found at ${distPath} — run "npm run build" before starting the server, or check your Build Command.`);
 }
 
-app.listen(PORT, () => {
-  console.log(`365sim backend listening on http://localhost:${PORT}`);
-  if (!process.env.API_FOOTBALL_KEY) {
-    console.warn('WARNING: API_FOOTBALL_KEY is not set — /api/matches will return an empty list until you add one in .env');
-  }
-  if (!process.env.JWT_SECRET) {
-    console.error(
-      'SECURITY WARNING: JWT_SECRET is not set. Using an insecure hardcoded fallback ' +
-      'means ANYONE can forge a valid admin login token. Set JWT_SECRET in your ' +
-      'environment (Render: Environment tab -> Generate) before letting real users in.'
-    );
-  }
+async function start() {
+  await initDb();
+
+  app.listen(PORT, () => {
+    console.log(`365sim backend listening on http://localhost:${PORT}`);
+    if (!process.env.API_FOOTBALL_KEY) {
+      console.warn('WARNING: API_FOOTBALL_KEY is not set — /api/matches will return an empty list until you add one in .env');
+    }
+    if (!process.env.JWT_SECRET) {
+      console.error(
+        'SECURITY WARNING: JWT_SECRET is not set. Using an insecure hardcoded fallback ' +
+        'means ANYONE can forge a valid admin login token. Set JWT_SECRET in your ' +
+        'environment (Render: Environment tab -> Generate) before letting real users in.'
+      );
+    }
+  });
+}
+
+start().catch((err) => {
+  console.error('FATAL: failed to start server:', err);
+  process.exit(1);
 });

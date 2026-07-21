@@ -32,21 +32,34 @@ export const TOP_LEAGUES = [
   { id: 71, name: 'Brazil Serie A', seasonFor: CALENDAR_SEASON },
 ];
 
-let lastKnownRemaining = getKV('af_lastKnownRemaining', Infinity);
-let fixturesRefreshTimers = new Map(Object.entries(getKV('af_fixturesRefreshTimers', {})));
-let oddsRefreshTimers = new Map(Object.entries(getKV('af_oddsRefreshTimers', {})));
-
 const FIXTURES_REFRESH_MS = 20 * 60 * 1000;   // status/live-score freshness
 const ODDS_REFRESH_MS = 4 * 60 * 60 * 1000;   // odds move slowly, and cost the same 1 req either way
 
+// Lazily loaded from kv_store on first use (NOT at module-import time —
+// the DB schema/pool isn't guaranteed ready until server.js's initDb() has
+// run, which happens after all modules are imported).
+let lastKnownRemaining = Infinity;
+let fixturesRefreshTimers = new Map();
+let oddsRefreshTimers = new Map();
+let stateLoaded = false;
+
+async function ensureStateLoaded() {
+  if (stateLoaded) return;
+  stateLoaded = true; // set first so concurrent calls don't double-load
+  lastKnownRemaining = await getKV('af_lastKnownRemaining', Infinity);
+  fixturesRefreshTimers = new Map(Object.entries(await getKV('af_fixturesRefreshTimers', {})));
+  oddsRefreshTimers = new Map(Object.entries(await getKV('af_oddsRefreshTimers', {})));
+}
+
 export async function fetchJson(path) {
+  await ensureStateLoaded();
   const resp = await fetch(`${BASE}${path}`, {
     headers: { 'x-apisports-key': API_FOOTBALL_KEY },
   });
   const remaining = resp.headers.get('x-ratelimit-requests-remaining');
   if (remaining !== null) {
     lastKnownRemaining = Number(remaining);
-    setKV('af_lastKnownRemaining', lastKnownRemaining);
+    await setKV('af_lastKnownRemaining', lastKnownRemaining);
     console.log(`[api-football] requests remaining today: ${remaining}`);
     if (lastKnownRemaining <= MIN_REMAINING_BUFFER) {
       console.warn(`[api-football] WARNING: only ${remaining} requests left today — throttling further refreshes.`);
@@ -60,23 +73,25 @@ export async function fetchJson(path) {
   return body.response;
 }
 
-export function shouldSkipForBudget() {
+export async function shouldSkipForBudget() {
+  await ensureStateLoaded();
   return lastKnownRemaining <= MIN_REMAINING_BUFFER;
 }
 
-function throttled(map, kvKey, key, minIntervalMs) {
+async function throttled(map, kvKey, key, minIntervalMs) {
+  await ensureStateLoaded();
   const now = Date.now();
   const last = map.get(key) || 0;
   if (now - last < minIntervalMs) return false; // still fresh, skip
   map.set(key, now);
-  setKV(kvKey, Object.fromEntries(map));
+  await setKV(kvKey, Object.fromEntries(map));
   return true;
 }
 
-export function canRefreshFixtures(leagueId) {
+export async function canRefreshFixtures(leagueId) {
   return throttled(fixturesRefreshTimers, 'af_fixturesRefreshTimers', leagueId, FIXTURES_REFRESH_MS);
 }
-export function canRefreshOdds(leagueId) {
+export async function canRefreshOdds(leagueId) {
   return throttled(oddsRefreshTimers, 'af_oddsRefreshTimers', leagueId, ODDS_REFRESH_MS);
 }
 

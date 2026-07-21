@@ -1,6 +1,6 @@
 import express from 'express';
 import { randomUUID } from 'crypto';
-import db from '../db.js';
+import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { afResolveCurrentOdds } from '../afMapper.js';
 
@@ -8,17 +8,18 @@ const router = express.Router();
 
 router.use(requireAuth);
 
-router.get('/', (req, res) => {
-  const bets = db.prepare('SELECT * FROM bets WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id);
-  const selStmt = db.prepare('SELECT * FROM bet_selections WHERE bet_id = ?');
-  const withSelections = bets.map((b) => ({
-    ...b,
-    selections: selStmt.all(b.id),
-  }));
+router.get('/', async (req, res) => {
+  const { rows: bets } = await pool.query('SELECT * FROM bets WHERE user_id = $1 ORDER BY created_at DESC', [req.user.id]);
+  const withSelections = await Promise.all(
+    bets.map(async (b) => {
+      const { rows: selections } = await pool.query('SELECT * FROM bet_selections WHERE bet_id = $1', [b.id]);
+      return { ...b, selections };
+    })
+  );
   res.json({ bets: withSelections });
 });
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { type, stake, selections } = req.body || {};
 
   if (!Array.isArray(selections) || selections.length === 0) {
@@ -28,19 +29,20 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'Stake must be a positive number' });
   }
 
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  const { rows: userRows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
+  const user = userRows[0];
   if (!user) return res.status(404).json({ error: 'User not found' });
   if (user.balance < stake) {
     return res.status(400).json({ error: 'Insufficient balance' });
   }
 
   // Re-verify each selection's odds against the current cache instead of trusting the client
-  const matchStmt = db.prepare('SELECT * FROM matches_cache WHERE id = ?');
   let totalOdds = 1;
   const verifiedSelections = [];
 
   for (const sel of selections) {
-    const matchRow = matchStmt.get(sel.matchId);
+    const { rows: matchRows } = await pool.query('SELECT * FROM matches_cache WHERE id = $1', [sel.matchId]);
+    const matchRow = matchRows[0];
     if (!matchRow) {
       return res.status(400).json({ error: `Match ${sel.matchId} not found or no longer available` });
     }
@@ -58,38 +60,35 @@ router.post('/', (req, res) => {
   const betId = randomUUID();
   const potentialReturn = Number((stake * totalOdds).toFixed(2));
 
-  const tx = db.transaction(() => {
-    db.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(stake, user.id);
-    db.prepare(`
-      INSERT INTO bets (id, user_id, type, stake, total_odds, potential_return, status, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?)
-    `).run(betId, user.id, type || 'SINGLE', stake, totalOdds, potentialReturn, Date.now());
-
-    const insertSel = db.prepare(`
-      INSERT INTO bet_selections
-        (bet_id, match_id, match_home, match_away, market_id, market_name, selection_id, selection_name, odds, status)
-      VALUES (@bet_id, @match_id, @match_home, @match_away, @market_id, @market_name, @selection_id, @selection_name, @odds, 'PENDING')
-    `);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('UPDATE users SET balance = balance - $1 WHERE id = $2', [stake, user.id]);
+    await client.query(
+      `INSERT INTO bets (id, user_id, type, stake, total_odds, potential_return, status, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,'PENDING',$7)`,
+      [betId, user.id, type || 'SINGLE', stake, totalOdds, potentialReturn, Date.now()]
+    );
     for (const sel of verifiedSelections) {
-      insertSel.run({
-        bet_id: betId,
-        match_id: sel.matchId,
-        match_home: sel.matchHome,
-        match_away: sel.matchAway,
-        market_id: sel.marketId,
-        market_name: sel.marketName,
-        selection_id: sel.selectionId,
-        selection_name: sel.selectionName,
-        odds: sel.odds,
-      });
+      await client.query(
+        `INSERT INTO bet_selections
+          (bet_id, match_id, match_home, match_away, market_id, market_name, selection_id, selection_name, odds, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'PENDING')`,
+        [betId, sel.matchId, sel.matchHome, sel.matchAway, sel.marketId, sel.marketName, sel.selectionId, sel.selectionName, sel.odds]
+      );
     }
-  });
-  tx();
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 
-  const updatedUser = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+  const { rows: updatedRows } = await pool.query('SELECT * FROM users WHERE id = $1', [user.id]);
   res.status(201).json({
     bet: { id: betId, totalOdds, potentialReturn, stake },
-    balance: updatedUser.balance,
+    balance: updatedRows[0].balance,
   });
 });
 
@@ -98,24 +97,32 @@ const CANCEL_WINDOW_MS = 10 * 60 * 1000; // must match the window shown in BetSl
 // A user can cancel their OWN bet while it's still PENDING and within the
 // cancellation window — enforced server-side (not just hidden in the UI
 // after 10 minutes), since the client's clock/timer can't be trusted.
-router.post('/:id/cancel', (req, res) => {
-  const bet = db.prepare('SELECT * FROM bets WHERE id = ?').get(req.params.id);
+router.post('/:id/cancel', async (req, res) => {
+  const { rows: betRows } = await pool.query('SELECT * FROM bets WHERE id = $1', [req.params.id]);
+  const bet = betRows[0];
   if (!bet) return res.status(404).json({ error: 'Bet not found' });
   if (bet.user_id !== req.user.id) return res.status(403).json({ error: 'Not your bet' });
   if (bet.status !== 'PENDING') return res.status(400).json({ error: 'Only pending bets can be cancelled' });
-  if (Date.now() - bet.created_at > CANCEL_WINDOW_MS) {
+  if (Date.now() - Number(bet.created_at) > CANCEL_WINDOW_MS) {
     return res.status(400).json({ error: 'Cancellation window has expired' });
   }
 
-  const tx = db.transaction(() => {
-    db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(bet.stake, bet.user_id);
-    db.prepare('DELETE FROM bet_selections WHERE bet_id = ?').run(bet.id);
-    db.prepare('DELETE FROM bets WHERE id = ?').run(bet.id);
-  });
-  tx();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [bet.stake, bet.user_id]);
+    await client.query('DELETE FROM bet_selections WHERE bet_id = $1', [bet.id]);
+    await client.query('DELETE FROM bets WHERE id = $1', [bet.id]);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 
-  const updatedUser = db.prepare('SELECT balance FROM users WHERE id = ?').get(req.user.id);
-  res.json({ ok: true, balance: updatedUser.balance });
+  const { rows: userRows } = await pool.query('SELECT balance FROM users WHERE id = $1', [req.user.id]);
+  res.json({ ok: true, balance: userRows[0].balance });
 });
 
 export default router;

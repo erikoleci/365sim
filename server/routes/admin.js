@@ -1,7 +1,7 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
-import db from '../db.js';
+import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { settleMatch, recomputeBetStatus } from '../matchSettlement.js';
 
@@ -23,107 +23,119 @@ function toPublicUser(row) {
 
 // --- USERS ---
 
-router.get('/users', (req, res) => {
-  const users = db.prepare('SELECT * FROM users').all();
+router.get('/users', async (req, res) => {
+  const { rows: users } = await pool.query('SELECT * FROM users');
   res.json({ users: users.map(toPublicUser) });
 });
 
-router.post('/users', (req, res) => {
+router.post('/users', async (req, res) => {
   const { name, username, password, balance } = req.body || {};
   if (!name || !username || !password) {
     return res.status(400).json({ error: 'name, username, and password are required' });
   }
-  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
-  if (existing) return res.status(409).json({ error: 'Username already taken' });
+  const { rows: existingRows } = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
+  if (existingRows[0]) return res.status(409).json({ error: 'Username already taken' });
 
   const id = randomUUID();
   const hash = bcrypt.hashSync(password, 10);
-  db.prepare(`
-    INSERT INTO users (id, name, username, password_hash, balance, role, avatar, created_at)
-    VALUES (?, ?, ?, ?, ?, 'USER', ?, ?)
-  `).run(id, name, username, hash, Number(balance) || 0, '', Date.now());
+  await pool.query(
+    `INSERT INTO users (id, name, username, password_hash, balance, role, avatar, created_at)
+     VALUES ($1,$2,$3,$4,$5,'USER',$6,$7)`,
+    [id, name, username, hash, Number(balance) || 0, '', Date.now()]
+  );
 
-  res.status(201).json({ user: toPublicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(id)) });
+  const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+  res.status(201).json({ user: toPublicUser(rows[0]) });
 });
 
-router.delete('/users/:id', (req, res) => {
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+router.delete('/users/:id', async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
+  const user = rows[0];
   if (!user) return res.status(404).json({ error: 'User not found' });
   if (user.role === 'ADMIN') return res.status(400).json({ error: 'Cannot delete an admin user' });
-  db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+  await pool.query('DELETE FROM users WHERE id = $1', [req.params.id]);
   res.json({ ok: true });
 });
 
-router.post('/users/:id/credit', (req, res) => {
+router.post('/users/:id/credit', async (req, res) => {
   const { amount } = req.body || {};
   if (typeof amount !== 'number' || amount === 0) {
     return res.status(400).json({ error: 'amount must be a non-zero number' });
   }
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(amount, req.params.id);
-  res.json({ user: toPublicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)) });
+  const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
+  if (!rows[0]) return res.status(404).json({ error: 'User not found' });
+  await pool.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [amount, req.params.id]);
+  const { rows: updated } = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
+  res.json({ user: toPublicUser(updated[0]) });
 });
 
-router.post('/users/:id/reset-password', (req, res) => {
+router.post('/users/:id/reset-password', async (req, res) => {
   const { password } = req.body || {};
   if (!password || password.length < 6) {
     return res.status(400).json({ error: 'password must be at least 6 characters' });
   }
-  const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
+  const { rows } = await pool.query('SELECT id FROM users WHERE id = $1', [req.params.id]);
+  if (!rows[0]) return res.status(404).json({ error: 'User not found' });
   const hash = bcrypt.hashSync(password, 10);
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.params.id);
+  await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, req.params.id]);
   res.json({ ok: true });
 });
 
 // --- BETS (global view + cancel) ---
 
-router.get('/bets', (req, res) => {
-  const bets = db.prepare('SELECT * FROM bets ORDER BY created_at DESC').all();
-  const selStmt = db.prepare('SELECT * FROM bet_selections WHERE bet_id = ?');
-  const userStmt = db.prepare('SELECT id, username, name, avatar FROM users WHERE id = ?');
-  res.json({
-    bets: bets.map((b) => ({
-      ...b,
-      selections: selStmt.all(b.id),
-      user: userStmt.get(b.user_id) || null,
-    })),
-  });
+router.get('/bets', async (req, res) => {
+  const { rows: bets } = await pool.query('SELECT * FROM bets ORDER BY created_at DESC');
+  const withDetails = await Promise.all(
+    bets.map(async (b) => {
+      const { rows: selections } = await pool.query('SELECT * FROM bet_selections WHERE bet_id = $1', [b.id]);
+      const { rows: userRows } = await pool.query('SELECT id, username, name, avatar FROM users WHERE id = $1', [b.user_id]);
+      return { ...b, selections, user: userRows[0] || null };
+    })
+  );
+  res.json({ bets: withDetails });
 });
 
-router.post('/bets/:id/cancel', (req, res) => {
-  const bet = db.prepare('SELECT * FROM bets WHERE id = ?').get(req.params.id);
+router.post('/bets/:id/cancel', async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM bets WHERE id = $1', [req.params.id]);
+  const bet = rows[0];
   if (!bet) return res.status(404).json({ error: 'Bet not found' });
 
-  const tx = db.transaction(() => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
     // Refund stake only if it hasn't already been paid out as a win
     if (bet.status !== 'WON') {
-      db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(bet.stake, bet.user_id);
+      await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [bet.stake, bet.user_id]);
     } else {
       // Was a win already credited (stake + winnings) — claw back the net winnings paid out
-      db.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(bet.potential_return - bet.stake, bet.user_id);
+      await client.query('UPDATE users SET balance = balance - $1 WHERE id = $2', [bet.potential_return - bet.stake, bet.user_id]);
     }
-    db.prepare('DELETE FROM bet_selections WHERE bet_id = ?').run(bet.id);
-    db.prepare('DELETE FROM bets WHERE id = ?').run(bet.id);
-  });
-  tx();
+    await client.query('DELETE FROM bet_selections WHERE bet_id = $1', [bet.id]);
+    await client.query('DELETE FROM bets WHERE id = $1', [bet.id]);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
   res.json({ ok: true });
 });
 
 // Manually override a single bet leg's outcome. Needed for markets where
 // automatic settlement can't safely infer the winner from just the final
 // score (double chance, draw-no-bet, handicaps) — see settle-match comment.
-router.patch('/bet-selections/:id', (req, res) => {
+router.patch('/bet-selections/:id', async (req, res) => {
   const { status } = req.body || {};
   if (!['WON', 'LOST'].includes(status)) {
     return res.status(400).json({ error: "status must be 'WON' or 'LOST'" });
   }
-  const selection = db.prepare('SELECT * FROM bet_selections WHERE id = ?').get(req.params.id);
+  const { rows } = await pool.query('SELECT * FROM bet_selections WHERE id = $1', [req.params.id]);
+  const selection = rows[0];
   if (!selection) return res.status(404).json({ error: 'Selection not found' });
 
-  db.prepare('UPDATE bet_selections SET status = ? WHERE id = ?').run(status, selection.id);
-  recomputeBetStatus(selection.bet_id);
+  await pool.query('UPDATE bet_selections SET status = $1 WHERE id = $2', [status, selection.id]);
+  await recomputeBetStatus(selection.bet_id);
   res.json({ ok: true });
 });
 
@@ -136,15 +148,15 @@ router.patch('/bet-selections/:id', (req, res) => {
 // via the manual override endpoint above rather than guessed.
 // force:true lets an admin re-settle a match the automatic scores poller
 // already closed, e.g. to correct a wrong final score.
-router.post('/matches/:id/settle', (req, res) => {
+router.post('/matches/:id/settle', async (req, res) => {
   const { homeScore, awayScore } = req.body || {};
   if (!Number.isInteger(homeScore) || !Number.isInteger(awayScore) || homeScore < 0 || awayScore < 0) {
     return res.status(400).json({ error: 'homeScore and awayScore must be non-negative integers' });
   }
-  const match = db.prepare('SELECT * FROM matches_cache WHERE id = ?').get(req.params.id);
-  if (!match) return res.status(404).json({ error: 'Match not found' });
+  const { rows } = await pool.query('SELECT * FROM matches_cache WHERE id = $1', [req.params.id]);
+  if (!rows[0]) return res.status(404).json({ error: 'Match not found' });
 
-  const result = settleMatch(req.params.id, homeScore, awayScore, { force: true });
+  const result = await settleMatch(req.params.id, homeScore, awayScore, { force: true });
   res.json({ ok: true, ...result });
 });
 

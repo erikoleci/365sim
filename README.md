@@ -75,21 +75,23 @@ npm run server      # backend + serve i dist/ (i njëjti proces Express)
 
 - Shmang problemin e URL-së së API-së midis dy domain-eve (frontend-i thërret `/api/...` relativisht — funksionon vetëm nëse janë në të njëjtin origin).
 - Shmang konfigurime shtesë CORS.
-- SQLite (`server/data/betsim.db`) është skedar lokal, pra backend-i **duhet** të xhirojë si proces Node.js i vazhdueshëm me disk të qëndrueshëm (jo serverless/pa gjendje).
 
-**Platforma të rekomanduara**: Railway, Render, Fly.io, ose një VPS (p.sh. Hetzner/DigitalOcean) — të gjitha mbështesin proces Node.js afatgjatë + volume të qëndrueshëm për `server/data/`.
+**Baza e të dhënave është PostgreSQL** (jo më SQLite) — kjo i mbijeton redeploy-eve/restarteve pa nevojë për disk të qëndrueshëm apo volume të hostit. Krijo një bazë falas te [neon.tech](https://neon.tech) ose [supabase.com](https://supabase.com) (të dyja kanë plan falas të përhershëm) dhe kopjo connection string-un si `DATABASE_URL`.
 
-**Hapat për deploy** (p.sh. Railway/Render):
-1. Sigurohu që `server/data/` ekziston (ose krijohet automatikisht para nisjes — shiko `Dockerfile`).
-2. Vendos variablat e mjedisit: `JWT_SECRET`, `ODDS_API_KEY`, `PORT` (zakonisht vendoset automatikisht nga platforma).
+**Platforma të rekomanduara** për vetë serverin (backend+frontend): Railway, Render, Fly.io, ose një VPS.
+
+**Hapat për deploy** (p.sh. Render):
+1. Krijo bazën Postgres falas (neon.tech ose supabase.com) dhe merr `DATABASE_URL`-in.
+2. Vendos variablat e mjedisit: `DATABASE_URL`, `JWT_SECRET` (gjenero një varg të rastësishëm), `API_FOOTBALL_KEY`.
 3. Build command: `npm install && npm run build`
 4. Start command: `npm run server` (ose `node server/server.js`)
-5. Monto një **volume të qëndrueshëm** te `server/data/` — përndryshe baza e të dhënave (userat, bastet) humbet në çdo redeploy/restart.
+
+Skema e tabelave krijohet automatikisht (`initDb()`) herën e parë që niset serveri — s'ka nevojë për migrime manuale.
 
 Alternativë me Docker (ka `Dockerfile` gati në repo):
 ```bash
 docker build -t 365sim .
-docker run -p 3001:3001 --env-file .env -v $(pwd)/server/data:/app/server/data 365sim
+docker run -p 3001:3001 --env-file .env 365sim
 ```
 
 Nëse prapë preferohet ndarja frontend/backend (Vercel/Netlify + Railway), duhet së pari të modifikohet `services/api.ts` që të lexojë një bazë URL nga `import.meta.env.VITE_API_TARGET` në vend të path-it relativ `/api`, dhe të kufizohet `cors()` te domain-i specifik i frontend-it.
