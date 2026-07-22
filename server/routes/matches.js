@@ -3,6 +3,7 @@ import pool, { getKV, setKV } from '../db.js';
 import { mapEventToMatch } from '../oddsUtils.js';
 import { settleMatch } from '../matchSettlement.js';
 import { refreshOddsPapi } from '../oddspapi.js';
+import { refreshBsd } from '../bsd.js';
 
 const router = express.Router();
 
@@ -213,6 +214,7 @@ router.get('/', async (req, res) => {
       await setKV('lastTopLeagueKeys', lastTopLeagueKeys);
     }
     await refreshOddsPapi();
+    await refreshBsd();
   } catch (err) {
     console.error('Error refreshing odds:', err.message);
   }
