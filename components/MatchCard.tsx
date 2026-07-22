@@ -20,7 +20,7 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
   const getButtonClass = (marketId: string, selectionId: string) => {
     const uniqueId = `${match.id}-${marketId}-${selectionId}`;
     const isSelected = selectedIds.includes(uniqueId);
-    const base = "flex-1 flex flex-col justify-center items-center h-10 md:h-full min-h-[40px] rounded cursor-pointer transition-colors text-xs font-bold mx-[1px]";
+    const base = "flex-1 flex flex-col justify-center items-center h-11 md:h-full min-h-[44px] rounded cursor-pointer transition-colors text-xs font-bold mx-[1px] active:scale-95";
     if (isFinished) return `${base} opacity-40 cursor-default bg-brand-panel text-brand-textMuted`;
     if (isSelected) return `${base} bg-white text-brand-headerDark`;
     return `${base} bg-[#444] hover:bg-[#555] text-brand-yellow`;

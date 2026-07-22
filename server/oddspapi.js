@@ -23,6 +23,12 @@ function norm(s) {
   return (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+function similar(a, b) {
+  a = norm(a); b = norm(b);
+  if (!a || !b) return false;
+  return a === b || a.includes(b) || b.includes(a);
+}
+
 export async function refreshOddsPapi() {
   if (!KEY) return;
   const last = await getKV('oddspapi_last', 0);
@@ -50,13 +56,14 @@ export async function refreshOddsPapi() {
     if (!league || !fx.participant1Name || !fx.participant2Name) continue;
 
     const { rows: candidates } = await pool.query(
-      `SELECT id, home_team, raw_json FROM matches_cache WHERE league = $1 AND status != 'FINISHED'`,
+      `SELECT id, home_team, away_team, raw_json FROM matches_cache WHERE league = $1 AND status != 'FINISHED'`,
       [league]
     );
 
+    // Require BOTH home and away to match (not just one side) — avoids
+    // false positives like "Real Madrid" vs "Real Sociedad".
     const match = candidates.find(
-      (c) => norm(c.home_team).includes(norm(fx.participant1Name).slice(0, 6)) ||
-             norm(fx.participant1Name).includes(norm(c.home_team || '').slice(0, 6))
+      (c) => similar(c.home_team, fx.participant1Name) && similar(c.away_team, fx.participant2Name)
     );
     if (!match) continue;
 
