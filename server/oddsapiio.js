@@ -7,13 +7,12 @@ const REFRESH_MS = 60 * 60 * 1000; // 100 req/hour budget -> 1x/hour is very saf
 // Best-guess league slugs (not verified against a live /v3/leagues call —
 // check Render logs for '[oddsapiio] no events for slug' to correct any that miss).
 const LEAGUES = [
-  { slug: 'premier-league', league: 'soccer_epl' },
-  { slug: 'la-liga', league: 'soccer_spain_la_liga' },
-  { slug: 'serie-a', league: 'soccer_italy_serie_a' },
-  { slug: 'bundesliga', league: 'soccer_germany_bundesliga' },
-  { slug: 'ligue-1', league: 'soccer_france_ligue_one' },
-  { slug: 'champions-league', league: 'soccer_uefa_champs_league' },
-  { slug: 'mls', league: 'soccer_usa_mls' },
+  { slug: 'england-premier-league', league: 'soccer_epl' },
+  { slug: 'spain-laliga', league: 'soccer_spain_la_liga' },
+  { slug: 'italy-serie-a', league: 'soccer_italy_serie_a' },
+  { slug: 'germany-bundesliga', league: 'soccer_germany_bundesliga' },
+  { slug: 'france-ligue-1', league: 'soccer_france_ligue_one' },
+  { slug: 'usa-mls', league: 'soccer_usa_mls' },
 ];
 
 function norm(s) { return (s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
