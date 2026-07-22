@@ -20,8 +20,8 @@ const MARKETS = 'h2h,totals,spreads';
 // /scores endpoint is separate: 2 credits per league per call (with daysFrom,
 // needed to catch recently-finished matches, not just currently-live ones).
 const LEAGUES_REFRESH_MS = 24 * 60 * 60 * 1000;  // sport list changes rarely -> 24h
-const ODDS_REFRESH_MS = 24 * 60 * 60 * 1000;      // once/day keeps ~4 leagues comfortably under 500 credits/month
-const SCORES_REFRESH_MS = 24 * 60 * 60 * 1000;    // same cadence — see budget math in comment below
+const ODDS_REFRESH_MS = 60 * 60 * 60 * 1000;      // 9 leagues x 5cr = 45/cycle; 500/45≈11 cycles/mo -> ~2.5 days
+const SCORES_REFRESH_MS = 60 * 60 * 60 * 1000;
 
 // CREDIT BUDGET (500/month on The Odds API free plan): each league costs
 // 3 credits/odds-refresh + 2 credits/scores-refresh = 5 credits per full
@@ -35,6 +35,11 @@ const TOP_LEAGUES = [
   'soccer_uefa_champs_league',
   'soccer_spain_la_liga',
   'soccer_fifa_world_cup',
+  'soccer_italy_serie_a',
+  'soccer_germany_bundesliga',
+  'soccer_france_ligue_one',
+  'soccer_usa_mls',
+  'soccer_brazil_campeonato',
 ];
 
 // Keyword matching still catches World Cup / Champions League / Europa /
