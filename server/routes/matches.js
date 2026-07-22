@@ -4,6 +4,7 @@ import { mapEventToMatch } from '../oddsUtils.js';
 import { settleMatch } from '../matchSettlement.js';
 import { refreshOddsPapi } from '../oddspapi.js';
 import { refreshBsd } from '../bsd.js';
+import { refreshHighlightly } from '../highlightly.js';
 
 const router = express.Router();
 
@@ -216,6 +217,7 @@ router.get('/', async (req, res) => {
     }
     await refreshOddsPapi();
     await refreshBsd();
+    await refreshHighlightly();
   } catch (err) {
     console.error('Error refreshing odds:', err.message);
   }
