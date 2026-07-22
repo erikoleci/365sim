@@ -38,7 +38,7 @@ export async function refreshOddsPapi() {
   const ids = TOURNAMENTS.map((t) => t.id).join(',');
   let data;
   try {
-    const resp = await fetch(`${BASE}/odds-by-tournaments?tournamentIds=${ids}&apiKey=${KEY}`);
+    const resp = await fetch(`${BASE}/odds-by-tournaments?tournamentIds=${ids}&bookmaker=pinnacle&apiKey=${KEY}`);
     data = await resp.json();
   } catch (err) {
     console.error('[oddspapi] fetch failed:', err.message);
