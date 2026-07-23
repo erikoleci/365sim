@@ -120,7 +120,10 @@ const App: React.FC = () => {
     return m.homeTeam.toLowerCase().includes(q) || m.awayTeam.toLowerCase().includes(q) || m.league.toLowerCase().includes(q);
   });
 
-  const liveMatches = searchFiltered.filter((m) => m.status === MatchStatus.LIVE);
+  const STALE_LIVE_MS = 6 * 60 * 60 * 1000; // matches don't last 6h — treat as stuck/stale if never settled
+  const liveMatches = searchFiltered
+    .filter((m) => m.status === MatchStatus.LIVE && (Date.now() - new Date(m.startTime).getTime()) < STALE_LIVE_MS)
+    .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
   const finishedMatches = searchFiltered
     .filter((m) => m.status === MatchStatus.FINISHED)
     .slice() // matches array is start_time ASC; show most recently finished first
@@ -129,7 +132,8 @@ const App: React.FC = () => {
   const upcomingMatches = searchFiltered
     .filter((m) => m.status === MatchStatus.UPCOMING)
     .filter((m) => currentLeague === 'All Top Football' || m.league === currentLeague)
-    .filter((m) => selectedDate === 'ALL' || albaniaDateKey(m.startTime) === selectedDate);
+    .filter((m) => selectedDate === 'ALL' || albaniaDateKey(m.startTime) === selectedDate)
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
   // Raw sport_keys (e.g. "soccer_brazil_campeonato") are what we store/compare
   // internally, but users should see readable names. This maps known keys to
