@@ -13,6 +13,7 @@ const LEAGUES = [
   { slug: 'germany-bundesliga', league: 'soccer_germany_bundesliga' },
   { slug: 'france-ligue-1', league: 'soccer_france_ligue_one' },
   { slug: 'usa-mls', league: 'soccer_usa_mls' },
+  { slug: 'brazil-brasileiro-serie-a', league: 'soccer_brazil_campeonato' },
 ];
 
 function norm(s) { return (s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }

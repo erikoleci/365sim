@@ -22,8 +22,8 @@ const MARKETS = 'h2h,totals,spreads';
 // /scores endpoint is separate: 2 credits per league per call (with daysFrom,
 // needed to catch recently-finished matches, not just currently-live ones).
 const LEAGUES_REFRESH_MS = 24 * 60 * 60 * 1000;  // sport list changes rarely -> 24h
-const ODDS_REFRESH_MS = 48 * 60 * 60 * 1000;      // odds move slowly -> every 2 days
-const SCORES_REFRESH_MS = 24 * 60 * 60 * 1000;    // results checked daily so finished matches settle promptly
+const ODDS_REFRESH_MS = 96 * 60 * 60 * 1000;      // 9 leagues -> every 4 days
+const SCORES_REFRESH_MS = 48 * 60 * 60 * 1000;    // every 2 days
 
 // CREDIT BUDGET (500/month on The Odds API free plan): each league costs
 // 3 credits/odds-refresh + 2 credits/scores-refresh = 5 credits per full
@@ -38,6 +38,10 @@ const TOP_LEAGUES = [
   'soccer_spain_la_liga',
   'soccer_fifa_world_cup',
   'soccer_usa_mls',
+  'soccer_italy_serie_a',
+  'soccer_germany_bundesliga',
+  'soccer_france_ligue_one',
+  'soccer_brazil_campeonato',
 ];
 
 // Keyword matching still catches World Cup / Champions League / Europa /
