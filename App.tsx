@@ -153,6 +153,7 @@ const App: React.FC = () => {
     'soccer_fifa_world_cup_qualifiers_europe': 'Kualifikueset Botërore - Evropa',
     'soccer_usa_mls': 'SHBA - MLS',
     'soccer_brazil_campeonato': 'Brazil - Serie A',
+    'oddsapiio_albania_superiore': 'Shqipëri - Kategoria Superiore',
   };
   const leagueLabel = (key: string) =>
     key === 'All Top Football'
