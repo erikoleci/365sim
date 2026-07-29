@@ -10,93 +10,91 @@ interface MatchDetailProps {
 
 const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, selectedIds }) => {
   const isFinished = match.status === MatchStatus.FINISHED;
+  const isLive = match.status === MatchStatus.LIVE;
   const [activeTab, setActiveTab] = useState<string>('All');
 
-  // Extract unique categories
   const categories = useMemo(() => {
-    const cats = new Set(match.markets.map(m => m.category || 'Other'));
+    const cats = new Set(match.markets.map((m) => m.category || 'Other'));
     return ['All', ...Array.from(cats).sort()];
   }, [match]);
 
-  const filteredMarkets = match.markets.filter(m => activeTab === 'All' || m.category === activeTab);
+  const filteredMarkets = match.markets.filter((m) => activeTab === 'All' || m.category === activeTab);
 
   const getButtonClass = (marketId: string, selectionId: string) => {
     const uniqueId = `${match.id}-${marketId}-${selectionId}`;
     const isSelected = selectedIds.includes(uniqueId);
-    
-    // Standard odds block style
-    const base = "flex justify-between items-center p-3 cursor-pointer transition-colors border-b border-brand-divider last:border-0";
-    if (isFinished) return `${base} opacity-50 cursor-default bg-brand-bg text-brand-textMuted`;
-    if (isSelected) return `${base} bg-brand-text text-brand-headerDark font-bold`;
-    return `${base} bg-brand-panel hover:bg-[#444] text-brand-text`;
+    const base = 'flex justify-between items-center gap-2 p-3 cursor-pointer transition-colors rounded-lg border';
+    if (isFinished) return `${base} opacity-40 cursor-default bg-brand-surface border-brand-border text-brand-textFaint`;
+    if (isSelected) return `${base} bg-brand-accent text-brand-bg border-brand-accent font-bold`;
+    return `${base} bg-brand-surface2 hover:bg-brand-surfaceHover border-brand-border text-brand-text`;
   };
 
   return (
     <div className="bg-brand-bg text-brand-text h-full flex flex-col">
       {/* Match Header */}
-      <div className="bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] bg-brand-headerDark/30 p-6 relative border-b border-brand-divider">
-        <button onClick={onClose} className="absolute top-4 left-4 text-brand-textMuted hover:text-white text-xs font-bold flex items-center gap-1">
-          ‹ Soccer
+      <div className="bg-brand-header p-6 relative border-b border-brand-border">
+        <button onClick={onClose} className="absolute top-4 left-4 text-brand-textMuted hover:text-brand-text text-xs font-semibold flex items-center gap-1 transition-colors">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+          Futboll
         </button>
-        
+
         <div className="mt-4 text-center">
-             <div className="text-xs text-brand-textMuted uppercase tracking-wider mb-2">{match.league}</div>
-             <div className="flex justify-center items-center gap-8">
-                 <div className="text-2xl font-bold text-white">{match.homeTeam}</div>
-                 <div className="text-3xl text-brand-yellow font-mono">
-                    {isFinished ? `${match.score?.home} - ${match.score?.away}` : 'v'}
-                 </div>
-                 <div className="text-2xl font-bold text-white">{match.awayTeam}</div>
-             </div>
-             {isFinished && (
-                <div className="mt-2 text-xs text-brand-accent">
-                    FT | HT: {match.score?.htHome}-{match.score?.htAway} | Corners: {match.score?.homeCorners}-{match.score?.awayCorners}
-                </div>
-             )}
+          <div className="text-xs text-brand-textFaint uppercase tracking-wider mb-3 flex items-center justify-center gap-2">
+            {match.league}
+            {isLive && (
+              <span className="flex items-center gap-1 text-brand-live font-bold">
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-live animate-pulseLive" /> {match.currentMinute || 'LIVE'}
+              </span>
+            )}
+          </div>
+          <div className="flex justify-center items-center gap-6 md:gap-8">
+            <div className="text-lg md:text-2xl font-bold text-brand-text text-right flex-1">{match.homeTeam}</div>
+            <div className="text-2xl md:text-3xl text-brand-accent font-mono font-bold tabular-nums shrink-0">
+              {isFinished || isLive ? `${isLive ? match.liveHomeScore ?? 0 : match.score?.home} - ${isLive ? match.liveAwayScore ?? 0 : match.score?.away}` : 'vs'}
+            </div>
+            <div className="text-lg md:text-2xl font-bold text-brand-text text-left flex-1">{match.awayTeam}</div>
+          </div>
+          {isFinished && (
+            <div className="mt-3 text-xs text-brand-textMuted">
+              E përfunduar &middot; Pjesa I: {match.score?.htHome}-{match.score?.htAway} &middot; Kënde: {match.score?.homeCorners}-{match.score?.awayCorners}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Category Tabs */}
-      <div className="bg-[#333] border-b border-brand-divider overflow-x-auto no-scrollbar">
-         <div className="flex">
-            {categories.map(cat => (
-                <button
-                    key={cat}
-                    onClick={() => setActiveTab(cat)}
-                    className={`px-4 py-3 text-xs font-bold uppercase transition-colors whitespace-nowrap ${
-                        activeTab === cat 
-                        ? 'text-brand-yellow border-b-2 border-brand-yellow bg-[#3a3a3a]' 
-                        : 'text-brand-textMuted hover:text-white hover:bg-[#3a3a3a]'
-                    }`}
-                >
-                    {cat}
-                </button>
-            ))}
-         </div>
+      <div className="bg-brand-header border-b border-brand-border overflow-x-auto no-scrollbar">
+        <div className="flex px-2 gap-1 py-2">
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setActiveTab(cat)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide transition-colors whitespace-nowrap ${
+                activeTab === cat ? 'bg-brand-accentSoft text-brand-accent' : 'text-brand-textMuted hover:text-brand-text hover:bg-brand-surfaceHover'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Markets Content */}
-      <div className="p-2 space-y-2 overflow-y-auto flex-1 bg-[#282828]">
-        {filteredMarkets.map(market => (
-            <div key={market.id} className="bg-brand-panel rounded overflow-hidden mb-2">
-                <div className="bg-[#383838] px-3 py-2 text-xs font-bold text-brand-text border-b border-[#444] flex justify-between">
-                    <span>{market.name}</span>
-                    <span className="text-[10px] text-brand-textMuted bg-black/20 px-1.5 py-0.5 rounded">Cash Out</span>
+      <div className="p-3 space-y-3 overflow-y-auto flex-1 bg-brand-bg">
+        {filteredMarkets.map((market) => (
+          <div key={market.id} className="bg-brand-surface rounded-xl overflow-hidden border border-brand-border">
+            <div className="px-3 py-2.5 text-xs font-semibold text-brand-text border-b border-brand-border">{market.name}</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-1.5 p-1.5">
+              {market.options.map((opt) => (
+                <div key={opt.id} onClick={() => !isFinished && onBetClick(match, market.id, opt.id)} className={getButtonClass(market.id, opt.id)}>
+                  <span className="text-xs truncate">{opt.name}</span>
+                  <span className="font-bold text-sm tabular-nums shrink-0">{opt.odds.toFixed(2)}</span>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 divide-x divide-brand-bg/20">
-                    {market.options.map(opt => (
-                        <div 
-                            key={opt.id} 
-                            onClick={() => !isFinished && onBetClick(match, market.id, opt.id)}
-                            className={getButtonClass(market.id, opt.id)}
-                        >
-                            <span className="text-xs text-brand-textMuted">{opt.name}</span>
-                            <span className="font-bold text-brand-yellow text-sm">{opt.odds.toFixed(2)}</span>
-                        </div>
-                    ))}
-                </div>
+              ))}
             </div>
+          </div>
         ))}
+        {filteredMarkets.length === 0 && <div className="text-center text-brand-textFaint text-sm mt-10">Nuk ka tregje në këtë kategori.</div>}
       </div>
     </div>
   );
