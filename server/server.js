@@ -12,6 +12,8 @@ import betsRouter from './routes/bets.js';
 import adminRouter from './routes/admin.js';
 import { initDb } from './db.js';
 
+let dbReady = false;
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distPath = path.join(__dirname, '..', 'dist');
 
@@ -54,7 +56,7 @@ app.use('/api/matches', matchesRouter);
 app.use('/api/bets', betsRouter);
 app.use('/api/admin', adminRouter);
 
-app.get('/api/health', (req, res) => res.json({ ok: true }));
+app.get('/api/health', (req, res) => res.status(dbReady ? 200 : 503).json({ ok: true, db: dbReady ? 'up' : 'down' }));
 
 // Serve the built frontend (npm run build -> dist/) from the same origin/process
 // as the API. This avoids CORS and cross-domain /api URL issues in production.
@@ -75,7 +77,14 @@ if (fs.existsSync(distPath)) {
 }
 
 async function start() {
-  await initDb();
+  try {
+    await initDb();
+    dbReady = true;
+    console.log('[db] connected and initialized');
+  } catch (err) {
+    dbReady = false;
+    console.error('[db] init failed; starting server without database:', err);
+  }
 
   app.listen(PORT, () => {
     console.log(`365sim backend listening on http://localhost:${PORT}`);
