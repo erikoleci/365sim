@@ -11,19 +11,13 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-// Most free-tier hosted Postgres providers (Neon, Supabase, Render) require
-// SSL but use certs that Node's default TLS validation doesn't recognize as
-// a "known" CA chain in every environment — rejectUnauthorized:false is the
-// standard, safe-enough setting for this (the connection itself is still
-// encrypted; this only skips CA verification, appropriate for a small app
-// connecting to a provider-managed database over its documented connection
-// string).
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
 });
 
 export async function initDb() {
+  await pool.query('SELECT 1');
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -77,17 +71,11 @@ export async function initDb() {
       status TEXT NOT NULL DEFAULT 'PENDING'
     );
 
-    -- Small generic key-value store for state that must survive process
-    -- restarts/redeploys (API-Football refresh throttling, remaining-quota
-    -- tracking, etc).
     CREATE TABLE IF NOT EXISTS kv_store (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
 
-    -- Audit trail of every admin action (settlement, credit adjustments,
-    -- password resets, user deletion, manual bet-leg overrides). Nothing is
-    -- ever deleted from this table.
     CREATE TABLE IF NOT EXISTS audit_log (
       id SERIAL PRIMARY KEY,
       actor_id TEXT NOT NULL,
@@ -99,9 +87,6 @@ export async function initDb() {
     );
   `);
 
-  // Seed test accounts if the table is empty. These are for LOCAL TESTING
-  // ONLY — weak, predictable credentials. Change or remove before letting
-  // real users in.
   const { rows } = await pool.query('SELECT COUNT(*)::int AS c FROM users');
   if (rows[0].c === 0) {
     await pool.query(
