@@ -11,7 +11,6 @@ import matchesRouter from './routes/matches.js';
 import betsRouter from './routes/bets.js';
 import adminRouter from './routes/admin.js';
 import { initDb } from './db.js';
-import { startScoresSyncJob } from './jobs/scoresSync.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distPath = path.join(__dirname, '..', 'dist');
@@ -38,18 +37,14 @@ const authLimiter = rateLimit({
   message: { error: 'Shumë përpjekje. Provo përsëri pas disa minutash.' },
 });
 
-// General API protection, keyed by user id when authenticated (falls back
-// to IP for anonymous requests) so one shared office/NAT IP with many real
-// users doesn't get throttled as if it were a single abusive client.
+// General API protection: generous enough for normal browsing/polling, but
+// stops scripted abuse (e.g. spam bet placement, scraping matches on a tight
+// loop) from one IP.
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    const header = req.headers.authorization || '';
-    return header.startsWith('Bearer ') ? header.slice(7, 47) : req.ip;
-  },
   message: { error: 'Shumë kërkesa. Provo përsëri pas pak.' },
 });
 
@@ -81,12 +76,18 @@ if (fs.existsSync(distPath)) {
 
 async function start() {
   await initDb();
-  startScoresSyncJob();
 
   app.listen(PORT, () => {
     console.log(`365sim backend listening on http://localhost:${PORT}`);
     if (!process.env.ODDS_API_KEY) {
       console.warn('WARNING: ODDS_API_KEY is not set — /api/matches will return an empty list until you add one in .env');
+    }
+    if (!process.env.JWT_SECRET) {
+      console.error(
+        'SECURITY WARNING: JWT_SECRET is not set. Using an insecure hardcoded fallback ' +
+        'means ANYONE can forge a valid admin login token. Set JWT_SECRET in your ' +
+        'environment (Render: Environment tab -> Generate) before letting real users in.'
+      );
     }
   });
 }

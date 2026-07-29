@@ -20,28 +20,14 @@ const MAX_POTENTIAL_RETURN = 1000000;
 const ODDS_WORSENING_TOLERANCE = 0.02;
 
 router.get('/', async (req, res) => {
-  // Pagination: without this, a long-time user's bet history query and
-  // response payload grow unbounded. Defaults to a sane page size; clients
-  // can request up to 100 per page.
-  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-  const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize, 10) || 20));
-  const offset = (page - 1) * pageSize;
-
-  const { rows: countRows } = await pool.query('SELECT COUNT(*)::int AS c FROM bets WHERE user_id = $1', [req.user.id]);
-  const { rows: bets } = await pool.query(
-    'SELECT * FROM bets WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
-    [req.user.id, pageSize, offset]
-  );
+  const { rows: bets } = await pool.query('SELECT * FROM bets WHERE user_id = $1 ORDER BY created_at DESC', [req.user.id]);
   const withSelections = await Promise.all(
     bets.map(async (b) => {
       const { rows: selections } = await pool.query('SELECT * FROM bet_selections WHERE bet_id = $1', [b.id]);
       return { ...b, selections };
     })
   );
-  res.json({
-    bets: withSelections,
-    pagination: { page, pageSize, total: countRows[0].c, totalPages: Math.ceil(countRows[0].c / pageSize) },
-  });
+  res.json({ bets: withSelections });
 });
 
 router.post('/', async (req, res) => {

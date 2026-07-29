@@ -5,32 +5,13 @@ import { randomUUID } from 'crypto';
 import pool from '../db.js';
 
 const router = express.Router();
-
-// SECURITY: no insecure fallback secret. If JWT_SECRET is missing, any
-// route that needs to sign/verify a token fails loudly instead of silently
-// using a guessable default that lets anyone forge an admin token.
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  console.error(
-    'FATAL: JWT_SECRET is not set. Refusing to start with an insecure default — ' +
-    'set JWT_SECRET in your environment (a long random string) before starting the server.'
-  );
-  process.exit(1);
-}
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 
 function signToken(user) {
   return jwt.sign(
     { id: user.id, username: user.username, role: user.role },
     JWT_SECRET,
-    { expiresIn: '15m' }
-  );
-}
-
-function signRefreshToken(user) {
-  return jwt.sign(
-    { id: user.id, type: 'refresh' },
-    JWT_SECRET,
-    { expiresIn: '30d' }
+    { expiresIn: '7d' }
   );
 }
 
@@ -80,8 +61,7 @@ router.post('/register', async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
   const user = rows[0];
   const token = signToken(user);
-  const refreshToken = signRefreshToken(user);
-  res.status(201).json({ token, refreshToken, user: toPublicUser(user) });
+  res.status(201).json({ token, user: toPublicUser(user) });
 });
 
 router.post('/login', async (req, res) => {
@@ -95,28 +75,7 @@ router.post('/login', async (req, res) => {
     return res.status(401).json({ error: 'Invalid username or password' });
   }
   const token = signToken(user);
-  const refreshToken = signRefreshToken(user);
-  res.json({ token, refreshToken, user: toPublicUser(user) });
-});
-
-// Exchanges a valid, still-unexpired refresh token for a new short-lived
-// access token, without requiring the user to log in again every 15 minutes.
-router.post('/refresh', async (req, res) => {
-  const { refreshToken } = req.body || {};
-  if (!refreshToken) return res.status(400).json({ error: 'refreshToken is required' });
-  let payload;
-  try {
-    payload = jwt.verify(refreshToken, JWT_SECRET);
-  } catch {
-    return res.status(401).json({ error: 'Invalid or expired refresh token' });
-  }
-  if (payload.type !== 'refresh') return res.status(401).json({ error: 'Not a refresh token' });
-
-  const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [payload.id]);
-  const user = rows[0];
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  const token = signToken(user);
-  res.json({ token });
+  res.json({ token, user: toPublicUser(user) });
 });
 
 router.get('/me', requireAuth, async (req, res) => {

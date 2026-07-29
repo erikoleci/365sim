@@ -1,15 +1,11 @@
 // server/providers/registry.js
 //
-// Single place where all odds provider adapters are registered.
-// - getActiveProvider(): the PRIMARY match source (drives the matches list).
-// - getEnrichmentProviders(): secondary sources that top up bookmaker odds
-//   or push live scores onto matches already cached by the primary source.
-// Adding a new primary provider = write one adapter + register() it +
-// flip ODDS_PROVIDER env var. Adding a new enrichment source = same,
-// just push it into ALL_ENRICHMENT_ADAPTERS instead.
+// Single place where all odds provider adapters are registered. The rest
+// of the app calls getActiveProvider() / getProvider(name) instead of
+// importing a specific provider directly — this is what makes "add a new
+// odds API" a one-file change instead of a codebase-wide refactor.
 
 import { TheOddsApiAdapter } from './TheOddsApiAdapter.js';
-import { ALL_ENRICHMENT_ADAPTERS } from './EnrichmentAdapters.js';
 
 const providers = new Map();
 
@@ -18,7 +14,6 @@ function register(adapter) {
 }
 
 register(new TheOddsApiAdapter());
-ALL_ENRICHMENT_ADAPTERS.forEach(register);
 
 // Example for the future — uncomment and implement when ready:
 // import { SportradarAdapter } from './SportradarAdapter.js';
@@ -36,10 +31,6 @@ export function getProvider(name) {
 
 export function getActiveProvider() {
   return getProvider(ACTIVE_PROVIDER);
-}
-
-export function getEnrichmentProviders() {
-  return ALL_ENRICHMENT_ADAPTERS;
 }
 
 export function listRegisteredProviders() {

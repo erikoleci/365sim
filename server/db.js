@@ -99,21 +99,6 @@ export async function initDb() {
     );
   `);
 
-  // Indexes for the query patterns actually used across bets.js, admin.js,
-  // and matches.js — without these, every list/lookup does a sequential
-  // scan once table sizes grow past a few hundred rows.
-  await pool.query(`
-    CREATE INDEX IF NOT EXISTS idx_bets_user_id ON bets(user_id);
-    CREATE INDEX IF NOT EXISTS idx_bets_status ON bets(status);
-    CREATE INDEX IF NOT EXISTS idx_bets_created_at ON bets(created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_bet_selections_bet_id ON bet_selections(bet_id);
-    CREATE INDEX IF NOT EXISTS idx_bet_selections_match_id ON bet_selections(match_id);
-    CREATE INDEX IF NOT EXISTS idx_matches_cache_status ON matches_cache(status);
-    CREATE INDEX IF NOT EXISTS idx_matches_cache_league ON matches_cache(league);
-    CREATE INDEX IF NOT EXISTS idx_matches_cache_start_time ON matches_cache(start_time);
-    CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at DESC);
-  `);
-
   // Seed test accounts if the table is empty. These are for LOCAL TESTING
   // ONLY — weak, predictable credentials. Change or remove before letting
   // real users in.
