@@ -1,10 +1,10 @@
 import express from 'express';
 import pool from '../db.js';
-import { getActiveProvider } from '../providers/registry.js';
+import { getActiveProvider, getEnrichmentProviders } from '../providers/registry.js';
 
 // This route no longer knows anything about The Odds API, odds-api.io,
-// oddspapi, bsd, or highlightly directly. It only talks to the active
-// OddsProvider adapter (see providers/registry.js). Swapping or adding a
+// oddspapi, bsd, or highlightly directly. It only talks to registered
+// OddsProvider adapters (see providers/registry.js). Swapping or adding a
 // provider never requires touching this file.
 const router = express.Router();
 
@@ -23,6 +23,14 @@ router.get('/', async (req, res) => {
   try {
     const provider = getActiveProvider();
     const matches = await provider.listMatches({ league: req.query.league });
+
+    // Enrichment providers (extra bookmaker odds, live scores, Albania
+    // Superliga primary coverage) top up matches_cache as a side effect;
+    // failures here are logged but never block the primary response.
+    for (const enricher of getEnrichmentProviders()) {
+      await enricher.refreshOdds();
+    }
+
     res.json({ matches, hasLiveApiKey: true });
   } catch (err) {
     console.error('Error refreshing odds:', err.message);

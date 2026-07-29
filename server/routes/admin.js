@@ -25,8 +25,16 @@ function toPublicUser(row) {
 // --- USERS ---
 
 router.get('/users', async (req, res) => {
-  const { rows: users } = await pool.query('SELECT * FROM users');
-  res.json({ users: users.map(toPublicUser) });
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize, 10) || 50));
+  const offset = (page - 1) * pageSize;
+
+  const { rows: countRows } = await pool.query('SELECT COUNT(*)::int AS c FROM users');
+  const { rows: users } = await pool.query('SELECT * FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2', [pageSize, offset]);
+  res.json({
+    users: users.map(toPublicUser),
+    pagination: { page, pageSize, total: countRows[0].c, totalPages: Math.ceil(countRows[0].c / pageSize) },
+  });
 });
 
 router.post('/users', async (req, res) => {
@@ -89,7 +97,10 @@ router.post('/users/:id/reset-password', async (req, res) => {
 // --- BETS (global view + cancel) ---
 
 router.get('/bets', async (req, res) => {
-  const { rows: bets } = await pool.query('SELECT * FROM bets ORDER BY created_at DESC');
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize, 10) || 50));
+  const offset = (page - 1) * pageSize;
+  const { rows: bets } = await pool.query('SELECT * FROM bets ORDER BY created_at DESC LIMIT $1 OFFSET $2', [pageSize, offset]);
   const withDetails = await Promise.all(
     bets.map(async (b) => {
       const { rows: selections } = await pool.query('SELECT * FROM bet_selections WHERE bet_id = $1', [b.id]);
