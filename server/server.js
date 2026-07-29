@@ -54,6 +54,20 @@ app.use('/api/matches', matchesRouter);
 app.use('/api/bets', betsRouter);
 app.use('/api/admin', adminRouter);
 
+// Catch-all error handler: any unhandled error thrown/rejected inside a route
+// (e.g. Postgres unreachable, quota exceeded) returns a clean 503 instead of
+// crashing the entire Node process (which was causing full 502s + restart
+// loops on transient DB issues).
+app.use((err, req, res, next) => {
+  console.error('[unhandled route error]', err.message);
+  if (res.headersSent) return next(err);
+  res.status(503).json({ error: 'Service temporarily unavailable. Please try again shortly.' });
+});
+
+process.on('unhandledRejection', (err) => {
+  console.error('[unhandledRejection]', err);
+});
+
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 // Serve the built frontend (npm run build -> dist/) from the same origin/process
