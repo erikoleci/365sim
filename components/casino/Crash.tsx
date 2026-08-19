@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { placeCasinoWager, settleCasinoWager } from '../../services/api';
 
 interface CrashProps {
   onBalanceUpdate: (amount: number) => void;
@@ -12,13 +13,27 @@ const Crash: React.FC<CrashProps> = ({ onBalanceUpdate, userBalance, onClose }) 
   const [stake, setStake] = useState(10);
   const [crashPoint, setCrashPoint] = useState(0);
   const [cashedAt, setCashedAt] = useState<number | null>(null);
+  const wagerIdRef = useRef<string | null>(null);
+  const balanceAfterWagerRef = useRef<number>(0);
+  const settledRef = useRef<boolean>(false);
   
   const requestRef = useRef<number>(0);
   const startTimeRef = useRef<number>(0);
 
-  const startGame = () => {
+  const startGame = async () => {
     if (userBalance < stake) return;
-    onBalanceUpdate(-stake);
+
+    let balance: number;
+    try {
+      const res = await placeCasinoWager('crash', stake);
+      wagerIdRef.current = res.wagerId;
+      balance = res.balance;
+      balanceAfterWagerRef.current = balance;
+      settledRef.current = false;
+      onBalanceUpdate(balance - userBalance);
+    } catch {
+      return;
+    }
     
     // Determine crash point (Weighted randomness)
     // Most games crash early. 
@@ -43,6 +58,17 @@ const Crash: React.FC<CrashProps> = ({ onBalanceUpdate, userBalance, onClose }) 
     requestRef.current = requestAnimationFrame(tick);
   };
 
+  const settleWager = async (multiplier: number) => {
+      if (!wagerIdRef.current || settledRef.current) return;
+      settledRef.current = true;
+      try {
+          const { balance } = await settleCasinoWager(wagerIdRef.current, multiplier);
+          onBalanceUpdate(balance - balanceAfterWagerRef.current);
+      } catch {
+          // balance already reflects the optimistic local deduction; nothing further to do here
+      }
+  };
+
   const tick = () => {
     const elapsed = (Date.now() - startTimeRef.current) / 1000;
     // Growth function: e^(0.15 * t) - roughly standard crash curve speed
@@ -52,6 +78,7 @@ const Crash: React.FC<CrashProps> = ({ onBalanceUpdate, userBalance, onClose }) 
         setMultiplier(crashPoint);
         setGameState('CRASHED');
         cancelAnimationFrame(requestRef.current!);
+        settleWager(0); // crashed before cashing out — wager resolves as LOST, no payout
     } else {
         setMultiplier(currentMult);
         requestRef.current = requestAnimationFrame(tick);
@@ -63,8 +90,7 @@ const Crash: React.FC<CrashProps> = ({ onBalanceUpdate, userBalance, onClose }) 
       cancelAnimationFrame(requestRef.current!);
       setGameState('CASHED_OUT');
       setCashedAt(multiplier);
-      const win = stake * multiplier;
-      onBalanceUpdate(win);
+      settleWager(multiplier);
   };
 
   // Cleanup on unmount

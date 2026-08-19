@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { placeCasinoWager, settleCasinoWager } from '../../services/api';
 
 interface SlotMachineProps {
   onBalanceUpdate: (amount: number) => void;
@@ -22,18 +23,31 @@ const SlotMachine: React.FC<SlotMachineProps> = ({ onBalanceUpdate, userBalance,
   const [stake, setStake] = useState(10);
   const [message, setMessage] = useState('GOOD LUCK!');
   const [winAmount, setWinAmount] = useState(0);
+  const [wagerId, setWagerId] = useState<string | null>(null);
+  const [balanceAfterWager, setBalanceAfterWager] = useState(0);
 
-  const spin = () => {
+  const spin = async () => {
     if (userBalance < stake) {
       setMessage('INSUFFICIENT FUNDS');
       return;
     }
     if (isSpinning) return;
 
+    let balance: number;
+    try {
+      const res = await placeCasinoWager('slots', stake);
+      setWagerId(res.wagerId);
+      balance = res.balance;
+      setBalanceAfterWager(balance);
+      onBalanceUpdate(balance - userBalance);
+    } catch (err: any) {
+      setMessage(err?.message || 'Could not place bet');
+      return;
+    }
+
     setIsSpinning(true);
     setWinAmount(0);
     setMessage('SPINNING...');
-    onBalanceUpdate(-stake);
 
     // Animation simulation
     let intervalCount = 0;
@@ -46,12 +60,12 @@ const SlotMachine: React.FC<SlotMachineProps> = ({ onBalanceUpdate, userBalance,
       intervalCount++;
       if (intervalCount > 10) {
         clearInterval(interval);
-        finalizeSpin();
+        finalizeSpin(balance);
       }
     }, 100);
   };
 
-  const finalizeSpin = () => {
+  const finalizeSpin = async (balanceBeforeSettle: number) => {
     // Generate final result
     // Slight bias towards losing for realism, but decent chance to win
     const r1 = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
@@ -61,14 +75,22 @@ const SlotMachine: React.FC<SlotMachineProps> = ({ onBalanceUpdate, userBalance,
     setReels([r1, r2, r3]);
     setIsSpinning(false);
 
-    if (r1 === r2 && r2 === r3) {
-      const multiplier = PAYOUTS[r1];
+    const multiplier = (r1 === r2 && r2 === r3) ? PAYOUTS[r1] : 0;
+
+    if (!wagerId) return; // shouldn't happen — spin() always sets it first
+    try {
+      const { balance } = await settleCasinoWager(wagerId, multiplier);
+      onBalanceUpdate(balance - balanceBeforeSettle);
+    } catch (err: any) {
+      setMessage(err?.message || 'Could not settle wager');
+      return;
+    }
+
+    if (multiplier > 0) {
       const win = stake * multiplier;
       setWinAmount(win);
-      onBalanceUpdate(win);
       setMessage(`BIG WIN! ${win} L`);
     } else if (r1 === r2 || r2 === r3 || r1 === r3) {
-      // Small win for 2 matches? Optional. Let's stick to 3 for simplicity or maybe refund
       setMessage('NO WIN');
     } else {
       setMessage('TRY AGAIN');

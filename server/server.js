@@ -7,9 +7,10 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import rateLimit from 'express-rate-limit';
 import authRouter from './routes/auth.js';
-import matchesRouter from './routes/matches.js';
+import matchesRouter, { startBackgroundRefresh } from './routes/matches.js';
 import betsRouter from './routes/bets.js';
 import adminRouter from './routes/admin.js';
+import casinoRouter from './routes/casino.js';
 import { initDb } from './db.js';
 
 let dbReady = false;
@@ -55,6 +56,7 @@ app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/matches', matchesRouter);
 app.use('/api/bets', betsRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/casino', casinoRouter);
 
 // Catch-all error handler: any unhandled error thrown/rejected inside a route
 // (e.g. Postgres unreachable, quota exceeded) returns a clean 503 instead of
@@ -95,6 +97,7 @@ async function start() {
     await initDb();
     dbReady = true;
     console.log('[db] connected and initialized');
+    startBackgroundRefresh();
   } catch (err) {
     dbReady = false;
     console.error('[db] init failed; starting server without database:', err);

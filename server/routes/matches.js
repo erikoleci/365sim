@@ -191,6 +191,46 @@ async function refreshLeagueScores(leagueKey) {
   }
 }
 
+// Refreshes odds/scores for the top leagues plus every secondary provider.
+// Each individual refresh call is already internally throttled (see
+// ODDS_REFRESH_MS / SCORES_REFRESH_MS / the providers' own timers), so
+// calling this often is cheap — it's a no-op most of the time. This used to
+// run inline inside GET / on every page load; it now runs on its own
+// interval so a normal user request never waits on 5+ outbound API calls.
+async function refreshTopLeagues() {
+  if (!ODDS_API_KEY) return;
+  try {
+    const leagues = await getSoccerLeagues();
+    const targetLeagues = leagues.filter(isTopLeague);
+
+    for (const l of targetLeagues) {
+      await refreshLeagueOdds(l.key);
+      await refreshLeagueScores(l.key);
+    }
+
+    lastTopLeagueKeys = targetLeagues.map((l) => l.key);
+    await setKV('lastTopLeagueKeys', lastTopLeagueKeys);
+
+    await refreshOddsPapi();
+    await refreshBsd();
+    await refreshHighlightly();
+    await refreshOddsApiIo();
+    await refreshPrimaryLeagues();
+  } catch (err) {
+    console.error('Error refreshing odds:', err.message);
+  }
+}
+
+const BACKGROUND_REFRESH_INTERVAL_MS = 10 * 60 * 1000; // 10 min trigger cadence; actual work is gated by each refresher's own throttle
+let backgroundRefreshStarted = false;
+
+export function startBackgroundRefresh() {
+  if (backgroundRefreshStarted) return;
+  backgroundRefreshStarted = true;
+  refreshTopLeagues(); // fire-and-forget, warms the cache on boot
+  setInterval(refreshTopLeagues, BACKGROUND_REFRESH_INTERVAL_MS);
+}
+
 router.get('/leagues', async (req, res) => {
   try {
     const leagues = await getSoccerLeagues();
@@ -205,35 +245,29 @@ router.get('/', async (req, res) => {
     return res.json({ matches: [], hasLiveApiKey: false });
   }
 
-  try {
-    const leagues = await getSoccerLeagues();
-    const targetLeagues = req.query.league
-      ? leagues.filter((l) => l.key === req.query.league)
-      : leagues.filter(isTopLeague);
-
-    for (const l of targetLeagues) {
-      await refreshLeagueOdds(l.key);
-      await refreshLeagueScores(l.key);
+  // Explicit single-league filter: still refreshed on demand (narrower,
+  // far less frequent than the default page load, and already
+  // self-throttled), so a filtered request for a league outside the
+  // top-leagues background set still gets populated.
+  if (req.query.league) {
+    try {
+      const leagues = await getSoccerLeagues();
+      const target = leagues.find((l) => l.key === req.query.league);
+      if (target) {
+        await refreshLeagueOdds(target.key);
+        await refreshLeagueScores(target.key);
+      }
+    } catch (err) {
+      console.error('Error refreshing odds for league filter:', err.message);
     }
 
-    if (!req.query.league) {
-      lastTopLeagueKeys = targetLeagues.map((l) => l.key);
-      await setKV('lastTopLeagueKeys', lastTopLeagueKeys);
-    }
-    await refreshOddsPapi();
-    await refreshBsd();
-    await refreshHighlightly();
-    await refreshOddsApiIo();
-    await refreshPrimaryLeagues();
-  } catch (err) {
-    console.error('Error refreshing odds:', err.message);
+    const { rows } = await pool.query('SELECT * FROM matches_cache WHERE league = $1 ORDER BY start_time ASC', [req.query.league]);
+    return res.json({ matches: rows.map(mapEventToMatch), hasLiveApiKey: true });
   }
 
-  const { rows } = req.query.league
-    ? await pool.query('SELECT * FROM matches_cache WHERE league = $1 ORDER BY start_time ASC', [req.query.league])
-    : lastTopLeagueKeys.length
-      ? await pool.query('SELECT * FROM matches_cache WHERE league = ANY($1::text[]) ORDER BY start_time ASC', [[...lastTopLeagueKeys, 'oddsapiio_albania_superiore']])
-      : await pool.query('SELECT * FROM matches_cache ORDER BY start_time ASC');
+  const { rows } = lastTopLeagueKeys.length
+    ? await pool.query('SELECT * FROM matches_cache WHERE league = ANY($1::text[]) ORDER BY start_time ASC', [[...lastTopLeagueKeys, 'oddsapiio_albania_superiore']])
+    : await pool.query('SELECT * FROM matches_cache ORDER BY start_time ASC');
 
   res.json({ matches: rows.map(mapEventToMatch), hasLiveApiKey: true });
 });

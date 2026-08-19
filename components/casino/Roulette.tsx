@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { placeCasinoWager, settleCasinoWager } from '../../services/api';
 
 interface RouletteProps {
   onBalanceUpdate: (amount: number) => void;
@@ -43,65 +44,64 @@ const Roulette: React.FC<RouletteProps> = ({ onBalanceUpdate, userBalance, onClo
       setMessage('Bets cleared');
   };
 
-  const spinWheel = () => {
+  const spinWheel = async () => {
     if (totalBet === 0) {
         setMessage('Place a bet first');
         return;
     }
     if (spinning) return;
 
-    // Deduct Balance Immediately
-    onBalanceUpdate(-totalBet);
-    setSpinning(true);
-    setMessage('No more bets...');
-    setResultNumber(null);
+    // Persist the wager server-side first (deducts + records it in the DB),
+    // instead of only mutating local React state. If this fails (e.g. the
+    // balance shown locally is stale), we don't spin at all.
+    let wagerId: string;
+    try {
+        const currentBets = bets;
+        const { wagerId: id, balance } = await placeCasinoWager('roulette', totalBet);
+        wagerId = id;
+        onBalanceUpdate(balance - userBalance);
+        setSpinning(true);
+        setMessage('No more bets...');
+        setResultNumber(null);
 
-    // --- RIGGED LOGIC ---
-    // 1. Identify all numbers that would cause a win
-    const winningNumbers = new Set<number>();
+        // Fair, uniformly random result on a single-zero European wheel (0-36).
+        // The house edge comes entirely from the standard payout table below
+        // (a single number pays 35:1, i.e. the true odds would be 36:1) —
+        // exactly like a real wheel — not from filtering out numbers the
+        // player covered.
+        const result = Math.floor(Math.random() * 37);
 
-    // Check specific number bets
-    Object.keys(bets).forEach(key => {
-        if (!isNaN(parseInt(key))) {
-            winningNumbers.add(parseInt(key));
-        }
-        if (key === 'RED') {
-            RED_NUMBERS.forEach(n => winningNumbers.add(n));
-        }
-        if (key === 'BLACK') {
-            NUMBERS.forEach(n => {
-                if (n !== 0 && !RED_NUMBERS.includes(n)) winningNumbers.add(n);
+        setTimeout(async () => {
+            setResultNumber(result);
+            setSpinning(false);
+
+            // Resolve payouts for every spot the player covered this round.
+            let winnings = 0;
+            Object.entries(currentBets).forEach(([spot, amount]) => {
+                if (!isNaN(parseInt(spot))) {
+                    if (parseInt(spot) === result) winnings += amount * 36; // 35:1 plus stake back
+                    return;
+                }
+                if (spot === 'RED' && RED_NUMBERS.includes(result)) winnings += amount * 2;
+                if (spot === 'BLACK' && result !== 0 && !RED_NUMBERS.includes(result)) winnings += amount * 2;
+                if (spot === 'EVEN' && result !== 0 && result % 2 === 0) winnings += amount * 2;
+                if (spot === 'ODD' && result !== 0 && result % 2 !== 0) winnings += amount * 2;
             });
-        }
-        if (key === 'EVEN') {
-            NUMBERS.forEach(n => { if (n !== 0 && n % 2 === 0) winningNumbers.add(n); });
-        }
-        if (key === 'ODD') {
-            NUMBERS.forEach(n => { if (n !== 0 && n % 2 !== 0) winningNumbers.add(n); });
-        }
-    });
 
-    // 2. Filter available numbers to find LOSING numbers
-    // If the user covers EVERYTHING (rare), we force 0 (House edge) or just random if they covered 0 too.
-    let losingNumbers = NUMBERS.filter(n => !winningNumbers.has(n));
-    
-    // Fallback: If they somehow bet on literally everything, just pick a number and we will just say "Bad Luck" 
-    // (In reality, if they bet everything, they lose money on the 0 split anyway, but let's stick to the "no win" prompt).
-    if (losingNumbers.length === 0) {
-        // Technically impossible to cover everything with profit, but let's just pick 0
-        losingNumbers = [0]; 
+            const multiplier = winnings / totalBet; // server re-caps this against the game's real max payout
+            const { balance: settledBalance } = await settleCasinoWager(wagerId, multiplier);
+            onBalanceUpdate(settledBalance - balance);
+
+            if (winnings > 0) {
+                setMessage(`You won ${winnings.toFixed(2)}!`);
+            } else {
+                setMessage('House Wins.');
+            }
+            setBets({});
+        }, 2000);
+    } catch (err: any) {
+        setMessage(err?.message || 'Could not place bet');
     }
-
-    // 3. Select a rigged result
-    const forcedResult = losingNumbers[Math.floor(Math.random() * losingNumbers.length)];
-
-    // Animation
-    setTimeout(() => {
-        setResultNumber(forcedResult);
-        setSpinning(false);
-        setMessage('House Wins.');
-        setBets({});
-    }, 2000);
   };
 
   return (

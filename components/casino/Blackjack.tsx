@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { placeCasinoWager, settleCasinoWager } from '../../services/api';
 
 interface BlackjackProps {
   onBalanceUpdate: (amount: number) => void;
@@ -30,6 +31,7 @@ const Blackjack: React.FC<BlackjackProps> = ({ onBalanceUpdate, userBalance, onC
   const [dealerHand, setDealerHand] = useState<Card[]>([]);
   const [stake, setStake] = useState(25);
   const [message, setMessage] = useState('Place your bet');
+  const [wagerId, setWagerId] = useState<string | null>(null);
   
   // Create and Shuffle Deck
   const createDeck = () => {
@@ -55,12 +57,22 @@ const Blackjack: React.FC<BlackjackProps> = ({ onBalanceUpdate, userBalance, onC
     return score;
   };
 
-  const dealGame = () => {
+  const dealGame = async () => {
     if (userBalance < stake) {
         setMessage('Insufficient Funds');
         return;
     }
-    onBalanceUpdate(-stake);
+    let balanceAfterWager: number;
+    try {
+        const { wagerId: id, balance } = await placeCasinoWager('blackjack', stake);
+        setWagerId(id);
+        balanceAfterWager = balance;
+        onBalanceUpdate(balance - userBalance);
+    } catch (err: any) {
+        setMessage(err?.message || 'Could not place bet');
+        return;
+    }
+
     const d = createDeck();
     const pHand = [d.pop()!, d.pop()!];
     const dHand = [d.pop()!, d.pop()!];
@@ -74,9 +86,9 @@ const Blackjack: React.FC<BlackjackProps> = ({ onBalanceUpdate, userBalance, onC
     // Check Instant Blackjack
     if (calcScore(pHand) === 21) {
         if (calcScore(dHand) === 21) {
-            endGame('PUSH', pHand, dHand, 1); // Push
+            endGame('PUSH', pHand, dHand, 1, balanceAfterWager); // Push
         } else {
-            endGame('BLACKJACK', pHand, dHand, 2.5); // 3:2 payout (stake back + 1.5x)
+            endGame('BLACKJACK', pHand, dHand, 2.5, balanceAfterWager); // 3:2 payout (stake back + 1.5x)
         }
     }
   };
@@ -88,7 +100,7 @@ const Blackjack: React.FC<BlackjackProps> = ({ onBalanceUpdate, userBalance, onC
     const score = calcScore(newHand);
     
     if (score > 21) {
-        endGame('BUST', newHand, dealerHand, 0);
+        endGame('BUST', newHand, dealerHand, 0, userBalance);
     }
   };
 
@@ -108,21 +120,25 @@ const Blackjack: React.FC<BlackjackProps> = ({ onBalanceUpdate, userBalance, onC
     const dScore = calcScore(dHand);
 
     if (dScore > 21) {
-        endGame('DEALER BUST', playerHand, dHand, 2);
+        endGame('DEALER BUST', playerHand, dHand, 2, userBalance);
     } else if (pScore > dScore) {
-        endGame('YOU WIN', playerHand, dHand, 2);
+        endGame('YOU WIN', playerHand, dHand, 2, userBalance);
     } else if (pScore === dScore) {
-        endGame('PUSH', playerHand, dHand, 1);
+        endGame('PUSH', playerHand, dHand, 1, userBalance);
     } else {
-        endGame('DEALER WINS', playerHand, dHand, 0);
+        endGame('DEALER WINS', playerHand, dHand, 0, userBalance);
     }
   };
 
-  const endGame = (msg: string, pHand: Card[], dHand: Card[], multiplier: number) => {
+  const endGame = async (msg: string, pHand: Card[], dHand: Card[], multiplier: number, baseBalance: number) => {
     setGameState('FINISHED');
     setMessage(msg);
-    if (multiplier > 0) {
-        onBalanceUpdate(Number((stake * multiplier).toFixed(2)));
+    if (!wagerId) return; // shouldn't happen — dealGame always sets it first
+    try {
+        const { balance } = await settleCasinoWager(wagerId, multiplier);
+        onBalanceUpdate(balance - baseBalance);
+    } catch (err: any) {
+        setMessage(err?.message || 'Could not settle wager');
     }
   };
 

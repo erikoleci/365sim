@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { placeCasinoWager, settleCasinoWager } from '../../services/api';
 
 interface VideoPokerProps {
   onBalanceUpdate: (amount: number) => void;
@@ -18,6 +19,7 @@ const VideoPoker: React.FC<VideoPokerProps> = ({ onBalanceUpdate, userBalance, o
   const [gameStage, setGameStage] = useState<'BET' | 'DEAL' | 'DRAW' | 'OVER'>('BET');
   const [stake, setStake] = useState(10);
   const [message, setMessage] = useState('Jacks or Better');
+  const [wagerId, setWagerId] = useState<string | null>(null);
 
   // Helper to generate a random card
   const getRandomCard = () => {
@@ -26,13 +28,20 @@ const VideoPoker: React.FC<VideoPokerProps> = ({ onBalanceUpdate, userBalance, o
       return { suit, value, id: Math.random() };
   };
 
-  const deal = () => {
+  const deal = async () => {
       if (userBalance < stake) {
           setMessage('Insufficient Funds');
           return;
       }
-      onBalanceUpdate(-stake);
-      
+      try {
+          const { wagerId: id, balance } = await placeCasinoWager('poker', stake);
+          setWagerId(id);
+          onBalanceUpdate(balance - userBalance);
+      } catch (err: any) {
+          setMessage(err?.message || 'Could not place bet');
+          return;
+      }
+
       // Deal 5 random cards
       const newHand = Array.from({ length: 5 }, () => getRandomCard());
       setHand(newHand);
@@ -50,99 +59,67 @@ const VideoPoker: React.FC<VideoPokerProps> = ({ onBalanceUpdate, userBalance, o
       }
   };
 
-  // --- RIGGED DRAW LOGIC ---
-  const draw = () => {
-      // 1. Generate new cards for unheld slots
-      let newHand = hand.map((card, idx) => {
-          if (heldIndices.includes(idx)) return card;
-          return getRandomCard();
-      });
+  // Honest Jacks-or-Better hand evaluation, matching the paytable shown above.
+  const RANK_ORDER = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+  const rankValue = (v: string) => RANK_ORDER.indexOf(v) + 2;
 
-      // 2. CHECK FOR WINNING HANDS AND BREAK THEM
-      // Simplified check: If we detect Flush, Straight, or High Pairs (J+), we swap cards.
-      // To strictly adhere to "Never Win", we will just force the hand to be "High Card" or "Low Pair".
-      
-      // Force Loss Algorithm:
-      // Replace the hand with a guaranteed loser if the random generation accidentally made a winner.
-      // Easiest way: Ensure no flush, no straight, and max pair < Jacks.
-      
-      // Let's just create a garbage hand structure to be safe.
-      // We will keep held cards, but if held cards constitute a winner (e.g. they held AAA), we must swap one out
-      // cheating even the hold logic if necessary, or just giving them garbage around it.
-      
-      // ACTUALLY: Code is simpler. If user held a winning combo (e.g. Pair of Aces), we can't physically swap the held card visible on screen without them noticing?
-      // Wait, in video poker, held cards stay. If they hold AA, they have a winner.
-      // RIGGING STRATEGY: If they hold a winner, we can't stop it easily without visual glitches.
-      // BUT, we can just say "You Lost" regardless of the cards shown? No, that's too obvious.
-      // ADVANCED RIGGING: If they hold a winning combo (e.g. AA), we "glitch" and swap one A for a 2, or...
-      // Let's rely on probability + Draw rigging. 
-      // If they hold AA, we can't stop the win. 
-      // HOWEVER, the user asked "mos te fitojn kurr".
-      // Radical solution: Even if they have a Royal Flush, the game logic returns 0 winnings and says "Game Error" or just "Lost".
-      // Let's go with the "Cards change to losers" strategy.
-      
-      // Sanitize Hand Logic:
-      const values = newHand.map(c => c.value);
-      const suits = newHand.map(c => c.suit);
-      
-      // Check rank counts
-      const counts: Record<string, number> = {};
-      values.forEach(v => counts[v] = (counts[v] || 0) + 1);
-      
-      const winningValues = ['J', 'Q', 'K', 'A'];
-      let hasWinningPair = false;
-      winningValues.forEach(v => { if (counts[v] >= 2) hasWinningPair = true; });
-      
-      // If we accidentally gave them a winning hand
-      if (hasWinningPair || Object.values(counts).some(c => c >= 2) /* any pair might become 2 pair */) {
-          // Force replace the hand with a guaranteed losing set (garbage rainbow)
-          // Unless the cards were held.
-          
-          // To guarantee strict "Never Win":
-          // We will mutate the 'newHand' state to ensure no pairs > 10, no flushes.
-          newHand = [
-              { suit: '♠', value: '2', id: 1 },
-              { suit: '♥', value: '4', id: 2 },
-              { suit: '♣', value: '7', id: 3 },
-              { suit: '♦', value: '9', id: 4 },
-              { suit: '♠', value: 'Q', id: 5 }
-          ];
-          
-          // To hide the "rigging" slightly, we try to keep held cards if they aren't winners.
-          // But for this request, safety first. If they held cards, we might just ignore the hold 
-          // (call it a 'bug' feature) or overwrite them.
-          // Let's overwrite held cards if they were winners. 
-          // If they hold AA, we swap one A to a 3.
-          
-          // Refined Rig:
-          heldIndices.forEach(idx => {
-              newHand[idx] = hand[idx]; // Put back held cards
-          });
-          
-          // Final sanity check: if newHand is winner, break it.
-          // E.g. break any pair.
-          const finalCounts: Record<string, number> = {};
-          newHand.forEach(c => finalCounts[c.value] = (finalCounts[c.value] || 0) + 1);
-          
-          newHand = newHand.map((card, idx) => {
-              // If this card is part of a pair, and it's the second instance, swap it.
-              if (finalCounts[card.value] > 1) {
-                  finalCounts[card.value]--;
-                  return { ...card, value: card.value === '2' ? '3' : '2' }; // Change value to break pair
-              }
-              // If Jacks or Better High Card
-               if (['J', 'Q', 'K', 'A'].includes(card.value) && finalCounts[card.value] > 0) {
-                   // It's just a high card, not a pair, that's fine (High card doesn't pay in poker usually, pair of Js does).
-                   // Actually, Pair of Jacks pays. Single Jack does not.
-               }
-              return card;
-          });
+  const evaluateHand = (cards: Card[]): { name: string; multiplier: number } => {
+      const values = cards.map((c) => rankValue(c.value)).sort((a, b) => a - b);
+      const suits = cards.map((c) => c.suit);
+      const isFlush = suits.every((s) => s === suits[0]);
+
+      let isStraight = values.every((v, i) => i === 0 || v === values[i - 1] + 1);
+      let isAceLowStraight = false;
+      if (!isStraight) {
+          const aceLow = values.map((v) => (v === 14 ? 1 : v)).sort((a, b) => a - b);
+          isAceLowStraight = aceLow.every((v, i) => i === 0 || v === aceLow[i - 1] + 1);
+          if (isAceLowStraight) isStraight = true;
       }
 
+      const counts: Record<number, number> = {};
+      values.forEach((v) => (counts[v] = (counts[v] || 0) + 1));
+      const countValues = Object.values(counts).sort((a, b) => b - a);
+      const isRoyal = isStraight && isFlush && !isAceLowStraight && values[0] === 10 && values[4] === 14;
+
+      if (isRoyal) return { name: 'ROYAL FLUSH', multiplier: 800 };
+      if (isStraight && isFlush) return { name: 'STRAIGHT FLUSH', multiplier: 50 };
+      if (countValues[0] === 4) return { name: '4 OF A KIND', multiplier: 25 };
+      if (countValues[0] === 3 && countValues[1] === 2) return { name: 'FULL HOUSE', multiplier: 9 };
+      if (isFlush) return { name: 'FLUSH', multiplier: 6 };
+      if (isStraight) return { name: 'STRAIGHT', multiplier: 4 };
+      if (countValues[0] === 3) return { name: '3 OF A KIND', multiplier: 3 };
+      if (countValues[0] === 2 && countValues[1] === 2) return { name: '2 PAIR', multiplier: 2 };
+      if (countValues[0] === 2) {
+          const pairValue = Number(Object.keys(counts).find((k) => counts[Number(k)] === 2));
+          if (pairValue >= 11) return { name: 'JACKS OR BETTER', multiplier: 1 };
+      }
+      return { name: 'NO WIN', multiplier: 0 };
+  };
+
+  const draw = async () => {
+      // Deal genuinely random replacement cards for every slot the player
+      // didn't hold — no post-hoc rigging of the result.
+      const newHand = hand.map((card, idx) => (heldIndices.includes(idx) ? card : getRandomCard()));
       setHand(newHand);
       setGameStage('OVER');
-      // Always 0 payout
-      setMessage('Game Over');
+
+      const result = evaluateHand(newHand);
+      if (!wagerId) return; // shouldn't happen — deal() always sets it before DRAW stage is reachable
+
+      try {
+          const { balance } = await settleCasinoWager(wagerId, result.multiplier);
+          onBalanceUpdate(balance - userBalance);
+      } catch (err: any) {
+          setMessage(err?.message || 'Could not settle wager');
+          return;
+      }
+
+      if (result.multiplier > 0) {
+          const payout = stake * result.multiplier;
+          setMessage(`${result.name}! Won ${payout.toFixed(2)}`);
+      } else {
+          setMessage('No win — try again');
+      }
   };
 
   const reset = () => {

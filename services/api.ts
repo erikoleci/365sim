@@ -184,3 +184,21 @@ export async function adminSettleMatch(matchId: string, homeScore: number, awayS
     { method: 'POST', body: JSON.stringify({ homeScore, awayScore }) }
   );
 }
+
+// --- Casino ---
+
+export type CasinoGame = 'roulette' | 'blackjack' | 'slots' | 'crash' | 'baccarat' | 'poker';
+
+export async function placeCasinoWager(game: CasinoGame, stake: number): Promise<{ wagerId: string; balance: number }> {
+  return request<{ wagerId: string; balance: number }>('/casino/wager', {
+    method: 'POST',
+    body: JSON.stringify({ game, stake }),
+  });
+}
+
+export async function settleCasinoWager(wagerId: string, multiplier: number): Promise<{ balance: number; payout: number }> {
+  return request<{ balance: number; payout: number }>('/casino/settle', {
+    method: 'POST',
+    body: JSON.stringify({ wagerId, multiplier }),
+  });
+}

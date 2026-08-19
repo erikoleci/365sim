@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { placeCasinoWager, settleCasinoWager } from '../../services/api';
 
 interface BaccaratProps {
   onBalanceUpdate: (amount: number) => void;
@@ -62,7 +63,18 @@ const Baccarat: React.FC<BaccaratProps> = ({ onBalanceUpdate, userBalance, onClo
           return;
       }
 
-      onBalanceUpdate(-stake);
+      let balanceAfterWager: number;
+      let wagerId: string;
+      try {
+          const res = await placeCasinoWager('baccarat', stake);
+          wagerId = res.wagerId;
+          balanceAfterWager = res.balance;
+          onBalanceUpdate(res.balance - userBalance);
+      } catch (err: any) {
+          setMessage(err?.message || 'Could not place bet');
+          return;
+      }
+
       setGameState('DEALING');
       setMessage('Dealing...');
       setPlayerHand([]);
@@ -133,14 +145,21 @@ const Baccarat: React.FC<BaccaratProps> = ({ onBalanceUpdate, userBalance, onClo
       setWinner(result);
       setGameState('FINISHED');
 
-      // Payouts
-      let winAmount = 0;
-      if (result === selectedBet) {
-          if (result === 'PLAYER') winAmount = stake * 2;
-          if (result === 'BANKER') winAmount = stake * 1.95; // 5% commission
-          if (result === 'TIE') winAmount = stake * 9; // 8:1 usually
-          
-          onBalanceUpdate(Number(winAmount.toFixed(2)));
+      // Payouts — settled server-side against the wager placed above.
+      const multiplier = result === selectedBet
+          ? (result === 'PLAYER' ? 2 : result === 'BANKER' ? 1.95 : 9) // TIE pays 8:1
+          : 0;
+
+      try {
+          const { balance } = await settleCasinoWager(wagerId, multiplier);
+          onBalanceUpdate(balance - balanceAfterWager);
+      } catch (err: any) {
+          setMessage(err?.message || 'Could not settle wager');
+          return;
+      }
+
+      if (multiplier > 0) {
+          const winAmount = stake * multiplier;
           setMessage(`${result} WINS! You won ${winAmount.toFixed(2)}`);
       } else {
           setMessage(`${result} WINS! You lost.`);

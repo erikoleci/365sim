@@ -105,16 +105,23 @@ router.post('/bets/:id/cancel', async (req, res) => {
   const bet = rows[0];
   if (!bet) return res.status(404).json({ error: 'Bet not found' });
 
+  // Balance integrity: a PENDING bet's stake was deducted but nothing has
+  // resolved yet, so cancelling it must refund the stake. A WON bet already
+  // paid out (stake + winnings), so cancelling it must claw back that net
+  // payout. A LOST bet's stake was already correctly forfeited when it lost
+  // — there is no balance movement to reverse, so cancelling it must NOT
+  // refund anything (previously this fell through to the same branch as
+  // PENDING and incorrectly refunded the stake, effectively minting free
+  // balance any time an admin cancelled a losing ticket).
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    // Refund stake only if it hasn't already been paid out as a win
-    if (bet.status !== 'WON') {
+    if (bet.status === 'PENDING') {
       await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [bet.stake, bet.user_id]);
-    } else {
-      // Was a win already credited (stake + winnings) — claw back the net winnings paid out
+    } else if (bet.status === 'WON') {
       await client.query('UPDATE users SET balance = balance - $1 WHERE id = $2', [bet.potential_return - bet.stake, bet.user_id]);
     }
+    // status === 'LOST' -> no balance change, just remove the record
     await client.query('DELETE FROM bet_selections WHERE bet_id = $1', [bet.id]);
     await client.query('DELETE FROM bets WHERE id = $1', [bet.id]);
     await client.query('COMMIT');
