@@ -5,7 +5,7 @@ import * as api from '../services/api';
 interface AdminPanelProps {
   users: User[];
   allBets: Bet[];
-  onCreateUser: (u: Omit<User, 'id' | 'role' | 'avatar'>) => void;
+  onCreateUser: (u: { name: string; username: string; password: string; balance: number }) => void;
   onDeleteUser: (userId: string) => void;
   onAddCredit: (userId: string, amount: number) => void;
   onResetPassword: (userId: string, newPass: string) => void;
@@ -212,8 +212,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                             <div>
                               <div className="font-bold">{u.name}</div>
                               <div className="text-xs text-brand-textMuted">@{u.username}</div>
-                              {/* Show current password for easy admin debugging in simulation */}
-                              <div className="text-[10px] text-brand-textMuted opacity-50">pw: {u.password}</div>
                             </div>
                           </div>
                         </td>

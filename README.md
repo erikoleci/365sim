@@ -57,12 +57,13 @@ Hapi faqen te `http://localhost:5173`.
 - ✅ Kuotat riverifikohen në server para se të pranohet basti (mbrojtje kundër kuotave të vjetruara)
 - ✅ Settlement i bastesh bazuar në rezultat real (jo simulim AI): automatik për 1X2/Totale/BTTS, override manual për tregje më komplekse
 - ✅ JWT + role-based access (admin vs user), rate-limiting kundër brute-force, helmet për HTTP headers
+- ✅ User-i mund të anulojë vetë një kupon **PENDING** brenda dritares kohore të lejuar (`POST /api/bets/:id/cancel`) — admin gjithashtu mund ta anulojë çdo kupon, pavarësisht statusit
 
 ## Kufizime të njohura (të qëllimshme, jo bug)
 
 - **Double Chance, Draw No Bet, Hendikep**: emërtimet e outcome-ve nga API ndryshojnë sipas bookmaker-it dhe s'janë testuar kundrejt të dhënave reale prodhimi — settlement-i i tyre kërkon konfirmim manual nga admin (`PATCH /api/admin/bet-selections/:id`) në vend që të hamendësohet logjikë e pakonfirmuar.
 - Plani falas i The Odds API ka **500 kërkesa/muaj** — backend-i cache-on kampionatet 6 orë dhe kuotat 5 minuta për ta respektuar këtë limit; mos e ul këtë interval pa kontrolluar header-in `x-requests-remaining`.
-- S'ka ende endpoint të dedikuar për user-in e zakonshëm të anulojë vetë një kupon (vetëm admin mund ta bëjë këtë tani).
+- S'ka pagesa reale, s'ka gateway pagesash — bilanci është plotësisht virtual.
 
 ## Build për prodhim
 

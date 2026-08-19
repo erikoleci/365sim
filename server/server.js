@@ -27,6 +27,18 @@ const app = express();
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 
+// Refuse to boot in production with the insecure default JWT secret — a
+// known hardcoded fallback would let anyone forge a valid admin token.
+// Development keeps working without a .env so local setup stays simple.
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  console.error(
+    'FATAL: JWT_SECRET is not set. Refusing to start in production with the ' +
+    'insecure hardcoded fallback secret. Set JWT_SECRET in your environment ' +
+    '(Render: Environment tab -> Generate) before starting the server.'
+  );
+  process.exit(1);
+}
+
 app.use(helmet());
 app.use(cors());
 app.use(express.json());
