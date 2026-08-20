@@ -1,20 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { casinoBlackjackDeal, casinoBlackjackHit, casinoBlackjackStand } from '../../services/api';
 
 interface BlackjackProps {
-  onBalanceUpdate: (amount: number) => void;
+  onSetBalance: (balance: number) => void;
   userBalance: number;
   onClose: () => void;
 }
 
-type Card = { suit: string; value: string; numValue: number };
-const SUITS = ['♠', '♥', '♦', '♣'];
-const VALUES = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+type Card = { suit: string; value: string; numValue: number } | null;
 
 const getCardColor = (suit: string) => (suit === '♥' || suit === '♦' ? 'text-red-500' : 'text-black');
 
 const CardView: React.FC<{ card: Card, hidden?: boolean }> = ({ card, hidden }) => (
-  <div className={`w-16 h-24 bg-white rounded flex flex-col items-center justify-center border-2 border-gray-300 shadow-md ${hidden ? 'bg-blue-800 border-white' : ''}`}>
-      {!hidden && (
+  <div className={`w-16 h-24 bg-white rounded flex flex-col items-center justify-center border-2 border-gray-300 shadow-md ${hidden || !card ? 'bg-blue-800 border-white' : ''}`}>
+      {!hidden && card && (
           <>
             <div className={`text-xl font-bold ${getCardColor(card.suit)}`}>{card.value}</div>
             <div className={`text-2xl ${getCardColor(card.suit)}`}>{card.suit}</div>
@@ -23,122 +22,75 @@ const CardView: React.FC<{ card: Card, hidden?: boolean }> = ({ card, hidden }) 
   </div>
 );
 
-const Blackjack: React.FC<BlackjackProps> = ({ onBalanceUpdate, userBalance, onClose }) => {
-  const [gameState, setGameState] = useState<'BETTING' | 'PLAYING' | 'DEALER_TURN' | 'FINISHED'>('BETTING');
-  const [deck, setDeck] = useState<Card[]>([]);
+const calcScore = (hand: Card[]) => {
+  const cards = hand.filter((c): c is NonNullable<Card> => c !== null);
+  let score = cards.reduce((acc, card) => acc + card.numValue, 0);
+  let aces = cards.filter(c => c.value === 'A').length;
+  while (score > 21 && aces > 0) {
+    score -= 10;
+    aces -= 1;
+  }
+  return score;
+};
+
+const Blackjack: React.FC<BlackjackProps> = ({ onSetBalance, userBalance, onClose }) => {
+  const [gameState, setGameState] = useState<'BETTING' | 'PLAYING' | 'FINISHED'>('BETTING');
   const [playerHand, setPlayerHand] = useState<Card[]>([]);
   const [dealerHand, setDealerHand] = useState<Card[]>([]);
   const [stake, setStake] = useState(25);
   const [message, setMessage] = useState('Place your bet');
-  
-  // Create and Shuffle Deck
-  const createDeck = () => {
-    const newDeck: Card[] = [];
-    for (const suit of SUITS) {
-      for (const val of VALUES) {
-        let num = parseInt(val);
-        if (['J', 'Q', 'K'].includes(val)) num = 10;
-        if (val === 'A') num = 11;
-        newDeck.push({ suit, value: val, numValue: num });
-      }
-    }
-    return newDeck.sort(() => Math.random() - 0.5);
-  };
+  const [roundId, setRoundId] = useState<string | null>(null);
 
-  const calcScore = (hand: Card[]) => {
-    let score = hand.reduce((acc, card) => acc + card.numValue, 0);
-    let aces = hand.filter(c => c.value === 'A').length;
-    while (score > 21 && aces > 0) {
-      score -= 10;
-      aces -= 1;
-    }
-    return score;
-  };
-
-  const dealGame = () => {
+  const dealGame = async () => {
     if (userBalance < stake) {
         setMessage('Insufficient Funds');
         return;
     }
-    onBalanceUpdate(-stake);
-    const d = createDeck();
-    const pHand = [d.pop()!, d.pop()!];
-    const dHand = [d.pop()!, d.pop()!];
-    
-    setDeck(d);
-    setPlayerHand(pHand);
-    setDealerHand(dHand);
-    setGameState('PLAYING');
-    setMessage('Hit or Stand?');
-
-    // Check Instant Blackjack
-    if (calcScore(pHand) === 21) {
-        if (calcScore(dHand) === 21) {
-            endGame('PUSH', pHand, dHand, 1); // Push
+    try {
+        const res = await casinoBlackjackDeal(stake);
+        setRoundId(res.roundId);
+        setPlayerHand(res.playerHand);
+        setDealerHand(res.dealerHand);
+        onSetBalance(res.balance);
+        if (res.status === 'FINISHED') {
+            setGameState('FINISHED');
+            setMessage(res.message || '');
         } else {
-            endGame('BLACKJACK', pHand, dHand, 2.5); // 3:2 payout (stake back + 1.5x)
+            setGameState('PLAYING');
+            setMessage('Hit or Stand?');
         }
+    } catch (err: any) {
+        setMessage(err?.message || 'Something went wrong');
     }
   };
 
-  const hit = () => {
-    const newCard = deck.pop()!;
-    const newHand = [...playerHand, newCard];
-    setPlayerHand(newHand);
-    const score = calcScore(newHand);
-    
-    if (score > 21) {
-        endGame('BUST', newHand, dealerHand, 0);
-    }
-  };
-
-  const stand = () => {
-    setGameState('DEALER_TURN');
-    let dHand = [...dealerHand];
-    let dDeck = [...deck];
-    
-    // Dealer logic: Hit on soft 17? Let's say stand on all 17s for simplicity
-    while (calcScore(dHand) < 17) {
-        dHand.push(dDeck.pop()!);
-    }
-    setDealerHand(dHand);
-    setDeck(dDeck);
-    
-    const pScore = calcScore(playerHand);
-    const dScore = calcScore(dHand);
-
-    if (dScore > 21) {
-        endGame('DEALER BUST', playerHand, dHand, 2);
-    } else if (pScore > dScore) {
-        endGame('YOU WIN', playerHand, dHand, 2);
-    } else if (pScore === dScore) {
-        endGame('PUSH', playerHand, dHand, 1);
-    } else {
-        endGame('DEALER WINS', playerHand, dHand, 0);
-    }
-  };
-
-  const endGame = (msg: string, pHand: Card[], dHand: Card[], multiplier: number) => {
-    // House-controlled outcome: a genuine player win (multiplier > 1) is only
-    // allowed ~1% of the time, and even then only for a small capped profit
-    // (5%-50% of stake) instead of the full 2x/2.5x blackjack payout.
-    const WIN_CHANCE = 0.01;
-    let finalMsg = msg;
-    let finalMultiplier = 0;
-    if (multiplier > 1) {
-        if (Math.random() < WIN_CHANCE) {
-            finalMultiplier = 1 + (0.05 + Math.random() * 0.45);
-        } else {
-            finalMsg = 'DEALER WINS';
+  const hit = async () => {
+    if (!roundId) return;
+    try {
+        const res = await casinoBlackjackHit(roundId);
+        setPlayerHand(res.playerHand);
+        setDealerHand(res.dealerHand);
+        if (res.status === 'FINISHED') {
+            setGameState('FINISHED');
+            setMessage(res.message || 'BUST');
+            if (typeof res.balance === 'number') onSetBalance(res.balance);
         }
-    } else {
-        finalMultiplier = multiplier; // push (1) or loss (0) pass through unchanged
+    } catch (err: any) {
+        setMessage(err?.message || 'Something went wrong');
     }
+  };
 
+  const stand = async () => {
+    if (!roundId) return;
     setGameState('FINISHED');
-    setMessage(finalMsg);
-    if (finalMultiplier > 0) {
-        onBalanceUpdate(Number((stake * finalMultiplier).toFixed(2)));
+    try {
+        const res = await casinoBlackjackStand(roundId);
+        setPlayerHand(res.playerHand);
+        setDealerHand(res.dealerHand);
+        setMessage(res.message);
+        onSetBalance(res.balance);
+    } catch (err: any) {
+        setMessage(err?.message || 'Something went wrong');
     }
   };
 
@@ -153,11 +105,11 @@ const Blackjack: React.FC<BlackjackProps> = ({ onBalanceUpdate, userBalance, onC
                     <div className="w-16 h-24 border-2 border-dashed border-white/20 rounded"></div>
                 ) : (
                     dealerHand.map((c, i) => (
-                        <CardView key={i} card={c} hidden={gameState === 'PLAYING' && i === 0} />
+                        <CardView key={i} card={c} hidden={c === null} />
                     ))
                 )}
            </div>
-           {gameState !== 'BETTING' && gameState !== 'PLAYING' && (
+           {gameState === 'FINISHED' && (
                <div className="text-white font-bold bg-black/40 inline-block px-3 rounded">{calcScore(dealerHand)}</div>
            )}
        </div>

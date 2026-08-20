@@ -1,66 +1,78 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { casinoCrashStart, casinoCrashStatus, casinoCrashCashout } from '../../services/api';
 
 interface CrashProps {
-  onBalanceUpdate: (amount: number) => void;
+  onSetBalance: (balance: number) => void;
   userBalance: number;
   onClose: () => void;
 }
 
-const Crash: React.FC<CrashProps> = ({ onBalanceUpdate, userBalance, onClose }) => {
+const Crash: React.FC<CrashProps> = ({ onSetBalance, userBalance, onClose }) => {
   const [multiplier, setMultiplier] = useState(1.00);
   const [gameState, setGameState] = useState<'IDLE' | 'RUNNING' | 'CRASHED' | 'CASHED_OUT'>('IDLE');
   const [stake, setStake] = useState(10);
-  const [crashPoint, setCrashPoint] = useState(0);
   const [cashedAt, setCashedAt] = useState<number | null>(null);
-  
+
   const requestRef = useRef<number>(0);
   const startTimeRef = useRef<number>(0);
+  const roundIdRef = useRef<string | null>(null);
 
-  const startGame = () => {
-    if (userBalance < stake) return;
-    onBalanceUpdate(-stake);
-    
-    // Determine crash point — house-controlled: ~1% of rounds get a small,
-    // genuinely reachable crash point (1.05x-1.5x, a small profit if cashed
-    // out in time), the other ~99% crash instantly at 1.00x before the
-    // player can react.
-    const WIN_CHANCE = 0.01;
-    let cp = 1.00;
-    if (Math.random() < WIN_CHANCE) {
-        cp = 1.05 + Math.random() * 0.45;
+  const startGame = async () => {
+    if (userBalance < stake || gameState === 'RUNNING') return;
+
+    try {
+      const { roundId, balance } = await casinoCrashStart(stake);
+      onSetBalance(balance);
+      roundIdRef.current = roundId;
+
+      // Brief authoritative check: the server already knows whether this
+      // round crashes instantly (the ~99% case) or is a real, reachable
+      // crash point (~1%) — ask once before animating so we don't fake a
+      // "running" state for a round that already crashed at 1.00x.
+      const status = await casinoCrashStatus(roundId);
+      if (status.crashed) {
+        setMultiplier(status.multiplier ?? 1.00);
+        setGameState('CRASHED');
+        return;
+      }
+
+      setGameState('RUNNING');
+      setMultiplier(1.00);
+      setCashedAt(null);
+      startTimeRef.current = Date.now();
+      requestRef.current = requestAnimationFrame(tick);
+    } catch (err) {
+      // Insufficient balance or network error — nothing to animate.
     }
-
-    setCrashPoint(cp);
-    setGameState('RUNNING');
-    setMultiplier(1.00);
-    setCashedAt(null);
-    startTimeRef.current = Date.now();
-    
-    requestRef.current = requestAnimationFrame(tick);
   };
 
   const tick = () => {
     const elapsed = (Date.now() - startTimeRef.current) / 1000;
-    // Growth function: e^(0.15 * t) - roughly standard crash curve speed
+    // Purely visual growth curve — the server independently decides, at
+    // cashout time, whether this round had actually crashed by then.
     const currentMult = Math.floor((Math.exp(0.15 * elapsed)) * 100) / 100;
-
-    if (currentMult >= crashPoint) {
-        setMultiplier(crashPoint);
-        setGameState('CRASHED');
-        cancelAnimationFrame(requestRef.current!);
-    } else {
-        setMultiplier(currentMult);
-        requestRef.current = requestAnimationFrame(tick);
-    }
+    setMultiplier(currentMult);
+    requestRef.current = requestAnimationFrame(tick);
   };
 
-  const cashOut = () => {
-      if (gameState !== 'RUNNING') return;
+  const cashOut = async () => {
+      if (gameState !== 'RUNNING' || !roundIdRef.current) return;
       cancelAnimationFrame(requestRef.current!);
-      setGameState('CASHED_OUT');
-      setCashedAt(multiplier);
-      const win = stake * multiplier;
-      onBalanceUpdate(win);
+
+      try {
+        const { crashed, multiplier: finalMultiplier, payout, balance } = await casinoCrashCashout(roundIdRef.current);
+        onSetBalance(balance);
+        if (crashed) {
+          setMultiplier(finalMultiplier);
+          setGameState('CRASHED');
+        } else {
+          setMultiplier(finalMultiplier);
+          setCashedAt(finalMultiplier);
+          setGameState('CASHED_OUT');
+        }
+      } catch (err) {
+        setGameState('CRASHED');
+      }
   };
 
   // Cleanup on unmount
@@ -131,7 +143,6 @@ const Crash: React.FC<CrashProps> = ({ onBalanceUpdate, userBalance, onClose }) 
                 ) : (
                     <button 
                         onClick={startGame}
-                        disabled={gameState === 'CRASHED' && multiplier > 100} // slight delay prev
                         className="w-full h-14 bg-brand-accent hover:bg-brand-header text-brand-bg font-bold text-xl rounded shadow-lg transition-transform active:scale-95 uppercase"
                     >
                         {gameState === 'IDLE' ? 'Place Bet' : 'Play Again'}

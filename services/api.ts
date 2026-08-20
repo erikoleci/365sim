@@ -184,3 +184,82 @@ export async function adminSettleMatch(matchId: string, homeScore: number, awayS
     { method: 'POST', body: JSON.stringify({ homeScore, awayScore }) }
   );
 }
+
+// --- Casino (server-authoritative: every game is deducted/resolved/paid
+// out on the backend, never mutated purely client-side) ---
+
+export interface PokerCard { suit: string; value: string; }
+
+export async function casinoSlotsSpin(stake: number) {
+  return request<{ reels: string[]; payout: number; balance: number }>('/casino/slots/spin', {
+    method: 'POST',
+    body: JSON.stringify({ stake }),
+  });
+}
+
+export async function casinoRouletteSpin(bets: Record<string, number>) {
+  return request<{ result: number; payout: number; balance: number }>('/casino/roulette/spin', {
+    method: 'POST',
+    body: JSON.stringify({ bets }),
+  });
+}
+
+export async function casinoBaccaratDeal(stake: number, selectedBet: 'PLAYER' | 'BANKER' | 'TIE') {
+  return request<{ playerHand: any[]; bankerHand: any[]; result: 'PLAYER' | 'BANKER' | 'TIE'; payout: number; balance: number }>(
+    '/casino/baccarat/deal',
+    { method: 'POST', body: JSON.stringify({ stake, selectedBet }) }
+  );
+}
+
+export async function casinoCrashStart(stake: number) {
+  return request<{ roundId: string; startTime: number; balance: number }>('/casino/crash/start', {
+    method: 'POST',
+    body: JSON.stringify({ stake }),
+  });
+}
+
+export async function casinoCrashStatus(roundId: string) {
+  return request<{ crashed: boolean; multiplier: number | null; resolved: boolean }>(`/casino/crash/${roundId}/status`);
+}
+
+export async function casinoCrashCashout(roundId: string) {
+  return request<{ crashed: boolean; multiplier: number; payout: number; balance: number }>(
+    `/casino/crash/${roundId}/cashout`,
+    { method: 'POST' }
+  );
+}
+
+export async function casinoBlackjackDeal(stake: number) {
+  return request<{
+    roundId: string; status: 'PLAYING' | 'FINISHED';
+    playerHand: any[]; dealerHand: (any | null)[]; message: string | null; payout: number; balance: number;
+  }>('/casino/blackjack/deal', { method: 'POST', body: JSON.stringify({ stake }) });
+}
+
+export async function casinoBlackjackHit(roundId: string) {
+  return request<{
+    status: 'PLAYING' | 'FINISHED';
+    playerHand: any[]; dealerHand: (any | null)[]; message?: string; payout?: number; balance?: number;
+  }>(`/casino/blackjack/${roundId}/hit`, { method: 'POST' });
+}
+
+export async function casinoBlackjackStand(roundId: string) {
+  return request<{
+    status: 'FINISHED';
+    playerHand: any[]; dealerHand: any[]; message: string; payout: number; balance: number;
+  }>(`/casino/blackjack/${roundId}/stand`, { method: 'POST' });
+}
+
+export async function casinoVideoPokerDeal(stake: number) {
+  return request<{ roundId: string; hand: PokerCard[]; balance: number }>('/casino/videopoker/deal', {
+    method: 'POST',
+    body: JSON.stringify({ stake }),
+  });
+}
+
+export async function casinoVideoPokerDraw(roundId: string, holdIndices: number[]) {
+  return request<{ hand: PokerCard[]; tier: string | null; payout: number; balance: number }>(
+    `/casino/videopoker/${roundId}/draw`,
+    { method: 'POST', body: JSON.stringify({ holdIndices }) }
+  );
+}

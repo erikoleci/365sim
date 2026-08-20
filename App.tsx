@@ -376,7 +376,7 @@ const App: React.FC = () => {
               onCancelBet={handleCancelBet}
             />
           ) : currentView === 'casino' ? (
-            <CasinoHub userBalance={currentUser.balance} onUpdateBalance={(amount) => setCurrentUser((p) => p ? { ...p, balance: p.balance + amount } : p)} />
+            <CasinoHub userBalance={currentUser.balance} onSetBalance={(balance) => setCurrentUser((p) => p ? { ...p, balance } : p)} />
           ) : detailMatch ? (
             <MatchDetail
               match={detailMatch}

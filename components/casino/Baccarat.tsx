@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { casinoBaccaratDeal } from '../../services/api';
 
 interface BaccaratProps {
-  onBalanceUpdate: (amount: number) => void;
+  onSetBalance: (balance: number) => void;
   userBalance: number;
   onClose: () => void;
 }
@@ -26,7 +27,7 @@ const CardView: React.FC<{ card: Card }> = ({ card }) => (
   </div>
 );
 
-const Baccarat: React.FC<BaccaratProps> = ({ onBalanceUpdate, userBalance, onClose }) => {
+const Baccarat: React.FC<BaccaratProps> = ({ onSetBalance, userBalance, onClose }) => {
   const [gameState, setGameState] = useState<'BETTING' | 'DEALING' | 'FINISHED'>('BETTING');
   const [playerHand, setPlayerHand] = useState<Card[]>([]);
   const [bankerHand, setBankerHand] = useState<Card[]>([]);
@@ -34,12 +35,6 @@ const Baccarat: React.FC<BaccaratProps> = ({ onBalanceUpdate, userBalance, onClo
   const [stake, setStake] = useState(50);
   const [message, setMessage] = useState('Select a hand to bet on');
   const [winner, setWinner] = useState<'PLAYER' | 'BANKER' | 'TIE' | null>(null);
-
-  const getRandomCard = (): Card => {
-      const suit = SUITS[Math.floor(Math.random() * SUITS.length)];
-      const value = VALUES[Math.floor(Math.random() * VALUES.length)];
-      return { suit, value, numValue: getBaccaratValue(value) };
-  };
 
   const calculateScore = (hand: Card[]) => {
       const total = hand.reduce((acc, c) => acc + c.numValue, 0);
@@ -52,71 +47,6 @@ const Baccarat: React.FC<BaccaratProps> = ({ onBalanceUpdate, userBalance, onClo
       setMessage(`Betting ${stake} on ${type}`);
   };
 
-  // Deals one full round of real cards/rules and returns the resulting hands
-  // and winner, without any UI side effects. Used so we can privately
-  // "redeal" (rejection sampling) until the outcome matches the
-  // house-controlled win chance, while whatever round we do show the user is
-  // always an internally consistent, honestly-dealt hand.
-  const dealRound = async (animate: boolean) => {
-      const p1 = getRandomCard();
-      const b1 = getRandomCard();
-      const p2 = getRandomCard();
-      const b2 = getRandomCard();
-
-      if (animate) {
-          await new Promise(r => setTimeout(r, 500));
-          setPlayerHand([p1]);
-          await new Promise(r => setTimeout(r, 500));
-          setBankerHand([b1]);
-          await new Promise(r => setTimeout(r, 500));
-          setPlayerHand([p1, p2]);
-          await new Promise(r => setTimeout(r, 500));
-          setBankerHand([b1, b2]);
-      }
-
-      let pScore = calculateScore([p1, p2]);
-      let bScore = calculateScore([b1, b2]);
-
-      let finalPHand = [p1, p2];
-      let finalBHand = [b1, b2];
-
-      if (pScore >= 8 || bScore >= 8) {
-          // Natural - no more cards
-      } else {
-          let p3: Card | null = null;
-
-          if (pScore <= 5) {
-              if (animate) await new Promise(r => setTimeout(r, 800));
-              p3 = getRandomCard();
-              finalPHand.push(p3);
-              if (animate) setPlayerHand([...finalPHand]);
-              pScore = calculateScore(finalPHand);
-          }
-
-          let bankerDraws = false;
-          if (bScore <= 2) bankerDraws = true;
-          else if (bScore === 3) bankerDraws = p3?.numValue !== 8;
-          else if (bScore === 4) bankerDraws = p3 === null || [2,3,4,5,6,7].includes(p3.numValue);
-          else if (bScore === 5) bankerDraws = p3 === null || [4,5,6,7].includes(p3.numValue);
-          else if (bScore === 6) bankerDraws = p3 !== null && [6,7].includes(p3.numValue);
-
-          if (bankerDraws) {
-              if (animate) await new Promise(r => setTimeout(r, 800));
-              const b3 = getRandomCard();
-              finalBHand.push(b3);
-              if (animate) setBankerHand([...finalBHand]);
-              bScore = calculateScore(finalBHand);
-          }
-      }
-
-      let result: 'PLAYER' | 'BANKER' | 'TIE';
-      if (pScore > bScore) result = 'PLAYER';
-      else if (bScore > pScore) result = 'BANKER';
-      else result = 'TIE';
-
-      return { finalPHand, finalBHand, result };
-  };
-
   const deal = async () => {
       if (!selectedBet) {
           setMessage('Please select a bet first!');
@@ -127,29 +57,25 @@ const Baccarat: React.FC<BaccaratProps> = ({ onBalanceUpdate, userBalance, onClo
           return;
       }
 
-      onBalanceUpdate(-stake);
       setGameState('DEALING');
       setMessage('Dealing...');
       setPlayerHand([]);
       setBankerHand([]);
       setWinner(null);
 
-      // House-controlled outcome: ~1% of rounds are allowed to land on the
-      // player's selected bet (a win), the other ~99% are forced to land on
-      // anything else — found by privately redealing real hands/rules until
-      // the target outcome comes up, so the cards shown always add up.
-      const WIN_CHANCE = 0.01;
-      const wantWin = Math.random() < WIN_CHANCE;
-      let round = await dealRound(false);
-      let attempts = 0;
-      while (attempts < 300 && (wantWin ? round.result !== selectedBet : round.result === selectedBet)) {
-          round = await dealRound(false);
-          attempts++;
+      let round;
+      try {
+          round = await casinoBaccaratDeal(stake, selectedBet);
+      } catch (err: any) {
+          setGameState('BETTING');
+          setMessage(err?.message || 'Something went wrong');
+          return;
       }
+      const finalPHand: Card[] = round.playerHand;
+      const finalBHand: Card[] = round.bankerHand;
+      const result = round.result;
 
-      const { finalPHand, finalBHand, result } = round;
-
-      // Animate the accepted round's real cards.
+      // Animate the server's real, already-resolved cards.
       await new Promise(r => setTimeout(r, 500));
       setPlayerHand([finalPHand[0]]);
       await new Promise(r => setTimeout(r, 500));
@@ -169,14 +95,10 @@ const Baccarat: React.FC<BaccaratProps> = ({ onBalanceUpdate, userBalance, onClo
 
       setWinner(result);
       setGameState('FINISHED');
+      onSetBalance(round.balance);
 
-      // Payouts — capped to a small profit (5%-50% of stake) on the rare win,
-      // instead of the standard 2x / 1.95x / 9x baccarat payouts.
-      let winAmount = 0;
-      if (result === selectedBet) {
-          winAmount = Number((stake * (1.05 + Math.random() * 0.45)).toFixed(2));
-          onBalanceUpdate(winAmount);
-          setMessage(`${result} WINS! You won ${winAmount.toFixed(2)}`);
+      if (round.payout > 0) {
+          setMessage(`${result} WINS! You won ${round.payout.toFixed(2)}`);
       } else {
           setMessage(`${result} WINS! You lost.`);
       }

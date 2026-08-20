@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { casinoSlotsSpin } from '../../services/api';
 
 interface SlotMachineProps {
-  onBalanceUpdate: (amount: number) => void;
+  onSetBalance: (balance: number) => void;
   userBalance: number;
   onClose: () => void;
 }
 
 const SYMBOLS = ['🍒', '🍋', '🍇', '💎', '🔔', '7️⃣'];
+// Display-only reference table — actual payouts are decided by the server.
 const PAYOUTS: Record<string, number> = {
   '🍒': 3,
   '🍋': 5,
@@ -16,14 +18,14 @@ const PAYOUTS: Record<string, number> = {
   '7️⃣': 100
 };
 
-const SlotMachine: React.FC<SlotMachineProps> = ({ onBalanceUpdate, userBalance, onClose }) => {
+const SlotMachine: React.FC<SlotMachineProps> = ({ onSetBalance, userBalance, onClose }) => {
   const [reels, setReels] = useState<string[]>(['7️⃣', '7️⃣', '7️⃣']);
   const [isSpinning, setIsSpinning] = useState(false);
   const [stake, setStake] = useState(10);
   const [message, setMessage] = useState('GOOD LUCK!');
   const [winAmount, setWinAmount] = useState(0);
 
-  const spin = () => {
+  const spin = async () => {
     if (userBalance < stake) {
       setMessage('INSUFFICIENT FUNDS');
       return;
@@ -33,62 +35,43 @@ const SlotMachine: React.FC<SlotMachineProps> = ({ onBalanceUpdate, userBalance,
     setIsSpinning(true);
     setWinAmount(0);
     setMessage('SPINNING...');
-    onBalanceUpdate(-stake);
 
-    // Animation simulation
-    let intervalCount = 0;
-    const interval = setInterval(() => {
-      setReels([
-        SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)],
-        SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)],
-        SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)]
-      ]);
-      intervalCount++;
-      if (intervalCount > 10) {
-        clearInterval(interval);
-        finalizeSpin();
+    try {
+      // Ask the server for the real, authoritative result up front, then
+      // just animate towards it — the server has already deducted the
+      // stake and credited any winnings by the time this resolves.
+      const resultPromise = casinoSlotsSpin(stake);
+
+      let intervalCount = 0;
+      const interval = setInterval(() => {
+        setReels([
+          SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)],
+          SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)],
+          SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)]
+        ]);
+        intervalCount++;
+        if (intervalCount > 10) clearInterval(interval);
+      }, 100);
+
+      const { reels: finalReels, payout, balance } = await resultPromise;
+      await new Promise((r) => setTimeout(r, 1100));
+      clearInterval(interval);
+
+      setReels(finalReels);
+      onSetBalance(balance);
+      setIsSpinning(false);
+
+      if (payout > 0) {
+        setWinAmount(payout);
+        setMessage(`WIN! ${payout} L`);
+      } else if (finalReels[0] === finalReels[1] || finalReels[1] === finalReels[2] || finalReels[0] === finalReels[2]) {
+        setMessage('NO WIN');
+      } else {
+        setMessage('TRY AGAIN');
       }
-    }, 100);
-  };
-
-  const finalizeSpin = () => {
-    // House-controlled outcome: ~1% of spins are allowed to land a winning
-    // triple, the other ~99% are forced to a guaranteed non-match. Even the
-    // ~1% that win only pay out a small profit, not the full paytable.
-    const WIN_CHANCE = 0.01;
-    let r1: string, r2: string, r3: string;
-    let forcedWin = false;
-
-    if (Math.random() < WIN_CHANCE) {
-      forcedWin = true;
-      const symbol = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
-      r1 = r2 = r3 = symbol;
-    } else {
-      r1 = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
-      r2 = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
-      r3 = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
-      if (r1 === r2 && r2 === r3) {
-        // Extremely rare accidental triple from independent draws — bump one
-        // reel to the next symbol so it never pays out.
-        r3 = SYMBOLS[(SYMBOLS.indexOf(r3) + 1) % SYMBOLS.length];
-      }
-    }
-
-    setReels([r1, r2, r3]);
-    setIsSpinning(false);
-
-    if (r1 === r2 && r2 === r3) {
-      // Small capped profit (5%-50% of stake) instead of the paytable multiplier.
-      const smallMultiplier = forcedWin ? 1.05 + Math.random() * 0.45 : PAYOUTS[r1];
-      const win = Number((stake * smallMultiplier).toFixed(2));
-      setWinAmount(win);
-      onBalanceUpdate(win);
-      setMessage(`WIN! ${win} L`);
-    } else if (r1 === r2 || r2 === r3 || r1 === r3) {
-      // Small win for 2 matches? Optional. Let's stick to 3 for simplicity or maybe refund
-      setMessage('NO WIN');
-    } else {
-      setMessage('TRY AGAIN');
+    } catch (err: any) {
+      setIsSpinning(false);
+      setMessage(err?.message || 'Something went wrong');
     }
   };
 

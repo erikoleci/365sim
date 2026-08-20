@@ -85,6 +85,19 @@ export async function initDb() {
       details TEXT,
       created_at BIGINT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS casino_rounds (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      game TEXT NOT NULL,
+      stake DOUBLE PRECISION NOT NULL,
+      status TEXT NOT NULL DEFAULT 'PENDING',
+      state TEXT,
+      result TEXT,
+      payout DOUBLE PRECISION NOT NULL DEFAULT 0,
+      created_at BIGINT NOT NULL,
+      resolved_at BIGINT
+    );
   `);
 
   const { rows } = await pool.query('SELECT COUNT(*)::int AS c FROM users');

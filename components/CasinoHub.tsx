@@ -8,18 +8,18 @@ import Crash from './casino/Crash';
 
 interface CasinoHubProps {
   userBalance: number;
-  onUpdateBalance: (amount: number) => void;
+  onSetBalance: (balance: number) => void;
 }
 
-const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, onUpdateBalance }) => {
+const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, onSetBalance }) => {
   const [activeGame, setActiveGame] = useState<'slots' | 'blackjack' | 'roulette' | 'poker' | 'baccarat' | 'crash' | null>(null);
 
-  if (activeGame === 'slots') return <SlotMachine userBalance={userBalance} onBalanceUpdate={onUpdateBalance} onClose={() => setActiveGame(null)} />;
-  if (activeGame === 'blackjack') return <Blackjack userBalance={userBalance} onBalanceUpdate={onUpdateBalance} onClose={() => setActiveGame(null)} />;
-  if (activeGame === 'roulette') return <Roulette userBalance={userBalance} onBalanceUpdate={onUpdateBalance} onClose={() => setActiveGame(null)} />;
-  if (activeGame === 'poker') return <VideoPoker userBalance={userBalance} onBalanceUpdate={onUpdateBalance} onClose={() => setActiveGame(null)} />;
-  if (activeGame === 'baccarat') return <Baccarat userBalance={userBalance} onBalanceUpdate={onUpdateBalance} onClose={() => setActiveGame(null)} />;
-  if (activeGame === 'crash') return <Crash userBalance={userBalance} onBalanceUpdate={onUpdateBalance} onClose={() => setActiveGame(null)} />;
+  if (activeGame === 'slots') return <SlotMachine userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
+  if (activeGame === 'blackjack') return <Blackjack userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
+  if (activeGame === 'roulette') return <Roulette userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
+  if (activeGame === 'poker') return <VideoPoker userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
+  if (activeGame === 'baccarat') return <Baccarat userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
+  if (activeGame === 'crash') return <Crash userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
 
   return (
     <div className="p-6 text-white min-h-[80vh]">

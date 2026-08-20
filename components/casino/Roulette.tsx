@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
+import { casinoRouletteSpin } from '../../services/api';
 
 interface RouletteProps {
-  onBalanceUpdate: (amount: number) => void;
+  onSetBalance: (balance: number) => void;
   userBalance: number;
   onClose: () => void;
 }
@@ -16,7 +17,7 @@ const getColor = (num: number) => {
   return 'bg-gray-900'; // Black
 };
 
-const Roulette: React.FC<RouletteProps> = ({ onBalanceUpdate, userBalance, onClose }) => {
+const Roulette: React.FC<RouletteProps> = ({ onSetBalance, userBalance, onClose }) => {
   const [bets, setBets] = useState<Record<string, number>>({});
   const [spinning, setSpinning] = useState(false);
   const [resultNumber, setResultNumber] = useState<number | null>(null);
@@ -43,79 +44,35 @@ const Roulette: React.FC<RouletteProps> = ({ onBalanceUpdate, userBalance, onClo
       setMessage('Bets cleared');
   };
 
-  const spinWheel = () => {
+  const spinWheel = async () => {
     if (totalBet === 0) {
         setMessage('Place a bet first');
         return;
     }
     if (spinning) return;
 
-    // Deduct Balance Immediately
-    onBalanceUpdate(-totalBet);
     setSpinning(true);
     setMessage('No more bets...');
     setResultNumber(null);
 
-    // --- RIGGED LOGIC ---
-    // 1. Identify all numbers that would cause a win
-    const winningNumbers = new Set<number>();
+    try {
+        const { result, payout, balance } = await casinoRouletteSpin(bets);
 
-    // Check specific number bets
-    Object.keys(bets).forEach(key => {
-        if (!isNaN(parseInt(key))) {
-            winningNumbers.add(parseInt(key));
-        }
-        if (key === 'RED') {
-            RED_NUMBERS.forEach(n => winningNumbers.add(n));
-        }
-        if (key === 'BLACK') {
-            NUMBERS.forEach(n => {
-                if (n !== 0 && !RED_NUMBERS.includes(n)) winningNumbers.add(n);
-            });
-        }
-        if (key === 'EVEN') {
-            NUMBERS.forEach(n => { if (n !== 0 && n % 2 === 0) winningNumbers.add(n); });
-        }
-        if (key === 'ODD') {
-            NUMBERS.forEach(n => { if (n !== 0 && n % 2 !== 0) winningNumbers.add(n); });
-        }
-    });
-
-    // 2. Filter available numbers to find LOSING numbers
-    // If the user covers EVERYTHING (rare), we force 0 (House edge) or just random if they covered 0 too.
-    let losingNumbers = NUMBERS.filter(n => !winningNumbers.has(n));
-    
-    // Fallback: If they somehow bet on literally everything, just pick a number and we will just say "Bad Luck" 
-    // (In reality, if they bet everything, they lose money on the 0 split anyway, but let's stick to the "no win" prompt).
-    if (losingNumbers.length === 0) {
-        // Technically impossible to cover everything with profit, but let's just pick 0
-        losingNumbers = [0]; 
-    }
-
-    // 3. House-controlled result: ~1% of spins are allowed to land on a
-    // number that pays out; the other ~99% are forced onto a losing number.
-    const WIN_CHANCE = 0.01;
-    const useWinningPool = winningNumbers.size > 0 && Math.random() < WIN_CHANCE;
-    const resultPool = useWinningPool ? Array.from(winningNumbers) : losingNumbers;
-    const forcedResult = resultPool[Math.floor(Math.random() * resultPool.length)];
-
-    // 4. Payout: only the ~1% "useWinningPool" branch ever pays anything,
-    // and even then it's capped to a small profit (5%-50% of total staked),
-    // not the standard 35:1 / 1:1 roulette payouts.
-    const payout = useWinningPool ? Number((totalBet * (1.05 + Math.random() * 0.45)).toFixed(2)) : 0;
-
-    // Animation
-    setTimeout(() => {
-        setResultNumber(forcedResult);
+        setTimeout(() => {
+            setResultNumber(result);
+            setSpinning(false);
+            onSetBalance(balance);
+            if (payout > 0) {
+                setMessage(`You Win ${payout}!`);
+            } else {
+                setMessage('House Wins.');
+            }
+            setBets({});
+        }, 2000);
+    } catch (err: any) {
         setSpinning(false);
-        if (payout > 0) {
-            onBalanceUpdate(payout);
-            setMessage(`You Win ${payout}!`);
-        } else {
-            setMessage('House Wins.');
-        }
-        setBets({});
-    }, 2000);
+        setMessage(err?.message || 'Something went wrong');
+    }
   };
 
   return (
