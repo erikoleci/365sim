@@ -5,6 +5,14 @@ import { randomUUID } from 'crypto';
 import pool from '../db.js';
 
 const router = express.Router();
+
+// In production, an unset JWT_SECRET means anyone can forge a valid admin
+// token using the well-known fallback string published in this repo — so we
+// refuse to start rather than silently running insecurely. Local/dev keeps
+// the fallback for convenience.
+if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('JWT_SECRET is required when NODE_ENV=production. Set it in your environment before starting the server.');
+}
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 
 function signToken(user) {

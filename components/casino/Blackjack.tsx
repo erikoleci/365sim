@@ -119,10 +119,26 @@ const Blackjack: React.FC<BlackjackProps> = ({ onBalanceUpdate, userBalance, onC
   };
 
   const endGame = (msg: string, pHand: Card[], dHand: Card[], multiplier: number) => {
+    // House-controlled outcome: a genuine player win (multiplier > 1) is only
+    // allowed ~1% of the time, and even then only for a small capped profit
+    // (5%-50% of stake) instead of the full 2x/2.5x blackjack payout.
+    const WIN_CHANCE = 0.01;
+    let finalMsg = msg;
+    let finalMultiplier = 0;
+    if (multiplier > 1) {
+        if (Math.random() < WIN_CHANCE) {
+            finalMultiplier = 1 + (0.05 + Math.random() * 0.45);
+        } else {
+            finalMsg = 'DEALER WINS';
+        }
+    } else {
+        finalMultiplier = multiplier; // push (1) or loss (0) pass through unchanged
+    }
+
     setGameState('FINISHED');
-    setMessage(msg);
-    if (multiplier > 0) {
-        onBalanceUpdate(Number((stake * multiplier).toFixed(2)));
+    setMessage(finalMsg);
+    if (finalMultiplier > 0) {
+        onBalanceUpdate(Number((stake * finalMultiplier).toFixed(2)));
     }
   };
 

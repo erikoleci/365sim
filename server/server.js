@@ -27,7 +27,26 @@ app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 
 app.use(helmet());
-app.use(cors());
+// Restrict cross-origin requests to known frontend origin(s). Falls back to
+// allowing all origins only when FRONTEND_ORIGIN is unset (e.g. local dev
+// where frontend and API are served together on one origin anyway).
+const allowedOrigins = (process.env.FRONTEND_ORIGIN || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+app.use(cors(
+  allowedOrigins.length
+    ? {
+        origin: (origin, callback) => {
+          // Allow same-origin/non-browser requests (no Origin header) and
+          // any explicitly whitelisted origin.
+          if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+          callback(new Error('Not allowed by CORS'));
+        },
+      }
+    : undefined
+));
 app.use(express.json());
 
 // Brute-force protection on auth endpoints: 20 attempts / 15 min per IP.

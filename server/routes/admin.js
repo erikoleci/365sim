@@ -90,13 +90,32 @@ router.post('/users/:id/reset-password', async (req, res) => {
 
 router.get('/bets', async (req, res) => {
   const { rows: bets } = await pool.query('SELECT * FROM bets ORDER BY created_at DESC');
-  const withDetails = await Promise.all(
-    bets.map(async (b) => {
-      const { rows: selections } = await pool.query('SELECT * FROM bet_selections WHERE bet_id = $1', [b.id]);
-      const { rows: userRows } = await pool.query('SELECT id, username, name, avatar FROM users WHERE id = $1', [b.user_id]);
-      return { ...b, selections, user: userRows[0] || null };
-    })
-  );
+
+  // Batch both lookups instead of running 2 queries per bet (N+1).
+  const betIds = [...new Set(bets.map((b) => b.id))];
+  const userIds = [...new Set(bets.map((b) => b.user_id))];
+
+  const [selectionsResult, usersResult] = await Promise.all([
+    betIds.length
+      ? pool.query('SELECT * FROM bet_selections WHERE bet_id = ANY($1::text[])', [betIds])
+      : { rows: [] },
+    userIds.length
+      ? pool.query('SELECT id, username, name, avatar FROM users WHERE id = ANY($1::text[])', [userIds])
+      : { rows: [] },
+  ]);
+
+  const selectionsByBet = new Map();
+  for (const sel of selectionsResult.rows) {
+    if (!selectionsByBet.has(sel.bet_id)) selectionsByBet.set(sel.bet_id, []);
+    selectionsByBet.get(sel.bet_id).push(sel);
+  }
+  const userById = new Map(usersResult.rows.map((u) => [u.id, u]));
+
+  const withDetails = bets.map((b) => ({
+    ...b,
+    selections: selectionsByBet.get(b.id) || [],
+    user: userById.get(b.user_id) || null,
+  }));
   res.json({ bets: withDetails });
 });
 

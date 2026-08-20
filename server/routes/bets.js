@@ -21,12 +21,18 @@ const ODDS_WORSENING_TOLERANCE = 0.02;
 
 router.get('/', async (req, res) => {
   const { rows: bets } = await pool.query('SELECT * FROM bets WHERE user_id = $1 ORDER BY created_at DESC', [req.user.id]);
-  const withSelections = await Promise.all(
-    bets.map(async (b) => {
-      const { rows: selections } = await pool.query('SELECT * FROM bet_selections WHERE bet_id = $1', [b.id]);
-      return { ...b, selections };
-    })
-  );
+  // Fetch all selections for every bet in a single round trip instead of one
+  // query per bet (N+1), then group them in memory.
+  const betIds = bets.map((b) => b.id);
+  const selectionsByBet = new Map();
+  if (betIds.length) {
+    const { rows: selections } = await pool.query('SELECT * FROM bet_selections WHERE bet_id = ANY($1::text[])', [betIds]);
+    for (const sel of selections) {
+      if (!selectionsByBet.has(sel.bet_id)) selectionsByBet.set(sel.bet_id, []);
+      selectionsByBet.get(sel.bet_id).push(sel);
+    }
+  }
+  const withSelections = bets.map((b) => ({ ...b, selections: selectionsByBet.get(b.id) || [] }));
   res.json({ bets: withSelections });
 });
 

@@ -52,21 +52,38 @@ const SlotMachine: React.FC<SlotMachineProps> = ({ onBalanceUpdate, userBalance,
   };
 
   const finalizeSpin = () => {
-    // Generate final result
-    // Slight bias towards losing for realism, but decent chance to win
-    const r1 = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
-    const r2 = Math.random() > 0.6 ? r1 : SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)]; 
-    const r3 = Math.random() > 0.7 ? r1 : SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
-    
+    // House-controlled outcome: ~1% of spins are allowed to land a winning
+    // triple, the other ~99% are forced to a guaranteed non-match. Even the
+    // ~1% that win only pay out a small profit, not the full paytable.
+    const WIN_CHANCE = 0.01;
+    let r1: string, r2: string, r3: string;
+    let forcedWin = false;
+
+    if (Math.random() < WIN_CHANCE) {
+      forcedWin = true;
+      const symbol = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
+      r1 = r2 = r3 = symbol;
+    } else {
+      r1 = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
+      r2 = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
+      r3 = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
+      if (r1 === r2 && r2 === r3) {
+        // Extremely rare accidental triple from independent draws — bump one
+        // reel to the next symbol so it never pays out.
+        r3 = SYMBOLS[(SYMBOLS.indexOf(r3) + 1) % SYMBOLS.length];
+      }
+    }
+
     setReels([r1, r2, r3]);
     setIsSpinning(false);
 
     if (r1 === r2 && r2 === r3) {
-      const multiplier = PAYOUTS[r1];
-      const win = stake * multiplier;
+      // Small capped profit (5%-50% of stake) instead of the paytable multiplier.
+      const smallMultiplier = forcedWin ? 1.05 + Math.random() * 0.45 : PAYOUTS[r1];
+      const win = Number((stake * smallMultiplier).toFixed(2));
       setWinAmount(win);
       onBalanceUpdate(win);
-      setMessage(`BIG WIN! ${win} L`);
+      setMessage(`WIN! ${win} L`);
     } else if (r1 === r2 || r2 === r3 || r1 === r3) {
       // Small win for 2 matches? Optional. Let's stick to 3 for simplicity or maybe refund
       setMessage('NO WIN');

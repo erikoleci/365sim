@@ -20,19 +20,15 @@ const Crash: React.FC<CrashProps> = ({ onBalanceUpdate, userBalance, onClose }) 
     if (userBalance < stake) return;
     onBalanceUpdate(-stake);
     
-    // Determine crash point (Weighted randomness)
-    // Most games crash early. 
-    // Logic: 1% instant crash. 50% chance under 2.00x.
-    const r = Math.random();
+    // Determine crash point — house-controlled: ~1% of rounds get a small,
+    // genuinely reachable crash point (1.05x-1.5x, a small profit if cashed
+    // out in time), the other ~99% crash instantly at 1.00x before the
+    // player can react.
+    const WIN_CHANCE = 0.01;
     let cp = 1.00;
-    if (r < 0.02) cp = 1.00; // Instant crash
-    else {
-        // Simple inverse distribution approximation for "Simulated Crash"
-        // E = 0.99 / (1 - r) ... standard formula
-        cp = Math.max(1.00, (0.96 / (1 - r))); 
+    if (Math.random() < WIN_CHANCE) {
+        cp = 1.05 + Math.random() * 0.45;
     }
-    // Cap strictly for sim safety
-    if (cp > 50) cp = 50; 
 
     setCrashPoint(cp);
     setGameState('RUNNING');

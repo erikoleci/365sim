@@ -92,14 +92,28 @@ const Roulette: React.FC<RouletteProps> = ({ onBalanceUpdate, userBalance, onClo
         losingNumbers = [0]; 
     }
 
-    // 3. Select a rigged result
-    const forcedResult = losingNumbers[Math.floor(Math.random() * losingNumbers.length)];
+    // 3. House-controlled result: ~1% of spins are allowed to land on a
+    // number that pays out; the other ~99% are forced onto a losing number.
+    const WIN_CHANCE = 0.01;
+    const useWinningPool = winningNumbers.size > 0 && Math.random() < WIN_CHANCE;
+    const resultPool = useWinningPool ? Array.from(winningNumbers) : losingNumbers;
+    const forcedResult = resultPool[Math.floor(Math.random() * resultPool.length)];
+
+    // 4. Payout: only the ~1% "useWinningPool" branch ever pays anything,
+    // and even then it's capped to a small profit (5%-50% of total staked),
+    // not the standard 35:1 / 1:1 roulette payouts.
+    const payout = useWinningPool ? Number((totalBet * (1.05 + Math.random() * 0.45)).toFixed(2)) : 0;
 
     // Animation
     setTimeout(() => {
         setResultNumber(forcedResult);
         setSpinning(false);
-        setMessage('House Wins.');
+        if (payout > 0) {
+            onBalanceUpdate(payout);
+            setMessage(`You Win ${payout}!`);
+        } else {
+            setMessage('House Wins.');
+        }
         setBets({});
     }, 2000);
   };
