@@ -124,11 +124,17 @@ const App: React.FC = () => {
   const liveMatches = searchFiltered
     .filter((m) => m.status === MatchStatus.LIVE && (Date.now() - new Date(m.startTime).getTime()) < STALE_LIVE_MS)
     .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
-  const finishedMatches = searchFiltered
-    .filter((m) => m.status === MatchStatus.FINISHED)
-    .slice() // matches array is start_time ASC; show most recently finished first
-    .reverse()
-    .slice(0, 15);
+  // Only ever surface finished results for TODAY, and only while the
+  // calendar strip is on "Të gjitha" or "Sot" — browsing "Nesër" or any
+  // other date should never show today's already-finished games at the top.
+  const todayKey = albaniaTodayKey();
+  const finishedMatches = (selectedDate === 'ALL' || selectedDate === todayKey)
+    ? searchFiltered
+        .filter((m) => m.status === MatchStatus.FINISHED && albaniaDateKey(m.startTime) === todayKey)
+        .slice() // matches array is start_time ASC; show most recently finished first
+        .reverse()
+        .slice(0, 15)
+    : [];
   const upcomingMatches = searchFiltered
     .filter((m) => m.status === MatchStatus.UPCOMING)
     .filter((m) => currentLeague === 'All Top Football' || m.league === currentLeague)
