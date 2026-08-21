@@ -11,7 +11,9 @@ import matchesRouter from './routes/matches.js';
 import betsRouter from './routes/bets.js';
 import adminRouter from './routes/admin.js';
 import casinoRouter from './routes/casino.js';
+import scrapeRouter from './routes/scrape.js';
 import { initDb } from './db.js';
+import { initWebSocket } from './ws.js';
 
 let dbReady = false;
 
@@ -76,6 +78,7 @@ app.use('/api/matches', matchesRouter);
 app.use('/api/bets', betsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/casino', casinoRouter);
+app.use('/api/scrape', scrapeRouter);
 
 // Catch-all error handler: any unhandled error thrown/rejected inside a route
 // (e.g. Postgres unreachable, quota exceeded) returns a clean 503 instead of
@@ -121,7 +124,7 @@ async function start() {
     console.error('[db] init failed; starting server without database:', err);
   }
 
-  app.listen(PORT, () => {
+  const httpServer = app.listen(PORT, () => {
     console.log(`365sim backend listening on http://localhost:${PORT}`);
     if (!process.env.ODDS_API_KEY) {
       console.warn('WARNING: ODDS_API_KEY is not set — /api/matches will return an empty list until you add one in .env');
@@ -134,6 +137,7 @@ async function start() {
       );
     }
   });
+  initWebSocket(httpServer);
 }
 
 start().catch((err) => {

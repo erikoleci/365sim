@@ -15,6 +15,12 @@ const MIN_STAKE = 10;
 const MAX_STAKE = 50000;
 const MAX_SELECTIONS_PER_TICKET = 20;
 const MAX_POTENTIAL_RETURN = 1000000;
+// Risk Management: max total liability the house will carry on a single
+// outcome (sum of potential_return across all PENDING tickets backing that
+// exact selection). Prevents one popular pick from exposing the operator
+// to unbounded payout if it hits — a real trading desk would hedge/adjust
+// odds instead; this is the simplest safety net for a simulator.
+const MAX_SELECTION_EXPOSURE = 5000000;
 // How much worse the current odds are allowed to be vs. what the user saw
 // when they built the slip, before we reject instead of silently accepting
 // a worse price. 2% tolerance absorbs normal rounding/timing noise.
@@ -106,6 +112,23 @@ router.post('/', async (req, res) => {
   const potentialReturn = Number((stake * totalOdds).toFixed(2));
   if (potentialReturn > MAX_POTENTIAL_RETURN) {
     return res.status(400).json({ error: `Maximum potential payout is ${MAX_POTENTIAL_RETURN}. Reduce your stake or selections.` });
+  }
+
+  // Risk Management: exposure check — for each selection, sum the
+  // potential_return already committed on PENDING tickets backing that
+  // same outcome, and reject if this new ticket would push it past the
+  // house-wide cap.
+  for (const sel of verifiedSelections) {
+    const { rows: exposureRows } = await pool.query(
+      `SELECT COALESCE(SUM(b.potential_return), 0) AS exposure
+       FROM bet_selections bs JOIN bets b ON b.id = bs.bet_id
+       WHERE bs.match_id = $1 AND bs.market_id = $2 AND bs.selection_id = $3 AND b.status = 'PENDING'`,
+      [sel.matchId, sel.marketId, sel.selectionId]
+    );
+    const currentExposure = Number(exposureRows[0].exposure);
+    if (currentExposure + potentialReturn > MAX_SELECTION_EXPOSURE) {
+      return res.status(400).json({ error: `This selection is temporarily limited due to high exposure. Try a smaller stake.` });
+    }
   }
 
   const client = await pool.connect();

@@ -98,6 +98,73 @@ export async function initDb() {
       created_at BIGINT NOT NULL,
       resolved_at BIGINT
     );
+
+    -- Odds Engine: every time a selection's odds change, one row here.
+    -- Never overwritten — this is the audit trail for "why did the price
+    -- move" (auto refresh vs manual admin override) that Risk/Trading
+    -- needs, and what powers an odds-movement chart in the UI.
+    CREATE TABLE IF NOT EXISTS odds_history (
+      id SERIAL PRIMARY KEY,
+      match_id TEXT NOT NULL,
+      market_id TEXT NOT NULL,
+      selection_id TEXT NOT NULL,
+      old_odds DOUBLE PRECISION,
+      new_odds DOUBLE PRECISION NOT NULL,
+      changed_by TEXT NOT NULL DEFAULT 'SYSTEM',
+      reason TEXT,
+      created_at BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_odds_history_match ON odds_history (match_id, created_at DESC);
+
+    -- Live Match Engine: append-only feed of in-match events (goal, card,
+    -- substitution, VAR, corner...). Powers the match timeline and drives
+    -- "market suspend for N seconds after a goal".
+    CREATE TABLE IF NOT EXISTS match_events (
+      id SERIAL PRIMARY KEY,
+      match_id TEXT NOT NULL,
+      minute INTEGER,
+      type TEXT NOT NULL,
+      team TEXT,
+      player TEXT,
+      detail TEXT,
+      created_at BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_match_events_match ON match_events (match_id, created_at);
+
+    -- Live in-play stats snapshot per match (one row per match, overwritten
+    -- on each poll) — possession/shots/corners/xG for the live stats panel.
+    CREATE TABLE IF NOT EXISTS live_statistics (
+      match_id TEXT PRIMARY KEY,
+      minute INTEGER,
+      home_score INTEGER DEFAULT 0,
+      away_score INTEGER DEFAULT 0,
+      possession_home INTEGER,
+      possession_away INTEGER,
+      shots_home INTEGER,
+      shots_away INTEGER,
+      shots_on_target_home INTEGER,
+      shots_on_target_away INTEGER,
+      corners_home INTEGER,
+      corners_away INTEGER,
+      cards_home INTEGER,
+      cards_away INTEGER,
+      xg_home DOUBLE PRECISION,
+      xg_away DOUBLE PRECISION,
+      updated_at BIGINT NOT NULL
+    );
+
+    -- Cache for the public Wikipedia scraper (server/scrapers/wikipedia.js)
+    -- so it hits Wikipedia's infra rarely, not on every page view.
+    CREATE TABLE IF NOT EXISTS logo_cache (
+      name TEXT PRIMARY KEY,
+      logo_url TEXT,
+      fetched_at BIGINT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS standings_cache (
+      cache_key TEXT PRIMARY KEY,
+      rows_json TEXT NOT NULL,
+      fetched_at BIGINT NOT NULL
+    );
   `);
 
   const { rows } = await pool.query('SELECT COUNT(*)::int AS c FROM users');

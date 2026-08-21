@@ -83,6 +83,48 @@ function translateOutcomeName(marketKey, id, outcome, ev) {
 
 // Merge every bookmaker's view into one market per key, keeping the BEST
 // (highest) price per outcome across bookmakers.
+// Odds Engine: diff best-price-per-outcome between the previously stored
+// event and the freshly fetched one, and return one row per outcome whose
+// price actually moved — for the caller to persist into odds_history.
+// Pure/DB-free so it's directly unit-testable (see tests/oddsUtils.test.js).
+export function diffOddsChanges(matchId, oldEv, newEv) {
+  function bestPrices(ev) {
+    const best = new Map(); // marketKey -> Map(outcomeId -> {price, marketId})
+    for (const bookmaker of ev?.bookmakers || []) {
+      for (const market of bookmaker.markets || []) {
+        if (!MARKET_LABELS[market.key]) continue;
+        if (!best.has(market.key)) best.set(market.key, new Map());
+        const outMap = best.get(market.key);
+        for (const outcome of market.outcomes || []) {
+          const id = outcomeId(market.key, outcome, ev);
+          const existing = outMap.get(id);
+          if (!existing || outcome.price > existing) outMap.set(id, outcome.price);
+        }
+      }
+    }
+    return best;
+  }
+
+  const oldBest = bestPrices(oldEv);
+  const newBest = bestPrices(newEv);
+  const changes = [];
+
+  for (const [marketKey, outMap] of newBest.entries()) {
+    for (const [selectionId, newPrice] of outMap.entries()) {
+      const oldPrice = oldBest.get(marketKey)?.get(selectionId) ?? null;
+      if (oldPrice !== null && Math.abs(oldPrice - newPrice) < 0.001) continue; // unchanged
+      changes.push({
+        matchId,
+        marketId: `${matchId}-${marketKey}`,
+        selectionId,
+        oldOdds: oldPrice,
+        newOdds: newPrice,
+      });
+    }
+  }
+  return changes;
+}
+
 export function mapEventToMatch(row) {
   const ev = JSON.parse(row.raw_json);
   const marketMap = new Map();

@@ -1,6 +1,7 @@
 import express from 'express';
 import pool, { getKV, setKV } from '../db.js';
-import { mapEventToMatch } from '../oddsUtils.js';
+import { mapEventToMatch, diffOddsChanges } from '../oddsUtils.js';
+import { pushOddsChanged, pushGoal } from '../ws.js';
 import { settleMatch } from '../matchSettlement.js';
 import { refreshOddsPapi } from '../oddspapi.js';
 import { refreshBsd } from '../bsd.js';
@@ -133,6 +134,26 @@ async function refreshLeagueOdds(leagueKey) {
 
   for (const ev of events) {
     const status = new Date(ev.commence_time) > new Date() ? 'UPCOMING' : 'LIVE';
+
+    // Odds Engine: diff against what we had before overwriting raw_json.
+    const { rows: existingRows } = await pool.query('SELECT raw_json FROM matches_cache WHERE id = $1', [ev.id]);
+    if (existingRows[0]) {
+      try {
+        const oldEv = JSON.parse(existingRows[0].raw_json);
+        const changes = diffOddsChanges(ev.id, oldEv, ev);
+        for (const c of changes) {
+          await pool.query(
+            `INSERT INTO odds_history (match_id, market_id, selection_id, old_odds, new_odds, changed_by, reason, created_at)
+             VALUES ($1,$2,$3,$4,$5,'SYSTEM','auto_refresh',$6)`,
+            [c.matchId, c.marketId, c.selectionId, c.oldOdds, c.newOdds, now]
+          );
+        }
+        if (changes.length > 0) pushOddsChanged(ev.id, { changes });
+      } catch (err) {
+        console.error('Failed recording odds_history:', err.message);
+      }
+    }
+
     await pool.query(
       `INSERT INTO matches_cache (id, league, home_team, away_team, start_time, status, raw_json, fetched_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
@@ -183,10 +204,33 @@ async function refreshLeagueScores(leagueKey) {
     if (ev.completed) {
       await settleMatch(ev.id, homeScore, awayScore);
     } else {
+      const prevHome = existing.live_home_score ?? 0;
+      const prevAway = existing.live_away_score ?? 0;
+      const scoreChanged = homeScore !== prevHome || awayScore !== prevAway;
+
       await pool.query(
         `UPDATE matches_cache SET status = 'LIVE', live_home_score = $1, live_away_score = $2 WHERE id = $3 AND status != 'FINISHED'`,
         [homeScore, awayScore, ev.id]
       );
+
+      // Live Match Engine: a score bump means a goal happened. Log the
+      // event and push it live — the frontend suspends markets for a few
+      // seconds and updates the scoreline without any polling/refresh.
+      if (scoreChanged) {
+        const scoringTeam = homeScore > prevHome ? ev.home_team : ev.away_team;
+        await pool.query(
+          `INSERT INTO match_events (match_id, minute, type, team, detail, created_at)
+           VALUES ($1,NULL,'GOAL',$2,$3,$4)`,
+          [ev.id, scoringTeam, `${homeScore}-${awayScore}`, now]
+        );
+        await pool.query(
+          `INSERT INTO live_statistics (match_id, home_score, away_score, updated_at)
+           VALUES ($1,$2,$3,$4)
+           ON CONFLICT (match_id) DO UPDATE SET home_score = excluded.home_score, away_score = excluded.away_score, updated_at = excluded.updated_at`,
+          [ev.id, homeScore, awayScore, now]
+        );
+        pushGoal(ev.id, { homeScore, awayScore, scoringTeam });
+      }
     }
   }
 }
@@ -236,6 +280,14 @@ router.get('/', async (req, res) => {
       : await pool.query('SELECT * FROM matches_cache ORDER BY start_time ASC');
 
   res.json({ matches: rows.map(mapEventToMatch), hasLiveApiKey: true });
+});
+
+router.get('/:id/odds-history', async (req, res) => {
+  const { rows } = await pool.query(
+    'SELECT market_id, selection_id, old_odds, new_odds, changed_by, reason, created_at FROM odds_history WHERE match_id = $1 ORDER BY created_at ASC',
+    [req.params.id]
+  );
+  res.json({ history: rows });
 });
 
 router.get('/:id', async (req, res) => {

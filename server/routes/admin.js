@@ -188,6 +188,45 @@ router.post('/matches/:id/settle', async (req, res) => {
 });
 
 // --- AUDIT LOG ---
+// Risk Management: current house exposure per outcome, and top-level KPIs
+// (turnover/open liability) for the Admin Dashboard.
+router.get('/risk/exposure', async (req, res) => {
+  const { rows } = await pool.query(`
+    SELECT bs.match_id, bs.match_home, bs.match_away, bs.market_id, bs.market_name,
+           bs.selection_id, bs.selection_name,
+           COUNT(DISTINCT b.id)::int AS ticket_count,
+           COALESCE(SUM(b.potential_return), 0) AS total_exposure
+    FROM bet_selections bs
+    JOIN bets b ON b.id = bs.bet_id
+    WHERE b.status = 'PENDING'
+    GROUP BY bs.match_id, bs.match_home, bs.match_away, bs.market_id, bs.market_name, bs.selection_id, bs.selection_name
+    ORDER BY total_exposure DESC
+    LIMIT 100
+  `);
+  res.json({ exposure: rows });
+});
+
+router.get('/dashboard/kpi', async (req, res) => {
+  const { rows: pending } = await pool.query(
+    `SELECT COALESCE(SUM(stake),0) AS turnover, COALESCE(SUM(potential_return),0) AS liability, COUNT(*)::int AS open_bets
+     FROM bets WHERE status = 'PENDING'`
+  );
+  const { rows: settled } = await pool.query(
+    `SELECT COALESCE(SUM(stake),0) AS turnover,
+            COALESCE(SUM(CASE WHEN status = 'WON' THEN potential_return ELSE 0 END),0) AS paid_out
+     FROM bets WHERE status IN ('WON','LOST')`
+  );
+  const { rows: users } = await pool.query(`SELECT COUNT(*)::int AS c FROM users`);
+  const ggr = Number(settled[0].turnover) - Number(settled[0].paid_out); // Gross Gaming Revenue = stakes in - payouts out
+  res.json({
+    turnover: Number(pending[0].turnover) + Number(settled[0].turnover),
+    openLiability: Number(pending[0].liability),
+    openBets: pending[0].open_bets,
+    ggr,
+    totalUsers: users[0].c,
+  });
+});
+
 router.get('/audit-log', async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 200, 500);
   const { rows } = await pool.query('SELECT * FROM audit_log ORDER BY created_at DESC LIMIT $1', [limit]);
