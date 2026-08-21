@@ -13,9 +13,12 @@ interface AdminPanelProps {
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet }) => {
-  const [activeTab, setActiveTab] = useState<'users' | 'tickets' | 'audit'>('users');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'tickets' | 'audit'>('dashboard');
   const [auditEntries, setAuditEntries] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [kpi, setKpi] = useState<api.AdminDashboardKpi | null>(null);
+  const [exposure, setExposure] = useState<api.AdminExposureRow[]>([]);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
 
   useEffect(() => {
     if (activeTab === 'audit') {
@@ -24,6 +27,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
         .then(setAuditEntries)
         .catch(() => setAuditEntries([]))
         .finally(() => setAuditLoading(false));
+    }
+    if (activeTab === 'dashboard') {
+      setDashboardLoading(true);
+      Promise.all([api.adminFetchDashboardKpi(), api.adminFetchExposure()])
+        .then(([k, e]) => { setKpi(k); setExposure(e); })
+        .catch(() => { setKpi(null); setExposure([]); })
+        .finally(() => setDashboardLoading(false));
     }
   }, [activeTab]);
   
@@ -132,6 +142,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
       {/* Header Tabs */}
       <div className="flex border-b border-brand-divider bg-brand-bg">
         <button
+          onClick={() => setActiveTab('dashboard')}
+          className={`px-6 py-3 text-sm font-bold ${activeTab === 'dashboard' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
+        >
+          Dashboard
+        </button>
+        <button
           onClick={() => setActiveTab('users')}
           className={`px-6 py-3 text-sm font-bold ${activeTab === 'users' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
         >
@@ -152,7 +168,72 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
       </div>
 
       <div className="p-6">
-        {activeTab === 'users' ? (
+        {activeTab === 'dashboard' ? (
+          <div className="space-y-6">
+            {dashboardLoading ? (
+              <div className="text-brand-textMuted text-sm">Loading...</div>
+            ) : !kpi ? (
+              <div className="text-brand-textMuted text-sm">Failed to load dashboard data.</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  <div className="bg-brand-bg border border-brand-divider rounded p-4">
+                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">GGR</div>
+                    <div className={`text-xl font-bold ${kpi.ggr >= 0 ? 'text-brand-accent' : 'text-red-400'}`}>{kpi.ggr.toFixed(2)} L</div>
+                  </div>
+                  <div className="bg-brand-bg border border-brand-divider rounded p-4">
+                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">Turnover (Total)</div>
+                    <div className="text-xl font-bold text-white">{kpi.turnover.toFixed(2)} L</div>
+                  </div>
+                  <div className="bg-brand-bg border border-brand-divider rounded p-4">
+                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">Open Liability</div>
+                    <div className="text-xl font-bold text-brand-yellow">{kpi.openLiability.toFixed(2)} L</div>
+                  </div>
+                  <div className="bg-brand-bg border border-brand-divider rounded p-4">
+                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">Open Bets</div>
+                    <div className="text-xl font-bold text-white">{kpi.openBets}</div>
+                  </div>
+                  <div className="bg-brand-bg border border-brand-divider rounded p-4">
+                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">Total Users</div>
+                    <div className="text-xl font-bold text-white">{kpi.totalUsers}</div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-brand-yellow font-bold uppercase text-xs tracking-wider mb-3">Top Exposure (highest house liability, PENDING bets)</h3>
+                  {exposure.length === 0 ? (
+                    <div className="text-brand-textMuted text-sm">No pending exposure.</div>
+                  ) : (
+                    <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+                      <table className="w-full text-left text-xs text-brand-text">
+                        <thead className="bg-brand-bg text-brand-textMuted uppercase sticky top-0">
+                          <tr>
+                            <th className="p-2">Match</th>
+                            <th className="p-2">Market</th>
+                            <th className="p-2">Selection</th>
+                            <th className="p-2">Tickets</th>
+                            <th className="p-2 text-right">Exposure</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-brand-divider">
+                          {exposure.map((row, i) => (
+                            <tr key={i} className="hover:bg-brand-bg/50">
+                              <td className="p-2">{row.match_home} v {row.match_away}</td>
+                              <td className="p-2 text-brand-textMuted">{row.market_name}</td>
+                              <td className="p-2 font-bold">{row.selection_name}</td>
+                              <td className="p-2">{row.ticket_count}</td>
+                              <td className="p-2 text-right text-brand-yellow font-bold">{Number(row.total_exposure).toFixed(2)} L</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        ) : activeTab === 'users' ? (
           <div className="space-y-8">
             {/* Create User Section */}
             <div className="bg-brand-bg p-4 rounded border border-brand-divider">

@@ -174,6 +174,27 @@ export async function adminFetchAuditLog(): Promise<any[]> {
   return data.entries;
 }
 
+export interface AdminDashboardKpi {
+  turnover: number;
+  openLiability: number;
+  openBets: number;
+  ggr: number;
+  totalUsers: number;
+}
+export async function adminFetchDashboardKpi() {
+  return request<AdminDashboardKpi>('/admin/dashboard/kpi');
+}
+
+export interface AdminExposureRow {
+  match_id: string; match_home: string; match_away: string;
+  market_id: string; market_name: string; selection_id: string; selection_name: string;
+  ticket_count: number; total_exposure: number;
+}
+export async function adminFetchExposure() {
+  const data = await request<{ exposure: AdminExposureRow[] }>('/admin/risk/exposure');
+  return data.exposure;
+}
+
 export async function adminCancelBet(betId: string) {
   return request<{ ok: true }>(`/admin/bets/${betId}/cancel`, { method: 'POST' });
 }
