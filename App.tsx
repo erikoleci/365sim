@@ -21,6 +21,7 @@ const App: React.FC = () => {
   const [myBets, setMyBets] = useState<Bet[]>([]);
   const [adminUsers, setAdminUsers] = useState<User[]>([]);
   const [adminAllBets, setAdminAllBets] = useState<any[]>([]);
+  const [favorites, setFavorites] = useState<api.Favorite[]>([]);
 
   // --- UI State ---
   const [simulatingMatchId, setSimulatingMatchId] = useState<string | null>(null);
@@ -42,6 +43,30 @@ const App: React.FC = () => {
       setCurrentUser(user);
       setAuthChecked(true);
     })();
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser) { setFavorites([]); return; }
+    (async () => {
+      try {
+        const { favorites: f } = await api.getFavorites();
+        setFavorites(f);
+      } catch (e) {
+        console.error('Failed to load favorites', e);
+      }
+    })();
+  }, [currentUser]);
+
+  const favoriteTeams = useMemo(() => new Set(favorites.filter(f => f.type === 'TEAM').map(f => f.value)), [favorites]);
+  const favoriteLeagues = useMemo(() => new Set(favorites.filter(f => f.type === 'LEAGUE').map(f => f.value)), [favorites]);
+
+  const toggleFavorite = useCallback(async (type: 'TEAM' | 'LEAGUE', value: string) => {
+    try {
+      const { favorites: f } = await api.toggleFavorite(type, value);
+      setFavorites(f);
+    } catch (e) {
+      console.error('Failed to toggle favorite', e);
+    }
   }, []);
 
   // --- Load matches from the real backend ---
@@ -137,7 +162,11 @@ const App: React.FC = () => {
     : [];
   const upcomingMatches = searchFiltered
     .filter((m) => m.status === MatchStatus.UPCOMING)
-    .filter((m) => currentLeague === 'All Top Football' || m.league === currentLeague)
+    .filter((m) => {
+      if (currentLeague === 'All Top Football') return true;
+      if (currentLeague === 'FAVORITES') return favoriteTeams.has(m.homeTeam) || favoriteTeams.has(m.awayTeam) || favoriteLeagues.has(m.league);
+      return m.league === currentLeague;
+    })
     .filter((m) => selectedDate === 'ALL' || albaniaDateKey(m.startTime) === selectedDate)
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
@@ -404,6 +433,14 @@ const App: React.FC = () => {
                 <span className="text-[10px] bg-brand-yellow text-black px-1.5 rounded font-bold">SOCCER</span>
               </div>
 
+              <button onClick={() => { setCurrentLeague('FAVORITES'); setDetailMatchId(null); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors hover:bg-[#444] hover:text-white ${currentLeague === 'FAVORITES' ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
+                <div className="flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className="w-3.5 h-3.5 fill-brand-yellow"><path d="M10 1.5l2.6 5.27 5.82.85-4.21 4.1.99 5.8L10 14.9l-5.2 2.62.99-5.8-4.21-4.1 5.82-.85L10 1.5z" /></svg>
+                  <span className="uppercase tracking-wider">Të Preferuarat</span>
+                  {(favoriteTeams.size + favoriteLeagues.size) > 0 && <span className="text-[10px] bg-brand-yellow text-black px-1.5 rounded font-bold">{favoriteTeams.size + favoriteLeagues.size}</span>}
+                </div>
+              </button>
+
               <button onClick={() => { setDetailMatchId(null); document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' }); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors hover:bg-[#444] hover:text-white ${liveMatches.length === 0 ? 'opacity-40 cursor-not-allowed' : ''}`}>
                 <div className="flex items-center gap-2">
                   <span className="relative flex h-2 w-2">
@@ -429,7 +466,19 @@ const App: React.FC = () => {
                       </button>
                       {isOpen && leagues.map((league) => (
                         <button key={league} onClick={() => { setCurrentLeague(league); setDetailMatchId(null); }} className={`px-3 py-2.5 pl-6 hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 flex justify-between items-center group text-left w-full ${currentLeague === league ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
-                          {leagueLabel(league)}
+                          <span className="flex items-center min-w-0">
+                            <span
+                              role="button"
+                              onClick={(e) => { e.stopPropagation(); toggleFavorite('LEAGUE', league); }}
+                              className="shrink-0 mr-1.5 leading-none"
+                              title={favoriteLeagues.has(league) ? 'Hiq nga të preferuarat' : 'Shto te të preferuarat'}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className={`w-3 h-3 ${favoriteLeagues.has(league) ? 'fill-brand-yellow' : 'fill-none stroke-brand-textMuted'}`} strokeWidth={1.5}>
+                                <path d="M10 1.5l2.6 5.27 5.82.85-4.21 4.1.99 5.8L10 14.9l-5.2 2.62.99-5.8-4.21-4.1 5.82-.85L10 1.5z" />
+                              </svg>
+                            </span>
+                            <span className="truncate">{leagueLabel(league)}</span>
+                          </span>
                         </button>
                       ))}
                     </div>
@@ -519,6 +568,8 @@ const App: React.FC = () => {
                             onSettleMatch={handleSettleMatch}
                             isSimulating={simulatingMatchId === match.id}
                             selectedIds={selectedIds}
+                            favoriteTeams={favoriteTeams}
+                            onToggleFavoriteTeam={(team) => toggleFavorite('TEAM', team)}
                           />
                         ))}
                       </div>
@@ -543,6 +594,8 @@ const App: React.FC = () => {
                             onSettleMatch={handleSettleMatch}
                             isSimulating={simulatingMatchId === match.id}
                             selectedIds={selectedIds}
+                            favoriteTeams={favoriteTeams}
+                            onToggleFavoriteTeam={(team) => toggleFavorite('TEAM', team)}
                           />
                         ))}
                       </div>
@@ -581,6 +634,8 @@ const App: React.FC = () => {
                               onSettleMatch={handleSettleMatch}
                               isSimulating={simulatingMatchId === match.id}
                               selectedIds={selectedIds}
+                              favoriteTeams={favoriteTeams}
+                              onToggleFavoriteTeam={(team) => toggleFavorite('TEAM', team)}
                             />
                           ))}
                         </div>

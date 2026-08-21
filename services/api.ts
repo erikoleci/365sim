@@ -263,3 +263,16 @@ export async function casinoVideoPokerDraw(roundId: string, holdIndices: number[
     { method: 'POST', body: JSON.stringify({ holdIndices }) }
   );
 }
+
+export interface Favorite { type: 'TEAM' | 'LEAGUE'; value: string; }
+
+export async function getFavorites() {
+  return request<{ favorites: Favorite[] }>('/favorites');
+}
+
+export async function toggleFavorite(type: 'TEAM' | 'LEAGUE', value: string) {
+  return request<{ favorites: Favorite[]; favorited: boolean }>('/favorites/toggle', {
+    method: 'POST',
+    body: JSON.stringify({ type, value }),
+  });
+}

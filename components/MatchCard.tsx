@@ -9,10 +9,20 @@ interface MatchRowProps {
   isAdmin: boolean;
   onSettleMatch: (match: Match, homeScore: number, awayScore: number) => void;
   isSimulating: boolean;
-  selectedIds: string[]; 
+  selectedIds: string[];
+  favoriteTeams: Set<string>;
+  onToggleFavoriteTeam: (team: string) => void;
 }
 
-const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, isAdmin, onSettleMatch, isSimulating, selectedIds }) => {
+const StarButton: React.FC<{ active: boolean; onClick: (e: React.MouseEvent) => void }> = ({ active, onClick }) => (
+  <button onClick={onClick} className="shrink-0 mr-1.5 leading-none" title={active ? 'Hiq nga të preferuarat' : 'Shto te të preferuarat'}>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className={`w-3.5 h-3.5 ${active ? 'fill-brand-yellow' : 'fill-none stroke-brand-textMuted'}`} strokeWidth={1.5}>
+      <path d="M10 1.5l2.6 5.27 5.82.85-4.21 4.1.99 5.8L10 14.9l-5.2 2.62.99-5.8-4.21-4.1 5.82-.85L10 1.5z" />
+    </svg>
+  </button>
+);
+
+const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, isAdmin, onSettleMatch, isSimulating, selectedIds, favoriteTeams, onToggleFavoriteTeam }) => {
   const isFinished = match.status === MatchStatus.FINISHED;
   const isLive = match.status === MatchStatus.LIVE;
   const matchWinnerMarket = match.markets.find(m => m.id.endsWith('-h2h'));
@@ -52,7 +62,10 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
            <div className="flex flex-col gap-1.5">
                {/* Home Team */}
                <div className={`flex justify-between items-center ${isFinished ? 'opacity-80' : ''}`}>
-                 <span className="text-brand-text font-bold text-sm truncate pr-2">{match.homeTeam}</span>
+                 <span className="flex items-center min-w-0">
+                   <StarButton active={favoriteTeams.has(match.homeTeam)} onClick={(e) => { e.stopPropagation(); onToggleFavoriteTeam(match.homeTeam); }} />
+                   <span className="text-brand-text font-bold text-sm truncate pr-2">{match.homeTeam}</span>
+                 </span>
                  {(isFinished || isLive) && (
                     <span className={`font-mono font-bold text-lg w-8 text-right leading-none ${isLive ? 'text-brand-yellow drop-shadow-md' : 'text-brand-accent'}`}>
                         {isLive ? (match.liveHomeScore ?? 0) : match.score?.home}
@@ -62,7 +75,10 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
                
                {/* Away Team */}
                <div className={`flex justify-between items-center ${isFinished ? 'opacity-80' : ''}`}>
-                 <span className="text-brand-text font-bold text-sm truncate pr-2">{match.awayTeam}</span>
+                 <span className="flex items-center min-w-0">
+                   <StarButton active={favoriteTeams.has(match.awayTeam)} onClick={(e) => { e.stopPropagation(); onToggleFavoriteTeam(match.awayTeam); }} />
+                   <span className="text-brand-text font-bold text-sm truncate pr-2">{match.awayTeam}</span>
+                 </span>
                  {(isFinished || isLive) && (
                     <span className={`font-mono font-bold text-lg w-8 text-right leading-none ${isLive ? 'text-brand-yellow drop-shadow-md' : 'text-brand-accent'}`}>
                         {isLive ? (match.liveAwayScore ?? 0) : match.score?.away}

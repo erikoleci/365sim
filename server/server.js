@@ -12,6 +12,7 @@ import betsRouter from './routes/bets.js';
 import adminRouter from './routes/admin.js';
 import casinoRouter from './routes/casino.js';
 import scrapeRouter from './routes/scrape.js';
+import favoritesRouter from './routes/favorites.js';
 import { initDb } from './db.js';
 import { initWebSocket } from './ws.js';
 
@@ -79,6 +80,7 @@ app.use('/api/bets', betsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/casino', casinoRouter);
 app.use('/api/scrape', scrapeRouter);
+app.use('/api/favorites', favoritesRouter);
 
 // Catch-all error handler: any unhandled error thrown/rejected inside a route
 // (e.g. Postgres unreachable, quota exceeded) returns a clean 503 instead of
