@@ -167,6 +167,32 @@ const App: React.FC = () => {
       : LEAGUE_LABELS[key] ||
         key.replace(/^soccer_/, '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
+  // Sport keys generally follow "<provider>_<country>_<league>" (e.g.
+  // "soccer_spain_la_liga"). We use that country token to group leagues by
+  // country in the sidebar, so browsing e.g. Spain shows only Spain's
+  // leagues underneath it — with continental/international competitions
+  // (Champions League, Europa League, World Cup, qualifiers, etc.) pulled
+  // into their own "Ndërkombëtare" group instead of being mixed into
+  // whichever country happens to sort next to them.
+  const COUNTRY_TOKEN_LABELS: Record<string, string> = {
+    epl: 'Anglia', england: 'Anglia', spain: 'Spanja', italy: 'Italia', germany: 'Gjermania',
+    france: 'Franca', usa: 'SHBA', brazil: 'Brazil', argentina: 'Argjentinë', portugal: 'Portugali',
+    netherlands: 'Holandë', belgium: 'Belgjikë', turkey: 'Turqi', greece: 'Greqi', scotland: 'Skoci',
+    switzerland: 'Zvicër', austria: 'Austri', denmark: 'Danimarkë', sweden: 'Suedi', norway: 'Norvegji',
+    russia: 'Rusi', poland: 'Poloni', mexico: 'Meksikë', japan: 'Japoni', korea: 'Korea e Jugut',
+    china: 'Kinë', australia: 'Australi', chile: 'Kili', colombia: 'Kolumbi', albania: 'Shqipëri',
+    croatia: 'Kroaci', serbia: 'Serbi', romania: 'Rumani', ukraine: 'Ukrainë', saudi: 'Arabia Saudite',
+  };
+  const INTERNATIONAL_TOKENS = new Set(['uefa', 'fifa', 'conmebol', 'concacaf', 'afc', 'caf', 'international']);
+  const leagueCountry = (key: string): string => {
+    if (key === 'soccer_epl') return 'Anglia';
+    if (key === 'oddsapiio_albania_superiore') return 'Shqipëri';
+    const token = key.match(/^[a-z0-9]+_([a-z]+)_/)?.[1];
+    if (!token) return 'Të tjera';
+    if (INTERNATIONAL_TOKENS.has(token)) return 'Ndërkombëtare';
+    return COUNTRY_TOKEN_LABELS[token] || token.charAt(0).toUpperCase() + token.slice(1);
+  };
+
   const detailMatch = matches.find((m) => m.id === detailMatchId);
   const matchesByLeague = upcomingMatches.reduce((acc, match) => {
     if (!acc[match.league]) acc[match.league] = [];
@@ -178,6 +204,33 @@ const App: React.FC = () => {
     const fetchedLeagues = Array.from(new Set(matches.map((m) => m.league)));
     return Array.from(new Set(['All Top Football', ...fetchedLeagues])).sort();
   }, [matches]);
+
+  const leaguesByCountry = useMemo(() => {
+    const groups: Record<string, string[]> = {};
+    dynamicLeagues.filter((l) => l !== 'All Top Football').forEach((league) => {
+      const country = leagueCountry(league);
+      if (!groups[country]) groups[country] = [];
+      groups[country].push(league);
+    });
+    Object.values(groups).forEach((arr) => arr.sort((a, b) => leagueLabel(a).localeCompare(leagueLabel(b))));
+    const countryNames = Object.keys(groups).sort((a, b) => {
+      if (a === 'Ndërkombëtare') return 1;
+      if (b === 'Ndërkombëtare') return -1;
+      return a.localeCompare(b);
+    });
+    return countryNames.map((name) => [name, groups[name]] as [string, string[]]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dynamicLeagues]);
+
+  // Which country group is expanded in the sidebar. Kept in sync with
+  // whatever league is currently selected (so picking a league from the
+  // mobile chip strip, or resetting via "Home", opens/closes the right
+  // group), while still letting the user freely open other groups to browse.
+  const [expandedCountry, setExpandedCountry] = useState<string | null>(null);
+  useEffect(() => {
+    setExpandedCountry(currentLeague === 'All Top Football' ? null : leagueCountry(currentLeague));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentLeague]);
 
   const uniqueId = (matchId: string, marketId: string, selId: string) => `${matchId}-${marketId}-${selId}`;
   const selectedIds = useMemo(() => selections.map((s) => uniqueId(s.matchId, s.marketId, s.selectionId)), [selections]);
@@ -363,11 +416,25 @@ const App: React.FC = () => {
               </button>
 
               <div className="flex flex-col text-xs text-brand-textMuted max-h-[80vh] overflow-y-auto custom-scrollbar">
-                {dynamicLeagues.map((league) => (
-                  <button key={league} onClick={() => { setCurrentLeague(league); setDetailMatchId(null); }} className={`px-3 py-2.5 hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 flex justify-between items-center group text-left w-full ${currentLeague === league ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : 'pl-4'}`}>
-                    {leagueLabel(league)}
-                  </button>
-                ))}
+                {leaguesByCountry.map(([country, leagues]) => {
+                  const isOpen = expandedCountry === country;
+                  return (
+                    <div key={country}>
+                      <button
+                        onClick={() => setExpandedCountry(isOpen ? null : country)}
+                        className={`w-full flex justify-between items-center px-3 py-2 bg-[#333] hover:bg-[#3a3a3a] text-brand-text font-bold uppercase text-[10px] tracking-wider border-b border-brand-bg/10 transition-colors ${isOpen ? 'text-white' : ''}`}
+                      >
+                        <span>{country}</span>
+                        <span className="text-brand-textMuted">{isOpen ? '▾' : '▸'}</span>
+                      </button>
+                      {isOpen && leagues.map((league) => (
+                        <button key={league} onClick={() => { setCurrentLeague(league); setDetailMatchId(null); }} className={`px-3 py-2.5 pl-6 hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 flex justify-between items-center group text-left w-full ${currentLeague === league ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
+                          {leagueLabel(league)}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </aside>
