@@ -32,6 +32,10 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [currentView, setCurrentView] = useState<'sports' | 'casino'>('sports');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [searchHistory, setSearchHistory] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('searchHistory') || '[]'); } catch { return []; }
+  });
   const [isMobileSlipOpen, setIsMobileSlipOpen] = useState(false);
   const [selections, setSelections] = useState<BetSelectionItem[]>([]);
   const [betError, setBetError] = useState<string | null>(null);
@@ -145,6 +149,16 @@ const App: React.FC = () => {
     return m.homeTeam.toLowerCase().includes(q) || m.awayTeam.toLowerCase().includes(q) || m.league.toLowerCase().includes(q);
   });
 
+  const commitSearchHistory = useCallback((term: string) => {
+    const trimmed = term.trim();
+    if (!trimmed) return;
+    setSearchHistory((prev) => {
+      const next = [trimmed, ...prev.filter((t) => t.toLowerCase() !== trimmed.toLowerCase())].slice(0, 8);
+      try { localStorage.setItem('searchHistory', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
   const STALE_LIVE_MS = 6 * 60 * 60 * 1000; // matches don't last 6h — treat as stuck/stale if never settled
   const liveMatches = searchFiltered
     .filter((m) => m.status === MatchStatus.LIVE && (Date.now() - new Date(m.startTime).getTime()) < STALE_LIVE_MS)
@@ -195,6 +209,28 @@ const App: React.FC = () => {
       ? 'Të Gjitha Kampionatet'
       : LEAGUE_LABELS[key] ||
         key.replace(/^soccer_/, '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+  // Autocomplete suggestions — split into teams / leagues / direct match
+  // hits so the dropdown can show each kind separately, instant (no
+  // network call, just filtering data already loaded).
+  const searchSuggestions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return { teams: [] as string[], leagues: [] as string[], matches: [] as Match[] };
+
+    const teamSet = new Set<string>();
+    matches.forEach((m) => {
+      if (m.homeTeam.toLowerCase().includes(q)) teamSet.add(m.homeTeam);
+      if (m.awayTeam.toLowerCase().includes(q)) teamSet.add(m.awayTeam);
+    });
+    const leagueSet = new Set<string>();
+    matches.forEach((m) => {
+      if (leagueLabel(m.league).toLowerCase().includes(q)) leagueSet.add(m.league);
+    });
+    const directMatches = matches.filter((m) => m.homeTeam.toLowerCase().includes(q) || m.awayTeam.toLowerCase().includes(q)).slice(0, 5);
+
+    return { teams: Array.from(teamSet).slice(0, 5), leagues: Array.from(leagueSet).slice(0, 5), matches: directMatches };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, matches]);
 
   // Sport keys generally follow "<provider>_<country>_<league>" (e.g.
   // "soccer_spain_la_liga"). We use that country token to group leagues by
@@ -534,9 +570,75 @@ const App: React.FC = () => {
                 ))}
               </div>
 
-              <div className="bg-brand-panel p-3 rounded flex items-center gap-2 border border-brand-divider">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-brand-textMuted" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                <input type="text" placeholder="Kërko skuadra..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="bg-transparent text-white text-sm w-full outline-none placeholder-brand-textMuted" />
+              <div className="relative">
+                <div className="bg-brand-panel p-3 rounded flex items-center gap-2 border border-brand-divider">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-brand-textMuted shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                  <input
+                    type="text"
+                    placeholder="Kërko skuadra, liga..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onFocus={() => setIsSearchFocused(true)}
+                    onBlur={() => setTimeout(() => setIsSearchFocused(false), 150)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { commitSearchHistory(searchQuery); (e.target as HTMLInputElement).blur(); } }}
+                    className="bg-transparent text-white text-sm w-full outline-none placeholder-brand-textMuted"
+                  />
+                  {searchQuery && (
+                    <button onClick={() => setSearchQuery('')} className="text-brand-textMuted hover:text-white shrink-0">✕</button>
+                  )}
+                </div>
+
+                {isSearchFocused && (searchQuery.trim() ? (searchSuggestions.teams.length + searchSuggestions.leagues.length + searchSuggestions.matches.length > 0) : searchHistory.length > 0) && (
+                  <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-brand-panel border border-brand-divider rounded shadow-xl max-h-80 overflow-y-auto text-sm">
+                    {!searchQuery.trim() && searchHistory.length > 0 && (
+                      <>
+                        <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-brand-textMuted flex justify-between items-center">
+                          <span>Kërkime të fundit</span>
+                          <button onMouseDown={(e) => { e.preventDefault(); setSearchHistory([]); localStorage.removeItem('searchHistory'); }} className="hover:text-white">Pastro</button>
+                        </div>
+                        {searchHistory.map((term) => (
+                          <button key={term} onMouseDown={(e) => { e.preventDefault(); setSearchQuery(term); commitSearchHistory(term); setIsSearchFocused(false); }} className="w-full text-left px-3 py-2 text-brand-textMuted hover:bg-[#444] hover:text-white flex items-center gap-2">
+                            <span className="opacity-50">↺</span>{term}
+                          </button>
+                        ))}
+                      </>
+                    )}
+
+                    {searchQuery.trim() && searchSuggestions.teams.length > 0 && (
+                      <>
+                        <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-brand-textMuted">Skuadra</div>
+                        {searchSuggestions.teams.map((team) => (
+                          <button key={team} onMouseDown={(e) => { e.preventDefault(); setSearchQuery(team); commitSearchHistory(team); setIsSearchFocused(false); }} className="w-full text-left px-3 py-2 text-white hover:bg-[#444] flex items-center justify-between">
+                            <span>{team}</span>
+                            {favoriteTeams.has(team) && <span className="text-brand-yellow text-xs">★</span>}
+                          </button>
+                        ))}
+                      </>
+                    )}
+
+                    {searchQuery.trim() && searchSuggestions.leagues.length > 0 && (
+                      <>
+                        <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-brand-textMuted">Liga</div>
+                        {searchSuggestions.leagues.map((league) => (
+                          <button key={league} onMouseDown={(e) => { e.preventDefault(); setCurrentLeague(league); setSearchQuery(''); commitSearchHistory(leagueLabel(league)); setIsSearchFocused(false); }} className="w-full text-left px-3 py-2 text-white hover:bg-[#444]">
+                            {leagueLabel(league)}
+                          </button>
+                        ))}
+                      </>
+                    )}
+
+                    {searchQuery.trim() && searchSuggestions.matches.length > 0 && (
+                      <>
+                        <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-brand-textMuted">Ndeshje</div>
+                        {searchSuggestions.matches.map((m) => (
+                          <button key={m.id} onMouseDown={(e) => { e.preventDefault(); commitSearchHistory(searchQuery); setDetailMatchId(m.id); setSearchQuery(''); setIsSearchFocused(false); }} className="w-full text-left px-3 py-2 text-white hover:bg-[#444]">
+                            {m.homeTeam} <span className="text-brand-textMuted">vs</span> {m.awayTeam}
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
               {isLoading ? (
