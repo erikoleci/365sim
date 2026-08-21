@@ -662,12 +662,6 @@ const App: React.FC = () => {
         </>
       )}
 
-      <footer
-        className="text-center text-[10px] text-brand-textMuted py-3 px-4 border-t border-brand-divider bg-brand-bg"
-        title="365sim është një simulim vetëm për argëtim — luhet me para virtuale, jo para reale. S'ka lidhje me kompani të vërteta basti dhe s'ofron shërbime bastesh reale."
-      >
-        SPVJR
-      </footer>
     </div>
   );
 };
