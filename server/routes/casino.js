@@ -13,10 +13,10 @@ const MAX_STAKE = 5000;
 // The house allows a real win on ~1% of rounds; the other ~99% are forced
 // to a loss. Wins are also capped to a small profit (5%-50% of stake)
 // instead of each game's "natural" payout table.
-const WIN_CHANCE = 0.01;
-const smallProfitMultiplier = () => 1.05 + Math.random() * 0.45;
+export const WIN_CHANCE = 0.01;
+export const smallProfitMultiplier = () => 1.05 + Math.random() * 0.45;
 
-function validateStake(stake) {
+export function validateStake(stake) {
   return typeof stake === 'number' && Number.isFinite(stake) && stake >= MIN_STAKE && stake <= MAX_STAKE;
 }
 
@@ -149,9 +149,9 @@ const randBaccaratCard = () => {
   const value = BACCARAT_VALUES[Math.floor(Math.random() * BACCARAT_VALUES.length)];
   return { suit, value, numValue: baccaratValue(value) };
 };
-const scoreBaccaratHand = (hand) => hand.reduce((a, c) => a + c.numValue, 0) % 10;
+export const scoreBaccaratHand = (hand) => hand.reduce((a, c) => a + c.numValue, 0) % 10;
 
-function dealBaccaratRound() {
+export function dealBaccaratRound() {
   const p1 = randBaccaratCard(), b1 = randBaccaratCard(), p2 = randBaccaratCard(), b2 = randBaccaratCard();
   const pHand = [p1, p2], bHand = [b1, b2];
   let pScore = scoreBaccaratHand(pHand), bScore = scoreBaccaratHand(bHand);
@@ -291,7 +291,7 @@ router.post('/crash/:id/cashout', async (req, res) => {
 // BLACKJACK — multi-step (deal / hit / stand), state kept server-side
 // =====================================================================
 const BJ_VALUES = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
-function buildShuffledDeck() {
+export function buildShuffledDeck() {
   const deck = [];
   for (const suit of CARD_SUITS) {
     for (const val of BJ_VALUES) {
@@ -303,7 +303,7 @@ function buildShuffledDeck() {
   }
   return deck.sort(() => Math.random() - 0.5);
 }
-function calcBjScore(hand) {
+export function calcBjScore(hand) {
   let score = hand.reduce((a, c) => a + c.numValue, 0);
   let aces = hand.filter((c) => c.value === 'A').length;
   while (score > 21 && aces > 0) {
@@ -314,7 +314,7 @@ function calcBjScore(hand) {
 }
 // A genuine player win only pays out ~1% of the time (capped to a small
 // profit); pushes return the stake; losses return nothing.
-function resolveBlackjackResult(stake, natural) {
+export function resolveBlackjackResult(stake, natural) {
   if (natural.kind === 'LOSS') return { payout: 0, message: natural.message };
   if (natural.kind === 'PUSH') return { payout: stake, message: natural.message };
   if (Math.random() < WIN_CHANCE) {

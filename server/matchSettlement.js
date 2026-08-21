@@ -1,5 +1,31 @@
 import pool from './db.js';
 
+// Pure decision logic for a single bet leg given the final match result.
+// Kept separate from settleMatch (which is DB-coupled) so it can be unit
+// tested without a database. Returns 'WON' | 'LOST' | null (null = leave
+// PENDING for manual review — used for markets/lines we don't auto-settle).
+export function determineLegOutcome(leg, { winner, totalGoals, bothScored }) {
+  if (leg.market_id.endsWith('-h2h')) {
+    return leg.selection_id === winner ? 'WON' : 'LOST';
+  }
+  if (leg.market_id.endsWith('-totals')) {
+    const idx = leg.selection_id.lastIndexOf('-');
+    const side = leg.selection_id.slice(0, idx); // "Over" | "Under"
+    const point = parseFloat(leg.selection_id.slice(idx + 1));
+    if (Number.isNaN(point) || point === totalGoals) return null; // exact-push line, review manually
+    if (side === 'Over') return totalGoals > point ? 'WON' : 'LOST';
+    if (side === 'Under') return totalGoals < point ? 'WON' : 'LOST';
+    return null;
+  }
+  if (leg.market_id.endsWith('-btts')) {
+    if (leg.selection_id === 'Yes') return bothScored ? 'WON' : 'LOST';
+    if (leg.selection_id === 'No') return !bothScored ? 'WON' : 'LOST';
+    return null;
+  }
+  // double_chance / draw_no_bet / spreads -> left PENDING on purpose
+  return null;
+}
+
 // Recompute a bet's overall status from its legs, and pay out balance
 // exactly once, the moment it transitions into WON.
 export async function recomputeBetStatus(betId, client = pool) {
@@ -57,23 +83,7 @@ export async function settleMatch(matchId, homeScore, awayScore, { force = false
     try {
       for (const leg of legs) {
         affectedBetIds.add(leg.bet_id);
-        let outcome = null; // null = leave pending, needs manual review
-
-        if (leg.market_id.endsWith('-h2h')) {
-          outcome = leg.selection_id === winner ? 'WON' : 'LOST';
-        } else if (leg.market_id.endsWith('-totals')) {
-          const idx = leg.selection_id.lastIndexOf('-');
-          const side = leg.selection_id.slice(0, idx);       // "Over" | "Under"
-          const point = parseFloat(leg.selection_id.slice(idx + 1));
-          if (!Number.isNaN(point) && point !== totalGoals) { // skip exact-push lines, review manually
-            if (side === 'Over') outcome = totalGoals > point ? 'WON' : 'LOST';
-            if (side === 'Under') outcome = totalGoals < point ? 'WON' : 'LOST';
-          }
-        } else if (leg.market_id.endsWith('-btts')) {
-          if (leg.selection_id === 'Yes') outcome = bothScored ? 'WON' : 'LOST';
-          if (leg.selection_id === 'No') outcome = !bothScored ? 'WON' : 'LOST';
-        }
-        // double_chance / draw_no_bet / spreads -> left PENDING on purpose
+        const outcome = determineLegOutcome(leg, { winner, totalGoals, bothScored });
 
         if (outcome) {
           await client.query('UPDATE bet_selections SET status = $1 WHERE id = $2', [outcome, leg.id]);

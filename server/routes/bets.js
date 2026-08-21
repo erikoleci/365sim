@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { resolveCurrentOdds } from '../oddsUtils.js';
+import { findConflictingSelection, validateStakeAmount } from '../betValidation.js';
 
 const router = express.Router();
 
@@ -45,14 +46,9 @@ router.post('/', async (req, res) => {
   if (selections.length > MAX_SELECTIONS_PER_TICKET) {
     return res.status(400).json({ error: `Maximum ${MAX_SELECTIONS_PER_TICKET} selections per ticket` });
   }
-  if (typeof stake !== 'number' || !Number.isFinite(stake) || stake <= 0) {
-    return res.status(400).json({ error: 'Stake must be a positive number' });
-  }
-  if (stake < MIN_STAKE) {
-    return res.status(400).json({ error: `Minimum stake is ${MIN_STAKE}` });
-  }
-  if (stake > MAX_STAKE) {
-    return res.status(400).json({ error: `Maximum stake is ${MAX_STAKE}` });
+  const stakeError = validateStakeAmount(stake, { min: MIN_STAKE, max: MAX_STAKE });
+  if (stakeError) {
+    return res.status(400).json({ error: stakeError });
   }
 
   // --- Conflict detection: reject mutually exclusive / duplicate selections
@@ -62,15 +58,11 @@ router.post('/', async (req, res) => {
   // backing two outcomes of the same market on the same match is either a
   // mistake or a guaranteed-outcome exploit; either way, reject it clearly
   // rather than silently accepting it. ---
-  const seenMarkets = new Map(); // `${matchId}::${marketId}` -> selectionId already used
-  for (const sel of selections) {
-    const key = `${sel.matchId}::${sel.marketId}`;
-    if (seenMarkets.has(key)) {
-      return res.status(400).json({
-        error: `Conflicting selections: "${seenMarkets.get(key)}" and "${sel.selectionId}" are both from the same market on the same match.`,
-      });
-    }
-    seenMarkets.set(key, sel.selectionId);
+  const conflict = findConflictingSelection(selections);
+  if (conflict) {
+    return res.status(400).json({
+      error: `Conflicting selections: "${conflict.existingSelectionId}" and "${conflict.newSelectionId}" are both from the same market on the same match.`,
+    });
   }
 
   const { rows: userRows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);

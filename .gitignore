@@ -28,3 +28,4 @@ dist-ssr
 .env.local
 server/data/*.db
 server/data/*.db-*
+coverage
