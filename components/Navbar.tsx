@@ -46,7 +46,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
           {currentUser.role === UserRole.ADMIN && (
             <button 
               onClick={onOpenAdmin}
-              className="hidden md:block bg-brand-headerDark hover:bg-black/20 text-brand-yellow px-3 py-1.5 rounded font-bold border border-brand-yellow/30 transition-colors uppercase tracking-wide"
+              className="bg-brand-headerDark hover:bg-black/20 text-brand-yellow px-2 md:px-3 py-1.5 rounded font-bold border border-brand-yellow/30 transition-colors uppercase tracking-wide text-[10px] md:text-xs whitespace-nowrap"
             >
               Admin
             </button>
