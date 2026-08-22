@@ -25,7 +25,8 @@ const MARKETS = 'h2h,totals,spreads';
 // needed to catch recently-finished matches, not just currently-live ones).
 const LEAGUES_REFRESH_MS = 24 * 60 * 60 * 1000;  // sport list changes rarely -> 24h
 const ODDS_REFRESH_MS = 96 * 60 * 60 * 1000;      // 9 leagues -> every 4 days
-const SCORES_REFRESH_MS = 48 * 60 * 60 * 1000;    // every 2 days
+const SCORES_REFRESH_MS = 48 * 60 * 60 * 1000;    // every 2 days (leagues with no live match)
+const LIVE_SCORES_REFRESH_MS = 60 * 1000;          // every 60s for leagues currently showing a LIVE match
 
 // CREDIT BUDGET (500/month on The Odds API free plan): each league costs
 // 3 credits/odds-refresh + 2 credits/scores-refresh = 5 credits per full
@@ -173,7 +174,15 @@ async function refreshLeagueScores(leagueKey) {
   await ensureStateLoaded();
   const now = Date.now();
   const last = scoresRefreshTimers.get(leagueKey) || 0;
-  if (now - last < SCORES_REFRESH_MS) return;
+
+  // Leagues with a match currently LIVE get a much shorter refresh interval
+  // so goals show up almost instantly instead of waiting up to 48h.
+  const { rows: liveRows } = await pool.query(
+    `SELECT 1 FROM matches_cache WHERE league = $1 AND status = 'LIVE' LIMIT 1`,
+    [leagueKey]
+  );
+  const interval = liveRows.length ? LIVE_SCORES_REFRESH_MS : SCORES_REFRESH_MS;
+  if (now - last < interval) return;
   if (lastKnownRemaining <= MIN_REMAINING_CREDITS_BUFFER) {
     console.warn(`[the-odds-api] Skipping scores refresh of ${leagueKey}: low on monthly credits (${lastKnownRemaining} left).`);
     return;
