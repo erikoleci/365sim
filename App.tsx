@@ -37,6 +37,7 @@ const App: React.FC = () => {
     try { return JSON.parse(localStorage.getItem('searchHistory') || '[]'); } catch { return []; }
   });
   const [isMobileSlipOpen, setIsMobileSlipOpen] = useState(false);
+  const [isLeagueMenuOpen, setIsLeagueMenuOpen] = useState(false);
   const [selections, setSelections] = useState<BetSelectionItem[]>([]);
   const [betError, setBetError] = useState<string | null>(null);
 
@@ -462,67 +463,67 @@ const App: React.FC = () => {
       <div className="flex-1 flex max-w-[1450px] mx-auto w-full pt-4 px-2 gap-2 relative">
 
         {currentView === 'sports' && (
-          <aside className="hidden lg:block w-60 flex-shrink-0">
-            <div className="bg-brand-panel rounded overflow-hidden shadow-sm">
-              <div className="bg-[#383838] px-3 py-2 text-xs font-bold text-brand-text border-b border-[#444] uppercase flex justify-between">
-                <span>Leagues</span>
-                <span className="text-[10px] bg-brand-yellow text-black px-1.5 rounded font-bold">SOCCER</span>
-              </div>
+          <>
+            {/* Mobile trigger — opens leagues as a drawer from the left */}
+            <button
+              onClick={() => setIsLeagueMenuOpen(true)}
+              className="lg:hidden fixed left-2 top-[7.5rem] z-40 bg-brand-panel border border-[#444] rounded-full p-2.5 shadow-lg"
+              aria-label="Hap ligat"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className="w-5 h-5 fill-brand-yellow"><path fillRule="evenodd" d="M3 5h14a1 1 0 100-2H3a1 1 0 000 2zm0 6h14a1 1 0 100-2H3a1 1 0 000 2zm0 6h14a1 1 0 100-2H3a1 1 0 000 2z" clipRule="evenodd" /></svg>
+            </button>
 
-              <button onClick={() => { setCurrentLeague('FAVORITES'); setDetailMatchId(null); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors hover:bg-[#444] hover:text-white ${currentLeague === 'FAVORITES' ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
-                <div className="flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className="w-3.5 h-3.5 fill-brand-yellow"><path d="M10 1.5l2.6 5.27 5.82.85-4.21 4.1.99 5.8L10 14.9l-5.2 2.62.99-5.8-4.21-4.1 5.82-.85L10 1.5z" /></svg>
-                  <span className="uppercase tracking-wider">Të Preferuarat</span>
-                  {(favoriteTeams.size + favoriteLeagues.size) > 0 && <span className="text-[10px] bg-brand-yellow text-black px-1.5 rounded font-bold">{favoriteTeams.size + favoriteLeagues.size}</span>}
-                </div>
-              </button>
+            {isLeagueMenuOpen && (
+              <div className="lg:hidden fixed inset-0 z-50 flex" onClick={() => setIsLeagueMenuOpen(false)}>
+                <div className="w-72 max-w-[85vw] h-full bg-brand-panel overflow-y-auto custom-scrollbar shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                  <div className="bg-[#383838] px-3 py-3 text-xs font-bold text-brand-text border-b border-[#444] uppercase flex justify-between items-center sticky top-0">
+                    <span>Leagues</span>
+                    <button onClick={() => setIsLeagueMenuOpen(false)} className="text-brand-textMuted hover:text-white text-lg leading-none px-1">✕</button>
+                  </div>
 
-              <button onClick={() => { setDetailMatchId(null); document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' }); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors hover:bg-[#444] hover:text-white ${liveMatches.length === 0 ? 'opacity-40 cursor-not-allowed' : ''}`}>
-                <div className="flex items-center gap-2">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-accent opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-accent"></span>
-                  </span>
-                  <span className="uppercase tracking-wider">In-Play / Live</span>
-                  {liveMatches.length > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveMatches.length}</span>}
-                </div>
-              </button>
-
-              <div className="flex flex-col text-xs text-brand-textMuted max-h-[80vh] overflow-y-auto custom-scrollbar">
-                {leaguesByCountry.map(([country, leagues]) => {
-                  const isOpen = expandedCountry === country;
-                  return (
-                    <div key={country}>
-                      <button
-                        onClick={() => setExpandedCountry(isOpen ? null : country)}
-                        className={`w-full flex justify-between items-center px-3 py-2 bg-[#333] hover:bg-[#3a3a3a] text-brand-text font-bold uppercase text-[10px] tracking-wider border-b border-brand-bg/10 transition-colors ${isOpen ? 'text-white' : ''}`}
-                      >
-                        <span>{country}</span>
-                        <span className="text-brand-textMuted">{isOpen ? '▾' : '▸'}</span>
-                      </button>
-                      {isOpen && leagues.map((league) => (
-                        <button key={league} onClick={() => { setCurrentLeague(league); setDetailMatchId(null); }} className={`px-3 py-2.5 pl-6 hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 flex justify-between items-center group text-left w-full ${currentLeague === league ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
-                          <span className="flex items-center min-w-0">
-                            <span
-                              role="button"
-                              onClick={(e) => { e.stopPropagation(); toggleFavorite('LEAGUE', league); }}
-                              className="shrink-0 mr-1.5 leading-none"
-                              title={favoriteLeagues.has(league) ? 'Hiq nga të preferuarat' : 'Shto te të preferuarat'}
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className={`w-3 h-3 ${favoriteLeagues.has(league) ? 'fill-brand-yellow' : 'fill-none stroke-brand-textMuted'}`} strokeWidth={1.5}>
-                                <path d="M10 1.5l2.6 5.27 5.82.85-4.21 4.1.99 5.8L10 14.9l-5.2 2.62.99-5.8-4.21-4.1 5.82-.85L10 1.5z" />
-                              </svg>
-                            </span>
-                            <span className="truncate">{leagueLabel(league)}</span>
-                          </span>
-                        </button>
-                      ))}
+                  <button onClick={() => { setCurrentLeague('FAVORITES'); setDetailMatchId(null); setIsLeagueMenuOpen(false); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors hover:bg-[#444] hover:text-white ${currentLeague === 'FAVORITES' ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
+                    <div className="flex items-center gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className="w-3.5 h-3.5 fill-brand-yellow"><path d="M10 1.5l2.6 5.27 5.82.85-4.21 4.1.99 5.8L10 14.9l-5.2 2.62.99-5.8-4.21-4.1 5.82-.85L10 1.5z" /></svg>
+                      <span className="uppercase tracking-wider">Të Preferuarat</span>
                     </div>
-                  );
-                })}
+                  </button>
+
+                  <button onClick={() => { setDetailMatchId(null); setIsLeagueMenuOpen(false); document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' }); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors ${liveMatches.length === 0 ? 'opacity-40 cursor-not-allowed' : ''}`}>
+                    <div className="flex items-center gap-2">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-accent opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-accent"></span>
+                      </span>
+                      <span className="uppercase tracking-wider">In-Play / Live</span>
+                      {liveMatches.length > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveMatches.length}</span>}
+                    </div>
+                  </button>
+
+                  <div className="flex flex-col text-xs text-brand-textMuted">
+                    {leaguesByCountry.map(([country, leagues]) => {
+                      const isOpen = expandedCountry === country;
+                      return (
+                        <div key={country}>
+                          <button
+                            onClick={() => setExpandedCountry(isOpen ? null : country)}
+                            className={`w-full flex justify-between items-center px-3 py-2 bg-[#333] hover:bg-[#3a3a3a] text-brand-text font-bold uppercase text-[10px] tracking-wider border-b border-brand-bg/10 transition-colors ${isOpen ? 'text-white' : ''}`}
+                          >
+                            <span>{country}</span>
+                            <span className="text-brand-textMuted">{isOpen ? '▾' : '▸'}</span>
+                          </button>
+                          {isOpen && leagues.map((league) => (
+                            <button key={league} onClick={() => { setCurrentLeague(league); setDetailMatchId(null); setIsLeagueMenuOpen(false); }} className={`px-3 py-2.5 pl-6 hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 flex justify-between items-center group text-left w-full ${currentLeague === league ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
+                              <span className="truncate">{leagueLabel(league)}</span>
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
-            </div>
-          </aside>
+            )}
+          </>
         )}
 
         <main className="flex-1 min-w-0 mb-20 md:mb-0">
@@ -749,6 +750,70 @@ const App: React.FC = () => {
             </div>
           )}
         </main>
+
+        {currentView === 'sports' && (
+          <aside className="hidden lg:block w-60 flex-shrink-0">
+            <div className="bg-brand-panel rounded overflow-hidden shadow-sm sticky top-20">
+              <div className="bg-[#383838] px-3 py-2 text-xs font-bold text-brand-text border-b border-[#444] uppercase flex justify-between">
+                <span>Leagues</span>
+                <span className="text-[10px] bg-brand-yellow text-black px-1.5 rounded font-bold">SOCCER</span>
+              </div>
+
+              <button onClick={() => { setCurrentLeague('FAVORITES'); setDetailMatchId(null); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors hover:bg-[#444] hover:text-white ${currentLeague === 'FAVORITES' ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
+                <div className="flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className="w-3.5 h-3.5 fill-brand-yellow"><path d="M10 1.5l2.6 5.27 5.82.85-4.21 4.1.99 5.8L10 14.9l-5.2 2.62.99-5.8-4.21-4.1 5.82-.85L10 1.5z" /></svg>
+                  <span className="uppercase tracking-wider">Të Preferuarat</span>
+                  {(favoriteTeams.size + favoriteLeagues.size) > 0 && <span className="text-[10px] bg-brand-yellow text-black px-1.5 rounded font-bold">{favoriteTeams.size + favoriteLeagues.size}</span>}
+                </div>
+              </button>
+
+              <button onClick={() => { setDetailMatchId(null); document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' }); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors hover:bg-[#444] hover:text-white ${liveMatches.length === 0 ? 'opacity-40 cursor-not-allowed' : ''}`}>
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-accent opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-accent"></span>
+                  </span>
+                  <span className="uppercase tracking-wider">In-Play / Live</span>
+                  {liveMatches.length > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveMatches.length}</span>}
+                </div>
+              </button>
+
+              <div className="flex flex-col text-xs text-brand-textMuted max-h-[60vh] overflow-y-auto custom-scrollbar">
+                {leaguesByCountry.map(([country, leagues]) => {
+                  const isOpen = expandedCountry === country;
+                  return (
+                    <div key={country}>
+                      <button
+                        onClick={() => setExpandedCountry(isOpen ? null : country)}
+                        className={`w-full flex justify-between items-center px-3 py-2 bg-[#333] hover:bg-[#3a3a3a] text-brand-text font-bold uppercase text-[10px] tracking-wider border-b border-brand-bg/10 transition-colors ${isOpen ? 'text-white' : ''}`}
+                      >
+                        <span>{country}</span>
+                        <span className="text-brand-textMuted">{isOpen ? '▾' : '▸'}</span>
+                      </button>
+                      {isOpen && leagues.map((league) => (
+                        <button key={league} onClick={() => { setCurrentLeague(league); setDetailMatchId(null); }} className={`px-3 py-2.5 pl-6 hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 flex justify-between items-center group text-left w-full ${currentLeague === league ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
+                          <span className="flex items-center min-w-0">
+                            <span
+                              role="button"
+                              onClick={(e) => { e.stopPropagation(); toggleFavorite('LEAGUE', league); }}
+                              className="shrink-0 mr-1.5 leading-none"
+                              title={favoriteLeagues.has(league) ? 'Hiq nga të preferuarat' : 'Shto te të preferuarat'}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className={`w-3 h-3 ${favoriteLeagues.has(league) ? 'fill-brand-yellow' : 'fill-none stroke-brand-textMuted'}`} strokeWidth={1.5}>
+                                <path d="M10 1.5l2.6 5.27 5.82.85-4.21 4.1.99 5.8L10 14.9l-5.2 2.62.99-5.8-4.21-4.1 5.82-.85L10 1.5z" />
+                              </svg>
+                            </span>
+                            <span className="truncate">{leagueLabel(league)}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </aside>
+        )}
 
         {currentView === 'sports' && (
           <aside className="w-80 hidden md:flex flex-col flex-shrink-0">
