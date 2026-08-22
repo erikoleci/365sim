@@ -57,7 +57,7 @@ function isTopLeague(l) {
   return TOP_LEAGUE_KEYWORDS.some((kw) => title.includes(kw));
 }
 
-const MIN_REMAINING_CREDITS_BUFFER = 20;
+const MIN_REMAINING_CREDITS_BUFFER = 0; // no safety buffer (user request) — refresh runs until the account hits 0 credits
 
 // --- PERSISTED STATE (survives restarts/redeploys via kv_store), loaded
 // lazily on first use since module-import happens before initDb() runs. ---
