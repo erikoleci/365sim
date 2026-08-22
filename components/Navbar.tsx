@@ -76,7 +76,6 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
                    {liveCount > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveCount}</span>}
                  </span>
                  <span className="text-brand-accent cursor-default font-bold">Soccer</span>
-                 <span className="opacity-40 cursor-not-allowed" title="Së shpejti">Tennis</span>
                  <span className="opacity-40 cursor-not-allowed" title="Së shpejti">Basketball</span>
              </div>
          ) : (

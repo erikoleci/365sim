@@ -247,14 +247,20 @@ router.get('/leagues', async (req, res) => {
 
 router.get('/', async (req, res) => {
   if (!ODDS_API_KEY) {
-    return res.json({ matches: [], hasLiveApiKey: false });
+    try {
+      await refreshApiFootball();
+    } catch (err) {
+      console.error('Error refreshing API-Football:', err.message);
+    }
+    const { rows } = await pool.query('SELECT * FROM matches_cache WHERE league = ANY($1::text[]) ORDER BY start_time ASC', [apiFootballLeagueSlugs()]);
+    return res.json({ matches: rows.map(mapEventToMatch), hasLiveApiKey: false });
   }
 
   try {
     const leagues = await getSoccerLeagues();
     const targetLeagues = req.query.league
       ? leagues.filter((l) => l.key === req.query.league)
-      : leagues.filter(isTopLeague);
+      : leagues; // no whitelist — every soccer league the provider returns
 
     for (const l of targetLeagues) {
       await refreshLeagueOdds(l.key);
