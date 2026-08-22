@@ -7,6 +7,7 @@ import { refreshOddsPapi } from '../oddspapi.js';
 import { refreshBsd } from '../bsd.js';
 import { refreshHighlightly } from '../highlightly.js';
 import { refreshOddsApiIo, refreshPrimaryLeagues } from '../oddsapiio.js';
+import { refreshApiFootball, apiFootballLeagueSlugs } from '../apiFootballRefresh.js';
 
 const router = express.Router();
 
@@ -269,6 +270,7 @@ router.get('/', async (req, res) => {
     await refreshHighlightly();
     await refreshOddsApiIo();
     await refreshPrimaryLeagues();
+    await refreshApiFootball();
   } catch (err) {
     console.error('Error refreshing odds:', err.message);
   }
@@ -276,7 +278,7 @@ router.get('/', async (req, res) => {
   const { rows } = req.query.league
     ? await pool.query('SELECT * FROM matches_cache WHERE league = $1 ORDER BY start_time ASC', [req.query.league])
     : lastTopLeagueKeys.length
-      ? await pool.query('SELECT * FROM matches_cache WHERE league = ANY($1::text[]) ORDER BY start_time ASC', [[...lastTopLeagueKeys, 'oddsapiio_albania_superiore']])
+      ? await pool.query('SELECT * FROM matches_cache WHERE league = ANY($1::text[]) ORDER BY start_time ASC', [[...lastTopLeagueKeys, 'oddsapiio_albania_superiore', ...apiFootballLeagueSlugs()]])
       : await pool.query('SELECT * FROM matches_cache ORDER BY start_time ASC');
 
   res.json({ matches: rows.map(mapEventToMatch), hasLiveApiKey: true });
