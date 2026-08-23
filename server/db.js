@@ -71,6 +71,12 @@ export async function initDb() {
       status TEXT NOT NULL DEFAULT 'PENDING'
     );
 
+    CREATE INDEX IF NOT EXISTS idx_matches_cache_league_status ON matches_cache (league, status);
+    CREATE INDEX IF NOT EXISTS idx_matches_cache_start_time ON matches_cache (start_time);
+    CREATE INDEX IF NOT EXISTS idx_bets_user_id ON bets (user_id);
+    CREATE INDEX IF NOT EXISTS idx_bet_selections_bet_id ON bet_selections (bet_id);
+    CREATE INDEX IF NOT EXISTS idx_bet_selections_match_id ON bet_selections (match_id);
+
     CREATE TABLE IF NOT EXISTS kv_store (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
