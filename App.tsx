@@ -30,6 +30,7 @@ const App: React.FC = () => {
   const [currentLeague, setCurrentLeague] = useState('All Top Football');
   const [selectedDate, setSelectedDate] = useState('ALL'); // 'ALL' or 'YYYY-MM-DD' (local date)
   const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [currentView, setCurrentView] = useState<'sports' | 'casino'>('sports');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -85,8 +86,10 @@ const App: React.FC = () => {
       const { matches: fresh, hasLiveApiKey } = await api.fetchMatches();
       setMatches(fresh);
       setHasApiKey(hasLiveApiKey);
+      setLoadError(null);
     } catch (e) {
       console.error('Failed to load matches', e);
+      setLoadError('S\'arritëm të lidhemi me serverin. Kontrollo internetin dhe provo përsëri.');
     } finally {
       setIsLoading(false);
     }
@@ -642,7 +645,14 @@ const App: React.FC = () => {
                 )}
               </div>
 
-              {isLoading ? (
+              {loadError ? (
+                <div className="flex flex-col justify-center items-center h-64 bg-brand-panel rounded border border-brand-divider gap-3">
+                  <div className="text-brand-textMuted text-sm text-center px-4">{loadError}</div>
+                  <button onClick={() => loadMatches()} className="bg-brand-yellow hover:bg-yellow-400 text-brand-bg font-bold px-4 py-2 rounded text-sm">
+                    Provo Përsëri
+                  </button>
+                </div>
+              ) : isLoading ? (
                 <div className="flex flex-col justify-center items-center h-64 bg-brand-panel rounded border border-brand-divider">
                   <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-brand-yellow mb-4"></div>
                   <div className="text-brand-textMuted text-xs animate-pulse">Duke ngarkuar ndeshjet...</div>
