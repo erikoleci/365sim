@@ -18,9 +18,11 @@ export const pool = new Pool({
   // idle-suspend) leaves pool.connect()/pool.query() waiting indefinitely —
   // combined with the missing async-error handling this is what made
   // requests like /api/auth/login sit at "pending" forever instead of
-  // failing fast with a 503. Now: fail within a few seconds, always.
-  connectionTimeoutMillis: 8000,
-  statement_timeout: 10000,
+  // failing fast with a 503. 15s (not 8s) because Neon free-tier cold start
+  // from full suspend can genuinely take 10+ seconds — too short a timeout
+  // just turns "slow" into "fails every time right after idle".
+  connectionTimeoutMillis: 15000,
+  statement_timeout: 15000,
   idleTimeoutMillis: 30000,
 });
 
