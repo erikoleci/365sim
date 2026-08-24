@@ -14,6 +14,14 @@ if (!process.env.DATABASE_URL) {
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
+  // Without these, a slow/unreachable DB (e.g. Neon free-tier waking from
+  // idle-suspend) leaves pool.connect()/pool.query() waiting indefinitely —
+  // combined with the missing async-error handling this is what made
+  // requests like /api/auth/login sit at "pending" forever instead of
+  // failing fast with a 503. Now: fail within a few seconds, always.
+  connectionTimeoutMillis: 8000,
+  statement_timeout: 10000,
+  idleTimeoutMillis: 30000,
 });
 
 export async function initDb() {

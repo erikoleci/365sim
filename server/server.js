@@ -1,5 +1,13 @@
 import 'dotenv/config';
 import express from 'express';
+// MUST be imported before any router: patches Express 4 so a rejected
+// promise inside an `async (req, res) => {...}` route handler is forwarded
+// to the error-handling middleware below, instead of silently hanging the
+// request forever (client sees "pending" with no response, no error, no
+// timeout — this was happening on /api/auth/login and any other route
+// whenever a DB query was slow/failed, e.g. Render/Neon free-tier cold
+// starts or connection drops).
+import 'express-async-errors';
 import cors from 'cors';
 import helmet from 'helmet';
 import path from 'path';
