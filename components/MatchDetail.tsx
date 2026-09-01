@@ -12,9 +12,21 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
   const isFinished = match.status === MatchStatus.FINISHED;
   const [activeTab, setActiveTab] = useState<string>('All');
 
+  const CATEGORY_LABELS: Record<string, string> = {
+    All: 'Kryesore',
+    main: '45/90',
+    goals: 'Golat',
+    btts: 'Gol/JoGol',
+    handicap: 'Azian',
+    cards: 'Kartona',
+    corners: 'Korne',
+    scorers: 'Golashenues',
+    other: 'Speciale',
+  };
+
   // Extract unique categories
   const categories = useMemo(() => {
-    const cats = new Set(match.markets.map(m => m.category || 'Other'));
+    const cats = new Set(match.markets.map(m => m.category || 'other'));
     return ['All', ...Array.from(cats).sort()];
   }, [match]);
 
@@ -25,10 +37,10 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
     const isSelected = selectedIds.includes(uniqueId);
     
     // Standard odds block style
-    const base = "flex justify-between items-center p-3 cursor-pointer transition-colors border-b border-brand-divider last:border-0";
-    if (isFinished) return `${base} opacity-50 cursor-default bg-brand-bg text-brand-textMuted`;
-    if (isSelected) return `${base} bg-brand-text text-brand-headerDark font-bold`;
-    return `${base} bg-brand-panel hover:bg-[#444] text-brand-text`;
+    const base = "flex items-center justify-center gap-2 py-3 px-2 cursor-pointer transition-colors text-center";
+    if (isFinished) return `${base} opacity-50 cursor-default bg-[#4a4a4a] text-brand-textMuted`;
+    if (isSelected) return `${base} bg-brand-yellow text-brand-headerDark font-bold`;
+    return `${base} bg-[#4a4a4a] hover:bg-[#565656] text-brand-text`;
   };
 
   return (
@@ -69,7 +81,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
                         : 'text-brand-textMuted hover:text-white hover:bg-[#3a3a3a]'
                     }`}
                 >
-                    {cat}
+                    {CATEGORY_LABELS[cat] || cat}
                 </button>
             ))}
          </div>
@@ -77,26 +89,34 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
 
       {/* Markets Content */}
       <div className="p-2 space-y-2 overflow-y-auto flex-1 bg-[#282828]">
-        {filteredMarkets.map(market => (
-            <div key={market.id} className="bg-brand-panel rounded overflow-hidden mb-2">
-                <div className="bg-[#383838] px-3 py-2 text-xs font-bold text-brand-text border-b border-[#444] flex justify-between">
-                    <span>{market.name}</span>
-                    <span className="text-[10px] text-brand-textMuted bg-black/20 px-1.5 py-0.5 rounded">Cash Out</span>
+        {filteredMarkets.map(market => {
+            const cols = Math.min(market.options.length, 3) || 1;
+            return (
+            <div key={market.id} className="overflow-hidden mb-2">
+                <div className="bg-brand-header px-3 py-2 text-xs font-bold text-white">
+                    {market.name}
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 divide-x divide-brand-bg/20">
-                    {market.options.map(opt => (
-                        <div 
-                            key={opt.id} 
+                <div
+                    className="grid gap-px bg-brand-bg"
+                    style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+                >
+                    {market.options.map(opt => {
+                        const isSelected = selectedIds.includes(`${match.id}-${market.id}-${opt.id}`);
+                        return (
+                        <div
+                            key={opt.id}
                             onClick={() => !isFinished && onBetClick(match, market.id, opt.id)}
                             className={getButtonClass(market.id, opt.id)}
                         >
-                            <span className="text-xs text-brand-textMuted">{opt.name}</span>
-                            <span className="font-bold text-brand-yellow text-sm">{opt.odds.toFixed(2)}</span>
+                            <span className={`text-xs ${isSelected ? 'text-brand-headerDark' : 'text-brand-text'}`}>{opt.name}</span>
+                            <span className={`font-bold text-sm ${isSelected ? 'text-brand-headerDark' : 'text-brand-yellow'}`}>{opt.odds.toFixed(2)}</span>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
-        ))}
+            );
+        })}
       </div>
     </div>
   );
