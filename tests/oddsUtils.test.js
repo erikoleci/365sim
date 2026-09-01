@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { outcomeId, resolveCurrentOdds } from '../server/oddsUtils.js';
+import { outcomeId, resolveCurrentOdds, mapEventToMatch } from '../server/oddsUtils.js';
 
 const sampleEvent = (overrides = {}) => ({
   home_team: 'Tirana',
@@ -88,5 +88,39 @@ describe('resolveCurrentOdds', () => {
   it('returns null for a selection that does not exist within an existing market', () => {
     const odds = resolveCurrentOdds(row(sampleEvent()), 'match-1-h2h', 'NOT_A_REAL_SELECTION');
     expect(odds).toBeNull();
+  });
+});
+
+describe('mapEventToMatch (dynamic/unknown markets)', () => {
+  it('still renders a market whose key is not in MARKET_LABELS, with an auto-generated name/category', () => {
+    const ev = sampleEvent({
+      bookmakers: [
+        {
+          title: 'BookA',
+          markets: [
+            {
+              key: 'player_props', // not in MARKET_LABELS on purpose
+              outcomes: [{ name: 'Some Player Over 1.5', price: 2.1 }],
+            },
+          ],
+        },
+      ],
+    });
+    const match = mapEventToMatch(row(ev));
+    const market = match.markets.find((m) => m.marketKey === 'player_props');
+    expect(market).toBeDefined();
+    expect(market.name).toBe('Player Props'); // auto-generated, title-cased
+    expect(market.category).toBe('other');
+    expect(market.options[0].odds).toBe(2.1);
+  });
+
+  it('resolveCurrentOdds also works for a market key outside MARKET_LABELS', () => {
+    const ev = sampleEvent({
+      bookmakers: [
+        { title: 'BookA', markets: [{ key: 'corners', outcomes: [{ name: 'Over', point: 9.5, price: 1.85 }] }] },
+      ],
+    });
+    const odds = resolveCurrentOdds(row(ev), 'match-1-corners', 'Over-9.5');
+    expect(odds).toBe(1.85);
   });
 });

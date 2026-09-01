@@ -18,6 +18,22 @@ export const MARKET_LABELS = {
   spreads: { name: 'Hendikep Asian', category: 'handicap' },
 };
 
+// Any market key NOT in MARKET_LABELS above still gets rendered — it just
+// falls back to an auto-generated label instead of a hand-translated one.
+// This is what makes market rendering "source-agnostic": if the account's
+// plan tier unlocks more of The Odds API's markets (or a future provider
+// sends extra market keys) they show up automatically, with no code change
+// required here or in the frontend (MatchDetail.tsx already iterates
+// match.markets[] generically — see components/MatchDetail.tsx).
+function getMarketMeta(key) {
+  if (MARKET_LABELS[key]) return MARKET_LABELS[key];
+  const name = key
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+  return { name, category: 'other' };
+}
+
 export function outcomeId(marketKey, outcome, ev) {
   if (marketKey === 'h2h' || marketKey === 'double_chance' || marketKey === 'draw_no_bet') {
     if (outcome.name === ev.home_team) return 'HOME';
@@ -92,7 +108,6 @@ export function diffOddsChanges(matchId, oldEv, newEv) {
     const best = new Map(); // marketKey -> Map(outcomeId -> {price, marketId})
     for (const bookmaker of ev?.bookmakers || []) {
       for (const market of bookmaker.markets || []) {
-        if (!MARKET_LABELS[market.key]) continue;
         if (!best.has(market.key)) best.set(market.key, new Map());
         const outMap = best.get(market.key);
         for (const outcome of market.outcomes || []) {
@@ -131,7 +146,6 @@ export function mapEventToMatch(row) {
 
   for (const bookmaker of ev.bookmakers || []) {
     for (const market of bookmaker.markets || []) {
-      if (!MARKET_LABELS[market.key]) continue;
       if (!marketMap.has(market.key)) marketMap.set(market.key, new Map());
       const outMap = marketMap.get(market.key);
       for (const outcome of market.outcomes || []) {
@@ -150,13 +164,16 @@ export function mapEventToMatch(row) {
     }
   }
 
-  const markets = Array.from(marketMap.entries()).map(([key, outMap]) => ({
-    id: `${row.id}-${key}`,
-    marketKey: key,
-    name: MARKET_LABELS[key].name,
-    category: MARKET_LABELS[key].category,
-    options: sortOptions(key, Array.from(outMap.values())),
-  }));
+  const markets = Array.from(marketMap.entries()).map(([key, outMap]) => {
+    const meta = getMarketMeta(key);
+    return {
+      id: `${row.id}-${key}`,
+      marketKey: key,
+      name: meta.name,
+      category: meta.category,
+      options: sortOptions(key, Array.from(outMap.values())),
+    };
+  });
 
   return {
     id: row.id,
