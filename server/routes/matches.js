@@ -1,302 +1,184 @@
 import express from 'express';
 import pool, { getKV, setKV } from '../db.js';
 import { mapEventToMatch, diffOddsChanges } from '../oddsUtils.js';
-import { pushOddsChanged, pushGoal } from '../ws.js';
+import { pushOddsChanged, pushGoal, pushMatchStarted, pushLiveEvent } from '../ws.js';
 import { settleMatch } from '../matchSettlement.js';
-import { refreshOddsPapi } from '../oddspapi.js';
-import { refreshBsd } from '../bsd.js';
-import { refreshHighlightly } from '../highlightly.js';
-import { refreshOddsApiIo, refreshPrimaryLeagues } from '../oddsapiio.js';
-import { refreshApiFootball, apiFootballLeagueSlugs } from '../apiFootballRefresh.js';
+import { isConfigured as sourceConfigured, configurationStatus, fetchLeagues, fetchMatches, fetchMatchOdds, fetchLive } from '../authorizedFeed.js';
 
 const router = express.Router();
+const SOURCE_REFRESH_MS = Number(process.env.SOURCE_REFRESH_MS || 30000);
+const LIVE_REFRESH_MS = Number(process.env.SOURCE_LIVE_REFRESH_MS || 3000);
+let lastSourceSync = 0;
+let syncPromise = null;
 
-const ODDS_API_KEY = process.env.ODDS_API_KEY || '';
-const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
-
-// Markets we ask for per match. NOTE: btts / double_chance / draw_no_bet are
-// NOT included here because they returned "422 Markets not supported by this
-// endpoint" on this account's plan tier (confirmed via Render runtime logs).
-const MARKETS = 'h2h,totals,spreads';
-
-// COST MATH (The Odds API): every /odds call costs (markets × regions) credits.
-// With 3 markets × 1 region (eu) = 3 credits per league per refresh. The
-// /scores endpoint is separate: 2 credits per league per call (with daysFrom,
-// needed to catch recently-finished matches, not just currently-live ones).
-const LEAGUES_REFRESH_MS = 24 * 60 * 60 * 1000;  // sport list changes rarely -> 24h
-const ODDS_REFRESH_MS = 96 * 60 * 60 * 1000;      // 9 leagues -> every 4 days
-const SCORES_REFRESH_MS = 48 * 60 * 60 * 1000;    // every 2 days (leagues with no live match)
-const LIVE_SCORES_REFRESH_MS = 60 * 1000;          // every 60s for leagues currently showing a LIVE match
-
-// CREDIT BUDGET (500/month on The Odds API free plan): each league costs
-// 3 credits/odds-refresh + 2 credits/scores-refresh = 5 credits per full
-// cycle. At a 24h cycle, N leagues costs N*5*30 credits/month. With N=4
-// that's 600/month — still tight, so we trimmed the list to the leagues
-// that matter most rather than trying to cover everything. If you want
-// MORE leagues, increase ODDS_REFRESH_MS/SCORES_REFRESH_MS proportionally
-// (e.g. 12 leagues needs roughly a 3-4 day cycle to stay under budget).
-const TOP_LEAGUES = [
-  'soccer_epl',
-  'soccer_uefa_champs_league',
-  'soccer_spain_la_liga',
-  'soccer_fifa_world_cup',
-  'soccer_usa_mls',
-  'soccer_italy_serie_a',
-  'soccer_germany_bundesliga',
-  'soccer_france_ligue_one',
-  'soccer_brazil_campeonato',
-];
-
-// Keyword matching still catches World Cup / Champions League / Europa /
-// Conference League fixtures under any sport_key the provider uses,
-// without needing every exact key hardcoded above.
-const TOP_LEAGUE_KEYWORDS = ['world cup', 'champions league'];
-
-function isTopLeague(l) {
-  if (TOP_LEAGUES.includes(l.key)) return true;
-  const title = (l.title || '').toLowerCase();
-  return TOP_LEAGUE_KEYWORDS.some((kw) => title.includes(kw));
-}
-
-const MIN_REMAINING_CREDITS_BUFFER = 0; // no safety buffer (user request) — refresh runs until the account hits 0 credits
-
-// --- PERSISTED STATE (survives restarts/redeploys via kv_store), loaded
-// lazily on first use since module-import happens before initDb() runs. ---
-let leaguesCache = { data: [], fetchedAt: 0 };
-let oddsRefreshTimers = new Map();
-let scoresRefreshTimers = new Map();
-let lastKnownRemaining = Infinity;
-let lastTopLeagueKeys = [];
-let stateLoaded = false;
-
-async function ensureStateLoaded() {
-  if (stateLoaded) return;
-  stateLoaded = true;
-  leaguesCache = await getKV('leaguesCache', { data: [], fetchedAt: 0 });
-  oddsRefreshTimers = new Map(Object.entries(await getKV('oddsRefreshTimers', {})));
-  scoresRefreshTimers = new Map(Object.entries(await getKV('scoresRefreshTimers', {})));
-  lastKnownRemaining = await getKV('lastKnownRemaining', Infinity);
-  lastTopLeagueKeys = await getKV('lastTopLeagueKeys', []);
-}
-
-async function fetchJson(url) {
-  await ensureStateLoaded();
-  const resp = await fetch(url);
-  const remaining = resp.headers.get('x-requests-remaining');
-  const used = resp.headers.get('x-requests-used');
-  if (remaining !== null) {
-    lastKnownRemaining = Number(remaining);
-    await setKV('lastKnownRemaining', lastKnownRemaining);
-    console.log(`[the-odds-api] requests used=${used} remaining=${remaining}`);
-    if (lastKnownRemaining <= MIN_REMAINING_CREDITS_BUFFER) {
-      console.warn(`[the-odds-api] WARNING: only ${remaining} credits left this month — throttling further refreshes.`);
+async function persistEvent(event, { preserveFinished = true } = {}) {
+  const now = Date.now();
+  const { rows: oldRows } = await pool.query('SELECT * FROM matches_cache WHERE id = $1', [event.id]);
+  const old = oldRows[0];
+  if (old?.raw_json) {
+    const changes = diffOddsChanges(event.id, JSON.parse(old.raw_json), event);
+    if (changes.length) {
+      for (const c of changes) {
+        await pool.query(
+          `INSERT INTO odds_history (match_id, market_id, selection_id, old_odds, new_odds, changed_by, reason, created_at)
+           VALUES ($1,$2,$3,$4,$5,'SYSTEM','source_refresh',$6)`,
+          [c.matchId, c.marketId, c.selectionId, c.oldOdds, c.newOdds, now]
+        );
+      }
+      pushOddsChanged(event.id, { changes });
     }
   }
-  if (!resp.ok) {
-    const body = await resp.text();
-    throw new Error(`Odds API ${resp.status}: ${body}`);
+
+  const status = event.completed ? 'FINISHED' : (event.status === 'LIVE' ? 'LIVE' : 'UPCOMING');
+  const liveHome = event.live_home_score ?? null;
+  const liveAway = event.live_away_score ?? null;
+  const liveMinute = event.live_minute ?? null;
+  await pool.query(
+    `INSERT INTO matches_cache
+      (id, league, home_team, away_team, start_time, status, raw_json, fetched_at, live_home_score, live_away_score, live_minute, source, country)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+     ON CONFLICT (id) DO UPDATE SET
+       league=excluded.league,
+       home_team=excluded.home_team,
+       away_team=excluded.away_team,
+       start_time=excluded.start_time,
+       status=CASE WHEN $14 AND matches_cache.status='FINISHED' THEN matches_cache.status ELSE excluded.status END,
+       raw_json=excluded.raw_json,
+       fetched_at=excluded.fetched_at,
+       live_home_score=COALESCE(excluded.live_home_score,matches_cache.live_home_score),
+       live_away_score=COALESCE(excluded.live_away_score,matches_cache.live_away_score),
+       live_minute=COALESCE(excluded.live_minute,matches_cache.live_minute),
+       source=excluded.source,
+       country=excluded.country`,
+    [event.id, event.league, event.home_team, event.away_team, event.commence_time, status, JSON.stringify(event), now,
+      liveHome, liveAway, liveMinute, event.source || 'authorized-feed', event.country || null, preserveFinished]
+  );
+
+  if (old && old.status !== 'LIVE' && status === 'LIVE') pushMatchStarted(event.id);
+  if (old && liveHome != null && liveAway != null && (liveHome !== old.live_home_score || liveAway !== old.live_away_score)) {
+    const scoringTeam = liveHome > (old.live_home_score ?? 0) ? event.home_team : event.away_team;
+    await pool.query(
+      `INSERT INTO match_events (match_id, minute, type, team, detail, created_at)
+       VALUES ($1,$2,'GOAL',$3,'score_update',$4)`,
+      [event.id, Number.parseInt(String(liveMinute || ''), 10) || null, scoringTeam, now]
+    );
+    pushGoal(event.id, { homeScore: liveHome, awayScore: liveAway, scoringTeam, minute: liveMinute });
   }
-  return resp.json();
+
+  if (event.completed && liveHome != null && liveAway != null && old?.status !== 'FINISHED') {
+    await settleMatch(event.id, Number(liveHome), Number(liveAway));
+  }
 }
 
-async function getSoccerLeagues() {
-  await ensureStateLoaded();
+async function syncSource() {
+  if (!sourceConfigured()) return { configured: false, synced: false };
   const now = Date.now();
-  if (leaguesCache.data.length && now - leaguesCache.fetchedAt < LEAGUES_REFRESH_MS) {
-    return leaguesCache.data;
-  }
-  if (!ODDS_API_KEY) return [];
-  const all = await fetchJson(`${ODDS_API_BASE}/sports/?apiKey=${ODDS_API_KEY}`);
-  const soccer = all.filter((s) => s.group === 'Soccer' && s.active);
-  leaguesCache = { data: soccer, fetchedAt: now };
-  await setKV('leaguesCache', leaguesCache);
-  return soccer;
-}
+  const { rows: liveRows } = await pool.query(`SELECT 1 FROM matches_cache WHERE status='LIVE' LIMIT 1`);
+  const refreshInterval = liveRows.length ? LIVE_REFRESH_MS : SOURCE_REFRESH_MS;
+  if (now - lastSourceSync < refreshInterval) return { configured: true, synced: false };
+  if (syncPromise) return syncPromise;
 
-async function refreshLeagueOdds(leagueKey) {
-  await ensureStateLoaded();
-  const now = Date.now();
-  const last = oddsRefreshTimers.get(leagueKey) || 0;
-  if (now - last < ODDS_REFRESH_MS) return;
-  if (lastKnownRemaining <= MIN_REMAINING_CREDITS_BUFFER) {
-    console.warn(`[the-odds-api] Skipping odds refresh of ${leagueKey}: low on monthly credits (${lastKnownRemaining} left).`);
-    return;
-  }
-  oddsRefreshTimers.set(leagueKey, now);
-  await setKV('oddsRefreshTimers', Object.fromEntries(oddsRefreshTimers));
-
-  const url = `${ODDS_API_BASE}/sports/${leagueKey}/odds/?apiKey=${ODDS_API_KEY}&regions=eu&markets=${MARKETS}&oddsFormat=decimal`;
-  let events;
-  try {
-    events = await fetchJson(url);
-  } catch (err) {
-    console.error(`Failed refreshing odds for ${leagueKey}:`, err.message);
-    return;
-  }
-
-  for (const ev of events) {
-    const status = new Date(ev.commence_time) > new Date() ? 'UPCOMING' : 'LIVE';
-
-    // Odds Engine: diff against what we had before overwriting raw_json.
-    const { rows: existingRows } = await pool.query('SELECT raw_json FROM matches_cache WHERE id = $1', [ev.id]);
-    if (existingRows[0]) {
+  syncPromise = (async () => {
+    lastSourceSync = now;
+    const baseMatches = await fetchMatches();
+    for (const base of baseMatches) {
+      let event = base;
       try {
-        const oldEv = JSON.parse(existingRows[0].raw_json);
-        const changes = diffOddsChanges(ev.id, oldEv, ev);
-        for (const c of changes) {
+        const odds = await fetchMatchOdds(base.id);
+        if (odds) event = odds;
+      } catch (err) {
+        console.warn(`[source] odds unavailable for ${base.id}: ${err.message}`);
+      }
+      await persistEvent(event);
+    }
+
+    const { rows: active } = await pool.query(
+      `SELECT id FROM matches_cache WHERE status IN ('UPCOMING','LIVE') ORDER BY start_time ASC LIMIT 1000`
+    );
+    for (const row of active) {
+      try {
+        const live = await fetchLive(row.id);
+        if (!live) continue;
+        const { rows: currentRows } = await pool.query('SELECT * FROM matches_cache WHERE id=$1', [row.id]);
+        const current = currentRows[0];
+        const home = Number.isFinite(live.homeScore) ? live.homeScore : current.live_home_score;
+        const away = Number.isFinite(live.awayScore) ? live.awayScore : current.live_away_score;
+        const raw = current.raw_json ? JSON.parse(current.raw_json) : {};
+        raw._sourceMeta = { ...(raw._sourceMeta || {}), liveMinute: live.minute };
+        await pool.query(
+          `UPDATE matches_cache SET status=$1, live_home_score=$2, live_away_score=$3, live_minute=$4, raw_json=$5, fetched_at=$6 WHERE id=$7`,
+          [live.completed ? 'FINISHED' : 'LIVE', home ?? null, away ?? null, live.minute ?? null, JSON.stringify(raw), Date.now(), row.id]
+        );
+        if (live.statistics) {
+          const s = live.statistics;
           await pool.query(
-            `INSERT INTO odds_history (match_id, market_id, selection_id, old_odds, new_odds, changed_by, reason, created_at)
-             VALUES ($1,$2,$3,$4,$5,'SYSTEM','auto_refresh',$6)`,
-            [c.matchId, c.marketId, c.selectionId, c.oldOdds, c.newOdds, now]
+            `INSERT INTO live_statistics (match_id, minute, home_score, away_score, possession_home, possession_away, shots_home, shots_away, shots_on_target_home, shots_on_target_away, corners_home, corners_away, cards_home, cards_away, xg_home, xg_away, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+             ON CONFLICT (match_id) DO UPDATE SET minute=excluded.minute, home_score=excluded.home_score, away_score=excluded.away_score,
+             possession_home=excluded.possession_home, possession_away=excluded.possession_away, shots_home=excluded.shots_home, shots_away=excluded.shots_away,
+             shots_on_target_home=excluded.shots_on_target_home, shots_on_target_away=excluded.shots_on_target_away, corners_home=excluded.corners_home,
+             corners_away=excluded.corners_away, cards_home=excluded.cards_home, cards_away=excluded.cards_away, xg_home=excluded.xg_home, xg_away=excluded.xg_away, updated_at=excluded.updated_at`,
+            [row.id, live.minute ?? null, home ?? 0, away ?? 0, s.possession_home ?? null, s.possession_away ?? null, s.shots_home ?? null, s.shots_away ?? null,
+              s.shots_on_target_home ?? null, s.shots_on_target_away ?? null, s.corners_home ?? null, s.corners_away ?? null, s.cards_home ?? null, s.cards_away ?? null,
+              s.xg_home ?? null, s.xg_away ?? null, Date.now()]
           );
         }
-        if (changes.length > 0) pushOddsChanged(ev.id, { changes });
+        if (live.events?.length) {
+          for (const e of live.events) {
+            const type = String(e.type || 'EVENT').toUpperCase();
+            const detail = JSON.stringify(e);
+            const { rowCount } = await pool.query(
+              `INSERT INTO match_events (match_id, minute, type, team, player, detail, created_at)
+               SELECT $1,$2,$3,$4,$5,$6,$7 WHERE NOT EXISTS
+               (SELECT 1 FROM match_events WHERE match_id=$1 AND type=$3 AND minute IS NOT DISTINCT FROM $2 AND detail=$6)`,
+              [row.id, Number.parseInt(String(e.minute ?? ''), 10) || null, type, e.team ?? null, e.player ?? null, detail, Date.now()]
+            );
+            if (rowCount) pushLiveEvent(row.id, { event: e });
+          }
+        }
+        if (live.completed && home != null && away != null) await settleMatch(row.id, Number(home), Number(away));
       } catch (err) {
-        console.error('Failed recording odds_history:', err.message);
+        console.warn(`[source] live update failed for ${row.id}: ${err.message}`);
       }
     }
-
-    await pool.query(
-      `INSERT INTO matches_cache (id, league, home_team, away_team, start_time, status, raw_json, fetched_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       ON CONFLICT (id) DO UPDATE SET
-         status = CASE WHEN matches_cache.status = 'FINISHED' THEN matches_cache.status ELSE excluded.status END,
-         raw_json = excluded.raw_json, fetched_at = excluded.fetched_at`,
-      [ev.id, leagueKey, ev.home_team, ev.away_team, ev.commence_time, status, JSON.stringify(ev), now]
-    );
-  }
+    return { configured: true, synced: true, count: baseMatches.length };
+  })().finally(() => { syncPromise = null; });
+  return syncPromise;
 }
 
-// Pulls real scores (in-play + completed within the last day) and:
-//  - auto-settles any match the provider reports as completed via settleMatch()
-//  - flips still-in-progress matches to LIVE with a live scoreline
-async function refreshLeagueScores(leagueKey) {
-  await ensureStateLoaded();
-  const now = Date.now();
-  const last = scoresRefreshTimers.get(leagueKey) || 0;
 
-  // Leagues with a match currently LIVE get a much shorter refresh interval
-  // so goals show up almost instantly instead of waiting up to 48h.
-  const { rows: liveRows } = await pool.query(
-    `SELECT 1 FROM matches_cache WHERE league = $1 AND status = 'LIVE' LIMIT 1`,
-    [leagueKey]
-  );
-  const interval = liveRows.length ? LIVE_SCORES_REFRESH_MS : SCORES_REFRESH_MS;
-  if (now - last < interval) return;
-  if (lastKnownRemaining <= MIN_REMAINING_CREDITS_BUFFER) {
-    console.warn(`[the-odds-api] Skipping scores refresh of ${leagueKey}: low on monthly credits (${lastKnownRemaining} left).`);
-    return;
-  }
-  scoresRefreshTimers.set(leagueKey, now);
-  await setKV('scoresRefreshTimers', Object.fromEntries(scoresRefreshTimers));
-
-  const url = `${ODDS_API_BASE}/sports/${leagueKey}/scores/?apiKey=${ODDS_API_KEY}&daysFrom=2&dateFormat=iso`;
-  let events;
-  try {
-    events = await fetchJson(url);
-  } catch (err) {
-    console.error(`Failed refreshing scores for ${leagueKey}:`, err.message);
-    return;
-  }
-
-  for (const ev of events) {
-    const { rows } = await pool.query('SELECT * FROM matches_cache WHERE id = $1', [ev.id]);
-    const existing = rows[0];
-    if (!existing || existing.status === 'FINISHED') continue;
-    if (!Array.isArray(ev.scores)) continue;
-
-    const homeEntry = ev.scores.find((s) => s.name === ev.home_team);
-    const awayEntry = ev.scores.find((s) => s.name === ev.away_team);
-    const homeScore = homeEntry ? parseInt(homeEntry.score, 10) : null;
-    const awayScore = awayEntry ? parseInt(awayEntry.score, 10) : null;
-    if (homeScore === null || awayScore === null || Number.isNaN(homeScore) || Number.isNaN(awayScore)) continue;
-
-    if (ev.completed) {
-      await settleMatch(ev.id, homeScore, awayScore);
-    } else {
-      const prevHome = existing.live_home_score ?? 0;
-      const prevAway = existing.live_away_score ?? 0;
-      const scoreChanged = homeScore !== prevHome || awayScore !== prevAway;
-
-      await pool.query(
-        `UPDATE matches_cache SET status = 'LIVE', live_home_score = $1, live_away_score = $2 WHERE id = $3 AND status != 'FINISHED'`,
-        [homeScore, awayScore, ev.id]
-      );
-
-      // Live Match Engine: a score bump means a goal happened. Log the
-      // event and push it live — the frontend suspends markets for a few
-      // seconds and updates the scoreline without any polling/refresh.
-      if (scoreChanged) {
-        const scoringTeam = homeScore > prevHome ? ev.home_team : ev.away_team;
-        await pool.query(
-          `INSERT INTO match_events (match_id, minute, type, team, detail, created_at)
-           VALUES ($1,NULL,'GOAL',$2,$3,$4)`,
-          [ev.id, scoringTeam, `${homeScore}-${awayScore}`, now]
-        );
-        await pool.query(
-          `INSERT INTO live_statistics (match_id, home_score, away_score, updated_at)
-           VALUES ($1,$2,$3,$4)
-           ON CONFLICT (match_id) DO UPDATE SET home_score = excluded.home_score, away_score = excluded.away_score, updated_at = excluded.updated_at`,
-          [ev.id, homeScore, awayScore, now]
-        );
-        pushGoal(ev.id, { homeScore, awayScore, scoringTeam });
-      }
-    }
-  }
+export function startSourceScheduler() {
+  if (!sourceConfigured()) return;
+  const tick = async () => {
+    try { await syncSource(); } catch (err) { console.error('[source] background sync failed:', err.message); }
+  };
+  tick();
+  setInterval(tick, Math.max(1000, Number(process.env.SOURCE_SCHEDULER_MS || 5000))).unref?.();
 }
+
+router.get('/source-status', (req, res) => res.json(configurationStatus()));
 
 router.get('/leagues', async (req, res) => {
-  try {
-    const leagues = await getSoccerLeagues();
-    res.json({ leagues: leagues.map((l) => ({ key: l.key, title: l.title, group: l.group })) });
-  } catch (err) {
-    res.status(502).json({ error: 'Could not load leagues from odds provider', detail: err.message });
+  if (sourceConfigured()) {
+    try { return res.json({ leagues: await fetchLeagues() }); }
+    catch (err) { return res.status(502).json({ error: 'Could not load leagues from authorized source', detail: err.message }); }
   }
+  res.json({ leagues: [] });
 });
 
 router.get('/', async (req, res) => {
-  if (!ODDS_API_KEY) {
-    try {
-      await refreshApiFootball();
-    } catch (err) {
-      console.error('Error refreshing API-Football:', err.message);
-    }
-    const { rows } = await pool.query('SELECT * FROM matches_cache WHERE league = ANY($1::text[]) ORDER BY start_time ASC', [apiFootballLeagueSlugs()]);
-    return res.json({ matches: rows.map(mapEventToMatch), hasLiveApiKey: false });
+  if (sourceConfigured()) {
+    try { await syncSource(); }
+    catch (err) { console.error('[source] sync failed:', err.message); }
+    const params = [];
+    let query = 'SELECT * FROM matches_cache';
+    if (req.query.league) { query += ' WHERE league = $1'; params.push(req.query.league); }
+    query += ' ORDER BY start_time ASC';
+    const { rows } = await pool.query(query, params);
+    return res.json({ matches: rows.map(mapEventToMatch), source: 'authorized-feed' });
   }
-
-  try {
-    const leagues = await getSoccerLeagues();
-    const targetLeagues = req.query.league
-      ? leagues.filter((l) => l.key === req.query.league)
-      : leagues; // no whitelist — every soccer league the provider returns
-
-    for (const l of targetLeagues) {
-      await refreshLeagueOdds(l.key);
-      await refreshLeagueScores(l.key);
-    }
-
-    if (!req.query.league) {
-      lastTopLeagueKeys = targetLeagues.map((l) => l.key);
-      await setKV('lastTopLeagueKeys', lastTopLeagueKeys);
-    }
-    await refreshOddsPapi();
-    await refreshBsd();
-    await refreshHighlightly();
-    await refreshOddsApiIo();
-    await refreshPrimaryLeagues();
-    await refreshApiFootball();
-  } catch (err) {
-    console.error('Error refreshing odds:', err.message);
-  }
-
-  const { rows } = req.query.league
-    ? await pool.query('SELECT * FROM matches_cache WHERE league = $1 ORDER BY start_time ASC', [req.query.league])
-    : lastTopLeagueKeys.length
-      ? await pool.query('SELECT * FROM matches_cache WHERE league = ANY($1::text[]) ORDER BY start_time ASC', [[...lastTopLeagueKeys, 'oddsapiio_albania_superiore', ...apiFootballLeagueSlugs()]])
-      : await pool.query('SELECT * FROM matches_cache ORDER BY start_time ASC');
-
-  res.json({ matches: rows.map(mapEventToMatch), hasLiveApiKey: true });
+  const { rows } = await pool.query('SELECT * FROM matches_cache ORDER BY start_time ASC');
+  res.json({ matches: rows.map(mapEventToMatch), source: 'unconfigured' });
 });
 
 router.get('/:id/odds-history', async (req, res) => {
@@ -308,6 +190,9 @@ router.get('/:id/odds-history', async (req, res) => {
 });
 
 router.get('/:id', async (req, res) => {
+  if (sourceConfigured()) {
+    try { await syncSource(); } catch (err) { console.warn('[source] match sync:', err.message); }
+  }
   const { rows } = await pool.query('SELECT * FROM matches_cache WHERE id = $1', [req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: 'Match not found' });
   res.json({ match: mapEventToMatch(rows[0]) });

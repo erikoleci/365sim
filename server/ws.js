@@ -81,7 +81,8 @@ export function broadcast(topic, payload) {
 }
 
 // Convenience helpers matching the notification types from the spec.
-export const pushGoal = (matchId, data) => broadcast(`match:${matchId}`, { type: 'GOAL', ...data });
-export const pushOddsChanged = (matchId, data) => broadcast(`match:${matchId}`, { type: 'ODDS_CHANGED', ...data });
-export const pushMatchStarted = (matchId) => broadcast(`match:${matchId}`, { type: 'MATCH_STARTED' });
+export const pushGoal = (matchId, data) => { broadcast(`match:${matchId}`, { type: 'GOAL', ...data }); broadcast('live', { type: 'GOAL', matchId, ...data }); };
+export const pushOddsChanged = (matchId, data) => { broadcast(`match:${matchId}`, { type: 'ODDS_CHANGED', ...data }); broadcast('odds', { type: 'ODDS_CHANGED', matchId, ...data }); };
+export const pushMatchStarted = (matchId) => { broadcast(`match:${matchId}`, { type: 'MATCH_STARTED' }); broadcast('live', { type: 'MATCH_STARTED', matchId }); };
+export const pushLiveEvent = (matchId, data) => { broadcast(`match:${matchId}`, { type: 'LIVE_EVENT', ...data }); broadcast('live', { type: 'LIVE_EVENT', matchId, ...data }); };
 export const pushUserNotification = (userId, data) => broadcast(`user:${userId}`, { type: 'NOTIFICATION', ...data });

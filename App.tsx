@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Navbar from './components/Navbar';
 import MatchRow from './components/MatchCard';
 import MatchDetail from './components/MatchDetail';
@@ -17,6 +17,7 @@ const App: React.FC = () => {
 
   // --- Data State (from backend, not localStorage) ---
   const [matches, setMatches] = useState<Match[]>([]);
+  const hasLoadedMatches = useRef(false);
   const [hasApiKey, setHasApiKey] = useState(true); // assume true until first load tells us otherwise
   const [myBets, setMyBets] = useState<Bet[]>([]);
   const [adminUsers, setAdminUsers] = useState<User[]>([]);
@@ -81,11 +82,12 @@ const App: React.FC = () => {
   // All filtering (live / league / search) happens client-side below.
   const loadMatches = useCallback(async () => {
     if (!currentUser || currentView !== 'sports') return;
-    setIsLoading((prev) => (matches.length === 0 ? true : prev));
+    if (!hasLoadedMatches.current) setIsLoading(true);
     try {
-      const { matches: fresh, hasLiveApiKey } = await api.fetchMatches();
+      const { matches: fresh, source } = await api.fetchMatches();
       setMatches(fresh);
-      setHasApiKey(hasLiveApiKey);
+      hasLoadedMatches.current = true;
+      setHasApiKey(source !== 'unconfigured');
       setLoadError(null);
     } catch (e) {
       console.error('Failed to load matches', e);
@@ -93,14 +95,52 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser, currentView, matches.length]);
+  }, [currentUser, currentView]);
 
   useEffect(() => {
     loadMatches();
-    const interval = setInterval(loadMatches, 60000); // refresh odds every minute
+    const interval = setInterval(loadMatches, 30000); // HTTP fallback; WebSocket handles immediate live/odds events
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, currentView]);
+
+  // --- Real-time source events ---
+  useEffect(() => {
+    if (!currentUser || currentView !== 'sports') return;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
+    socket.onopen = () => {
+      const token = api.getToken();
+      if (token) socket.send(JSON.stringify({ type: 'auth', token }));
+      socket.send(JSON.stringify({ type: 'subscribe', topic: 'live' }));
+      socket.send(JSON.stringify({ type: 'subscribe', topic: 'odds' }));
+    };
+    socket.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (!msg.matchId) return;
+        if (msg.type === 'GOAL') {
+          setMatches((current) => current.map((m) => m.id === msg.matchId ? {
+            ...m,
+            status: MatchStatus.LIVE,
+            isLive: true,
+            liveHomeScore: msg.homeScore ?? m.liveHomeScore,
+            liveAwayScore: msg.awayScore ?? m.liveAwayScore,
+            currentMinute: msg.minute ?? m.currentMinute,
+          } : m));
+        } else if (msg.type === 'LIVE_EVENT') {
+          loadMatches();
+        } else if (msg.type === 'MATCH_STARTED') {
+          setMatches((current) => current.map((m) => m.id === msg.matchId ? { ...m, status: MatchStatus.LIVE, isLive: true } : m));
+          loadMatches();
+        } else if (msg.type === 'ODDS_CHANGED') {
+          loadMatches();
+        }
+      } catch { /* ignore malformed socket messages */ }
+    };
+    socket.onclose = () => {};
+    return () => socket.close();
+  }, [currentUser, currentView, loadMatches]);
 
   // --- Load my bets ---
   const loadMyBets = useCallback(async () => {
@@ -721,10 +761,10 @@ const App: React.FC = () => {
                       <div className="text-brand-textMuted text-sm mb-2">Asnjë ndeshje e disponueshme.</div>
                       <div className="text-brand-textMuted text-xs opacity-70">
                         {!hasApiKey
-                          ? 'ODDS_API_KEY s\u2019është konfiguruar në server — vendose te .env (lokal) ose te Environment Variables (Render/hosting) dhe rinis serverin.'
+                          ? 'Burimi sportiv i autorizuar nuk është konfiguruar në server.'
                           : selectedDate !== 'ALL'
-                            ? 'Nuk ka ndeshje të planifikuara për këtë datë në kampionatet e mbuluara. Provo "Të gjitha" ose një datë tjetër.'
-                            : 'Kampionatet kryesore mund të jenë pushim veror (pa ndeshje të planifikuara), ose kredia mujore e The Odds API mund të jetë konsumuar. Provo përsëri më vonë.'}
+                            ? 'Nuk ka ndeshje të disponueshme për këtë datë.'
+                            : 'Nuk ka ndeshje të disponueshme për momentin. Provo përsëri më vonë.'}
                       </div>
                     </div>
                   ) : (

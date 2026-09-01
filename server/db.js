@@ -83,6 +83,9 @@ export async function initDb() {
 
     CREATE INDEX IF NOT EXISTS idx_matches_cache_league_status ON matches_cache (league, status);
     CREATE INDEX IF NOT EXISTS idx_matches_cache_start_time ON matches_cache (start_time);
+    ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'unknown';
+    ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS country TEXT;
+    ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS live_minute TEXT;
     CREATE INDEX IF NOT EXISTS idx_bets_user_id ON bets (user_id);
     CREATE INDEX IF NOT EXISTS idx_bet_selections_bet_id ON bet_selections (bet_id);
     CREATE INDEX IF NOT EXISTS idx_bet_selections_match_id ON bet_selections (match_id);
