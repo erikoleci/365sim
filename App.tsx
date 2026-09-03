@@ -6,6 +6,7 @@ import BetSlip from './components/BetSlip';
 import AdminPanel from './components/AdminPanel';
 import Login from './components/Login';
 import CasinoHub from './components/CasinoHub';
+import SportSidebar from './components/SportSidebar';
 import { User, Match, Bet, UserRole, BetSelectionItem, MatchStatus } from './types';
 import * as api from './services/api';
 import { albaniaDateKey, albaniaTodayKey } from './utils/albaniaTime';
@@ -507,6 +508,9 @@ const App: React.FC = () => {
 
         {currentView === 'sports' && (
           <>
+            {/* Sport list sidebar — Home / Soccer / Basketball / etc, matching the reference layout */}
+            <SportSidebar onSelectSoccer={() => { setCurrentLeague('All Top Football'); setSelectedDate('ALL'); setDetailMatchId(null); }} />
+
             {/* Mobile trigger — opens leagues as a drawer from the left */}
             <button
               onClick={() => setIsLeagueMenuOpen(true)}
