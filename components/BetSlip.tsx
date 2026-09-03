@@ -130,6 +130,11 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                             <span className="font-bold text-white">{isSameGameMultiple ? `Same Game Multiple (${selections.length})` : isAccumulator ? `${selections.length}-Fold Accumulator` : 'Single Bet'}</span>
                             <span className="bg-brand-yellow text-brand-bg px-2 py-0.5 rounded font-bold text-xs">@{totalOdds.toFixed(2)}</span>
                         </div>
+                        {isSameGameMultiple && (
+                            <div className="text-[10px] text-brand-textMuted italic mb-2 leading-snug">
+                                Kuotë e vlerësuar (shumëzim i kuotave individuale) — asnjë provider nuk jep çmim të dedikuar SGM, kështu që ky kombinim s'e llogarit varësinë mes rezultateve në të njëjtën ndeshje.
+                            </div>
+                        )}
 
                         <div className="flex items-center gap-2 mb-2">
                             <span className="text-brand-textMuted w-12">Stake</span>

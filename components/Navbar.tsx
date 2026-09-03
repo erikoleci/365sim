@@ -30,7 +30,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
               title="Kjo është një simulim — nuk përdoren para reale."
               className="hidden sm:inline-block text-[9px] font-bold uppercase tracking-wider bg-brand-yellow/15 text-brand-yellow border border-brand-yellow/40 rounded px-1.5 py-0.5 leading-none"
             >
-              Demo
+              Simulim
             </span>
           </div>
           <div className="flex gap-4 text-brand-text/90 text-xs md:text-sm font-medium">
@@ -53,6 +53,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
         <div className="flex items-center gap-2 md:gap-4 text-xs">
           {currentUser.role === UserRole.ADMIN && (
             <button 
+              data-admin-toggle
               onClick={onOpenAdmin}
               className="bg-brand-headerDark hover:bg-black/20 text-brand-yellow px-2 md:px-3 py-1.5 rounded font-bold border border-brand-yellow/30 transition-colors uppercase tracking-wide text-[10px] md:text-xs whitespace-nowrap"
             >
@@ -87,7 +88,6 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
                    {liveCount > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveCount}</span>}
                  </span>
                  <span className="text-brand-accent cursor-default font-bold">Soccer</span>
-                 <span className="opacity-40 cursor-not-allowed" title="Së shpejti">Basketball</span>
              </div>
          ) : (
              <div className="flex gap-6 text-xs text-brand-textMuted whitespace-nowrap">

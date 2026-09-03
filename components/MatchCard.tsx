@@ -22,6 +22,21 @@ const StarButton: React.FC<{ active: boolean; onClick: (e: React.MouseEvent) => 
   </button>
 );
 
+// Real crest when the provider gave us one; otherwise a plain initials
+// tile — never a generic avatar/stock photo standing in for a team.
+const TeamBadge: React.FC<{ name: string; logo?: string }> = ({ name, logo }) => {
+  const [errored, setErrored] = React.useState(false);
+  if (logo && !errored) {
+    return <img src={logo} alt="" className="w-4 h-4 object-contain shrink-0" onError={() => setErrored(true)} />;
+  }
+  const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  return (
+    <span className="w-4 h-4 shrink-0 rounded-sm bg-[#444] text-brand-textMuted text-[8px] font-bold flex items-center justify-center leading-none">
+      {initials}
+    </span>
+  );
+};
+
 const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, isAdmin, onSettleMatch, isSimulating, selectedIds, favoriteTeams, onToggleFavoriteTeam }) => {
   const isFinished = match.status === MatchStatus.FINISHED;
   const isLive = match.status === MatchStatus.LIVE;
@@ -89,8 +104,9 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
            <div className="flex flex-col gap-1.5">
                {/* Home Team */}
                <div className={`flex justify-between items-center ${isFinished ? 'opacity-80' : ''}`}>
-                 <span className="flex items-center min-w-0">
+                 <span className="flex items-center min-w-0 gap-1.5">
                    <StarButton active={favoriteTeams.has(match.homeTeam)} onClick={(e) => { e.stopPropagation(); onToggleFavoriteTeam(match.homeTeam); }} />
+                   <TeamBadge name={match.homeTeam} logo={match.homeTeamLogo} />
                    <span className="text-brand-text font-bold text-sm truncate pr-2">{match.homeTeam}</span>
                  </span>
                  {(isFinished || isLive) && (
@@ -102,8 +118,9 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
                
                {/* Away Team */}
                <div className={`flex justify-between items-center ${isFinished ? 'opacity-80' : ''}`}>
-                 <span className="flex items-center min-w-0">
+                 <span className="flex items-center min-w-0 gap-1.5">
                    <StarButton active={favoriteTeams.has(match.awayTeam)} onClick={(e) => { e.stopPropagation(); onToggleFavoriteTeam(match.awayTeam); }} />
+                   <TeamBadge name={match.awayTeam} logo={match.awayTeamLogo} />
                    <span className="text-brand-text font-bold text-sm truncate pr-2">{match.awayTeam}</span>
                  </span>
                  {(isFinished || isLive) && (

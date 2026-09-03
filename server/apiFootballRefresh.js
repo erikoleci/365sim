@@ -101,6 +101,8 @@ async function refreshLeague({ id, slug }) {
     const fixtureId = f.fixture?.id;
     const home = f.teams?.home?.name;
     const away = f.teams?.away?.name;
+    const homeLogo = f.teams?.home?.logo || null;
+    const awayLogo = f.teams?.away?.logo || null;
     const startTime = f.fixture?.date;
     if (!fixtureId || !home || !away || !startTime) continue;
 
@@ -125,7 +127,7 @@ async function refreshLeague({ id, slug }) {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
        ON CONFLICT (id) DO UPDATE SET
          status = excluded.status, raw_json = excluded.raw_json, fetched_at = excluded.fetched_at`,
-      [id, slug, home, away, startTime, status, JSON.stringify({ id, home_team: home, away_team: away, bookmakers }), Date.now()]
+      [id, slug, home, away, startTime, status, JSON.stringify({ id, home_team: home, away_team: away, home_team_logo: homeLogo, away_team_logo: awayLogo, bookmakers }), Date.now()]
     );
   }
 }

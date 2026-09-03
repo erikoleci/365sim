@@ -133,11 +133,29 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
                </div>
              )}
              <div className="flex justify-center items-center gap-8">
-                 <div className="text-2xl font-bold text-white">{match.homeTeam}</div>
+                 <div className="flex flex-col items-center gap-1">
+                   {match.homeTeamLogo ? (
+                     <img src={match.homeTeamLogo} alt="" className="w-8 h-8 object-contain" />
+                   ) : (
+                     <span className="w-8 h-8 rounded bg-[#444] text-brand-textMuted text-xs font-bold flex items-center justify-center">
+                       {match.homeTeam.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
+                     </span>
+                   )}
+                   <div className="text-2xl font-bold text-white">{match.homeTeam}</div>
+                 </div>
                  <div className="text-3xl text-brand-yellow font-mono">
                     {isFinished ? `${match.score?.home} - ${match.score?.away}` : 'v'}
                  </div>
-                 <div className="text-2xl font-bold text-white">{match.awayTeam}</div>
+                 <div className="flex flex-col items-center gap-1">
+                   {match.awayTeamLogo ? (
+                     <img src={match.awayTeamLogo} alt="" className="w-8 h-8 object-contain" />
+                   ) : (
+                     <span className="w-8 h-8 rounded bg-[#444] text-brand-textMuted text-xs font-bold flex items-center justify-center">
+                       {match.awayTeam.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
+                     </span>
+                   )}
+                   <div className="text-2xl font-bold text-white">{match.awayTeam}</div>
+                 </div>
              </div>
              {isFinished && (
                 <div className="mt-2 text-xs text-brand-accent">
@@ -202,7 +220,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
           ) : (
             <div>
               <div className="text-[10px] text-brand-textMuted uppercase text-center mb-4">
-                DEMO / SIMULIM — statistika nga burimi i të dhënave, jo verifikim zyrtar
+                Statistika nga burimi i të dhënave — jo verifikim zyrtar
               </div>
               <StatBar label="Posedimi" home={liveDetail.statistics.possession_home} away={liveDetail.statistics.possession_away} suffix="%" />
               <StatBar label="Gjuajtje" home={liveDetail.statistics.shots_home} away={liveDetail.statistics.shots_away} />

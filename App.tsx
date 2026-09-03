@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Navbar from './components/Navbar';
 import MatchRow from './components/MatchCard';
 import MatchDetail from './components/MatchDetail';
@@ -195,6 +195,25 @@ const App: React.FC = () => {
 
   useEffect(() => { if (showAdmin) loadAdminData(); }, [showAdmin, loadAdminData]);
 
+  // Admin Panel: close on click-outside. adminPanelRef wraps only the
+  // <main> content area where AdminPanel renders, so a click on the Admin
+  // button itself, the navbar, or the sidebars doesn't get double-handled —
+  // it's excluded via the ref check plus a dedicated data attribute on the
+  // Admin toggle button (which has its own onClick that would otherwise
+  // immediately reopen what this just closed).
+  const adminPanelRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!showAdmin) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (adminPanelRef.current && !adminPanelRef.current.contains(target) && !target.closest('[data-admin-toggle]')) {
+        setShowAdmin(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showAdmin]);
+
   // --- Date picker helpers (bet365-style: Sot / Nesër / next few days) ---
   // Always compare using Albania's calendar date (Europe/Tirane), not the
   // visitor's device timezone, so "today" is correct for the target audience.
@@ -317,15 +336,46 @@ const App: React.FC = () => {
     russia: 'Rusi', poland: 'Poloni', mexico: 'Meksikë', japan: 'Japoni', korea: 'Korea e Jugut',
     china: 'Kinë', australia: 'Australi', chile: 'Kili', colombia: 'Kolumbi', albania: 'Shqipëri',
     croatia: 'Kroaci', serbia: 'Serbi', romania: 'Rumani', ukraine: 'Ukrainë', saudi: 'Arabia Saudite',
+    kosovo: 'Kosovë',
   };
+  // ISO 3166-1 alpha-2 code per country token -> converted to a flag emoji
+  // via regional indicator symbols. This is a clean, deterministic mapping
+  // (country token -> ISO code -> flag) rather than one icon reused for
+  // every country, and needs no image assets/network calls.
+  const COUNTRY_TOKEN_ISO: Record<string, string> = {
+    epl: 'GB', england: 'GB', spain: 'ES', italy: 'IT', germany: 'DE',
+    france: 'FR', usa: 'US', brazil: 'BR', argentina: 'AR', portugal: 'PT',
+    netherlands: 'NL', belgium: 'BE', turkey: 'TR', greece: 'GR', scotland: 'GB',
+    switzerland: 'CH', austria: 'AT', denmark: 'DK', sweden: 'SE', norway: 'NO',
+    russia: 'RU', poland: 'PL', mexico: 'MX', japan: 'JP', korea: 'KR',
+    china: 'CN', australia: 'AU', chile: 'CL', colombia: 'CO', albania: 'AL',
+    croatia: 'HR', serbia: 'RS', romania: 'RO', ukraine: 'UA', saudi: 'SA',
+    kosovo: 'XK',
+  };
+  const isoToFlagEmoji = (iso: string): string =>
+    iso.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
   const INTERNATIONAL_TOKENS = new Set(['uefa', 'fifa', 'conmebol', 'concacaf', 'afc', 'caf', 'international']);
+  const leagueCountryToken = (key: string): string | null => {
+    if (key === 'soccer_epl') return 'epl';
+    if (key === 'oddsapiio_albania_superiore') return 'albania';
+    return key.match(/^[a-z0-9]+_([a-z]+)_/)?.[1] || null;
+  };
   const leagueCountry = (key: string): string => {
-    if (key === 'soccer_epl') return 'Anglia';
-    if (key === 'oddsapiio_albania_superiore') return 'Shqipëri';
-    const token = key.match(/^[a-z0-9]+_([a-z]+)_/)?.[1];
+    const token = leagueCountryToken(key);
     if (!token) return 'Të tjera';
     if (INTERNATIONAL_TOKENS.has(token)) return 'Ndërkombëtare';
     return COUNTRY_TOKEN_LABELS[token] || token.charAt(0).toUpperCase() + token.slice(1);
+  };
+  // Flag for a country GROUP NAME (as returned by leagueCountry above) —
+  // looks up the underlying ISO code by reverse-mapping the label. Falls
+  // back to a globe icon for "Ndërkombëtare"/"Të tjera" (no single country
+  // flag applies) instead of forcing a flag onto non-country groups.
+  const countryFlag = (countryName: string): string => {
+    if (countryName === 'Ndërkombëtare') return '🌍';
+    if (countryName === 'Të tjera') return '🏳️';
+    const token = Object.keys(COUNTRY_TOKEN_LABELS).find((t) => COUNTRY_TOKEN_LABELS[t] === countryName);
+    const iso = token ? COUNTRY_TOKEN_ISO[token] : null;
+    return iso ? isoToFlagEmoji(iso) : '🏳️';
   };
 
   const detailMatch = matches.find((m) => m.id === detailMatchId);
@@ -578,7 +628,7 @@ const App: React.FC = () => {
                             onClick={() => setExpandedCountry(isOpen ? null : country)}
                             className={`w-full flex justify-between items-center px-3 py-2 bg-[#333] hover:bg-[#3a3a3a] text-brand-text font-bold uppercase text-[10px] tracking-wider border-b border-brand-bg/10 transition-colors ${isOpen ? 'text-white' : ''}`}
                           >
-                            <span>{country}</span>
+                            <span className="flex items-center gap-1.5"><span aria-hidden="true">{countryFlag(country)}</span>{country}</span>
                             <span className="text-brand-textMuted">{isOpen ? '▾' : '▸'}</span>
                           </button>
                           {isOpen && leagues.map((league) => (
@@ -596,7 +646,7 @@ const App: React.FC = () => {
           </>
         )}
 
-        <main className="flex-1 min-w-0 mb-20 md:mb-0">
+        <main ref={adminPanelRef as React.RefObject<HTMLElement>} className="flex-1 min-w-0 mb-20 md:mb-0">
           {showAdmin && currentUser.role === UserRole.ADMIN ? (
             <AdminPanel
               users={adminUsers} allBets={adminAllBets}
@@ -728,17 +778,23 @@ const App: React.FC = () => {
                 <>
                   <SpecialOffers matches={[...liveMatches, ...upcomingMatches]} onOpenDetail={(m) => setDetailMatchId(m.id)} onBetClick={handleToggleSelection} />
 
-                  {/* LIVE — always its own section, independent of the league filter */}
-                  {liveMatches.length > 0 && (
-                    <div id="live-section" className="bg-brand-panel rounded overflow-hidden shadow-sm border border-brand-accent/30 scroll-mt-4">
-                      <div className="bg-[#2a1f1f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex items-center gap-2">
-                        <span className="relative flex h-2 w-2">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-accent opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-accent"></span>
-                        </span>
-                        <span className="text-brand-accent uppercase tracking-wider">Live Tani</span>
-                        <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveMatches.length}</span>
+                  {/* LIVE — always its own section, independent of the league filter.
+                      Rendered even when empty so "Live In-Play" has somewhere to
+                      scroll to and shows an explicit real/no-fake-data message. */}
+                  <div id="live-section" className="bg-brand-panel rounded overflow-hidden shadow-sm border border-brand-accent/30 scroll-mt-4">
+                    <div className="bg-[#2a1f1f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex items-center gap-2">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-accent opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-accent"></span>
+                      </span>
+                      <span className="text-brand-accent uppercase tracking-wider">Live Tani</span>
+                      {liveMatches.length > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveMatches.length}</span>}
+                    </div>
+                    {liveMatches.length === 0 ? (
+                      <div className="text-center text-brand-textMuted text-xs py-8 px-4">
+                        Nuk ka asnjë ndeshje live aktualisht.
                       </div>
+                    ) : (
                       <div className="divide-y divide-brand-divider">
                         {liveMatches.map((match) => (
                           <MatchRow
@@ -755,8 +811,8 @@ const App: React.FC = () => {
                           />
                         ))}
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
                   {/* Recently finished matches with the real final score — auto-settled via the scores poller */}
                   {finishedMatches.length > 0 && (
@@ -802,6 +858,7 @@ const App: React.FC = () => {
                         <div className="bg-[#383838] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex justify-between items-center">
                           <div className="flex items-center gap-2">
                             <span className="w-1 h-3 rounded-full bg-brand-yellow"></span>
+                            <span aria-hidden="true">{countryFlag(leagueCountry(league))}</span>
                             <span>{leagueLabel(league)}</span>
                           </div>
                         </div>
@@ -866,7 +923,7 @@ const App: React.FC = () => {
                         onClick={() => setExpandedCountry(isOpen ? null : country)}
                         className={`w-full flex justify-between items-center px-3 py-2 bg-[#333] hover:bg-[#3a3a3a] text-brand-text font-bold uppercase text-[10px] tracking-wider border-b border-brand-bg/10 transition-colors ${isOpen ? 'text-white' : ''}`}
                       >
-                        <span>{country}</span>
+                        <span className="flex items-center gap-1.5"><span aria-hidden="true">{countryFlag(country)}</span>{country}</span>
                         <span className="text-brand-textMuted">{isOpen ? '▾' : '▸'}</span>
                       </button>
                       {isOpen && leagues.map((league) => (

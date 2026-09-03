@@ -55,6 +55,10 @@ export interface Match {
   league: string; 
   homeTeam: string;
   awayTeam: string;
+  // Real crest URL, only present when the source provider supplies one.
+  // Absent (not a placeholder photo) when no provider logo is available.
+  homeTeamLogo?: string;
+  awayTeamLogo?: string;
   startTime: string;
   status: MatchStatus;
   score?: MatchScore;

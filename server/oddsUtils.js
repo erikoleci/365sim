@@ -180,6 +180,12 @@ export function mapEventToMatch(row) {
     league: row.league,
     homeTeam: row.home_team,
     awayTeam: row.away_team,
+    // Real crest URL when the source provider supplies one (API-Football
+    // does; The Odds API and others don't). Left undefined otherwise —
+    // never filled with a stock/placeholder image here, the frontend
+    // decides how to render the "no logo" case.
+    homeTeamLogo: ev.home_team_logo || undefined,
+    awayTeamLogo: ev.away_team_logo || undefined,
     startTime: row.start_time,
     status: row.status,
     markets,
