@@ -35,6 +35,29 @@ export async function refreshOddsPapi() {
   if (Date.now() - last < REFRESH_MS) return;
   await setKV('oddspapi_last', Date.now());
 
+  // /v4/odds-by-tournaments (below) does NOT include participant names —
+  // only participant1Id/participant2Id (confirmed against oddspapi.io's
+  // docs: those name fields only exist on /v4/fixtures). So first pull
+  // fixtures per tournament to build a fixtureId -> names map, then use
+  // that map when walking the odds response.
+  const namesByFixtureId = new Map();
+  for (const t of TOURNAMENTS) {
+    let fxData;
+    try {
+      const resp = await fetch(`${BASE}/fixtures?tournamentId=${t.id}&hasOdds=true&apiKey=${KEY}`);
+      fxData = await resp.json();
+    } catch (err) {
+      console.error(`[oddspapi] fixtures fetch failed for tournament ${t.id}:`, err.message);
+      continue;
+    }
+    if (!Array.isArray(fxData)) continue;
+    for (const fx of fxData) {
+      if (fx.fixtureId && fx.participant1Name && fx.participant2Name) {
+        namesByFixtureId.set(fx.fixtureId, { home: fx.participant1Name, away: fx.participant2Name });
+      }
+    }
+  }
+
   const ids = TOURNAMENTS.map((t) => t.id).join(',');
   let data;
   try {
@@ -53,7 +76,9 @@ export async function refreshOddsPapi() {
 
   for (const fx of data) {
     const league = leagueByTid[fx.tournamentId];
-    if (!league || !fx.participant1Name || !fx.participant2Name) continue;
+    const names = namesByFixtureId.get(fx.fixtureId);
+    if (!league || !names) continue;
+    const { home: homeName, away: awayName } = names;
 
     const { rows: candidates } = await pool.query(
       `SELECT id, home_team, away_team, raw_json FROM matches_cache WHERE league = $1 AND status != 'FINISHED'`,
@@ -63,7 +88,7 @@ export async function refreshOddsPapi() {
     // Require BOTH home and away to match (not just one side) — avoids
     // false positives like "Real Madrid" vs "Real Sociedad".
     const match = candidates.find(
-      (c) => similar(c.home_team, fx.participant1Name) && similar(c.away_team, fx.participant2Name)
+      (c) => similar(c.home_team, homeName) && similar(c.away_team, awayName)
     );
     if (!match) continue;
 
