@@ -8,6 +8,7 @@ import { refreshBsd } from '../bsd.js';
 import { refreshHighlightly } from '../highlightly.js';
 import { refreshOddsApiIo, refreshPrimaryLeagues } from '../oddsapiio.js';
 import { refreshApiFootball, apiFootballLeagueSlugs } from '../apiFootballRefresh.js';
+import { refreshSportmonks } from '../sportmonks.js';
 
 const router = express.Router();
 
@@ -286,6 +287,7 @@ router.get('/', async (req, res) => {
     await refreshOddsApiIo();
     await refreshPrimaryLeagues();
     await refreshApiFootball();
+    await refreshSportmonks();
   } catch (err) {
     console.error('Error refreshing odds:', err.message);
   }
