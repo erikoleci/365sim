@@ -189,6 +189,21 @@ router.get('/:id/odds-history', async (req, res) => {
   res.json({ history: rows });
 });
 
+// Live stats + match events for the Match Details "Statistika"/"Ngjarjet"
+// tabs. Both tables are already populated by the live sync above when the
+// source feed provides them (see persistEvent/syncSource) — this just
+// exposes what was already being written but never read back.
+router.get('/:id/live-detail', async (req, res) => {
+  const [{ rows: statsRows }, { rows: eventRows }] = await Promise.all([
+    pool.query('SELECT * FROM live_statistics WHERE match_id = $1', [req.params.id]),
+    pool.query(
+      'SELECT minute, type, team, player, detail, created_at FROM match_events WHERE match_id = $1 ORDER BY created_at ASC',
+      [req.params.id]
+    ),
+  ]);
+  res.json({ statistics: statsRows[0] || null, events: eventRows });
+});
+
 router.get('/:id', async (req, res) => {
   if (sourceConfigured()) {
     try { await syncSource(); } catch (err) { console.warn('[source] match sync:', err.message); }

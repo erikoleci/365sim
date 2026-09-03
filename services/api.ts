@@ -77,6 +77,35 @@ export async function fetchLeagues(): Promise<{ key: string; title: string; grou
   return data.leagues;
 }
 
+export interface LiveStatistics {
+  minute: number | null;
+  possession_home: number | null;
+  possession_away: number | null;
+  shots_home: number | null;
+  shots_away: number | null;
+  shots_on_target_home: number | null;
+  shots_on_target_away: number | null;
+  corners_home: number | null;
+  corners_away: number | null;
+  cards_home: number | null;
+  cards_away: number | null;
+  xg_home: number | null;
+  xg_away: number | null;
+}
+
+export interface MatchEvent {
+  minute: number | null;
+  type: string;
+  team: string | null;
+  player: string | null;
+  detail: string | null;
+  created_at: number;
+}
+
+export async function fetchMatchLiveDetail(matchId: string): Promise<{ statistics: LiveStatistics | null; events: MatchEvent[] }> {
+  return request(`/matches/${matchId}/live-detail`);
+}
+
 // --- Bets ---
 
 export async function placeBet(stake: number, type: 'SINGLE' | 'ACCUMULATOR', selections: BetSelectionItem[]) {

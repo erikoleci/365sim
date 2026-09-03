@@ -1,5 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Match, MatchStatus } from '../types';
+import * as api from '../services/api';
+import type { LiveStatistics, MatchEvent } from '../services/api';
 
 interface MatchDetailProps {
   match: Match;
@@ -8,9 +10,52 @@ interface MatchDetailProps {
   selectedIds: string[];
 }
 
+const EVENT_LABELS: Record<string, string> = {
+  GOAL: '⚽ Gol',
+  YELLOW_CARD: '🟨 Kartonë i verdhë',
+  RED_CARD: '🟥 Kartonë i kuq',
+  SUBSTITUTION: '🔄 Zëvendësim',
+  CORNER: '🚩 Korner',
+  VAR: '📺 VAR',
+};
+
+const StatBar: React.FC<{ label: string; home: number | null; away: number | null; suffix?: string }> = ({ label, home, away, suffix = '' }) => {
+  const h = home ?? 0;
+  const a = away ?? 0;
+  const total = h + a || 1;
+  if (home == null && away == null) return null;
+  return (
+    <div className="mb-3">
+      <div className="flex justify-between text-xs text-white font-bold mb-1">
+        <span>{home ?? '-'}{suffix}</span>
+        <span className="text-brand-textMuted font-normal uppercase">{label}</span>
+        <span>{away ?? '-'}{suffix}</span>
+      </div>
+      <div className="flex h-1.5 rounded overflow-hidden bg-[#444]">
+        <div className="bg-brand-accent" style={{ width: `${(h / total) * 100}%` }} />
+        <div className="bg-brand-yellow" style={{ width: `${(a / total) * 100}%` }} />
+      </div>
+    </div>
+  );
+};
+
 const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, selectedIds }) => {
   const isFinished = match.status === MatchStatus.FINISHED;
+  const hasLiveData = match.status === MatchStatus.LIVE || isFinished;
   const [activeTab, setActiveTab] = useState<string>('All');
+  const [liveDetail, setLiveDetail] = useState<{ statistics: LiveStatistics | null; events: MatchEvent[] } | null>(null);
+  const [liveDetailLoading, setLiveDetailLoading] = useState(false);
+
+  useEffect(() => {
+    if (!hasLiveData) { setLiveDetail(null); return; }
+    let cancelled = false;
+    setLiveDetailLoading(true);
+    api.fetchMatchLiveDetail(match.id)
+      .then((d) => { if (!cancelled) setLiveDetail(d); })
+      .catch(() => { if (!cancelled) setLiveDetail({ statistics: null, events: [] }); })
+      .finally(() => { if (!cancelled) setLiveDetailLoading(false); });
+    return () => { cancelled = true; };
+  }, [match.id, hasLiveData]);
 
   const CATEGORY_LABELS: Record<string, string> = {
     All: 'Kryesore',
@@ -71,6 +116,30 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
       {/* Category Tabs */}
       <div className="bg-[#333] border-b border-brand-divider overflow-x-auto no-scrollbar">
          <div className="flex">
+            {hasLiveData && (
+              <>
+                <button
+                    onClick={() => setActiveTab('STATS')}
+                    className={`px-4 py-3 text-xs font-bold uppercase transition-colors whitespace-nowrap ${
+                        activeTab === 'STATS'
+                        ? 'text-brand-yellow border-b-2 border-brand-yellow bg-[#3a3a3a]'
+                        : 'text-brand-textMuted hover:text-white hover:bg-[#3a3a3a]'
+                    }`}
+                >
+                    Statistika
+                </button>
+                <button
+                    onClick={() => setActiveTab('EVENTS')}
+                    className={`px-4 py-3 text-xs font-bold uppercase transition-colors whitespace-nowrap ${
+                        activeTab === 'EVENTS'
+                        ? 'text-brand-yellow border-b-2 border-brand-yellow bg-[#3a3a3a]'
+                        : 'text-brand-textMuted hover:text-white hover:bg-[#3a3a3a]'
+                    }`}
+                >
+                    Ngjarjet
+                </button>
+              </>
+            )}
             {categories.map(cat => (
                 <button
                     key={cat}
@@ -87,7 +156,49 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
          </div>
       </div>
 
-      {/* Markets Content */}
+      {/* Stats / Events / Markets Content */}
+      {activeTab === 'STATS' ? (
+        <div className="p-4 overflow-y-auto flex-1 bg-[#282828]">
+          {liveDetailLoading ? (
+            <div className="text-center text-brand-textMuted text-xs py-8">Duke ngarkuar statistikat...</div>
+          ) : !liveDetail?.statistics ? (
+            <div className="text-center text-brand-textMuted text-xs py-8">
+              Statistika live s'janë të disponueshme për këtë ndeshje.
+            </div>
+          ) : (
+            <div>
+              <div className="text-[10px] text-brand-textMuted uppercase text-center mb-4">
+                DEMO / SIMULIM — statistika nga burimi i të dhënave, jo verifikim zyrtar
+              </div>
+              <StatBar label="Posedimi" home={liveDetail.statistics.possession_home} away={liveDetail.statistics.possession_away} suffix="%" />
+              <StatBar label="Gjuajtje" home={liveDetail.statistics.shots_home} away={liveDetail.statistics.shots_away} />
+              <StatBar label="Gjuajtje në portë" home={liveDetail.statistics.shots_on_target_home} away={liveDetail.statistics.shots_on_target_away} />
+              <StatBar label="Korner" home={liveDetail.statistics.corners_home} away={liveDetail.statistics.corners_away} />
+              <StatBar label="Kartonë" home={liveDetail.statistics.cards_home} away={liveDetail.statistics.cards_away} />
+              <StatBar label="xG" home={liveDetail.statistics.xg_home} away={liveDetail.statistics.xg_away} />
+            </div>
+          )}
+        </div>
+      ) : activeTab === 'EVENTS' ? (
+        <div className="p-4 overflow-y-auto flex-1 bg-[#282828]">
+          {liveDetailLoading ? (
+            <div className="text-center text-brand-textMuted text-xs py-8">Duke ngarkuar ngjarjet...</div>
+          ) : !liveDetail?.events.length ? (
+            <div className="text-center text-brand-textMuted text-xs py-8">Ende s'ka ngjarje të regjistruara.</div>
+          ) : (
+            <div className="space-y-2">
+              {liveDetail.events.map((ev, i) => (
+                <div key={i} className="flex items-center gap-3 bg-[#333] rounded px-3 py-2">
+                  <span className="text-brand-yellow font-mono text-xs w-8 shrink-0">{ev.minute != null ? `${ev.minute}'` : '-'}</span>
+                  <span className="text-white text-xs flex-1">{EVENT_LABELS[ev.type] || ev.type}</span>
+                  {ev.team && <span className="text-brand-textMuted text-[10px]">{ev.team}</span>}
+                  {ev.player && <span className="text-brand-textMuted text-[10px]">{ev.player}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="p-2 space-y-2 overflow-y-auto flex-1 bg-[#282828]">
         {filteredMarkets.map(market => {
             const cols = Math.min(market.options.length, 3) || 1;
@@ -118,6 +229,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
             );
         })}
       </div>
+      )}
     </div>
   );
 };
