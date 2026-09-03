@@ -204,6 +204,10 @@ export async function initDb() {
   // above — no migration needed for those, they've just never been
   // populated by any provider until now.)
   await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS sportmonks_fixture_id BIGINT;`);
+  // LondonPro365 live detail: in-play minute and provider numeric status code,
+  // persisted so the frontend can render a live clock for in-play matches.
+  await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS live_minute TEXT;`);
+  await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS live_status TEXT;`);
 
   const { rows } = await pool.query('SELECT COUNT(*)::int AS c FROM users');
   if (rows[0].c === 0) {

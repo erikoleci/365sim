@@ -23,6 +23,8 @@ import scrapeRouter from './routes/scrape.js';
 import favoritesRouter from './routes/favorites.js';
 import { initDb } from './db.js';
 import { initWebSocket } from './ws.js';
+import { startLondon365LiveLoop, ensureLondon365Import } from './london365.js';
+import { startLondon365Socket } from './london365Socket.js';
 
 let dbReady = false;
 
@@ -148,6 +150,13 @@ async function start() {
     }
   });
   initWebSocket(httpServer);
+
+  // LondonPro365 provider: seed the full catalog in the background (throttled,
+  // never blocks startup), start the in-play REST safety-net loop, and open the
+  // native Socket.IO feed for sub-second odds/score/lifecycle updates.
+  ensureLondon365Import();
+  startLondon365LiveLoop();
+  startLondon365Socket();
 }
 
 start().catch((err) => {

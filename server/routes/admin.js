@@ -5,6 +5,7 @@ import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { settleMatch, recomputeBetStatus } from '../matchSettlement.js';
 import { logAudit } from '../auditLog.js';
+import { importLondon365, getLondon365Status } from '../london365.js';
 
 const router = express.Router();
 
@@ -21,6 +22,26 @@ function toPublicUser(row) {
     balance: row.balance, role: row.role, avatar: row.avatar,
   };
 }
+
+// --- LONDONPRO365 DATA PROVIDER ---
+
+// Manually trigger a full import of every LondonPro365 sport, league, match,
+// market, and coefficient into matches_cache (the throttle guard is inside).
+router.post('/london365/import', async (req, res) => {
+  const body = req.body || {};
+  const result = await importLondon365({
+    sports: body.sports,
+    leagues: body.leagues,
+    matches: body.matches,
+    full: body.full,
+  });
+  await logAudit(req.user, 'LONDON365_IMPORT', 'london365', result);
+  res.json(result);
+});
+
+router.get('/london365/status', async (req, res) => {
+  res.json(await getLondon365Status());
+});
 
 // --- USERS ---
 

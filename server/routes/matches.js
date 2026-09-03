@@ -9,6 +9,7 @@ import { refreshHighlightly } from '../highlightly.js';
 import { refreshOddsApiIo, refreshPrimaryLeagues } from '../oddsapiio.js';
 import { refreshApiFootball, apiFootballLeagueSlugs } from '../apiFootballRefresh.js';
 import { refreshSportmonks } from '../sportmonks.js';
+import { ensureLondon365Import } from '../london365.js';
 
 const router = express.Router();
 
@@ -262,7 +263,11 @@ router.get('/', async (req, res) => {
     } catch (err) {
       console.error('Error refreshing API-Football:', err.message);
     }
-    const { rows } = await pool.query('SELECT * FROM matches_cache WHERE league = ANY($1::text[]) ORDER BY start_time ASC', [apiFootballLeagueSlugs()]);
+    // No The Odds API key configured: LondonPro365 becomes the primary data
+    // source. Seed it in the background (throttled, never blocks the request)
+    // and return everything currently cached, including the l365 rows.
+    ensureLondon365Import();
+    const { rows } = await pool.query('SELECT * FROM matches_cache ORDER BY start_time ASC');
     return res.json({ matches: rows.map(mapEventToMatch), hasLiveApiKey: false });
   }
 
@@ -288,6 +293,7 @@ router.get('/', async (req, res) => {
     await refreshPrimaryLeagues();
     await refreshApiFootball();
     await refreshSportmonks();
+    ensureLondon365Import();
   } catch (err) {
     console.error('Error refreshing odds:', err.message);
   }

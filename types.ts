@@ -68,6 +68,7 @@ export interface Match {
   // Live Data
   isLive?: boolean;
   currentMinute?: string;
+  liveStatus?: string;
   liveHomeScore?: number;
   liveAwayScore?: number;
 }
