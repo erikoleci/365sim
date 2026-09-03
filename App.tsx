@@ -6,6 +6,7 @@ import BetSlip from './components/BetSlip';
 import AdminPanel from './components/AdminPanel';
 import Login from './components/Login';
 import CasinoHub from './components/CasinoHub';
+import SpecialOffers from './components/SpecialOffers';
 import { User, Match, Bet, UserRole, BetSelectionItem, MatchStatus } from './types';
 import * as api from './services/api';
 import { albaniaDateKey, albaniaTodayKey } from './utils/albaniaTime';
@@ -425,7 +426,7 @@ const App: React.FC = () => {
   };
 
   // --- Bet slip ---
-  const handleToggleSelection = useCallback((match: Match, marketId: string, selectionId: string) => {
+  const handleToggleSelection = useCallback((match: Match, marketId: string, selectionId: string, boosted?: boolean) => {
     if (!currentUser) return;
     const market = match.markets.find((m) => m.id === marketId);
     const option = market?.options.find((o) => o.id === selectionId);
@@ -443,8 +444,9 @@ const App: React.FC = () => {
         marketName: market.name,
         selectionId: option.id,
         selectionName: option.name,
-        odds: option.odds,
+        odds: boosted ? Number((option.odds * 1.12).toFixed(2)) : option.odds,
         status: 'PENDING' as any,
+        boosted: !!boosted,
       }];
     });
   }, [currentUser]);
@@ -724,6 +726,8 @@ const App: React.FC = () => {
                 </div>
               ) : (
                 <>
+                  <SpecialOffers matches={[...liveMatches, ...upcomingMatches]} onOpenDetail={(m) => setDetailMatchId(m.id)} onBetClick={handleToggleSelection} />
+
                   {/* LIVE — always its own section, independent of the league filter */}
                   {liveMatches.length > 0 && (
                     <div id="live-section" className="bg-brand-panel rounded overflow-hidden shadow-sm border border-brand-accent/30 scroll-mt-4">

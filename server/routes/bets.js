@@ -2,7 +2,7 @@ import express from 'express';
 import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
-import { resolveCurrentOdds } from '../oddsUtils.js';
+import { resolveCurrentOdds, mapEventToMatch } from '../oddsUtils.js';
 import { findConflictingSelection, validateStakeAmount } from '../betValidation.js';
 
 const router = express.Router();
@@ -25,6 +25,25 @@ const MAX_SELECTION_EXPOSURE = 5000000;
 // when they built the slip, before we reject instead of silently accepting
 // a worse price. 2% tolerance absorbs normal rounding/timing noise.
 const ODDS_WORSENING_TOLERANCE = 0.02;
+
+// "Special Offers" boost: a fixed, server-verified uplift applied only when
+// the client explicitly flags a selection as boosted AND that selection is
+// legitimately eligible (see isBoostEligible below). Deliberately narrow —
+// single-bet only, favorite-only, one flat multiplier — so it can't be
+// combined with accumulators/SGM to inflate payouts beyond what the boost
+// strip actually advertises.
+const BOOST_MULTIPLIER = 1.12;
+
+function isBoostEligible(matchRow, sel) {
+  if (!sel.marketId.endsWith('-h2h')) return false;
+  const match = mapEventToMatch(matchRow);
+  const market = match.markets.find((m) => m.id === sel.marketId);
+  if (!market) return false;
+  const priced = market.options.filter((o) => o.odds > 0);
+  if (priced.length === 0) return false;
+  const favorite = priced.reduce((min, o) => (o.odds < min.odds ? o : min), priced[0]);
+  return favorite.id === sel.selectionId;
+}
 
 router.get('/', async (req, res) => {
   const { rows: bets } = await pool.query('SELECT * FROM bets WHERE user_id = $1 ORDER BY created_at DESC', [req.user.id]);
@@ -84,6 +103,11 @@ router.post('/', async (req, res) => {
   let totalOdds = 1;
   const verifiedSelections = [];
 
+  // Boost is only ever honored for true single bets (one selection) — this
+  // keeps liability predictable and matches what the Special Offers strip
+  // actually shows (a single boosted favorite), never stacked with an SGM/accumulator.
+  const boostRequested = selections.length === 1 && selections[0]?.boosted === true;
+
   for (const sel of selections) {
     const { rows: matchRows } = await pool.query('SELECT * FROM matches_cache WHERE id = $1', [sel.matchId]);
     const matchRow = matchRows[0];
@@ -93,9 +117,15 @@ router.post('/', async (req, res) => {
     if (matchRow.status === 'FINISHED') {
       return res.status(400).json({ error: `Match ${matchRow.home_team} vs ${matchRow.away_team} has already finished — betting is closed.` });
     }
-    const currentOdds = resolveCurrentOdds(matchRow, sel.marketId, sel.selectionId);
+    let currentOdds = resolveCurrentOdds(matchRow, sel.marketId, sel.selectionId);
     if (currentOdds === null) {
       return res.status(400).json({ error: `Selection ${sel.selectionId} in market ${sel.marketId} not found in current odds — it may have closed or moved` });
+    }
+    if (boostRequested) {
+      if (!isBoostEligible(matchRow, sel)) {
+        return res.status(400).json({ error: 'This selection is not eligible for the odds boost.' });
+      }
+      currentOdds = Number((currentOdds * BOOST_MULTIPLIER).toFixed(2));
     }
     if (typeof sel.odds === 'number' && currentOdds < sel.odds * (1 - ODDS_WORSENING_TOLERANCE)) {
       return res.status(409).json({

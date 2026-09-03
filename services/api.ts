@@ -124,6 +124,8 @@ export async function placeBet(stake: number, type: 'SINGLE' | 'ACCUMULATOR', se
           marketName: s.marketName,
           selectionId: s.selectionId,
           selectionName: s.selectionName,
+          odds: s.odds,
+          boosted: s.boosted,
         })),
       }),
     }

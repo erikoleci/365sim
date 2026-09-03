@@ -90,6 +90,9 @@ export interface BetSelectionItem {
   selectionName: string;
   odds: number;
   status: BetStatus;
+  // True when this selection came from the Special Offers boost strip —
+  // the server independently re-verifies eligibility before honoring it.
+  boosted?: boolean;
 }
 
 export interface Bet {

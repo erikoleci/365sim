@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Match, MatchStatus } from '../types';
 import * as api from '../services/api';
 import type { LiveStatistics, MatchEvent } from '../services/api';
+import LivePitch from './LivePitch';
 
 interface MatchDetailProps {
   match: Match;
@@ -45,6 +46,34 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
   const [activeTab, setActiveTab] = useState<string>('All');
   const [liveDetail, setLiveDetail] = useState<{ statistics: LiveStatistics | null; events: MatchEvent[] } | null>(null);
   const [liveDetailLoading, setLiveDetailLoading] = useState(false);
+
+  // Odds-movement arrows: remember the last-seen price per option id, and
+  // flag a direction ('up' | 'down') for a couple seconds after any change
+  // so the UI can flash a green/red arrow next to the odds that just moved.
+  const prevOddsRef = React.useRef<Map<string, number>>(new Map());
+  const [oddsFlash, setOddsFlash] = useState<Map<string, 'up' | 'down'>>(new Map());
+
+  useEffect(() => {
+    const prev = prevOddsRef.current;
+    const nextFlash = new Map<string, 'up' | 'down'>();
+    let changed = false;
+    for (const market of match.markets) {
+      for (const opt of market.options) {
+        const key = `${market.id}-${opt.id}`;
+        const last = prev.get(key);
+        if (last != null && last !== opt.odds) {
+          nextFlash.set(key, opt.odds > last ? 'up' : 'down');
+          changed = true;
+        }
+        prev.set(key, opt.odds);
+      }
+    }
+    if (changed) {
+      setOddsFlash(nextFlash);
+      const t = setTimeout(() => setOddsFlash(new Map()), 2500);
+      return () => clearTimeout(t);
+    }
+  }, [match.markets]);
 
   useEffect(() => {
     if (!hasLiveData) { setLiveDetail(null); return; }
@@ -98,6 +127,11 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
         
         <div className="mt-4 text-center">
              <div className="text-xs text-brand-textMuted uppercase tracking-wider mb-2">{match.league}</div>
+             {match.status === MatchStatus.LIVE && (
+               <div className="mb-4">
+                 <LivePitch match={match} stats={liveDetail?.statistics ?? null} />
+               </div>
+             )}
              <div className="flex justify-center items-center gap-8">
                  <div className="text-2xl font-bold text-white">{match.homeTeam}</div>
                  <div className="text-3xl text-brand-yellow font-mono">
@@ -213,6 +247,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
                 >
                     {market.options.map(opt => {
                         const isSelected = selectedIds.includes(`${match.id}-${market.id}-${opt.id}`);
+                        const flash = oddsFlash.get(`${market.id}-${opt.id}`);
                         return (
                         <div
                             key={opt.id}
@@ -220,7 +255,11 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
                             className={getButtonClass(market.id, opt.id)}
                         >
                             <span className={`text-xs ${isSelected ? 'text-brand-headerDark' : 'text-brand-text'}`}>{opt.name}</span>
-                            <span className={`font-bold text-sm ${isSelected ? 'text-brand-headerDark' : 'text-brand-yellow'}`}>{opt.odds.toFixed(2)}</span>
+                            <span className={`font-bold text-sm flex items-center gap-0.5 ${isSelected ? 'text-brand-headerDark' : 'text-brand-yellow'}`}>
+                              {opt.odds.toFixed(2)}
+                              {flash === 'up' && <span className="text-[10px] text-green-400">▲</span>}
+                              {flash === 'down' && <span className="text-[10px] text-red-400">▼</span>}
+                            </span>
                         </div>
                         );
                     })}

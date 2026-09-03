@@ -27,6 +27,33 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
   const isLive = match.status === MatchStatus.LIVE;
   const matchWinnerMarket = match.markets.find(m => m.id.endsWith('-h2h'));
 
+  // Odds-movement arrows in the list view, same approach as MatchDetail:
+  // remember last-seen price per selection, flash up/down briefly on change.
+  const prevOddsRef = React.useRef<Map<string, number>>(new Map());
+  const [oddsFlash, setOddsFlash] = React.useState<Map<string, 'up' | 'down'>>(new Map());
+
+  React.useEffect(() => {
+    const prev = prevOddsRef.current;
+    const nextFlash = new Map<string, 'up' | 'down'>();
+    let changed = false;
+    for (const market of match.markets) {
+      for (const opt of market.options) {
+        const key = `${market.id}-${opt.id}`;
+        const last = prev.get(key);
+        if (last != null && last !== opt.odds) {
+          nextFlash.set(key, opt.odds > last ? 'up' : 'down');
+          changed = true;
+        }
+        prev.set(key, opt.odds);
+      }
+    }
+    if (changed) {
+      setOddsFlash(nextFlash);
+      const t = setTimeout(() => setOddsFlash(new Map()), 2500);
+      return () => clearTimeout(t);
+    }
+  }, [match.markets]);
+
   const getButtonClass = (marketId: string, selectionId: string) => {
     const uniqueId = `${match.id}-${marketId}-${selectionId}`;
     const isSelected = selectedIds.includes(uniqueId);
@@ -126,6 +153,7 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
       <div className={`w-full md:w-[35%] flex items-stretch gap-1`}>
         {matchWinnerMarket && matchWinnerMarket.options.map(opt => {
             if (opt.odds === 0) return null;
+            const flash = oddsFlash.get(`${matchWinnerMarket.id}-${opt.id}`);
             return (
              <div 
                 key={opt.id}
@@ -133,7 +161,11 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
                 className={getButtonClass(matchWinnerMarket.id, opt.id)}
             >
                 <span className="text-brand-textMuted text-[10px] font-normal leading-none mb-0.5">{opt.id === 'DRAW' ? 'X' : opt.id === 'HOME' ? '1' : opt.id === 'AWAY' ? '2' : ''}</span>
-                <span className="leading-none">{opt.odds.toFixed(2)}</span>
+                <span className="leading-none flex items-center gap-0.5">
+                  {opt.odds.toFixed(2)}
+                  {flash === 'up' && <span className="text-[9px] text-green-400">▲</span>}
+                  {flash === 'down' && <span className="text-[9px] text-red-400">▼</span>}
+                </span>
             </div>
             )
         })}

@@ -31,6 +31,9 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
 
   const totalOdds = selections.reduce((acc, curr) => acc * curr.odds, 1);
   const isAccumulator = selections.length > 1;
+  // Same Game Multiple: every selection in the slip belongs to the same
+  // match — combine and label distinctly from a normal cross-match accumulator.
+  const isSameGameMultiple = isAccumulator && new Set(selections.map((s) => s.matchId)).size === 1;
   const potentialReturn = (parseFloat(stake || '0') * totalOdds).toFixed(2);
   const isValidStake = parseFloat(stake || '0') > 0 && parseFloat(stake || '0') <= userBalance;
 
@@ -124,7 +127,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                     {/* Stake Section */}
                     <div className="bg-brand-bg p-3 rounded border border-brand-divider mt-4">
                         <div className="flex justify-between items-center mb-2">
-                            <span className="font-bold text-white">{isAccumulator ? `${selections.length}-Fold Accumulator` : 'Single Bet'}</span>
+                            <span className="font-bold text-white">{isSameGameMultiple ? `Same Game Multiple (${selections.length})` : isAccumulator ? `${selections.length}-Fold Accumulator` : 'Single Bet'}</span>
                             <span className="bg-brand-yellow text-brand-bg px-2 py-0.5 rounded font-bold text-xs">@{totalOdds.toFixed(2)}</span>
                         </div>
 
