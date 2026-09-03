@@ -104,42 +104,69 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, currentView]);
 
-  // --- Real-time source events ---
+  // --- Real-time source events (WebSocket) ---
+  // Auto-reconnects with exponential backoff on drop instead of going
+  // permanently silent — the 30s poll above is only a slow fallback, not
+  // a substitute for live updates.
+  const [wsConnected, setWsConnected] = useState(false);
   useEffect(() => {
     if (!currentUser || currentView !== 'sports') return;
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
-    socket.onopen = () => {
-      const token = api.getToken();
-      if (token) socket.send(JSON.stringify({ type: 'auth', token }));
-      socket.send(JSON.stringify({ type: 'subscribe', topic: 'live' }));
-      socket.send(JSON.stringify({ type: 'subscribe', topic: 'odds' }));
+    let socket: WebSocket | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+    let cancelled = false;
+
+    const connect = () => {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
+      socket.onopen = () => {
+        attempt = 0;
+        setWsConnected(true);
+        const token = api.getToken();
+        if (token) socket!.send(JSON.stringify({ type: 'auth', token }));
+        socket!.send(JSON.stringify({ type: 'subscribe', topic: 'live' }));
+        socket!.send(JSON.stringify({ type: 'subscribe', topic: 'odds' }));
+      };
+      socket.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (!msg.matchId) return;
+          if (msg.type === 'GOAL') {
+            setMatches((current) => current.map((m) => m.id === msg.matchId ? {
+              ...m,
+              status: MatchStatus.LIVE,
+              isLive: true,
+              liveHomeScore: msg.homeScore ?? m.liveHomeScore,
+              liveAwayScore: msg.awayScore ?? m.liveAwayScore,
+              currentMinute: msg.minute ?? m.currentMinute,
+            } : m));
+          } else if (msg.type === 'LIVE_EVENT') {
+            loadMatches();
+          } else if (msg.type === 'MATCH_STARTED') {
+            setMatches((current) => current.map((m) => m.id === msg.matchId ? { ...m, status: MatchStatus.LIVE, isLive: true } : m));
+            loadMatches();
+          } else if (msg.type === 'ODDS_CHANGED') {
+            loadMatches();
+          }
+        } catch { /* ignore malformed socket messages */ }
+      };
+      socket.onclose = () => {
+        setWsConnected(false);
+        if (cancelled) return;
+        // Exponential backoff: 1s, 2s, 4s, 8s... capped at 30s.
+        const delay = Math.min(30000, 1000 * 2 ** attempt);
+        attempt += 1;
+        retryTimer = setTimeout(connect, delay);
+      };
+      socket.onerror = () => socket?.close();
     };
-    socket.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (!msg.matchId) return;
-        if (msg.type === 'GOAL') {
-          setMatches((current) => current.map((m) => m.id === msg.matchId ? {
-            ...m,
-            status: MatchStatus.LIVE,
-            isLive: true,
-            liveHomeScore: msg.homeScore ?? m.liveHomeScore,
-            liveAwayScore: msg.awayScore ?? m.liveAwayScore,
-            currentMinute: msg.minute ?? m.currentMinute,
-          } : m));
-        } else if (msg.type === 'LIVE_EVENT') {
-          loadMatches();
-        } else if (msg.type === 'MATCH_STARTED') {
-          setMatches((current) => current.map((m) => m.id === msg.matchId ? { ...m, status: MatchStatus.LIVE, isLive: true } : m));
-          loadMatches();
-        } else if (msg.type === 'ODDS_CHANGED') {
-          loadMatches();
-        }
-      } catch { /* ignore malformed socket messages */ }
+
+    connect();
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      socket?.close();
     };
-    socket.onclose = () => {};
-    return () => socket.close();
   }, [currentUser, currentView, loadMatches]);
 
   // --- Load my bets ---
