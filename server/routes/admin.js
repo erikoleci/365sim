@@ -25,7 +25,10 @@ function toPublicUser(row) {
 // --- USERS ---
 
 router.get('/users', async (req, res) => {
-  const { rows: users } = await pool.query('SELECT * FROM users');
+  // Capped like /audit-log — prevents an unbounded SELECT * as the user
+  // base grows; 1000 is comfortably above anything this demo needs today.
+  const limit = Math.min(Number(req.query.limit) || 1000, 1000);
+  const { rows: users } = await pool.query('SELECT * FROM users ORDER BY created_at DESC LIMIT $1', [limit]);
   res.json({ users: users.map(toPublicUser) });
 });
 
@@ -89,7 +92,11 @@ router.post('/users/:id/reset-password', async (req, res) => {
 // --- BETS (global view + cancel) ---
 
 router.get('/bets', async (req, res) => {
-  const { rows: bets } = await pool.query('SELECT * FROM bets ORDER BY created_at DESC');
+  // Capped for the same reason as /users above — most-recent-first so an
+  // admin scanning bet history always sees the newest tickets, not an
+  // arbitrary slice.
+  const limit = Math.min(Number(req.query.limit) || 500, 500);
+  const { rows: bets } = await pool.query('SELECT * FROM bets ORDER BY created_at DESC LIMIT $1', [limit]);
 
   // Batch both lookups instead of running 2 queries per bet (N+1).
   const betIds = [...new Set(bets.map((b) => b.id))];
