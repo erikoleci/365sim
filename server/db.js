@@ -53,7 +53,8 @@ export async function initDb() {
       result_away INTEGER,
       settled_at BIGINT,
       live_home_score INTEGER,
-      live_away_score INTEGER
+      live_away_score INTEGER,
+      sportmonks_fixture_id BIGINT
     );
 
     CREATE TABLE IF NOT EXISTS bets (
@@ -195,6 +196,14 @@ export async function initDb() {
       UNIQUE(user_id, type, value)
     );
   `);
+
+  // Migration: sportmonks_fixture_id was added after this table already
+  // existed on deployed databases (CREATE TABLE IF NOT EXISTS above won't
+  // retrofit existing tables), so add it explicitly if missing. (The
+  // live_statistics stat columns were already part of the original schema
+  // above — no migration needed for those, they've just never been
+  // populated by any provider until now.)
+  await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS sportmonks_fixture_id BIGINT;`);
 
   const { rows } = await pool.query('SELECT COUNT(*)::int AS c FROM users');
   if (rows[0].c === 0) {

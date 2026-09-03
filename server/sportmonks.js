@@ -85,11 +85,110 @@ export async function refreshSportmonks() {
 
     const scoreChanged = cand.live_home_score !== hs || cand.live_away_score !== as;
     await pool.query(
-      `UPDATE matches_cache SET status = 'LIVE', live_home_score = $1, live_away_score = $2 WHERE id = $3 AND status != 'FINISHED'`,
-      [hs, as, cand.id]
+      `UPDATE matches_cache SET status = 'LIVE', live_home_score = $1, live_away_score = $2, sportmonks_fixture_id = $3 WHERE id = $4 AND status != 'FINISHED'`,
+      [hs, as, fx.id, cand.id]
     );
     if (scoreChanged && (cand.live_home_score != null || cand.live_away_score != null)) {
       pushGoal(cand.id, { homeScore: hs, awayScore: as });
     }
+
+    // Enrich with full stats/events — a second call per live match, so it's
+    // kept separate from the lightweight inplay poll above (which covers
+    // score/status for every live match cheaply). Failures here never
+    // affect score tracking; they just mean Statistika/Ngjarjet stay empty
+    // for that match this cycle.
+    try {
+      await syncFixtureDetail(cand.id, fx.id);
+    } catch (err) {
+      console.error(`[sportmonks] fixture detail sync failed for ${cand.id}:`, err.message);
+    }
+  }
+}
+
+// Statistic type IDs, per https://docs.sportmonks.com/v3/definitions/types/statistics
+const STAT_TYPE = { POSSESSION: 45, SHOTS_TOTAL: 42, SHOTS_ON_TARGET: 86, CORNERS: 34, YELLOWCARDS: 84 };
+// Event type IDs, per Sportmonks' event-type filter examples (14/19/20/21).
+const EVENT_TYPE = { GOAL: 14, SUBSTITUTION: 18, YELLOWCARD: 19, REDCARD: 20, YELLOWRED: 21 };
+const EVENT_LABEL = {
+  [EVENT_TYPE.GOAL]: 'GOAL',
+  [EVENT_TYPE.SUBSTITUTION]: 'SUBSTITUTION',
+  [EVENT_TYPE.YELLOWCARD]: 'YELLOW_CARD',
+  [EVENT_TYPE.REDCARD]: 'RED_CARD',
+  [EVENT_TYPE.YELLOWRED]: 'SECOND_YELLOW',
+};
+
+async function fetchFixtureDetail(fixtureId) {
+  const url = `${BASE}/fixtures/${fixtureId}?api_token=${encodeURIComponent(KEY)}&include=statistics.type;events;participants`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status} on /fixtures/${fixtureId}`);
+  const json = await resp.json();
+  return json?.data;
+}
+
+// Pulls the full fixture (statistics + events) for one live match and fills
+// in live_statistics/match_events — both tables already existed and are
+// already read by GET /matches/:id/live-detail, but until now nothing
+// populated the possession/shots/corners/cards fields or non-goal events.
+async function syncFixtureDetail(matchId, fixtureId) {
+  const fixture = await fetchFixtureDetail(fixtureId);
+  if (!fixture) return;
+
+  const home = fixture.participants?.find((p) => p.meta?.location === 'home');
+  const away = fixture.participants?.find((p) => p.meta?.location === 'away');
+
+  const statValue = (typeId, location) => {
+    const row = fixture.statistics?.find((s) => s.type_id === typeId && s.location === location);
+    return row?.data?.value ?? null;
+  };
+
+  const now = Date.now();
+  await pool.query(
+    `INSERT INTO live_statistics
+       (match_id, minute, possession_home, possession_away, shots_home, shots_away,
+        shots_on_target_home, shots_on_target_away, corners_home, corners_away,
+        cards_home, cards_away, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+     ON CONFLICT (match_id) DO UPDATE SET
+       minute = excluded.minute,
+       possession_home = excluded.possession_home, possession_away = excluded.possession_away,
+       shots_home = excluded.shots_home, shots_away = excluded.shots_away,
+       shots_on_target_home = excluded.shots_on_target_home, shots_on_target_away = excluded.shots_on_target_away,
+       corners_home = excluded.corners_home, corners_away = excluded.corners_away,
+       cards_home = excluded.cards_home, cards_away = excluded.cards_away,
+       updated_at = excluded.updated_at`,
+    [
+      matchId, fixture.periods?.find((p) => p.has_timer)?.minutes ?? null,
+      statValue(STAT_TYPE.POSSESSION, 'home'), statValue(STAT_TYPE.POSSESSION, 'away'),
+      statValue(STAT_TYPE.SHOTS_TOTAL, 'home'), statValue(STAT_TYPE.SHOTS_TOTAL, 'away'),
+      statValue(STAT_TYPE.SHOTS_ON_TARGET, 'home'), statValue(STAT_TYPE.SHOTS_ON_TARGET, 'away'),
+      statValue(STAT_TYPE.CORNERS, 'home'), statValue(STAT_TYPE.CORNERS, 'away'),
+      statValue(STAT_TYPE.YELLOWCARDS, 'home'), statValue(STAT_TYPE.YELLOWCARDS, 'away'),
+      now,
+    ]
+  );
+
+  // Events: only insert ones we haven't stored yet (dedupe by minute+type+
+  // player, since Sportmonks events have no stable id we already track).
+  const nonGoalEvents = (fixture.events || []).filter((e) => e.type_id !== EVENT_TYPE.GOAL && EVENT_LABEL[e.type_id]);
+  if (nonGoalEvents.length === 0) return;
+
+  const { rows: existing } = await pool.query(
+    `SELECT minute, type, player FROM match_events WHERE match_id = $1`,
+    [matchId]
+  );
+  const seen = new Set(existing.map((e) => `${e.minute}|${e.type}|${e.player}`));
+
+  for (const ev of nonGoalEvents) {
+    const type = EVENT_LABEL[ev.type_id];
+    const player = ev.player_name || null;
+    const key = `${ev.minute}|${type}|${player}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const team = ev.participant_id === home?.id ? home?.name : ev.participant_id === away?.id ? away?.name : null;
+    await pool.query(
+      `INSERT INTO match_events (match_id, minute, type, team, player, detail, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [matchId, ev.minute ?? null, type, team, player, ev.result || null, now]
+    );
   }
 }
