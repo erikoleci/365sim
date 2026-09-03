@@ -15,7 +15,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import rateLimit from 'express-rate-limit';
 import authRouter from './routes/auth.js';
-import matchesRouter, { startSourceScheduler } from './routes/matches.js';
+import matchesRouter from './routes/matches.js';
 import betsRouter from './routes/bets.js';
 import adminRouter from './routes/admin.js';
 import casinoRouter from './routes/casino.js';
@@ -136,8 +136,8 @@ async function start() {
 
   const httpServer = app.listen(PORT, () => {
     console.log(`365sim backend listening on http://localhost:${PORT}`);
-    if (!process.env.SOURCE_MATCHES_URL && !process.env.SOURCE_MATCH_ODDS_URL_TEMPLATE) {
-      console.warn('WARNING: authorized source is not configured. Set SOURCE_MATCHES_URL and/or SOURCE_MATCH_ODDS_URL_TEMPLATE.');
+    if (!process.env.ODDS_API_KEY) {
+      console.warn('WARNING: ODDS_API_KEY is not set — /api/matches will return an empty list until you add one in .env');
     }
     if (!process.env.JWT_SECRET) {
       console.error(

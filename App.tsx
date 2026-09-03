@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Navbar from './components/Navbar';
 import MatchRow from './components/MatchCard';
 import MatchDetail from './components/MatchDetail';
@@ -17,7 +17,6 @@ const App: React.FC = () => {
 
   // --- Data State (from backend, not localStorage) ---
   const [matches, setMatches] = useState<Match[]>([]);
-  const hasLoadedMatches = useRef(false);
   const [hasApiKey, setHasApiKey] = useState(true); // assume true until first load tells us otherwise
   const [myBets, setMyBets] = useState<Bet[]>([]);
   const [adminUsers, setAdminUsers] = useState<User[]>([]);
@@ -82,12 +81,11 @@ const App: React.FC = () => {
   // All filtering (live / league / search) happens client-side below.
   const loadMatches = useCallback(async () => {
     if (!currentUser || currentView !== 'sports') return;
-    if (!hasLoadedMatches.current) setIsLoading(true);
+    setIsLoading((prev) => (matches.length === 0 ? true : prev));
     try {
-      const { matches: fresh, source } = await api.fetchMatches();
+      const { matches: fresh, hasLiveApiKey } = await api.fetchMatches();
       setMatches(fresh);
-      hasLoadedMatches.current = true;
-      setHasApiKey(source !== 'unconfigured');
+      setHasApiKey(hasLiveApiKey);
       setLoadError(null);
     } catch (e) {
       console.error('Failed to load matches', e);
@@ -95,11 +93,11 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser, currentView]);
+  }, [currentUser, currentView, matches.length]);
 
   useEffect(() => {
     loadMatches();
-    const interval = setInterval(loadMatches, 30000); // HTTP fallback; WebSocket handles immediate live/odds events
+    const interval = setInterval(loadMatches, 60000); // refresh odds every minute
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, currentView]);
@@ -788,10 +786,10 @@ const App: React.FC = () => {
                       <div className="text-brand-textMuted text-sm mb-2">Asnjë ndeshje e disponueshme.</div>
                       <div className="text-brand-textMuted text-xs opacity-70">
                         {!hasApiKey
-                          ? 'Burimi sportiv i autorizuar nuk është konfiguruar në server.'
+                          ? 'ODDS_API_KEY s\u2019është konfiguruar në server — vendose te .env (lokal) ose te Environment Variables (Render/hosting) dhe rinis serverin.'
                           : selectedDate !== 'ALL'
-                            ? 'Nuk ka ndeshje të disponueshme për këtë datë.'
-                            : 'Nuk ka ndeshje të disponueshme për momentin. Provo përsëri më vonë.'}
+                            ? 'Nuk ka ndeshje të planifikuara për këtë datë në kampionatet e mbuluara. Provo "Të gjitha" ose një datë tjetër.'
+                            : 'Kampionatet kryesore mund të jenë pushim veror (pa ndeshje të planifikuara), ose kredia mujore e The Odds API mund të jetë konsumuar. Provo përsëri më vonë.'}
                       </div>
                     </div>
                   ) : (
