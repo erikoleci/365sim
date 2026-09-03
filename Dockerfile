@@ -2,13 +2,16 @@ FROM node:22-slim
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci
+# Repo is managed with pnpm (pnpm-lock.yaml); enable it via corepack bundled with Node 22.
+RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
+
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY . .
 
 # Build the frontend into dist/, served statically by server/server.js
-RUN npm run build
+RUN pnpm run build
 
 ENV PORT=3001
 EXPOSE 3001
