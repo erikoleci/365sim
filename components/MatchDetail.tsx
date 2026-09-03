@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react';
 import { Match, MatchStatus } from '../types';
-import LivePitch from './LivePitch';
 
 interface MatchDetailProps {
   match: Match;
@@ -54,11 +53,6 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
         
         <div className="mt-4 text-center">
              <div className="text-xs text-brand-textMuted uppercase tracking-wider mb-2">{match.league}</div>
-             {match.status === MatchStatus.LIVE && (
-               <div className="mb-4">
-                 <LivePitch match={match} />
-               </div>
-             )}
              <div className="flex justify-center items-center gap-8">
                  <div className="text-2xl font-bold text-white">{match.homeTeam}</div>
                  <div className="text-3xl text-brand-yellow font-mono">

@@ -14,10 +14,6 @@ const MATCHES_URL = process.env.SOURCE_MATCHES_URL || '';
 const ODDS_TEMPLATE = process.env.SOURCE_MATCH_ODDS_URL_TEMPLATE || '';
 const LIVE_TEMPLATE = process.env.SOURCE_MATCH_LIVE_URL_TEMPLATE || '';
 const AUTH_TOKEN = process.env.SOURCE_AUTH_TOKEN || '';
-// Some providers (e.g. UKOddsApi) expect `X-Api-Key: <token>` instead of
-// `Authorization: Bearer <token>`. Set SOURCE_AUTH_HEADER to override the
-// header name; defaults to Authorization/Bearer for backward compatibility.
-const AUTH_HEADER_NAME = process.env.SOURCE_AUTH_HEADER || 'Authorization';
 const TIMEOUT_MS = Number(process.env.SOURCE_TIMEOUT_MS || 10000);
 
 function urlFrom(value, id) {
@@ -30,11 +26,7 @@ function urlFrom(value, id) {
 
 function headers() {
   const h = { Accept: 'application/json' };
-  if (AUTH_TOKEN) {
-    h[AUTH_HEADER_NAME] = AUTH_HEADER_NAME.toLowerCase() === 'authorization'
-      ? `Bearer ${AUTH_TOKEN}`
-      : AUTH_TOKEN;
-  }
+  if (AUTH_TOKEN) h.Authorization = `Bearer ${AUTH_TOKEN}`;
   return h;
 }
 
