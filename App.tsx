@@ -289,7 +289,11 @@ const App: React.FC = () => {
     key === 'All Top Football'
       ? 'Të Gjitha Kampionatet'
       : LEAGUE_LABELS[key] ||
-        key.replace(/^(soccer|l365)_/, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/\b\w/g, (c) => c.toUpperCase());
+        // Strip "<provider>_<country>__" so the row doesn't redundantly repeat
+        // the country name that's already shown in the group header above it
+        // (e.g. "l365_brazil__amazonense_serie_b" -> "Amazonense Serie B",
+        // not "Brazil Amazonense Serie B").
+        key.replace(/^(soccer|l365)_[a-z0-9-]+__/, '').replace(/^(soccer|l365)_/, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/\b\w/g, (c) => c.toUpperCase());
 
   // Autocomplete suggestions — split into teams / leagues / direct match
   // hits so the dropdown can show each kind separately, instant (no
@@ -341,13 +345,15 @@ const App: React.FC = () => {
     'costa-rica': 'Kosta Rika', 'republic-of-korea': 'Korea e Jugut', armenia: 'Armeni',
     azerbaijan: 'Azerbajxhan', 'united-arab-emirates': 'Emiratet e Bashkuara Arabe', algeria: 'Algjeri',
     egypt: 'Egjipt', 'south-africa': 'Afrika e Jugut', jordan: 'Jordani', kuwait: 'Kuvajt',
-    'hong-kong-china': 'Hong Kongu', bahrain: 'Bahrein', qatar: 'Katar', guatemala: 'Guatemalë',
+    'hong-kong': 'Hong Kongu', 'hong-kong-china': 'Hong Kongu', bahrain: 'Bahrein', qatar: 'Katar', guatemala: 'Guatemalë',
     vietnam: 'Vietnam', 'el-salvador': 'El Salvador', indonesia: 'Indonezi', andorra: 'Andorë',
     bolivia: 'Bolivi', uzbekistan: 'Uzbekistan', montenegro: 'Mali i Zi', 'san-marino': 'San Marino',
     canada: 'Kanada', nicaragua: 'Nikaragua', honduras: 'Honduras', thailand: 'Tajlandë',
     iraq: 'Irak', panama: 'Panama', tanzania: 'Tanzani', botswana: 'Botsvanë', zimbabwe: 'Zimbabve',
     uganda: 'Ugandë', paraguay: 'Paraguai', venezuela: 'Venezuelë', kazakhstan: 'Kazakistan',
     moldova: 'Moldavi', cyprus: 'Qipro', 'northern-cyprus': 'Qipro Veriore',
+    india: 'Indi', myanmar: 'Mianmar', nigeria: 'Nigeri', ghana: 'Ganë', kenya: 'Kenia',
+    morocco: 'Marok', tunisia: 'Tunizi', iran: 'Iran',
   };
   // ISO 3166-1 alpha-2 code per country token -> converted to a flag emoji
   // via regional indicator symbols. This is a clean, deterministic mapping
@@ -368,12 +374,14 @@ const App: React.FC = () => {
     wales: 'GB', malta: 'MT', 'bosnia-and-herzegovina': 'BA', lithuania: 'LT', latvia: 'LV',
     ecuador: 'EC', luxembourg: 'LU', 'faroe-islands': 'FO', georgia: 'GE', 'costa-rica': 'CR',
     armenia: 'AM', azerbaijan: 'AZ', 'united-arab-emirates': 'AE', algeria: 'DZ', egypt: 'EG',
-    'south-africa': 'ZA', jordan: 'JO', kuwait: 'KW', 'hong-kong-china': 'HK', bahrain: 'BH',
+    'south-africa': 'ZA', jordan: 'JO', kuwait: 'KW', 'hong-kong': 'HK', 'hong-kong-china': 'HK', bahrain: 'BH',
     qatar: 'QA', guatemala: 'GT', vietnam: 'VN', 'el-salvador': 'SV', indonesia: 'ID',
     andorra: 'AD', bolivia: 'BO', uzbekistan: 'UZ', montenegro: 'ME', 'san-marino': 'SM',
     canada: 'CA', nicaragua: 'NI', honduras: 'HN', thailand: 'TH', iraq: 'IQ', panama: 'PA',
     tanzania: 'TZ', botswana: 'BW', zimbabwe: 'ZW', uganda: 'UG', paraguay: 'PY',
     venezuela: 'VE', kazakhstan: 'KZ', moldova: 'MD', cyprus: 'CY', 'northern-cyprus': 'CY',
+    india: 'IN', myanmar: 'MM', nigeria: 'NG', ghana: 'GH', kenya: 'KE', morocco: 'MA',
+    tunisia: 'TN', iran: 'IR',
   };
   const isoToFlagEmoji = (iso: string): string =>
     iso.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));

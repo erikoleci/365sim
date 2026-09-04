@@ -128,17 +128,55 @@ function slugDash(s) {
 // COUNTRY_TOKEN_LABELS/COUNTRY_TOKEN_ISO so a LondonPro365 league gets the
 // correct flag and sidebar grouping instead of falling into "Të tjera".
 //
-// LondonPro365 (like most odds-feed scrapers) names leagues "Country:
-// Competition" (e.g. "England: Premier League", "Egypt: Premier League").
-// We now parse that country prefix directly instead of relying only on a
-// short hand-picked list of competition-name keywords — the old approach
-// only recognised ~18 well-known leagues and dumped EVERY other country
-// (the huge majority of what this provider actually covers) into one
-// generic "Të tjera" bucket. The keyword list below is kept as a fallback
-// for names with no "Country:" prefix, and to catch continental
-// competitions (Champions League, World Cup, etc.) even when they DO have
-// a "Europe:"/"World:" style prefix.
+// Reality (confirmed against the live provider): league names come back
+// "clean" with NO reliable delimiter — sometimes "Country Competition" with
+// no punctuation at all ("Spain La Liga", "Poland Cup"), sometimes just the
+// bare competition/state name with NO country word whatsoever ("Amazonense",
+// "Gaucho Serie A2", "Carioca Serie A" — Brazilian STATE championships), and
+// occasionally "Country: Competition" with a colon. There is no single
+// separator to rely on, so we layer several strategies:
+//   1. Name literally starts with a known country name -> use it directly.
+//   2. "Country: Competition" colon prefix -> use it directly.
+//   3. Distinctive competition-name keywords -> mapped country. IMPORTANT:
+//      more specific patterns (e.g. Brazilian state leagues, which contain
+//      the substring "serie a"/"serie b" just like Italy's Serie A/B) are
+//      checked BEFORE the broader ones they'd otherwise collide with.
+//   4. Otherwise 'other' (grouped as "Të tjera" on the frontend).
+const COUNTRY_NAMES_BY_LENGTH_DESC = [
+  'united arab emirates', 'south africa', 'south korea', 'saudi arabia', 'czech republic',
+  'costa rica', 'el salvador', 'hong kong', 'united states',
+  'england', 'spain', 'italy', 'germany', 'france', 'brazil', 'argentina', 'portugal',
+  'netherlands', 'holland', 'belgium', 'turkey', 'greece', 'scotland', 'switzerland',
+  'austria', 'denmark', 'sweden', 'norway', 'russia', 'poland', 'mexico', 'japan',
+  'china', 'australia', 'chile', 'colombia', 'albania', 'croatia', 'serbia', 'romania',
+  'ukraine', 'kosovo', 'iceland', 'hungary', 'finland', 'peru', 'slovakia', 'slovenia',
+  'ireland', 'uruguay', 'israel', 'bulgaria', 'malaysia', 'belarus', 'estonia', 'wales',
+  'malta', 'lithuania', 'latvia', 'ecuador', 'luxembourg', 'georgia', 'armenia',
+  'azerbaijan', 'algeria', 'egypt', 'jordan', 'kuwait', 'bahrain', 'qatar', 'guatemala',
+  'vietnam', 'indonesia', 'andorra', 'bolivia', 'uzbekistan', 'montenegro', 'canada',
+  'nicaragua', 'honduras', 'thailand', 'iraq', 'panama', 'tanzania', 'botswana',
+  'zimbabwe', 'uganda', 'paraguay', 'venezuela', 'kazakhstan', 'moldova', 'cyprus',
+  'india', 'myanmar', 'nigeria', 'ghana', 'kenya', 'morocco', 'tunisia', 'iran',
+];
+const COUNTRY_NAME_TO_TOKEN = {
+  england: 'england', spain: 'spain', italy: 'italy', germany: 'germany', france: 'france',
+  usa: 'usa', 'united states': 'usa', brazil: 'brazil', argentina: 'argentina', portugal: 'portugal',
+  netherlands: 'netherlands', holland: 'netherlands', belgium: 'belgium', turkey: 'turkey', greece: 'greece',
+  scotland: 'scotland', switzerland: 'switzerland', austria: 'austria', denmark: 'denmark', sweden: 'sweden',
+  norway: 'norway', russia: 'russia', poland: 'poland', mexico: 'mexico', japan: 'japan',
+  'south korea': 'korea', korea: 'korea', china: 'china', australia: 'australia', chile: 'chile',
+  colombia: 'colombia', albania: 'albania', croatia: 'croatia', serbia: 'serbia', romania: 'romania',
+  ukraine: 'ukraine', 'saudi arabia': 'saudi', kosovo: 'kosovo',
+  world: 'fifa', europe: 'uefa', international: 'uefa',
+  india: 'india', indonesia: 'indonesia', malaysia: 'malaysia', myanmar: 'myanmar',
+};
+// Specific -> broad. Anything that could collide with a broader pattern
+// below it (Brazilian state leagues vs. Italy's "Serie A/B") MUST come
+// first, since leagueCountryToken() returns on the FIRST match.
 const LEAGUE_COUNTRY_HINTS = [
+  // Brazilian state championships — contain "serie a"/"serie b" just like
+  // Italy's, so this MUST be checked before the generic Italy pattern.
+  [/brasileiro|brasileirao|amazonense|gaucho|carioca|paulista|catarinense|mineiro|baiano|pernambucano|cearense|potiguar|goiano|alagoano|capixaba|sergipano|paraense|matogrossense|brasilia|copa do brasil/, 'brazil'],
   [/champions league|europa league|conference league|uefa|super cup/, 'uefa'],
   [/world cup|fifa|nations league/, 'fifa'],
   [/copa america|conmebol|libertadores|sudamericana/, 'conmebol'],
@@ -156,38 +194,34 @@ const LEAGUE_COUNTRY_HINTS = [
   [/superliga.*shqip|kategoria superiore|albania/, 'albania'],
   [/mls|major league soccer/, 'usa'],
   [/liga mx/, 'mexico'],
-  [/brasileirao|brazil/, 'brazil'],
 ];
-// Raw "Country:" prefixes (as the provider writes them, lowercase) mapped
-// to the SAME tokens App.tsx already knows how to label/flag. Anything not
-// listed here still gets its own group (named after the raw country text)
-// instead of being merged away — see leagueCountryToken() below.
-const COUNTRY_NAME_TO_TOKEN = {
-  england: 'england', spain: 'spain', italy: 'italy', germany: 'germany', france: 'france',
-  usa: 'usa', 'united states': 'usa', brazil: 'brazil', argentina: 'argentina', portugal: 'portugal',
-  netherlands: 'netherlands', holland: 'netherlands', belgium: 'belgium', turkey: 'turkey', greece: 'greece',
-  scotland: 'scotland', switzerland: 'switzerland', austria: 'austria', denmark: 'denmark', sweden: 'sweden',
-  norway: 'norway', russia: 'russia', poland: 'poland', mexico: 'mexico', japan: 'japan',
-  'south korea': 'korea', korea: 'korea', china: 'china', australia: 'australia', chile: 'chile',
-  colombia: 'colombia', albania: 'albania', croatia: 'croatia', serbia: 'serbia', romania: 'romania',
-  ukraine: 'ukraine', 'saudi arabia': 'saudi', kosovo: 'kosovo',
-  world: 'fifa', europe: 'uefa', international: 'uefa',
-};
 function leagueCountryToken(name) {
   const raw = String(name || '');
   const n = raw.toLowerCase();
+
+  // 1. Name literally starts with a known country name, no punctuation
+  //    needed ("Spain La Liga", "Poland Cup", "England U21").
+  for (const countryName of COUNTRY_NAMES_BY_LENGTH_DESC) {
+    if (n === countryName || n.startsWith(countryName + ' ')) {
+      if (COUNTRY_NAME_TO_TOKEN[countryName]) return COUNTRY_NAME_TO_TOKEN[countryName];
+      const slugged = slugDash(countryName);
+      if (slugged) return slugged;
+    }
+  }
+
+  // 2. "Country: Competition" colon prefix.
   const colonIdx = raw.indexOf(':');
   if (colonIdx > 0) {
     const countryRaw = raw.slice(0, colonIdx).trim().toLowerCase();
     if (COUNTRY_NAME_TO_TOKEN[countryRaw]) return COUNTRY_NAME_TO_TOKEN[countryRaw];
     for (const [re, token] of LEAGUE_COUNTRY_HINTS) if (re.test(n)) return token;
-    // Unknown country name — still give it its OWN token/group (falls back
-    // to a title-cased label on the frontend) rather than merging into
-    // "Të tjera" with hundreds of unrelated leagues.
     const slugged = slugDash(countryRaw);
     if (slugged) return slugged;
   }
+
+  // 3. Distinctive competition-name keywords (Brazil-before-Italy etc.).
   for (const [re, token] of LEAGUE_COUNTRY_HINTS) if (re.test(n)) return token;
+
   return 'other';
 }
 
