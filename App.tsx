@@ -233,6 +233,28 @@ const App: React.FC = () => {
     return opts;
   }, []);
 
+  // Etiketa e një date-kalendarike (YYYY-MM-DD, sipas kohës së Shqipërisë)
+  // e përdorur si ndarës brenda çdo lige, kështu që kur një ligë nuk ka
+  // ndeshje sot, ndeshjet e ditëve të tjera shfaqen me datën e tyre.
+  const SQ_DAY_NAMES = ['Die', 'Hën', 'Mar', 'Mër', 'Enj', 'Pre', 'Sht'];
+  const SQ_MONTH_NAMES = ['Jan', 'Shk', 'Mar', 'Pri', 'Maj', 'Qer', 'Kor', 'Gus', 'Sht', 'Tet', 'Nën', 'Dhj'];
+  const dateKeyLabel = (key: string): string => {
+    if (key === albaniaTodayKey(0)) return 'Sot';
+    if (key === albaniaTodayKey(1)) return 'Nesër';
+    const d = new Date(key + 'T12:00:00');
+    if (Number.isNaN(d.getTime())) return key;
+    return `${SQ_DAY_NAMES[d.getDay()]} ${d.getDate()} ${SQ_MONTH_NAMES[d.getMonth()]}`;
+  };
+  const groupMatchesByDate = (list: Match[]): [string, Match[]][] => {
+    const byDate = new Map<string, Match[]>();
+    for (const m of list) {
+      const key = albaniaDateKey(m.startTime);
+      if (!byDate.has(key)) byDate.set(key, []);
+      byDate.get(key)!.push(m);
+    }
+    return Array.from(byDate.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  };
+
   // --- Filtering ---
   // Search applies everywhere. LIVE is always its own section at the top
   // (like a real bookmaker site), not a toggle that hides everything else.
@@ -255,15 +277,9 @@ const App: React.FC = () => {
   const liveMatches = searchFiltered
     .filter((m) => m.status === MatchStatus.LIVE && (Date.now() - new Date(m.startTime).getTime()) < STALE_LIVE_MS)
     .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
-  const upcomingMatches = searchFiltered
-    .filter((m) => m.status === MatchStatus.UPCOMING)
-    .filter((m) => {
-      if (currentLeague === 'All Top Football') return true;
-      if (currentLeague === 'FAVORITES') return favoriteTeams.has(m.homeTeam) || favoriteTeams.has(m.awayTeam) || favoriteLeagues.has(m.league);
-      return m.league === currentLeague;
-    })
-    .filter((m) => selectedDate === 'ALL' || albaniaDateKey(m.startTime) === selectedDate)
-    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+  // `upcomingMatches` llogaritet më poshtë (pas leagueCountry/filtrave të
+  // shtetit), sepse filtri i shtetit ka nevojë për leagueCountry() dhe sepse
+  // duhet edhe lista PA filtrin e datës, për fallback-un "nuk ka ndeshje sot".
 
   // Raw sport_keys (e.g. "soccer_brazil_campeonato") are what we store/compare
   // internally, but users should see readable names. This maps known keys to
@@ -354,6 +370,20 @@ const App: React.FC = () => {
     moldova: 'Moldavi', cyprus: 'Qipro', 'northern-cyprus': 'Qipro Veriore',
     india: 'Indi', myanmar: 'Mianmar', nigeria: 'Nigeri', ghana: 'Ganë', kenya: 'Kenia',
     morocco: 'Marok', tunisia: 'Tunizi', iran: 'Iran',
+    // Tokens që vijnë nga provider-a të tjerë (api-football etc.) ose në
+    // formë pa vizë — pa këto, shtete reale përfundonin te "Të tjera".
+    southkorea: 'Korea e Jugut', 'south-korea': 'Korea e Jugut', 'united-states': 'SHBA',
+    holland: 'Holandë', czech: 'Republika Çeke', 'saudi-arabia': 'Arabia Saudite',
+    'new-zealand': 'Zelanda e Re', singapore: 'Singapor', philippines: 'Filipine',
+    lebanon: 'Liban', syria: 'Siri', libya: 'Libi', sudan: 'Sudan', senegal: 'Senegal',
+    cameroon: 'Kamerun', 'ivory-coast': 'Bregu i Fildishtë', zambia: 'Zambi',
+    mozambique: 'Mozambik', angola: 'Angolë', ethiopia: 'Etiopi', rwanda: 'Ruandë',
+    gibraltar: 'Gjibraltar', liechtenstein: 'Lihtenshtajn', macedonia: 'Maqedoni',
+    'north-macedonia': 'Maqedonia e Veriut', tajikistan: 'Taxhikistan',
+    turkmenistan: 'Turkmenistan', kyrgyzstan: 'Kirgistan', mongolia: 'Mongoli',
+    nepal: 'Nepal', bangladesh: 'Bangladesh', pakistan: 'Pakistan', 'sri-lanka': 'Shri Lanka',
+    jamaica: 'Xhamajkë', 'dominican-republic': 'Republika Dominikane', cuba: 'Kubë',
+    haiti: 'Haiti', belize: 'Belize', suriname: 'Surinam', 'puerto-rico': 'Porto Riko',
   };
   // ISO 3166-1 alpha-2 code per country token -> converted to a flag emoji
   // via regional indicator symbols. This is a clean, deterministic mapping
@@ -382,6 +412,16 @@ const App: React.FC = () => {
     venezuela: 'VE', kazakhstan: 'KZ', moldova: 'MD', cyprus: 'CY', 'northern-cyprus': 'CY',
     india: 'IN', myanmar: 'MM', nigeria: 'NG', ghana: 'GH', kenya: 'KE', morocco: 'MA',
     tunisia: 'TN', iran: 'IR',
+    southkorea: 'KR', 'south-korea': 'KR', 'united-states': 'US', holland: 'NL',
+    czech: 'CZ', 'saudi-arabia': 'SA', 'new-zealand': 'NZ', singapore: 'SG',
+    philippines: 'PH', lebanon: 'LB', syria: 'SY', libya: 'LY', sudan: 'SD',
+    senegal: 'SN', cameroon: 'CM', 'ivory-coast': 'CI', zambia: 'ZM',
+    mozambique: 'MZ', angola: 'AO', ethiopia: 'ET', rwanda: 'RW', gibraltar: 'GI',
+    liechtenstein: 'LI', macedonia: 'MK', 'north-macedonia': 'MK', tajikistan: 'TJ',
+    turkmenistan: 'TM', kyrgyzstan: 'KG', mongolia: 'MN', nepal: 'NP',
+    bangladesh: 'BD', pakistan: 'PK', 'sri-lanka': 'LK', jamaica: 'JM',
+    'dominican-republic': 'DO', cuba: 'CU', haiti: 'HT', belize: 'BZ',
+    suriname: 'SR', 'puerto-rico': 'PR',
   };
   const isoToFlagEmoji = (iso: string): string =>
     iso.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
@@ -419,11 +459,46 @@ const App: React.FC = () => {
     return iso ? isoToFlagEmoji(iso) : '🏳️';
   };
 
+  // Filtri "shtet": kur shtypet Spanja, currentLeague bëhet "COUNTRY:Spanja"
+  // dhe faqja shfaq TË GJITHA ligat e Spanjës (të grupuara ligë-për-ligë),
+  // në vend që të kërkohet të zgjedhet një ligë e vetme.
+  const COUNTRY_FILTER_PREFIX = 'COUNTRY:';
+  const countryFilterKey = (country: string) => `${COUNTRY_FILTER_PREFIX}${country}`;
+  const isCountryFilter = (key: string) => key.startsWith(COUNTRY_FILTER_PREFIX);
+  const countryFromFilter = (key: string) => key.slice(COUNTRY_FILTER_PREFIX.length);
+
+  // Ndeshjet e ardhshme brenda zgjedhjes aktuale (të gjitha / të preferuarat /
+  // shtet / ligë), PA filtrin e datës.
+  const scopedUpcoming = useMemo(() => searchFiltered
+    .filter((m) => m.status === MatchStatus.UPCOMING)
+    .filter((m) => {
+      if (currentLeague === 'All Top Football') return true;
+      if (currentLeague === 'FAVORITES') return favoriteTeams.has(m.homeTeam) || favoriteTeams.has(m.awayTeam) || favoriteLeagues.has(m.league);
+      if (isCountryFilter(currentLeague)) return leagueCountry(m.league) === countryFromFilter(currentLeague);
+      return m.league === currentLeague;
+    })
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [matches, searchQuery, currentLeague, favoriteTeams, favoriteLeagues]);
+
+  const dateScopedUpcoming = useMemo(
+    () => scopedUpcoming.filter((m) => selectedDate === 'ALL' || albaniaDateKey(m.startTime) === selectedDate),
+    [scopedUpcoming, selectedDate],
+  );
+
+  // Kur ligë/shteti i zgjedhur nuk ka ndeshje për datën e zgjedhur, por ka
+  // ndeshje në ditët e tjera, shfaqim TË GJITHA ndeshjet e ardhshme me datën
+  // e tyre — në vend që faqja të dalë bosh (p.sh. La Liga pa ndeshje sot).
+  const dateFallbackActive = selectedDate !== 'ALL' && dateScopedUpcoming.length === 0 && scopedUpcoming.length > 0;
+  const upcomingMatches = dateFallbackActive ? scopedUpcoming : dateScopedUpcoming;
+
   const detailMatch = matches.find((m) => m.id === detailMatchId);
   const matchesByCountry = useMemo(() => {
     const byCountry: Record<string, Record<string, Match[]>> = {};
+    const selectedCountry = isCountryFilter(currentLeague) ? countryFromFilter(currentLeague) : null;
     for (const match of upcomingMatches) {
       const country = leagueCountry(match.league);
+      if (selectedCountry && country !== selectedCountry) continue;
       if (!byCountry[country]) byCountry[country] = {};
       if (!byCountry[country][match.league]) byCountry[country][match.league] = [];
       byCountry[country][match.league].push(match);
@@ -445,7 +520,8 @@ const App: React.FC = () => {
         .sort((a, b) => leagueLabel(a).localeCompare(leagueLabel(b)))
         .map((league) => [league, byCountry[country][league]] as [string, Match[]]),
     ] as [string, [string, Match[]][]]);
-  }, [upcomingMatches]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [upcomingMatches, currentLeague]);
   const dynamicLeagues = useMemo(() => {
     const fetchedLeagues = Array.from(new Set(matches.map((m) => m.league)));
     return Array.from(new Set(['All Top Football', ...fetchedLeagues])).sort();
@@ -484,7 +560,9 @@ const App: React.FC = () => {
   // group), while still letting the user freely open other groups to browse.
   const [expandedCountry, setExpandedCountry] = useState<string | null>(null);
   useEffect(() => {
-    setExpandedCountry(currentLeague === 'All Top Football' ? null : leagueCountry(currentLeague));
+    if (currentLeague === 'All Top Football' || currentLeague === 'FAVORITES') { setExpandedCountry(null); return; }
+    if (isCountryFilter(currentLeague)) { setExpandedCountry(countryFromFilter(currentLeague)); return; }
+    setExpandedCountry(leagueCountry(currentLeague));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentLeague]);
 
@@ -699,13 +777,30 @@ const App: React.FC = () => {
                       const isOpen = expandedCountry === country;
                       return (
                         <div key={country}>
-                          <button
-                            onClick={() => setExpandedCountry(isOpen ? null : country)}
-                            className={`w-full flex justify-between items-center px-3 py-2 bg-[#333] hover:bg-[#3a3a3a] text-brand-text font-bold uppercase text-[10px] tracking-wider border-b border-brand-bg/10 transition-colors ${isOpen ? 'text-white' : ''}`}
-                          >
-                            <span className="flex items-center gap-1.5"><span aria-hidden="true">{countryFlag(country)}</span>{country}</span>
-                            <span className="text-brand-textMuted">{isOpen ? '▾' : '▸'}</span>
-                          </button>
+                          <div className={`w-full flex items-stretch bg-[#333] border-b border-brand-bg/10 ${currentLeague === countryFilterKey(country) ? 'border-l-4 border-l-brand-yellow' : ''}`}>
+                            <button
+                              onClick={() => { setShowLiveOnly(false); setCurrentLeague(countryFilterKey(country)); setDetailMatchId(null); setIsLeagueMenuOpen(false); }}
+                              className={`flex-1 min-w-0 text-left px-3 py-2 hover:bg-[#3a3a3a] text-brand-text font-bold uppercase text-[10px] tracking-wider transition-colors ${currentLeague === countryFilterKey(country) ? 'text-white bg-[#444]' : ''}`}
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <span aria-hidden="true">{countryFlag(country)}</span>
+                                <span className="truncate">{country}</span>
+                                <span className="ml-auto text-[9px] text-brand-textMuted font-normal shrink-0">{leagues.length}</span>
+                              </span>
+                            </button>
+                            <button
+                              onClick={() => setExpandedCountry(isOpen ? null : country)}
+                              className="px-3 text-brand-textMuted hover:text-white hover:bg-[#3a3a3a] transition-colors"
+                              aria-label={isOpen ? `Mbyll ligat e ${country}` : `Hap ligat e ${country}`}
+                            >
+                              {isOpen ? '▾' : '▸'}
+                            </button>
+                          </div>
+                          {isOpen && (
+                            <button onClick={() => { setShowLiveOnly(false); setCurrentLeague(countryFilterKey(country)); setDetailMatchId(null); setIsLeagueMenuOpen(false); }} className={`px-3 py-2 pl-6 w-full text-left text-[10px] uppercase tracking-wider hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 ${currentLeague === countryFilterKey(country) ? 'bg-[#444] text-white font-bold' : 'text-brand-yellow'}`}>
+                              Të gjitha ligat ({leagues.length})
+                            </button>
+                          )}
                           {isOpen && leagues.map((league) => (
                             <button key={league} onClick={() => { setShowLiveOnly(false); setCurrentLeague(league); setDetailMatchId(null); setIsLeagueMenuOpen(false); }} className={`px-3 py-2.5 pl-6 hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 flex justify-between items-center group text-left w-full ${currentLeague === league ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
                               <span className="truncate">{leagueLabel(league)}</span>
@@ -745,8 +840,13 @@ const App: React.FC = () => {
                   <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse"></span>
                   LIVE {liveMatches.length > 0 && `(${liveMatches.length})`}
                 </button>
-                {dynamicLeagues.map((l) => (
-                  <button key={l} onClick={() => { setShowLiveOnly(false); setCurrentLeague(l); }} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${currentLeague === l ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>{leagueLabel(l)}</button>
+                <button onClick={() => { setShowLiveOnly(false); setCurrentLeague('All Top Football'); }} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${currentLeague === 'All Top Football' ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>Të Gjitha</button>
+                {leaguesByCountry.map(([country, leagues]) => (
+                  <button key={country} onClick={() => { setShowLiveOnly(false); setCurrentLeague(countryFilterKey(country)); setDetailMatchId(null); }} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 ${currentLeague === countryFilterKey(country) ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>
+                    <span aria-hidden="true">{countryFlag(country)}</span>
+                    {country}
+                    <span className={`text-[10px] font-normal ${currentLeague === countryFilterKey(country) ? 'text-black/60' : 'text-brand-textMuted'}`}>{leagues.length}</span>
+                  </button>
                 ))}
               </div>
 
@@ -894,6 +994,17 @@ const App: React.FC = () => {
                     </div>
                   )}
 
+                  {!showLiveOnly && dateFallbackActive && (
+                    <div className="bg-[#3a3320] border border-brand-yellow/40 text-brand-yellow text-xs rounded px-3 py-2 flex items-center justify-between gap-2">
+                      <span>
+                        Nuk ka ndeshje për datën e zgjedhur — po shfaqen ndeshjet e ardhshme, të ndara sipas datës.
+                      </span>
+                      <button onClick={() => setSelectedDate('ALL')} className="shrink-0 underline hover:text-white uppercase text-[10px] tracking-wide">
+                        Të gjitha datat
+                      </button>
+                    </div>
+                  )}
+
                   {/* Upcoming — grouped like the London site: Shtet -> Ligue -> ndeshje */}
                   {showLiveOnly ? null : matchesByCountry.length === 0 ? (
                     <div className="flex flex-col justify-center items-center h-64 bg-brand-panel rounded border border-brand-divider text-center px-6">
@@ -921,22 +1032,30 @@ const App: React.FC = () => {
                               <span>{leagueLabel(league)}</span>
                               <span className="ml-auto text-[10px] text-brand-textMuted font-normal">{leagueMatches.length}</span>
                             </div>
-                            <div className="divide-y divide-brand-divider">
-                              {leagueMatches.map((match) => (
-                                <MatchRow
-                                  key={match.id}
-                                  match={match}
-                                  onBetClick={handleToggleSelection}
-                                  onOpenDetail={(m) => setDetailMatchId(m.id)}
-                                  isAdmin={currentUser.role === UserRole.ADMIN}
-                                  onSettleMatch={handleSettleMatch}
-                                  isSimulating={simulatingMatchId === match.id}
-                                  selectedIds={selectedIds}
-                                  favoriteTeams={favoriteTeams}
-                                  onToggleFavoriteTeam={(team) => toggleFavorite('TEAM', team)}
-                                />
-                              ))}
-                            </div>
+                            {groupMatchesByDate(leagueMatches).map(([dateKey, dayMatches]) => (
+                              <div key={dateKey}>
+                                <div className="bg-[#2b2b2b] px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 border-b border-brand-bg/20">
+                                  <span className="text-brand-yellow">{dateKeyLabel(dateKey)}</span>
+                                  <span className="text-brand-textMuted font-normal normal-case">{dayMatches.length} ndeshje</span>
+                                </div>
+                                <div className="divide-y divide-brand-divider">
+                                  {dayMatches.map((match) => (
+                                    <MatchRow
+                                      key={match.id}
+                                      match={match}
+                                      onBetClick={handleToggleSelection}
+                                      onOpenDetail={(m) => setDetailMatchId(m.id)}
+                                      isAdmin={currentUser.role === UserRole.ADMIN}
+                                      onSettleMatch={handleSettleMatch}
+                                      isSimulating={simulatingMatchId === match.id}
+                                      selectedIds={selectedIds}
+                                      favoriteTeams={favoriteTeams}
+                                      onToggleFavoriteTeam={(team) => toggleFavorite('TEAM', team)}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         ))}
                       </div>
@@ -980,13 +1099,31 @@ const App: React.FC = () => {
                   const isOpen = expandedCountry === country;
                   return (
                     <div key={country}>
-                      <button
-                        onClick={() => setExpandedCountry(isOpen ? null : country)}
-                        className={`w-full flex justify-between items-center px-3 py-2 bg-[#333] hover:bg-[#3a3a3a] text-brand-text font-bold uppercase text-[10px] tracking-wider border-b border-brand-bg/10 transition-colors ${isOpen ? 'text-white' : ''}`}
-                      >
-                        <span className="flex items-center gap-1.5"><span aria-hidden="true">{countryFlag(country)}</span>{country}</span>
-                        <span className="text-brand-textMuted">{isOpen ? '▾' : '▸'}</span>
-                      </button>
+                      <div className={`w-full flex items-stretch bg-[#333] border-b border-brand-bg/10 ${currentLeague === countryFilterKey(country) ? 'border-l-4 border-l-brand-yellow' : ''}`}>
+                        <button
+                          onClick={() => { setShowLiveOnly(false); setCurrentLeague(countryFilterKey(country)); setDetailMatchId(null); setExpandedCountry(country); }}
+                          className={`flex-1 min-w-0 text-left px-3 py-2 hover:bg-[#3a3a3a] text-brand-text font-bold uppercase text-[10px] tracking-wider transition-colors ${currentLeague === countryFilterKey(country) ? 'text-white bg-[#444]' : ''}`}
+                          title={`Shfaq të gjitha ligat e ${country}`}
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <span aria-hidden="true">{countryFlag(country)}</span>
+                            <span className="truncate">{country}</span>
+                            <span className="ml-auto text-[9px] text-brand-textMuted font-normal shrink-0">{leagues.length}</span>
+                          </span>
+                        </button>
+                        <button
+                          onClick={() => setExpandedCountry(isOpen ? null : country)}
+                          className="px-3 text-brand-textMuted hover:text-white hover:bg-[#3a3a3a] transition-colors"
+                          aria-label={isOpen ? `Mbyll ligat e ${country}` : `Hap ligat e ${country}`}
+                        >
+                          {isOpen ? '▾' : '▸'}
+                        </button>
+                      </div>
+                      {isOpen && (
+                        <button onClick={() => { setShowLiveOnly(false); setCurrentLeague(countryFilterKey(country)); setDetailMatchId(null); }} className={`px-3 py-2 pl-6 w-full text-left text-[10px] uppercase tracking-wider hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 ${currentLeague === countryFilterKey(country) ? 'bg-[#444] text-white font-bold' : 'text-brand-yellow'}`}>
+                          Të gjitha ligat ({leagues.length})
+                        </button>
+                      )}
                       {isOpen && leagues.map((league) => (
                         <button key={league} onClick={() => { setShowLiveOnly(false); setCurrentLeague(league); setDetailMatchId(null); }} className={`px-3 py-2.5 pl-6 hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 flex justify-between items-center group text-left w-full ${currentLeague === league ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
                           <span className="flex items-center min-w-0">
