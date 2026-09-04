@@ -1,6 +1,7 @@
 import React from 'react';
 import { Match, MatchStatus } from '../types';
 import type { LiveStatistics } from '../services/api';
+import { formatLiveStatus, isHalftime } from '../utils/liveStatus';
 
 interface LivePitchProps {
   match: Match;
@@ -23,8 +24,8 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats }) => {
 
   return (
     <div className="relative w-full h-44 md:h-52 rounded overflow-hidden border border-brand-divider bg-gradient-to-b from-[#1f6b4a] to-[#155038]">
-      <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/50 text-white text-[11px] font-bold px-2 py-0.5 rounded z-10">
-        {stats?.minute != null ? `${stats.minute}'` : (match.currentMinute || 'LIVE')}
+      <div className={`absolute top-2 left-1/2 -translate-x-1/2 text-white text-[11px] font-bold px-2 py-0.5 rounded z-10 ${isHalftime(match) ? 'bg-brand-yellow text-black' : 'bg-black/50'}`}>
+        {stats?.minute != null && !isHalftime(match) ? `${stats.minute}'` : formatLiveStatus(match)}
       </div>
 
       <svg viewBox="0 0 400 220" className="absolute inset-0 w-full h-full opacity-40" preserveAspectRatio="none">

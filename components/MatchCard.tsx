@@ -1,6 +1,7 @@
 import React from 'react';
 import { Match, MatchStatus } from '../types';
 import { formatMatchTime, formatMatchDayMonth, isSameAlbaniaDay, albaniaTodayKey } from '../utils/albaniaTime';
+import { formatLiveStatus, isHalftime } from '../utils/liveStatus';
 
 interface MatchRowProps {
   match: Match;
@@ -87,8 +88,8 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
       <div className="flex-1 flex items-center cursor-pointer mb-3 md:mb-0" onClick={() => onOpenDetail(match)}>
         <div className="text-xs text-brand-textMuted w-10 text-center flex flex-col items-center justify-center shrink-0">
            {isLive ? (
-               <div className="text-brand-accent animate-pulse font-bold">
-                   {match.currentMinute || "LIVE"}
+               <div className={`font-bold leading-tight ${isHalftime(match) ? 'text-brand-yellow' : 'text-brand-accent animate-pulse'}`}>
+                   {isHalftime(match) ? 'Pushim' : (match.currentMinute ? `${match.currentMinute}'` : 'LIVE')}
                </div>
            ) : (
                <>

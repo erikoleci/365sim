@@ -486,7 +486,11 @@ const App: React.FC = () => {
     setSelections((prev) => {
       const exists = prev.some((s) => uniqueId(s.matchId, s.marketId, s.selectionId) === uId);
       if (exists) return prev.filter((s) => uniqueId(s.matchId, s.marketId, s.selectionId) !== uId);
-      return [...prev, {
+      // Selections within the SAME market of the SAME match are mutually
+      // exclusive (e.g. picking "2" after "1" in the 1X2 market must drop
+      // "1" — they can never both win, so keeping both makes no sense).
+      const withoutSameMarket = prev.filter((s) => !(s.matchId === match.id && s.marketId === marketId));
+      return [...withoutSameMarket, {
         matchId: match.id,
         matchHome: match.homeTeam,
         matchAway: match.awayTeam,
