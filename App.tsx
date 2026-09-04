@@ -6,7 +6,6 @@ import BetSlip from './components/BetSlip';
 import AdminPanel from './components/AdminPanel';
 import Login from './components/Login';
 import CasinoHub from './components/CasinoHub';
-import SpecialOffers from './components/SpecialOffers';
 import { User, Match, Bet, UserRole, BetSelectionItem, MatchStatus } from './types';
 import * as api from './services/api';
 import { albaniaDateKey, albaniaTodayKey } from './utils/albaniaTime';
@@ -803,13 +802,6 @@ const App: React.FC = () => {
                 </div>
               ) : (
                 <>
-                  {/* Home stays light: only upcoming matches + special offers.
-                      Live matches are not fetched/rendered here at all —
-                      only once "Live" is pressed (showLiveOnly). */}
-                  {!showLiveOnly && (
-                    <SpecialOffers matches={upcomingMatches} onOpenDetail={(m) => setDetailMatchId(m.id)} onBetClick={handleToggleSelection} />
-                  )}
-
                   {/* LIVE — only rendered when the person pressed "Live In-Play".
                       Shown even if empty (real "no live matches" message, no
                       fake data) since that's the whole point of the button. */}
