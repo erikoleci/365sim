@@ -1087,7 +1087,9 @@ export function startLondon365LiveLoop() {
 export async function getLondon365Status() {
   const { rows } = await pool.query(
     `SELECT COUNT(*)::int AS matches,
-            COUNT(*) FILTER (WHERE status = 'LIVE')::int AS live
+            COUNT(*) FILTER (WHERE status = 'LIVE')::int AS live,
+            COUNT(*) FILTER (WHERE status = 'UPCOMING')::int AS upcoming,
+            COUNT(*) FILTER (WHERE status = 'FINISHED')::int AS finished
      FROM matches_cache WHERE id LIKE 'l365-%'`
   );
   return {
@@ -1100,6 +1102,8 @@ export async function getLondon365Status() {
     liveIntervalMs: LIVE_INTERVAL_MS,
     matches: rows[0].matches,
     liveMatches: rows[0].live,
+    upcomingMatches: rows[0].upcoming,
+    finishedMatches: rows[0].finished,
     lastImport: await getKV('l365_last_import', 0),
     lastLiveSync: await getKV('l365_last_live_sync', 0),
     leagues: (await getKV('l365_leagues', [])).length,
