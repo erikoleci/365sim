@@ -78,13 +78,19 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
   useEffect(() => {
     if (!hasLiveData) { setLiveDetail(null); return; }
     let cancelled = false;
-    setLiveDetailLoading(true);
-    api.fetchMatchLiveDetail(match.id)
-      .then((d) => { if (!cancelled) setLiveDetail(d); })
-      .catch(() => { if (!cancelled) setLiveDetail({ statistics: null, events: [] }); })
-      .finally(() => { if (!cancelled) setLiveDetailLoading(false); });
-    return () => { cancelled = true; };
-  }, [match.id, hasLiveData]);
+    const load = () => {
+      setLiveDetailLoading(true);
+      api.fetchMatchLiveDetail(match.id)
+        .then((d) => { if (!cancelled) setLiveDetail(d); })
+        .catch(() => { if (!cancelled) setLiveDetail({ statistics: null, events: [] }); })
+        .finally(() => { if (!cancelled) setLiveDetailLoading(false); });
+    };
+    load();
+    // Live games: keep stats, events, minute and odds fresh on their own
+    // cadence while the detail panel is open, without any manual refresh.
+    const interval = match.status === MatchStatus.LIVE ? setInterval(load, 15000) : null;
+    return () => { cancelled = true; if (interval) clearInterval(interval); };
+  }, [match.id, hasLiveData, match.status]);
 
   const CATEGORY_LABELS: Record<string, string> = {
     All: 'Të Gjitha',

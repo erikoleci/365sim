@@ -422,14 +422,32 @@ router.get('/:id/odds-history', async (req, res) => {
 // source feed provides them (see persistEvent/syncSource) — this just
 // exposes what was already being written but never read back.
 router.get('/:id/live-detail', async (req, res) => {
-  const [{ rows: statsRows }, { rows: eventRows }] = await Promise.all([
+  const [{ rows: statsRows }, { rows: eventRows }, { rows: cacheRows }] = await Promise.all([
     pool.query('SELECT * FROM live_statistics WHERE match_id = $1', [req.params.id]),
     pool.query(
       'SELECT minute, type, team, player, detail, created_at FROM match_events WHERE match_id = $1 ORDER BY created_at ASC',
       [req.params.id]
     ),
+    pool.query('SELECT live_minute, live_home_score, live_away_score, status FROM matches_cache WHERE id = $1', [req.params.id]),
   ]);
-  res.json({ statistics: statsRows[0] || null, events: eventRows });
+  // The provider's live feed carries the real in-play clock (e.g. "62:14")
+  // even when the stats table has no minute yet — expose it so the pitch
+  // shows a genuine running minute for LondonPro365 games.
+  let statistics = statsRows[0] || null;
+  const cache = cacheRows[0];
+  if (cache) {
+    const m = String(cache.live_minute || '').match(/^(\d+)/);
+    if (!statistics) {
+      statistics = {
+        minute: m ? Number(m[1]) : null,
+        home_score: cache.live_home_score,
+        away_score: cache.live_away_score,
+      };
+    } else if (statistics.minute == null && m) {
+      statistics = { ...statistics, minute: Number(m[1]) };
+    }
+  }
+  res.json({ statistics, events: eventRows });
 });
 
 router.get('/:id', async (req, res) => {

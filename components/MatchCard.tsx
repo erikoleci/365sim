@@ -15,6 +15,15 @@ interface MatchRowProps {
   onToggleFavoriteTeam: (team: string) => void;
 }
 
+// Real in-play clock: the provider reports minutes like "62:14" — render the
+// running minute plus the game half (Pjesa I / Pushim / Pjesa II / Shtesë).
+export function parseLiveClock(minute?: string): { minute: number; half: string } | null {
+  const m = parseInt(String(minute || '').match(/^\d+/)?.[0] ?? '', 10);
+  if (Number.isNaN(m)) return null;
+  const half = m < 45 ? 'Pjesa I' : m < 46 ? 'Pushim' : m < 90 ? 'Pjesa II' : m < 105 ? 'Shtesë' : 'Penallti';
+  return { minute: m, half };
+}
+
 const StarButton: React.FC<{ active: boolean; onClick: (e: React.MouseEvent) => void }> = ({ active, onClick }) => (
   <button onClick={onClick} className="shrink-0 mr-1.5 leading-none" title={active ? 'Hiq nga të preferuarat' : 'Shto te të preferuarat'}>
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className={`w-3.5 h-3.5 ${active ? 'fill-brand-yellow' : 'fill-none stroke-brand-textMuted'}`} strokeWidth={1.5}>
@@ -41,7 +50,13 @@ const TeamBadge: React.FC<{ name: string; logo?: string }> = ({ name, logo }) =>
 const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, isAdmin, onSettleMatch, isSimulating, selectedIds, favoriteTeams, onToggleFavoriteTeam }) => {
   const isFinished = match.status === MatchStatus.FINISHED;
   const isLive = match.status === MatchStatus.LIVE;
-  const matchWinnerMarket = match.markets.find(m => m.id.endsWith('-h2h'));
+  // The card shows ONLY the 1X2 market (1 / X / 2) — never the extra
+  // outcomes some providers pack into the same bucket (correct score, HTFT).
+  const h2hMarket = match.markets.find(m => m.id.endsWith('-h2h'));
+  const matchWinnerMarket = h2hMarket
+    ? { ...h2hMarket, options: h2hMarket.options.filter(o => o.id === 'HOME' || o.id === 'DRAW' || o.id === 'AWAY') }
+    : undefined;
+  const liveClock = parseLiveClock(match.currentMinute);
 
   // Odds-movement arrows in the list view, same approach as MatchDetail:
   // remember last-seen price per selection, flash up/down briefly on change.
@@ -86,10 +101,11 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
       
       {/* Time & Teams Info */}
       <div className="flex-1 flex items-center cursor-pointer mb-3 md:mb-0" onClick={() => onOpenDetail(match)}>
-        <div className="text-xs text-brand-textMuted w-10 text-center flex flex-col items-center justify-center shrink-0">
+        <div className="text-xs text-brand-textMuted w-12 text-center flex flex-col items-center justify-center shrink-0">
            {isLive ? (
                <div className={`font-bold leading-tight ${isHalftime(match) ? 'text-brand-yellow' : 'text-brand-accent animate-pulse'}`}>
-                   {isHalftime(match) ? 'Pushim' : (match.currentMinute ? `${match.currentMinute}'` : 'LIVE')}
+                   {isHalftime(match) ? 'Pushim' : (liveClock ? `${liveClock.minute}'` : (match.currentMinute ? `${match.currentMinute}'` : 'LIVE'))}
+                   {liveClock && !isHalftime(match) && <div className="text-[9px] font-semibold text-brand-yellow normal-case leading-none mt-0.5">{liveClock.half}</div>}
                </div>
            ) : (
                <>

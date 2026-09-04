@@ -81,7 +81,20 @@ export function broadcast(topic, payload) {
 }
 
 // Convenience helpers matching the notification types from the spec.
-export const pushGoal = (matchId, data) => broadcast(`match:${matchId}`, { type: 'GOAL', ...data });
-export const pushOddsChanged = (matchId, data) => broadcast(`match:${matchId}`, { type: 'ODDS_CHANGED', ...data });
-export const pushMatchStarted = (matchId) => broadcast(`match:${matchId}`, { type: 'MATCH_STARTED' });
+// Besides the per-match topic, every live event is also broadcast on the
+// global 'odds' / 'live' topics — the frontend subscribes to those two on
+// connect, which is what makes odds arrows and live score updates reach
+// clients without a manual refresh.
+export const pushGoal = (matchId, data) => {
+  broadcast(`match:${matchId}`, { type: 'GOAL', ...data });
+  broadcast('live', { matchId, type: 'GOAL', ...data });
+};
+export const pushOddsChanged = (matchId, data) => {
+  broadcast(`match:${matchId}`, { type: 'ODDS_CHANGED', ...data });
+  broadcast('odds', { matchId, type: 'ODDS_CHANGED', ...data });
+};
+export const pushMatchStarted = (matchId) => {
+  broadcast(`match:${matchId}`, { type: 'MATCH_STARTED' });
+  broadcast('live', { matchId, type: 'MATCH_STARTED' });
+};
 export const pushUserNotification = (userId, data) => broadcast(`user:${userId}`, { type: 'NOTIFICATION', ...data });

@@ -19,9 +19,12 @@ const SpecialOffers: React.FC<SpecialOffersProps> = ({ matches, onOpenDetail, on
       .map((m) => {
         const h2h = m.markets.find((mk) => mk.id.endsWith('-h2h'));
         if (!h2h) return null;
+        // The card strip must offer ONLY 1/X/2 — ignore any extra outcomes
+        // (correct score, HTFT) that the provider may pack into h2h.
+        const pickable = h2h.options.filter((o) => o.id === 'HOME' || o.id === 'DRAW' || o.id === 'AWAY');
         // Pick the shortest-priced (favorite) selection to boost — most
         // appealing as a "boost" since the uplift is proportionally bigger.
-        const favorite = [...h2h.options].filter((o) => o.odds > 0).sort((a, b) => a.odds - b.odds)[0];
+        const favorite = [...pickable].filter((o) => o.odds > 0).sort((a, b) => a.odds - b.odds)[0];
         if (!favorite) return null;
         return { match: m, market: h2h, option: favorite };
       })

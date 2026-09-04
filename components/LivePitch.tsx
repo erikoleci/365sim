@@ -21,11 +21,15 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats }) => {
   // Map possession % to a left-position between 25% (away dominant) and 75% (home dominant)
   const dotLeftPct = 25 + (possHome / 100) * 50;
   const attackingSide = possHome >= possAway ? match.homeTeam : match.awayTeam;
+  // Real in-play minute + game half from the provider clock ("62:14").
+  const minNum = parseInt(String(stats?.minute ?? match.currentMinute ?? '').match(/^\d+/)?.[0] ?? '', 10);
+  const half = Number.isNaN(minNum) ? null : minNum < 45 ? 'Pjesa I' : minNum < 46 ? 'Pushim' : minNum < 90 ? 'Pjesa II' : minNum < 105 ? 'Shtesë' : 'Penallti';
 
   return (
     <div className="relative w-full h-44 md:h-52 rounded overflow-hidden border border-brand-divider bg-gradient-to-b from-[#1f6b4a] to-[#155038]">
-      <div className={`absolute top-2 left-1/2 -translate-x-1/2 text-white text-[11px] font-bold px-2 py-0.5 rounded z-10 ${isHalftime(match) ? 'bg-brand-yellow text-black' : 'bg-black/50'}`}>
-        {stats?.minute != null && !isHalftime(match) ? `${stats.minute}'` : formatLiveStatus(match)}
+      <div className={`absolute top-2 left-1/2 -translate-x-1/2 text-[11px] font-bold px-2 py-0.5 rounded z-10 ${isHalftime(match) ? 'bg-brand-yellow text-black' : 'bg-black/50 text-white'}`}>
+        {isHalftime(match) ? 'Pushim' : (!Number.isNaN(minNum) ? `${minNum}'` : formatLiveStatus(match))}
+        {half && !isHalftime(match) && <span className="text-brand-yellow font-semibold"> · {half}</span>}
       </div>
 
       <svg viewBox="0 0 400 220" className="absolute inset-0 w-full h-full opacity-40" preserveAspectRatio="none">

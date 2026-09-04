@@ -21,6 +21,7 @@
 import pool, { getKV, setKV } from './db.js';
 import { diffOddsChanges } from './oddsUtils.js';
 import { pushOddsChanged, pushGoal } from './ws.js';
+import { settleMatch } from './matchSettlement.js';
 
 const ENABLED = (process.env.LONDON365_ENABLED || '1') === '1';
 const API_BASE = process.env.LONDON365_API || 'https://eccoplay365.com';
@@ -271,6 +272,33 @@ export async function fetchDetailRows(gameId) {
   return rows;
 }
 
+// Live games expose their full market catalog on a different endpoint:
+// /ajax/livegame/{id} returns every market (with real names, live prices,
+// current minute and score) for an in-play game — /ajax/prematchgame/{id}
+// returns zero rows once a game kicks off. Same row shape as
+// fetchDetailRows so buildEvent, the repair pass and the live loop share it.
+export async function fetchLiveRows(gameId) {
+  const detail = await api('/ajax/livegame/' + gameId, { retries: 4 });
+  const rows = [];
+  const groups = Array.isArray(detail) ? detail : [];
+  for (const group of groups) {
+    if (!Array.isArray(group)) continue;
+    for (const m of group) {
+      if (!m) continue;
+      rememberMarketName(m.market_id, m.market);
+      rows.push({
+        coefId: String(m.id),
+        coef: parseFloat(m.odd),
+        option: (m.market_option || '').trim(),
+        marketId: String(m.market_id),
+        marketName: m.market || null,
+        category: m.mainCategory ? decodeMarketName(m.mainCategory) : null,
+      });
+    }
+  }
+  return rows;
+}
+
 function totalsOutcome(option) {
   const m = String(option || '').trim().match(/^(mbi|over|nen|under)\s*([0-9.]+)/i);
   if (!m) return null;
@@ -320,6 +348,13 @@ export function buildEvent(gameId, homeTeam, awayTeam, commenceTime, rows) {
       const owner = canonicalOwner.get(key);
       if (owner === undefined) canonicalOwner.set(key, r.marketId);
       else if (owner !== String(r.marketId)) key = slug(marketName) + '_m' + r.marketId;
+    }
+    // The card must show ONLY 1/X/2. Some provider markets named like the
+    // final result also carry correct-score / HTFT options; those get their
+    // own bucket instead of polluting h2h (no coefficient is lost).
+    if (key === 'h2h') {
+      const opt = String(r.option || '').trim();
+      if (opt !== '1' && opt !== 'X' && opt !== '2') key = slug(marketName) + '_m' + r.marketId;
     }
     if (!byKey.has(key)) byKey.set(key, { key: key, label: marketName, category: r.category || null, outcomes: [] });
     const opt = outcomeFromOption(key, r.option, ev);
@@ -406,7 +441,7 @@ async function upsertMatch(ev, league, status, liveScores, liveInfo) {
       `INSERT INTO matches_cache (id, league, home_team, away_team, start_time, status, raw_json, fetched_at, live_home_score, live_away_score, live_minute, live_status)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        ON CONFLICT (id) DO UPDATE SET
-         league = excluded.league,
+         league = CASE WHEN excluded.league = '' THEN matches_cache.league ELSE excluded.league END,
          home_team = excluded.home_team,
          away_team = excluded.away_team,
          start_time = excluded.start_time,
@@ -453,15 +488,22 @@ function mergeEvents(oldEv, newEv) {
   for (const nm of newMarkets) {
     const old = byKey.get(nm.key);
     if (!old) { markets.push(nm); byKey.set(nm.key, nm); continue; }
+    // Match by provider coefId first; the provider can issue a fresh coefId
+    // for the same outcome between prematch and live, so also fall back to
+    // the outcome identity (name + point) to avoid duplicate rows.
     const byId = new Map((old.outcomes || []).map(function (o) { return [String(o.id), o]; }));
+    const byIdentity = new Map((old.outcomes || []).map(function (o) { return [String(o.name) + '|' + (o.point != null ? o.point : ''), o]; }));
     for (const no of nm.outcomes || []) {
-      const ex = byId.get(String(no.id));
+      const identity = String(no.name) + '|' + (no.point != null ? no.point : '');
+      const ex = byId.get(String(no.id)) || byIdentity.get(identity);
       if (ex) {
         ex.price = no.price;
         if (no.point !== undefined) ex.point = no.point;
+        ex.id = no.id;
       } else {
         (old.outcomes = old.outcomes || []).push(no);
         byId.set(String(no.id), no);
+        byIdentity.set(identity, no);
       }
     }
   }
@@ -650,11 +692,17 @@ export function ensureLondon365Import() {
   })();
 }
 
-// Live sync: in-play scores plus real-time odds movement.
+// Live sync: in-play scores plus REAL-TIME FULL market catalog. The list
+// endpoint (/ajax/livegames) only carries the packed 1X2 odds, but every
+// live game exposes its complete market set on /ajax/livegame/{id} — same
+// row shape as the prematch detail endpoint — so we fetch it per game and
+// merge it into the cached event. Games that leave the live feed are
+// auto-settled with their last known score so final results appear.
 export async function syncLondon365Live() {
   if (!ENABLED) return { games: 0 };
   await ensureMarketNamesLoaded();
   let gamesSynced = 0;
+  const liveIds = new Set();
 
   for (const sid of await resolveSports()) {
     let games;
@@ -667,16 +715,52 @@ export async function syncLondon365Live() {
     if (!Array.isArray(games)) continue;
 
     for (const g of games) {
-      const odds = hydrateRowNames(parseOddString(g.odd).filter(function (o) { return o ? !Number.isNaN(o.coef) : false; }));
+      if (!g || !g.id) continue;
+      liveIds.add('l365-' + g.id);
+      let rows = [];
+      try {
+        if (DETAIL_DELAY_MS) await sleep(DETAIL_DELAY_MS);
+        rows = await fetchLiveRows(g.id);
+      } catch (err) {
+        console.error('[london365] livegame detail ' + g.id + ' failed (falling back to packed list odds):', err.message);
+      }
+      if (!rows.length) rows = parseOddString(g.odd);
+      const odds = hydrateRowNames(rows.filter(function (o) { return o ? !Number.isNaN(o.coef) : false; }));
       if (!odds.length) continue;
-      const ev = buildEvent(g.id, g.home_team, g.away_team, isoFromWholeDate(null, g.game_date, g.game_time), odds);
+      const ev = buildEvent(g.id, g.home_team, g.away_team, isoFromWholeDate(g.whole_date, g.game_date, g.game_time), odds);
       const score = parseScore(g.result);
       const minute = g.current_minute || null;
-      const prev = await upsertMatch(ev, g.league, 'LIVE', score, { minute: minute, apiStatus: g.api_status });
+      const prev = await upsertMatch(ev, g.league || '', 'LIVE', score, { minute: minute, apiStatus: g.api_status });
       await recordGoalIfChanged(ev, score, minute, prev);
       gamesSynced++;
     }
   }
+
+  // End detection: a cached LIVE l365 match that is no longer in the live
+  // feed and started >2.5h ago has finished — settle it with the last
+  // known score so the final result shows on the right of the card.
+  try {
+    const { rows } = await pool.query(
+      "SELECT id, live_home_score, live_away_score, start_time FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
+    );
+    const cutoff = Date.now() - 2.5 * 60 * 60 * 1000;
+    for (const row of rows) {
+      if (liveIds.has(row.id)) continue;
+      if (Date.parse(row.start_time) > cutoff) continue;
+      const home = row.live_home_score ?? 0;
+      const away = row.live_away_score ?? 0;
+      await pool.query("UPDATE matches_cache SET live_status = 'ended' WHERE id = $1", [row.id]);
+      try {
+        await settleMatch(row.id, home, away);
+        console.log('[london365] auto-settled ' + row.id + ' ' + home + '-' + away);
+      } catch (err) {
+        console.error('[london365] auto-settle ' + row.id + ' failed:', err.message);
+      }
+    }
+  } catch (err) {
+    console.error('[london365] end detection failed:', err.message);
+  }
+
   await setKV('l365_last_live_sync', Date.now());
   return { games: gamesSynced };
 }
@@ -734,7 +818,7 @@ export async function applySocketGame(g, status) {
   const score = parseScore(g.result);
   const minute = g.current_minute || null;
   const resolved = status || (minute ? 'LIVE' : statusFromCommence(commence));
-  const prev = await upsertMatch(ev, g.league, resolved, score, { minute: minute, apiStatus: g.api_status });
+  const prev = await upsertMatch(ev, g.league || '', resolved, score, { minute: minute, apiStatus: g.api_status });
   await recordGoalIfChanged(ev, score, minute, prev);
   return true;
 }
@@ -802,7 +886,10 @@ export async function repairSparseEvents(opts) {
       await pool.query('UPDATE matches_cache SET fetched_at = $2 WHERE id = $1', [row.id, Date.now()]);
       try {
         if (DETAIL_DELAY_MS) await sleep(DETAIL_DELAY_MS);
-        const fresh = hydrateRowNames((await fetchDetailRows(gameId)).filter(function (r) { return r && !Number.isNaN(r.coef); }));
+        // LIVE events must be repaired through the live endpoint — the
+        // prematch detail returns zero rows once a game kicks off.
+        const rawRows = row.status === 'LIVE' ? await fetchLiveRows(gameId) : await fetchDetailRows(gameId);
+        const fresh = hydrateRowNames(rawRows.filter(function (r) { return r && !Number.isNaN(r.coef); }));
         if (fresh.length <= countOutcomes(ev)) continue;
         const newEv = buildEvent(gameId, ev.home_team, ev.away_team, ev.commence_time, fresh);
         await upsertMatch(newEv, row.league, row.status, null);
