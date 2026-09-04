@@ -15,6 +15,13 @@ const router = express.Router();
 
 const ODDS_API_KEY = process.env.ODDS_API_KEY || '';
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
+// The Odds API is OFF by default (user request): its 3-market events
+// (1X2/totals/spreads) duplicated LondonPro365 fixtures and made the
+// frontend show only a handful of coefficients instead of the full
+// LondonPro365 catalog. Set ODDS_API_ENABLED=1 in the environment to
+// re-enable it; dedupeMatches() below still keeps the richer card per
+// fixture, so even when enabled it can no longer hide LondonPro365.
+const ODDS_API_ENABLED = (process.env.ODDS_API_ENABLED || '0') === '1';
 
 // Markets we ask for per match. NOTE: btts / double_chance / draw_no_bet are
 // NOT included here because they returned "422 Markets not supported by this
@@ -346,15 +353,17 @@ router.get('/leagues', async (req, res) => {
 });
 
 router.get('/', async (req, res) => {
-  if (!ODDS_API_KEY) {
+  // The Odds API disabled (default) or no key configured: LondonPro365 is
+  // the primary data source. Seed it in the background (throttled, never
+  // blocks the request) and return everything currently cached, including
+  // the l365 rows. dedupeMatches() guarantees a sparse provider card can
+  // never hide the richer LondonPro365 one.
+  if (!ODDS_API_KEY || !ODDS_API_ENABLED) {
     try {
       await refreshApiFootball();
     } catch (err) {
       console.error('Error refreshing API-Football:', err.message);
     }
-    // No The Odds API key configured: LondonPro365 becomes the primary data
-    // source. Seed it in the background (throttled, never blocks the request)
-    // and return everything currently cached, including the l365 rows.
     ensureLondon365Import();
     const { rows } = await pool.query('SELECT * FROM matches_cache ORDER BY start_time ASC');
     return res.json({ matches: dedupeMatches(rows.map(mapEventToMatch)), hasLiveApiKey: false });

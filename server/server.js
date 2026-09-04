@@ -161,8 +161,8 @@ async function start() {
   // fetch failed (provider rate limits on hosting). Without this, most
   // LondonPro365 matches on Render only show the sparse 1-4 list-level
   // markets instead of the full catalog.
-  setTimeout(function () { repairSparseEvents({ limit: 20 }).catch(function () {}); }, 90 * 1000);
-  setInterval(function () { repairSparseEvents({ limit: 20 }).catch(function () {}); }, 5 * 60 * 1000);
+  setTimeout(function () { repairSparseEvents({ limit: 40 }).catch(function () {}); }, 45 * 1000);
+  setInterval(function () { repairSparseEvents({ limit: 40 }).catch(function () {}); }, 3 * 60 * 1000);
 }
 
 start().catch((err) => {
