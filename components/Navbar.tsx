@@ -26,12 +26,6 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
             >
               bet<span className="text-brand-yellow">365</span>sim
             </div>
-            <span
-              title="Kjo është një simulim — nuk përdoren para reale."
-              className="hidden sm:inline-block text-[9px] font-bold uppercase tracking-wider bg-brand-yellow/15 text-brand-yellow border border-brand-yellow/40 rounded px-1.5 py-0.5 leading-none"
-            >
-              Simulim
-            </span>
           </div>
           <div className="flex gap-4 text-brand-text/90 text-xs md:text-sm font-medium">
             <span 
@@ -64,12 +58,10 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
           <div className="flex items-center gap-2 cursor-pointer group">
              <div className="text-right leading-tight">
                 <div className="text-white font-bold hidden md:block">{currentUser.name}</div>
-                <div className="text-brand-yellow font-bold" title="Balancë virtuale — jo para reale">
+                <div className="text-brand-yellow font-bold">
                   {currentUser.balance.toFixed(2)} <span className="hidden md:inline">L</span>
-                  <span className="hidden md:inline text-brand-textMuted font-normal text-[9px] ml-1 uppercase">virtuale</span>
                 </div>
              </div>
-             <img src={currentUser.avatar} className="w-8 h-8 rounded-full border-2 border-brand-headerDark" alt="avatar" />
           </div>
           
           <button onClick={onLogout} className="text-brand-textMuted hover:text-white text-xs ml-1">

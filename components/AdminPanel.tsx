@@ -289,7 +289,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                       <tr key={u.id} className="hover:bg-brand-bg/50">
                         <td className="p-3">
                           <div className="flex items-center gap-2">
-                            <img src={u.avatar} alt={u.username} className="w-6 h-6 rounded-full" />
                             <div>
                               <div className="font-bold">{u.name}</div>
                               <div className="text-xs text-brand-textMuted">@{u.username}</div>
@@ -389,7 +388,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                                         <div className="flex items-center gap-1">
                                             {user ? (
                                                 <>
-                                                    <img src={user.avatar} alt={user.username} className="w-4 h-4 rounded-full" />
                                                     <span className="text-xs">{user.username}</span>
                                                 </>
                                             ) : (
