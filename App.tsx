@@ -426,6 +426,113 @@ const App: React.FC = () => {
   const isoToFlagEmoji = (iso: string): string =>
     iso.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
   const INTERNATIONAL_TOKENS = new Set(['uefa', 'fifa', 'conmebol', 'concacaf', 'afc', 'caf', 'international']);
+
+  // Normalizon emrin e liges per klasifikim: heq aksentet ("Turkiye" ->
+  // "turkiye"), zevendeson cdo shenje jo-alfanumerike (perfshire mojibake si
+  // "T??Rkiye" ose "Women???S") me hapesire, dhe kthen shkronja te vogla.
+  const normalizeLeagueName = (s: string): string =>
+    s
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+
+  // Harta "emer i lexueshem -> token shteti". Shumica e providerve dergojne
+  // ligat si emra ("Spain La Liga", "Brasileiro Serie B", "M15 Madrid",
+  // "AFC U20 Asian Cup Qualification") — pa kete harte ato binin te gjitha
+  // te "Të tjera". Rendi i kontrollit:
+  //  1) emri i shtetit (ose fjale qe i perkasin vetem atij: "brasileiro",
+  //     "ekstraklasa", "allsvenskan", qytetet e turnireve M15/W15/Challenger),
+  //  2) kompeticione kombetare pa emer shteti ne rresht ("Premier League",
+  //     "Serie A/B/C"...),
+  //  3) kompeticione nderkombetare (UEFA/FIFA/AFC/ASEAN/FIBA/World Cup/
+  //     Friendlies) -> grupi "Ndërkombëtare",
+  //  4) asgje -> "Të tjera".
+  const NAME_TOKEN_PATTERNS: [RegExp, string][] = [
+    // --- 1) Emra shtetesh + fjale unike kombetare + qytete turnish ---
+    [/algeria/, 'algeria'],
+    [/argentina/, 'argentina'],
+    [/armenia/, 'armenia'],
+    [/australia|new south wales|npl queensland|sa premier league/, 'australia'],
+    [/azerbaijan/, 'azerbaijan'],
+    [/belgium|belgian/, 'belgium'],
+    [/brazil|brasileiro|copa do brasil|paulista|pernambucano|cearense|goias|amazonense|campeonato brasileiro/, 'brazil'],
+    [/bulgaria|plovdiv/, 'bulgaria'],
+    [/chile/, 'chile'],
+    [/china|zhangjiagang|cba/, 'china'],
+    [/colombia/, 'colombia'],
+    [/cyprus/, 'cyprus'],
+    [/denmark|superligaen/, 'denmark'],
+    [/ecuador|ligapro/, 'ecuador'],
+    [/egypt|hurghada/, 'egypt'],
+    [/england/, 'england'],
+    [/estonia|esiliiga/, 'estonia'],
+    [/finland|kakkonen|kolmonen/, 'finland'],
+    [/france|ligue 1|ligue 2|ligue 3|coupe de france|cap d agde/, 'france'],
+    [/georgia/, 'georgia'],
+    [/germany|bundesliga|meerbusch|dfb/, 'germany'],
+    [/greece/, 'greece'],
+    [/hungary|nb i|nb ii|pecs|magyar/, 'hungary'],
+    [/iceland/, 'iceland'],
+    [/india|mizoram|shillong|sikkim/, 'india'],
+    [/indonesia/, 'indonesia'],
+    [/iraq/, 'iraq'],
+    [/israel|liga alef|liga bet|liga leumit/, 'israel'],
+    [/italy|coppa italia|primavera|fiano romano/, 'italy'],
+    [/japan/, 'japan'],
+    [/jordan/, 'jordan'],
+    [/latvia/, 'latvia'],
+    [/lithuania|a lyga/, 'lithuania'],
+    [/malaysia/, 'malaysia'],
+    [/mozambique|mocambola/, 'mozambique'],
+    [/myanmar/, 'myanmar'],
+    [/netherlands|eredivisie|dutch|holland/, 'netherlands'],
+    [/paraguay/, 'paraguay'],
+    [/poland|ekstraklasa|iv liga|puchar|szczawno|grodzisk/, 'poland'],
+    [/portugal|porto/, 'portugal'],
+    [/qatar/, 'qatar'],
+    [/romania|buzau|brasov/, 'romania'],
+    [/saudi/, 'saudi'],
+    [/scotland/, 'scotland'],
+    [/serbia|kursumlijska/, 'serbia'],
+    [/slovenia/, 'slovenia'],
+    [/spain|la liga|laliga|madrid|badalona|copa del rey/, 'spain'],
+    [/sweden|allsvenskan/, 'sweden'],
+    [/switzerland/, 'switzerland'],
+    [/turkey|turkiye|rkiye|tff|super lig/, 'turkey'],
+    [/uganda/, 'uganda'],
+    [/ukraine/, 'ukraine'],
+    [/uruguay/, 'uruguay'],
+    [/\busa\b|united states|us open|major league soccer|\bmls\b/, 'usa'],
+    [/uzbekistan/, 'uzbekistan'],
+    [/vietnam/, 'vietnam'],
+    [/wales/, 'wales'],
+    [/tanzania|zanzibar/, 'tanzania'],
+    [/thailand|nonthaburi/, 'thailand'],
+    [/tunisia|monastir/, 'tunisia'],
+    [/morocco|casablanca/, 'morocco'],
+    // --- 2) Kompeticione kombetare pa emer shteti ne rresht ---
+    [/premier league|championship|fa cup|efl|league one|league two|development league/, 'england'],
+    [/serie a|serie b|serie c/, 'italy'],
+    [/segunda division|primera division/, 'spain'],
+    [/bundesliga|dfb pokal|regionalliga/, 'germany'],
+    [/knvb/, 'netherlands'],
+    [/pro league|first division/, 'belgium'],
+    [/hnl/, 'croatia'],
+    [/superettan/, 'sweden'],
+    [/eliteserien/, 'norway'],
+    [/veikkausliiga/, 'finland'],
+    [/meistriliiga/, 'estonia'],
+    [/virsliga/, 'latvia'],
+    [/kategoria superiore/, 'albania'],
+    [/sleague/, 'singapore'],
+    [/prva liga|druga liga|superliga/, 'serbia'],
+    // --- 3) Nderkombetare ---
+    [/afc|asian cup|asean|fiba|world cup|world club|club friendlies|europe friendlies|women.{0,4}s friendly|uefa|champions league|europa league|conference league|nations league|intercontinental/, 'international'],
+  ];
+
   const leagueCountryToken = (key: string): string | null => {
     if (key === 'soccer_epl') return 'epl';
     if (key === 'oddsapiio_albania_superiore') return 'albania';
@@ -436,7 +543,13 @@ const App: React.FC = () => {
     const dbl = key.match(/^[a-z0-9]+_([a-z0-9-]+)__/)?.[1];
     if (dbl) return dbl;
     // Legacy single-underscore format (older cached rows / other providers).
-    return key.match(/^[a-z0-9]+_([a-z]+)_/)?.[1] || null;
+    const legacy = key.match(/^[a-z0-9]+_([a-z]+)_/)?.[1];
+    if (legacy) return legacy;
+    // Emra te lexueshem ("Spain La Liga", "M15 Madrid", "Brasileiro Serie B",
+    // "AFC U20 Asian Cup Qualification") — klasifikohen sipas hartes me lart.
+    const norm = normalizeLeagueName(key);
+    const hit = NAME_TOKEN_PATTERNS.find(([re]) => re.test(norm));
+    return hit ? hit[1] : null;
   };
   const leagueCountry = (key: string): string => {
     const token = leagueCountryToken(key);
