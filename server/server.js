@@ -23,7 +23,7 @@ import scrapeRouter from './routes/scrape.js';
 import favoritesRouter from './routes/favorites.js';
 import { initDb } from './db.js';
 import { initWebSocket } from './ws.js';
-import { startLondon365LiveLoop, ensureLondon365Import } from './london365.js';
+import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents } from './london365.js';
 import { startLondon365Socket } from './london365Socket.js';
 
 let dbReady = false;
@@ -157,6 +157,12 @@ async function start() {
   ensureLondon365Import();
   startLondon365LiveLoop();
   startLondon365Socket();
+  // Periodically restore full market detail for events whose initial detail
+  // fetch failed (provider rate limits on hosting). Without this, most
+  // LondonPro365 matches on Render only show the sparse 1-4 list-level
+  // markets instead of the full catalog.
+  setTimeout(function () { repairSparseEvents({ limit: 20 }).catch(function () {}); }, 90 * 1000);
+  setInterval(function () { repairSparseEvents({ limit: 20 }).catch(function () {}); }, 5 * 60 * 1000);
 }
 
 start().catch((err) => {

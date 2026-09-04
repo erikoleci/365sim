@@ -62,6 +62,95 @@ function isTopLeague(l) {
 
 const MIN_REMAINING_CREDITS_BUFFER = 0; // no safety buffer (user request) — refresh runs until the account hits 0 credits
 
+// --- Cross-provider fixture deduplication ---------------------------------
+// The same game can be cached twice: once from The Odds API (only h2h/totals/
+// spreads -> 2-4 markets) and once from LondonPro365 (the full catalog, 80+
+// markets). The frontend would then show the sparse card and the user would
+// conclude LondonPro365 only has a few markets. This keeps, per fixture, the
+// card with the most markets+odds (LondonPro365 wins in practice), while
+// preserving the most advanced status (LIVE/FINISHED) from any duplicate.
+// Team names are compared fuzzily to survive transliteration differences
+// ("Al-Fayha" vs "Al Feiha", "Al-Ittihad" vs "Al Ittihad").
+function normTeam(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\b(fc|cf|sc|ac|afc|fk|if|bk|sk|cd|sd|ud|club)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+function teamSim(a, b) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  const d = levenshtein(a, b);
+  return 1 - d / Math.max(a.length, b.length);
+}
+function outcomeCount(m) {
+  let n = 0;
+  for (const mk of m.markets || []) n += (mk.options || []).length;
+  return n;
+}
+function sameFixture(a, b) {
+  const ah = normTeam(a.homeTeam), aa = normTeam(a.awayTeam);
+  const bh = normTeam(b.homeTeam), ba = normTeam(b.awayTeam);
+  const direct = teamSim(ah, bh) >= 0.75 && teamSim(aa, ba) >= 0.75;
+  const swapped = teamSim(ah, ba) >= 0.75 && teamSim(aa, bh) >= 0.75;
+  return direct || swapped;
+}
+const STATUS_RANK = { UPCOMING: 0, LIVE: 1, FINISHED: 2 };
+function dedupeMatches(list) {
+  const WINDOW_MS = 3 * 60 * 60 * 1000;
+  const sorted = [...list].sort((x, y) => Date.parse(x.startTime) - Date.parse(y.startTime));
+  const groups = []; // {rep, candidates, time}
+  for (const m of sorted) {
+    const t = Date.parse(m.startTime);
+    let placed = false;
+    if (!Number.isNaN(t)) {
+      for (const g of groups) {
+        if (Math.abs(t - g.time) > WINDOW_MS) continue;
+        if (sameFixture(g.rep, m)) {
+          g.candidates.push(m);
+          placed = true;
+          break;
+        }
+      }
+    }
+    if (!placed) groups.push({ rep: m, candidates: [m], time: t });
+  }
+  return groups.map((g) => {
+    let best = g.candidates[0];
+    for (const c of g.candidates) {
+      const cs = outcomeCount(c);
+      const bs = outcomeCount(best);
+      if (cs > bs || (cs === bs && String(c.id).startsWith('l365-') && !String(best.id).startsWith('l365-'))) best = c;
+    }
+    best = { ...best };
+    for (const c of g.candidates) {
+      if (c === best || (STATUS_RANK[c.status] || 0) <= (STATUS_RANK[best.status] || 0)) continue;
+      best.status = c.status;
+      best.isLive = c.isLive;
+      best.liveHomeScore = c.liveHomeScore ?? best.liveHomeScore;
+      best.liveAwayScore = c.liveAwayScore ?? best.liveAwayScore;
+      best.currentMinute = c.currentMinute ?? best.currentMinute;
+    }
+    return best;
+  });
+}
+
 // --- PERSISTED STATE (survives restarts/redeploys via kv_store), loaded
 // lazily on first use since module-import happens before initDb() runs. ---
 let leaguesCache = { data: [], fetchedAt: 0 };
@@ -268,7 +357,7 @@ router.get('/', async (req, res) => {
     // and return everything currently cached, including the l365 rows.
     ensureLondon365Import();
     const { rows } = await pool.query('SELECT * FROM matches_cache ORDER BY start_time ASC');
-    return res.json({ matches: rows.map(mapEventToMatch), hasLiveApiKey: false });
+    return res.json({ matches: dedupeMatches(rows.map(mapEventToMatch)), hasLiveApiKey: false });
   }
 
   try {
@@ -307,7 +396,7 @@ router.get('/', async (req, res) => {
       ? await pool.query("SELECT * FROM matches_cache WHERE league = ANY($1::text[]) OR id LIKE 'l365-%' ORDER BY start_time ASC", [[...lastTopLeagueKeys, 'oddsapiio_albania_superiore', ...apiFootballLeagueSlugs()]])
       : await pool.query('SELECT * FROM matches_cache ORDER BY start_time ASC');
 
-  res.json({ matches: rows.map(mapEventToMatch), hasLiveApiKey: true });
+  res.json({ matches: dedupeMatches(rows.map(mapEventToMatch)), hasLiveApiKey: true });
 });
 
 router.get('/:id/odds-history', async (req, res) => {

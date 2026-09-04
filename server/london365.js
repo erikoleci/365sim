@@ -50,6 +50,8 @@ const LEAGUE_LIMIT = Number(process.env.LONDON365_LEAGUES || 0);
 const FULL_DETAIL = (process.env.LONDON365_FULL || '1') === '1';
 const LIVE_INTERVAL_MS = Math.max(10000, Number(process.env.LONDON365_LIVE_INTERVAL_MS || 30000));
 const IMPORT_THROTTLE_MS = Number(process.env.LONDON365_IMPORT_THROTTLE_MS || 600000);
+const DETAIL_DELAY_MS = Math.max(0, Number(process.env.LONDON365_DETAIL_DELAY_MS || 150));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
@@ -190,6 +192,47 @@ export function mapMarketKey(name, marketId) {
   if (CANONICAL_MARKETS[n]) return CANONICAL_MARKETS[n];
   if (!n) return 'other';
   return slug(n) + (marketId ? '_m' + marketId : '');
+}
+
+// A cached event is "sparse" when its detail fetch failed and we only have
+// the few list-level markets (or unnamed "Market <id>" fallbacks). These are
+// the rows the repair pass re-fetches with full detail so every market and
+// coefficient finally reaches the frontend.
+export function isSparseEvent(ev) {
+  const markets = (ev && ev.bookmakers && ev.bookmakers[0] && ev.bookmakers[0].markets) || [];
+  if (!markets.length) return true;
+  let outcomes = 0;
+  for (const m of markets) {
+    outcomes += (m.outcomes || []).length;
+    if (!m.label || /^Market \d+$/.test(m.label)) return true;
+  }
+  return outcomes < 10;
+}
+
+// Fetch every market of one game from the detail endpoint. Shared by the
+// main import and the repair pass. Extra retries because the provider
+// intermittently answers "Something went wrong" under load — a failed
+// detail fetch is exactly what silently drops ~90 markets per match.
+export async function fetchDetailRows(gameId) {
+  const detail = await api('/ajax/prematchgame/' + gameId, { retries: 5 });
+  const rows = [];
+  if (Array.isArray(detail)) {
+    for (const market of detail) {
+      if (!Array.isArray(market)) continue;
+      for (const m of market) {
+        rememberMarketName(m.market_id, m.market);
+        rows.push({
+          coefId: String(m.id),
+          coef: parseFloat(m.odd),
+          option: (m.market_option || '').trim(),
+          marketId: String(m.market_id),
+          marketName: m.market || null,
+          category: m.mainCategory ? decodeMarketName(m.mainCategory) : null,
+        });
+      }
+    }
+  }
+  return rows;
 }
 
 function totalsOutcome(option) {
@@ -480,8 +523,6 @@ export async function importLondon365(opts) {
   let coefficientCount = 0;
   let detailOkCount = 0;
   let detailFailCount = 0;
-  const DETAIL_DELAY_MS = Math.max(0, Number(process.env.LONDON365_DETAIL_DELAY_MS || 150));
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   try {
     for (const sid of sports) {
@@ -514,26 +555,10 @@ export async function importLondon365(opts) {
               // detail request per game, back-to-back, is exactly the
               // pattern anti-bot/rate-limit rules key on. A failed detail
               // fetch silently falls back to the sparse list-level odds
-              // below, which is the most likely reason only a handful of
-              // markets (not the full catalog) end up showing.
+              // below; the periodic repairSparseEvents pass restores the
+              // full market catalog for those games afterwards.
               if (DETAIL_DELAY_MS) await sleep(DETAIL_DELAY_MS);
-              const detail = await api('/ajax/prematchgame/' + game.id);
-              if (Array.isArray(detail)) {
-                for (const market of detail) {
-                  if (!Array.isArray(market)) continue;
-                  for (const m of market) {
-                    rememberMarketName(m.market_id, m.market);
-                    rows.push({
-                      coefId: String(m.id),
-                      coef: parseFloat(m.odd),
-                      option: (m.market_option || '').trim(),
-                      marketId: String(m.market_id),
-                      marketName: m.market || null,
-                      category: m.mainCategory ? decodeMarketName(m.mainCategory) : null,
-                    });
-                  }
-                }
-              }
+              rows = await fetchDetailRows(game.id);
               detailOkCount++;
             } catch (err) {
               detailFailCount++;
@@ -708,6 +733,54 @@ export async function removeSocketCoef(gameId, coefId) {
     if (removed) await pool.query('UPDATE matches_cache SET raw_json = $2, fetched_at = $3 WHERE id = $1', [id, JSON.stringify(ev), Date.now()]);
     return removed;
   });
+}
+
+// Repair pass: the provider's detail endpoint intermittently fails on
+// hosting (rate limits / transient "Something went wrong"), leaving cached
+// l365 events with only the sparse list-level odds — 1-4 markets, names
+// like "Market 6575". This re-fetches full detail for the OLDEST sparse
+// events in bounded batches and replaces them, so the frontend eventually
+// shows every LondonPro365 market and coefficient. Rotation via fetched_at
+// guarantees one permanently-broken game can't block the queue.
+let repairRunning = false;
+export async function repairSparseEvents(opts) {
+  opts = opts || {};
+  if (!ENABLED || repairRunning) return { attempted: 0, repaired: 0 };
+  repairRunning = true;
+  const limit = Number(opts.limit) || 25;
+  try {
+    await ensureMarketNamesLoaded();
+    const { rows } = await pool.query(
+      "SELECT id, league, status, raw_json FROM matches_cache WHERE id LIKE 'l365-%' AND status != 'FINISHED' ORDER BY fetched_at ASC LIMIT $1",
+      [limit * 3]
+    );
+    let attempted = 0;
+    let repaired = 0;
+    for (const row of rows) {
+      if (repaired >= limit) break;
+      let ev;
+      try { ev = JSON.parse(row.raw_json); } catch (err) { continue; }
+      if (!isSparseEvent(ev)) continue;
+      const gameId = String(row.id).replace('l365-', '');
+      attempted++;
+      await pool.query('UPDATE matches_cache SET fetched_at = $2 WHERE id = $1', [row.id, Date.now()]);
+      try {
+        if (DETAIL_DELAY_MS) await sleep(DETAIL_DELAY_MS);
+        const fresh = hydrateRowNames((await fetchDetailRows(gameId)).filter(function (r) { return r && !Number.isNaN(r.coef); }));
+        if (fresh.length <= countOutcomes(ev)) continue;
+        const newEv = buildEvent(gameId, ev.home_team, ev.away_team, ev.commence_time, fresh);
+        await upsertMatch(newEv, row.league, row.status, null);
+        repaired++;
+      } catch (err) {
+        console.error('[london365] repair ' + row.id + ' failed:', err.message);
+      }
+    }
+    if (attempted) await setKV('l365_market_names', Object.fromEntries(marketNameById));
+    if (repaired) console.log('[london365] repair pass: ' + repaired + '/' + attempted + ' sparse events restored to full detail');
+    return { attempted: attempted, repaired: repaired };
+  } finally {
+    repairRunning = false;
+  }
 }
 
 let liveTimer = null;
