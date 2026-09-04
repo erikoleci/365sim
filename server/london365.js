@@ -112,6 +112,17 @@ export function parseOddString(s) {
 function slug(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 }
+// Same as slug() but joins words with a dash — used ONLY for the country
+// segment of a league key, so a multi-word country ("Costa Rica", "Hong
+// Kong", "Czech Republic") survives intact. leagueKey() then separates the
+// country segment from the competition slug with a DOUBLE underscore, so
+// the frontend can recover the full country name (dashes -> spaces)
+// instead of a single-underscore split that only ever grabbed the first
+// word and silently truncated every multi-word country to something like
+// "Costa" or "Czech".
+function slugDash(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
 
 // League name -> country token, using the SAME vocabulary as App.tsx's
 // COUNTRY_TOKEN_LABELS/COUNTRY_TOKEN_ISO so a LondonPro365 league gets the
@@ -173,7 +184,7 @@ function leagueCountryToken(name) {
     // Unknown country name — still give it its OWN token/group (falls back
     // to a title-cased label on the frontend) rather than merging into
     // "Të tjera" with hundreds of unrelated leagues.
-    const slugged = slug(countryRaw);
+    const slugged = slugDash(countryRaw);
     if (slugged) return slugged;
   }
   for (const [re, token] of LEAGUE_COUNTRY_HINTS) if (re.test(n)) return token;
@@ -183,8 +194,13 @@ function leagueCountryToken(name) {
 // Build the same provider_country_slug league key format The Odds API uses
 // (e.g. soccer_italy_serie_a), so App.tsx's existing flag/grouping regex
 // picks these up automatically with no frontend changes needed.
+// Country segment first, THEN a double underscore, THEN the competition
+// slug — the double underscore is the unambiguous boundary App.tsx uses to
+// recover the full (possibly multi-word/dashed) country segment, instead
+// of the old single-underscore format that only ever kept the country's
+// first word.
 export function leagueKey(name) {
-  return 'l365_' + leagueCountryToken(name) + '_' + (slug(name) || 'league');
+  return 'l365_' + leagueCountryToken(name) + '__' + (slug(name) || 'league');
 }
 
 // Decode the HTML entities the provider embeds in market names. Built with

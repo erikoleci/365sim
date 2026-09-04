@@ -289,7 +289,7 @@ const App: React.FC = () => {
     key === 'All Top Football'
       ? 'Të Gjitha Kampionatet'
       : LEAGUE_LABELS[key] ||
-        key.replace(/^(soccer|l365)_/, '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+        key.replace(/^(soccer|l365)_/, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/\b\w/g, (c) => c.toUpperCase());
 
   // Autocomplete suggestions — split into teams / leagues / direct match
   // hits so the dropdown can show each kind separately, instant (no
@@ -329,6 +329,25 @@ const App: React.FC = () => {
     china: 'Kinë', australia: 'Australi', chile: 'Kili', colombia: 'Kolumbi', albania: 'Shqipëri',
     croatia: 'Kroaci', serbia: 'Serbi', romania: 'Rumani', ukraine: 'Ukrainë', saudi: 'Arabia Saudite',
     kosovo: 'Kosovë',
+    // Extended list so far more countries get a proper Albanian label
+    // (and flag, via COUNTRY_TOKEN_ISO below) instead of falling back to a
+    // raw title-cased English name.
+    iceland: 'Islandë', hungary: 'Hungari', 'czech-republic': 'Republika Çeke', finland: 'Finlandë',
+    peru: 'Peru', slovakia: 'Sllovaki', slovenia: 'Slloveni', ireland: 'Irlandë', uruguay: 'Uruguai',
+    israel: 'Izrael', bulgaria: 'Bullgari', malaysia: 'Malajzi', belarus: 'Bjellorusi', estonia: 'Estoni',
+    'northern-ireland': 'Irlanda e Veriut', wales: 'Uells', malta: 'Maltë',
+    'bosnia-and-herzegovina': 'Bosnjë dhe Hercegovinë', lithuania: 'Lituani', latvia: 'Letoni',
+    ecuador: 'Ekuador', luxembourg: 'Luksemburg', 'faroe-islands': 'Ishujt Faroe', georgia: 'Gjeorgji',
+    'costa-rica': 'Kosta Rika', 'republic-of-korea': 'Korea e Jugut', armenia: 'Armeni',
+    azerbaijan: 'Azerbajxhan', 'united-arab-emirates': 'Emiratet e Bashkuara Arabe', algeria: 'Algjeri',
+    egypt: 'Egjipt', 'south-africa': 'Afrika e Jugut', jordan: 'Jordani', kuwait: 'Kuvajt',
+    'hong-kong-china': 'Hong Kongu', bahrain: 'Bahrein', qatar: 'Katar', guatemala: 'Guatemalë',
+    vietnam: 'Vietnam', 'el-salvador': 'El Salvador', indonesia: 'Indonezi', andorra: 'Andorë',
+    bolivia: 'Bolivi', uzbekistan: 'Uzbekistan', montenegro: 'Mali i Zi', 'san-marino': 'San Marino',
+    canada: 'Kanada', nicaragua: 'Nikaragua', honduras: 'Honduras', thailand: 'Tajlandë',
+    iraq: 'Irak', panama: 'Panama', tanzania: 'Tanzani', botswana: 'Botsvanë', zimbabwe: 'Zimbabve',
+    uganda: 'Ugandë', paraguay: 'Paraguai', venezuela: 'Venezuelë', kazakhstan: 'Kazakistan',
+    moldova: 'Moldavi', cyprus: 'Qipro', 'northern-cyprus': 'Qipro Veriore',
   };
   // ISO 3166-1 alpha-2 code per country token -> converted to a flag emoji
   // via regional indicator symbols. This is a clean, deterministic mapping
@@ -343,6 +362,18 @@ const App: React.FC = () => {
     china: 'CN', australia: 'AU', chile: 'CL', colombia: 'CO', albania: 'AL',
     croatia: 'HR', serbia: 'RS', romania: 'RO', ukraine: 'UA', saudi: 'SA',
     kosovo: 'XK',
+    iceland: 'IS', hungary: 'HU', 'czech-republic': 'CZ', finland: 'FI', peru: 'PE',
+    slovakia: 'SK', slovenia: 'SI', ireland: 'IE', uruguay: 'UY', israel: 'IL',
+    bulgaria: 'BG', malaysia: 'MY', belarus: 'BY', estonia: 'EE', 'northern-ireland': 'GB',
+    wales: 'GB', malta: 'MT', 'bosnia-and-herzegovina': 'BA', lithuania: 'LT', latvia: 'LV',
+    ecuador: 'EC', luxembourg: 'LU', 'faroe-islands': 'FO', georgia: 'GE', 'costa-rica': 'CR',
+    armenia: 'AM', azerbaijan: 'AZ', 'united-arab-emirates': 'AE', algeria: 'DZ', egypt: 'EG',
+    'south-africa': 'ZA', jordan: 'JO', kuwait: 'KW', 'hong-kong-china': 'HK', bahrain: 'BH',
+    qatar: 'QA', guatemala: 'GT', vietnam: 'VN', 'el-salvador': 'SV', indonesia: 'ID',
+    andorra: 'AD', bolivia: 'BO', uzbekistan: 'UZ', montenegro: 'ME', 'san-marino': 'SM',
+    canada: 'CA', nicaragua: 'NI', honduras: 'HN', thailand: 'TH', iraq: 'IQ', panama: 'PA',
+    tanzania: 'TZ', botswana: 'BW', zimbabwe: 'ZW', uganda: 'UG', paraguay: 'PY',
+    venezuela: 'VE', kazakhstan: 'KZ', moldova: 'MD', cyprus: 'CY', 'northern-cyprus': 'CY',
   };
   const isoToFlagEmoji = (iso: string): string =>
     iso.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
@@ -350,13 +381,23 @@ const App: React.FC = () => {
   const leagueCountryToken = (key: string): string | null => {
     if (key === 'soccer_epl') return 'epl';
     if (key === 'oddsapiio_albania_superiore') return 'albania';
+    // New LondonPro365 format: l365_<country-slug>__<competition-slug> — the
+    // DOUBLE underscore is the unambiguous boundary, so a multi-word
+    // country (e.g. "costa-rica", "hong-kong-china") comes through intact
+    // instead of being cut down to its first word.
+    const dbl = key.match(/^[a-z0-9]+_([a-z0-9-]+)__/)?.[1];
+    if (dbl) return dbl;
+    // Legacy single-underscore format (older cached rows / other providers).
     return key.match(/^[a-z0-9]+_([a-z]+)_/)?.[1] || null;
   };
   const leagueCountry = (key: string): string => {
     const token = leagueCountryToken(key);
     if (!token || token === 'other') return 'Të tjera';
     if (INTERNATIONAL_TOKENS.has(token)) return 'Ndërkombëtare';
-    return COUNTRY_TOKEN_LABELS[token] || token.charAt(0).toUpperCase() + token.slice(1);
+    if (COUNTRY_TOKEN_LABELS[token]) return COUNTRY_TOKEN_LABELS[token];
+    // Unknown country not yet in our Albanian dictionary — still show its
+    // own real name (dash-slug -> Title Case Words) instead of "Të tjera".
+    return token.split('-').filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   };
   // Flag for a country GROUP NAME (as returned by leagueCountry above) —
   // looks up the underlying ISO code by reverse-mapping the label. Falls
