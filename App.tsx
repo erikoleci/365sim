@@ -398,9 +398,19 @@ const App: React.FC = () => {
       groups[country].push(league);
     });
     Object.values(groups).forEach((arr) => arr.sort((a, b) => leagueLabel(a).localeCompare(leagueLabel(b))));
+    // Biggest European leagues first (what most people are looking for),
+    // then every other country alphabetically, then continental/
+    // international competitions (Champions League, World Cup, etc.) at
+    // the very end — they're a different kind of thing than a country.
+    const PRIORITY_COUNTRIES = ['Anglia', 'Spanja', 'Italia', 'Gjermania', 'Franca', 'Portugali', 'Holandë', 'Belgjikë'];
     const countryNames = Object.keys(groups).sort((a, b) => {
+      if (a === 'Të tjera') return 1;
+      if (b === 'Të tjera') return -1;
       if (a === 'Ndërkombëtare') return 1;
       if (b === 'Ndërkombëtare') return -1;
+      const pa = PRIORITY_COUNTRIES.indexOf(a);
+      const pb = PRIORITY_COUNTRIES.indexOf(b);
+      if (pa !== -1 || pb !== -1) return (pa === -1 ? 999 : pa) - (pb === -1 ? 999 : pb);
       return a.localeCompare(b);
     });
     return countryNames.map((name) => [name, groups[name]] as [string, string[]]);
