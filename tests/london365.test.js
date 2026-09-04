@@ -6,6 +6,7 @@ import {
   isoFromWholeDate,
   parseScore,
   statusFromCommence,
+  leagueKey,
 } from '../server/london365.js';
 
 describe('london365 parseOddString', function () {
@@ -101,5 +102,17 @@ describe('london365 date and score helpers', function () {
   it('classifies upcoming vs live by kickoff time', function () {
     expect(statusFromCommence('2999-01-01T00:00:00.000Z')).toBe('UPCOMING');
     expect(statusFromCommence('2000-01-01T00:00:00.000Z')).toBe('LIVE');
+  });
+});
+
+describe('london365 leagueKey', function () {
+  it('builds a provider_country_slug key so App.tsx groups it under the right flag', function () {
+    expect(leagueKey('Premier League')).toBe('l365_england_premier_league');
+    expect(leagueKey('Serie A')).toBe('l365_italy_serie_a');
+    expect(leagueKey('UEFA Champions League')).toBe('l365_uefa_uefa_champions_league');
+  });
+
+  it('falls back to the "other" country token for an unrecognized league name', function () {
+    expect(leagueKey('Some Obscure Regional Cup')).toBe('l365_other_some_obscure_regional_cup');
   });
 });

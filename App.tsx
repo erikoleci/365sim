@@ -297,7 +297,7 @@ const App: React.FC = () => {
     key === 'All Top Football'
       ? 'Të Gjitha Kampionatet'
       : LEAGUE_LABELS[key] ||
-        key.replace(/^soccer_/, '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+        key.replace(/^(soccer|l365)_/, '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
   // Autocomplete suggestions — split into teams / leagues / direct match
   // hits so the dropdown can show each kind separately, instant (no
@@ -362,7 +362,7 @@ const App: React.FC = () => {
   };
   const leagueCountry = (key: string): string => {
     const token = leagueCountryToken(key);
-    if (!token) return 'Të tjera';
+    if (!token || token === 'other') return 'Të tjera';
     if (INTERNATIONAL_TOKENS.has(token)) return 'Ndërkombëtare';
     return COUNTRY_TOKEN_LABELS[token] || token.charAt(0).toUpperCase() + token.slice(1);
   };

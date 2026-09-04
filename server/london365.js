@@ -89,6 +89,44 @@ function slug(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 }
 
+// League name -> country token, using the SAME vocabulary as App.tsx's
+// COUNTRY_TOKEN_LABELS/COUNTRY_TOKEN_ISO so a LondonPro365 league gets the
+// correct flag and sidebar grouping instead of falling into "Të tjera".
+// Keyed on lowercase league name substrings since this provider gives us a
+// bare competition name, not a country field.
+const LEAGUE_COUNTRY_HINTS = [
+  [/premier league|championship|league one|league two|fa cup|efl/, 'england'],
+  [/la liga|copa del rey|segunda/, 'spain'],
+  [/serie a|serie b|coppa italia/, 'italy'],
+  [/bundesliga|dfb.?pokal/, 'germany'],
+  [/ligue 1|ligue 2|coupe de france/, 'france'],
+  [/eredivisie/, 'netherlands'],
+  [/primeira liga|liga portugal/, 'portugal'],
+  [/jupiler|belgi/, 'belgium'],
+  [/super lig|turk/, 'turkey'],
+  [/super league.*greece|greek/, 'greece'],
+  [/scottish|premiership/, 'scotland'],
+  [/superliga.*shqip|kategoria superiore|albania/, 'albania'],
+  [/mls|major league soccer/, 'usa'],
+  [/liga mx/, 'mexico'],
+  [/brasileirao|brazil/, 'brazil'],
+  [/champions league|europa league|conference league|uefa/, 'uefa'],
+  [/world cup|fifa/, 'fifa'],
+  [/copa america|conmebol/, 'conmebol'],
+];
+function leagueCountryToken(name) {
+  const n = String(name || '').toLowerCase();
+  for (const [re, token] of LEAGUE_COUNTRY_HINTS) if (re.test(n)) return token;
+  return 'other';
+}
+
+// Build the same provider_country_slug league key format The Odds API uses
+// (e.g. soccer_italy_serie_a), so App.tsx's existing flag/grouping regex
+// picks these up automatically with no frontend changes needed.
+export function leagueKey(name) {
+  return 'l365_' + leagueCountryToken(name) + '_' + (slug(name) || 'league');
+}
+
 // Map a LondonPro365 market label to a canonical market key so the existing
 // outcomeId/translateOutcomeName logic produces HOME/DRAW/AWAY and Over/Under
 // with points. Unknown markets still render generically in MatchDetail.
@@ -325,6 +363,10 @@ export async function importLondon365(opts) {
   const leaguesSeen = new Set(await getKV('l365_leagues', []));
   let matchCount = 0;
   let coefficientCount = 0;
+  let detailOkCount = 0;
+  let detailFailCount = 0;
+  const DETAIL_DELAY_MS = Math.max(0, Number(process.env.LONDON365_DETAIL_DELAY_MS || 150));
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   try {
     for (const sid of sports) {
@@ -353,6 +395,13 @@ export async function importLondon365(opts) {
           let rows = [];
           if (full) {
             try {
+              // Gentle pacing: hammering a real bookmaker backend with one
+              // detail request per game, back-to-back, is exactly the
+              // pattern anti-bot/rate-limit rules key on. A failed detail
+              // fetch silently falls back to the sparse list-level odds
+              // below, which is the most likely reason only a handful of
+              // markets (not the full catalog) end up showing.
+              if (DETAIL_DELAY_MS) await sleep(DETAIL_DELAY_MS);
               const detail = await api('/ajax/prematchgame/' + game.id);
               if (Array.isArray(detail)) {
                 for (const market of detail) {
@@ -368,8 +417,10 @@ export async function importLondon365(opts) {
                   }
                 }
               }
+              detailOkCount++;
             } catch (err) {
-              console.error('[london365] detail ' + game.id + ' failed:', err.message);
+              detailFailCount++;
+              console.error('[london365] detail ' + game.id + ' failed (falling back to sparse list odds):', err.message);
             }
           }
           if (!rows.length) rows = parseOddString(game.odd);
@@ -383,7 +434,7 @@ export async function importLondon365(opts) {
             isoFromWholeDate(game.whole_date, game.game_date, game.game_time),
             rows
           );
-          await upsertMatch(ev, league.name, statusFromCommence(ev.commence_time), null);
+          await upsertMatch(ev, leagueKey(league.name), statusFromCommence(ev.commence_time), null);
           matchCount++;
           coefficientCount += rows.length;
           leaguesSeen.add(league.name);
@@ -392,8 +443,13 @@ export async function importLondon365(opts) {
     }
     await setKV('l365_leagues', Array.from(leaguesSeen));
     await setKV('l365_last_import', Date.now());
-    console.log('[london365] import done: ' + matchCount + ' matches, ' + coefficientCount + ' coefficients');
-    return { matches: matchCount, coefficients: coefficientCount, leagues: leaguesSeen.size };
+    console.log(
+      '[london365] import done: ' + matchCount + ' matches, ' + coefficientCount + ' coefficients, ' +
+      leaguesSeen.size + ' leagues (full-detail fetch: ' + detailOkCount + ' ok / ' + detailFailCount + ' failed' +
+      (full && detailFailCount > detailOkCount ? ' — MOSTLY FAILING, matches are likely showing only sparse list-level odds, not the full market catalog' : '') +
+      ')'
+    );
+    return { matches: matchCount, coefficients: coefficientCount, leagues: leaguesSeen.size, detailOkCount, detailFailCount };
   } finally {
     importRunning = false;
   }
