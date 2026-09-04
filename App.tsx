@@ -256,17 +256,6 @@ const App: React.FC = () => {
   const liveMatches = searchFiltered
     .filter((m) => m.status === MatchStatus.LIVE && (Date.now() - new Date(m.startTime).getTime()) < STALE_LIVE_MS)
     .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
-  // Only ever surface finished results for TODAY, and only while the
-  // calendar strip is on "Të gjitha" or "Sot" — browsing "Nesër" or any
-  // other date should never show today's already-finished games at the top.
-  const todayKey = albaniaTodayKey();
-  const finishedMatches = (selectedDate === 'ALL' || selectedDate === todayKey)
-    ? searchFiltered
-        .filter((m) => m.status === MatchStatus.FINISHED && albaniaDateKey(m.startTime) === todayKey)
-        .slice() // matches array is start_time ASC; show most recently finished first
-        .reverse()
-        .slice(0, 15)
-    : [];
   const upcomingMatches = searchFiltered
     .filter((m) => m.status === MatchStatus.UPCOMING)
     .filter((m) => {
@@ -383,12 +372,32 @@ const App: React.FC = () => {
   };
 
   const detailMatch = matches.find((m) => m.id === detailMatchId);
-  const matchesByLeague = upcomingMatches.reduce((acc, match) => {
-    if (!acc[match.league]) acc[match.league] = [];
-    acc[match.league].push(match);
-    return acc;
-  }, {} as Record<string, Match[]>);
-
+  const matchesByCountry = useMemo(() => {
+    const byCountry: Record<string, Record<string, Match[]>> = {};
+    for (const match of upcomingMatches) {
+      const country = leagueCountry(match.league);
+      if (!byCountry[country]) byCountry[country] = {};
+      if (!byCountry[country][match.league]) byCountry[country][match.league] = [];
+      byCountry[country][match.league].push(match);
+    }
+    const PRIORITY_COUNTRIES = ['Anglia', 'Spanja', 'Italia', 'Gjermania', 'Franca', 'Portugali', 'Holandë', 'Belgjikë'];
+    const countryNames = Object.keys(byCountry).sort((a, b) => {
+      if (a === 'Të tjera') return 1;
+      if (b === 'Të tjera') return -1;
+      if (a === 'Ndërkombëtare') return 1;
+      if (b === 'Ndërkombëtare') return -1;
+      const pa = PRIORITY_COUNTRIES.indexOf(a);
+      const pb = PRIORITY_COUNTRIES.indexOf(b);
+      if (pa !== -1 || pb !== -1) return (pa === -1 ? 999 : pa) - (pb === -1 ? 999 : pb);
+      return a.localeCompare(b);
+    });
+    return countryNames.map((country) => [
+      country,
+      Object.keys(byCountry[country])
+        .sort((a, b) => leagueLabel(a).localeCompare(leagueLabel(b)))
+        .map((league) => [league, byCountry[country][league]] as [string, Match[]]),
+    ] as [string, [string, Match[]][]]);
+  }, [upcomingMatches]);
   const dynamicLeagues = useMemo(() => {
     const fetchedLeagues = Array.from(new Set(matches.map((m) => m.league)));
     return Array.from(new Set(['All Top Football', ...fetchedLeagues])).sort();
@@ -844,34 +853,8 @@ const App: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Recently finished matches with the real final score — auto-settled via the scores poller */}
-                  {!showLiveOnly && finishedMatches.length > 0 && (
-                    <div className="bg-brand-panel rounded overflow-hidden shadow-sm">
-                      <div className="bg-[#383838] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex items-center gap-2">
-                        <span className="w-1 h-3 rounded-full bg-brand-textMuted"></span>
-                        <span className="uppercase tracking-wider">Rezultatet e Fundit</span>
-                      </div>
-                      <div className="divide-y divide-brand-divider">
-                        {finishedMatches.map((match) => (
-                          <MatchRow
-                            key={match.id}
-                            match={match}
-                            onBetClick={handleToggleSelection}
-                            onOpenDetail={(m) => setDetailMatchId(m.id)}
-                            isAdmin={currentUser.role === UserRole.ADMIN}
-                            onSettleMatch={handleSettleMatch}
-                            isSimulating={simulatingMatchId === match.id}
-                            selectedIds={selectedIds}
-                            favoriteTeams={favoriteTeams}
-                            onToggleFavoriteTeam={(team) => toggleFavorite('TEAM', team)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Upcoming, grouped by league, filtered by sidebar selection + search — hidden entirely while in the Live-only view */}
-                  {showLiveOnly ? null : Object.keys(matchesByLeague).length === 0 ? (
+                  {/* Upcoming — grouped like the London site: Shtet -> Ligue -> ndeshje */}
+                  {showLiveOnly ? null : matchesByCountry.length === 0 ? (
                     <div className="flex flex-col justify-center items-center h-64 bg-brand-panel rounded border border-brand-divider text-center px-6">
                       <div className="text-brand-textMuted text-sm mb-2">Asnjë ndeshje e disponueshme.</div>
                       <div className="text-brand-textMuted text-xs opacity-70">
@@ -883,31 +866,38 @@ const App: React.FC = () => {
                       </div>
                     </div>
                   ) : (
-                    Object.entries(matchesByLeague).map(([league, leagueMatches]: [string, Match[]]) => (
-                      <div key={league} className="bg-brand-panel rounded overflow-hidden shadow-sm">
-                        <div className="bg-[#383838] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex justify-between items-center">
-                          <div className="flex items-center gap-2">
-                            <span className="w-1 h-3 rounded-full bg-brand-yellow"></span>
-                            <span aria-hidden="true">{countryFlag(leagueCountry(league))}</span>
-                            <span>{leagueLabel(league)}</span>
+                    matchesByCountry.map(([country, leagues]: [string, [string, Match[]][]]) => (
+                      <div key={country} className="bg-brand-panel rounded overflow-hidden shadow-sm">
+                        <div className="bg-[#2f2f2f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex items-center gap-2 uppercase tracking-wider">
+                          <span aria-hidden="true">{countryFlag(country)}</span>
+                          <span>{country}</span>
+                          <span className="ml-auto text-[10px] text-brand-textMuted font-normal">{leagues.length} ligë</span>
+                        </div>
+                        {leagues.map(([league, leagueMatches]: [string, Match[]]) => (
+                          <div key={league} className="border-b border-brand-divider last:border-b-0">
+                            <div className="bg-[#383838] px-3 py-2 text-xs font-bold text-white flex items-center gap-2">
+                              <span className="w-1 h-3 rounded-full bg-brand-yellow"></span>
+                              <span>{leagueLabel(league)}</span>
+                              <span className="ml-auto text-[10px] text-brand-textMuted font-normal">{leagueMatches.length}</span>
+                            </div>
+                            <div className="divide-y divide-brand-divider">
+                              {leagueMatches.map((match) => (
+                                <MatchRow
+                                  key={match.id}
+                                  match={match}
+                                  onBetClick={handleToggleSelection}
+                                  onOpenDetail={(m) => setDetailMatchId(m.id)}
+                                  isAdmin={currentUser.role === UserRole.ADMIN}
+                                  onSettleMatch={handleSettleMatch}
+                                  isSimulating={simulatingMatchId === match.id}
+                                  selectedIds={selectedIds}
+                                  favoriteTeams={favoriteTeams}
+                                  onToggleFavoriteTeam={(team) => toggleFavorite('TEAM', team)}
+                                />
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                        <div className="divide-y divide-brand-divider">
-                          {leagueMatches.map((match) => (
-                            <MatchRow
-                              key={match.id}
-                              match={match}
-                              onBetClick={handleToggleSelection}
-                              onOpenDetail={(m) => setDetailMatchId(m.id)}
-                              isAdmin={currentUser.role === UserRole.ADMIN}
-                              onSettleMatch={handleSettleMatch}
-                              isSimulating={simulatingMatchId === match.id}
-                              selectedIds={selectedIds}
-                              favoriteTeams={favoriteTeams}
-                              onToggleFavoriteTeam={(team) => toggleFavorite('TEAM', team)}
-                            />
-                          ))}
-                        </div>
+                        ))}
                       </div>
                     ))
                   )}
