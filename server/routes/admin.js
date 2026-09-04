@@ -5,7 +5,7 @@ import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { settleMatch, recomputeBetStatus } from '../matchSettlement.js';
 import { logAudit } from '../auditLog.js';
-import { importLondon365, getLondon365Status } from '../london365.js';
+import { importLondon365, getLondon365Status, getLondon365CountryDebug } from '../london365.js';
 
 const router = express.Router();
 
@@ -41,6 +41,13 @@ router.post('/london365/import', async (req, res) => {
 
 router.get('/london365/status', async (req, res) => {
   res.json(await getLondon365Status());
+});
+
+// Shows exactly how every real league name we've seen gets classified into
+// a country (or "other") — open this in the browser while logged in as
+// admin to see/paste the real mapping instead of guessing at it.
+router.get('/london365/countries-debug', async (req, res) => {
+  res.json(await getLondon365CountryDebug());
 });
 
 // --- USERS ---

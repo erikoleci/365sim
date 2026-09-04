@@ -993,5 +993,26 @@ export async function getLondon365Status() {
     lastImport: await getKV('l365_last_import', 0),
     lastLiveSync: await getKV('l365_last_live_sync', 0),
     leagues: (await getKV('l365_leagues', [])).length,
+    // Raw league names exactly as the provider sends them — paste this list
+    // back for an accurate country-name mapping instead of guessing at the
+    // provider's naming format.
+    leagueNames: await getKV('l365_leagues', []),
   };
+}
+
+// Diagnostic helper: shows exactly how leagueCountryToken() classifies every
+// raw league name we've actually seen from the provider, so mapping issues
+// (a league landing in the wrong country, or in "other") can be inspected
+// directly instead of guessed at.
+export async function getLondon365CountryDebug() {
+  const names = await getKV('l365_leagues', []);
+  const byCountry = {};
+  for (const name of names) {
+    const token = leagueCountryToken(name);
+    (byCountry[token] = byCountry[token] || []).push(name);
+  }
+  const summary = Object.entries(byCountry)
+    .sort((a, b) => b[1].length - a[1].length)
+    .map(([token, leagueNames]) => ({ token, count: leagueNames.length, leagueNames }));
+  return { totalLeagues: names.length, otherCount: (byCountry.other || []).length, summary };
 }
