@@ -225,6 +225,44 @@ function leagueCountryToken(name) {
   return 'other';
 }
 
+// --- Real country identification (country.id / league.country_id) --------
+// The provider exposes an authoritative id-based mapping:
+//   GET /ajax/countries/{sportId}  -> [{ id, name, sport_id, ... }, ...]
+//   GET /ajax/leagues/{sportId}    -> [{ id, name, country_id, ... }, ...]
+// league.country_id links directly to country.id. This is the PRIMARY
+// source of truth for a league's country — leagueCountryToken() above
+// (name/regex guessing) is kept ONLY as a last-resort fallback for the rare
+// league whose country_id we can't resolve (missing from the countries
+// list, or the provider omitted the field), never as the primary path.
+const COUNTRY_MAP_CACHE_MS = 6 * 60 * 60 * 1000; // matches the provider catalog's own refresh cadence
+const countryMapCache = new Map(); // sportId -> { fetchedAt, countryMap }
+// provider league id (string) -> { key, name, countryId, countryName } —
+// lets live/socket payloads that carry a league_id resolve the SAME
+// country-accurate key the import pass computed, instead of falling back
+// to a raw league name string.
+const leagueById = new Map();
+
+async function getCountryMap(sportId) {
+  const cached = countryMapCache.get(sportId);
+  if (cached && Date.now() - cached.fetchedAt < COUNTRY_MAP_CACHE_MS) return cached.countryMap;
+
+  const countries = await api('/ajax/countries/' + sportId);
+  const countryMap = new Map(
+    (Array.isArray(countries) ? countries : []).map((c) => [String(c.id), c.name])
+  );
+  console.log('[london365] loaded ' + countryMap.size + ' countries for sport ' + sportId);
+  countryMapCache.set(sportId, { fetchedAt: Date.now(), countryMap: countryMap });
+  return countryMap;
+}
+
+// Preferred key builder: resolves the country from the provider's REAL
+// country name (via country.id <- league.country_id), falling back to the
+// name-heuristic above only when that real name isn't available.
+export function leagueKeyFromCountry(countryName, leagueName) {
+  const token = countryName ? (slugDash(countryName) || 'other') : leagueCountryToken(leagueName);
+  return 'l365_' + token + '__' + (slug(leagueName) || 'league');
+}
+
 // Build the same provider_country_slug league key format The Odds API uses
 // (e.g. soccer_italy_serie_a), so App.tsx's existing flag/grouping regex
 // picks these up automatically with no frontend changes needed.
@@ -416,6 +454,12 @@ export function buildEvent(gameId, homeTeam, awayTeam, commenceTime, rows) {
   return ev;
 }
 
+// Returns null (never a fabricated "now") when the provider's date fields
+// are missing or unparseable, so a caller can SKIP the game instead of
+// silently mislabeling it. Defaulting to "now" here used to make
+// statusFromCommence() classify every one of these as LIVE — a match with
+// no real kickoff time would vanish from "Upcoming" and inflate the LIVE
+// count instead of being surfaced as the data problem it actually is.
 export function isoFromWholeDate(wholeDate, gameDate, gameTime) {
   const src = wholeDate || ((gameDate || '') + ' ' + (gameTime || ''));
   let iso = String(src).trim().replace(' ', 'T');
@@ -426,7 +470,7 @@ export function isoFromWholeDate(wholeDate, gameDate, gameTime) {
     iso += 'Z';
   }
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return new Date().toISOString();
+  if (Number.isNaN(d.getTime())) return null;
   return d.toISOString();
 }
 
@@ -664,6 +708,17 @@ export async function importLondon365(opts) {
       if (!Array.isArray(leagues)) continue;
       if (leagueCap) leagues = leagues.slice(0, leagueCap);
 
+      // Real country.id -> country.name map for this sport (cached — see
+      // getCountryMap). A failure here never aborts the import: it just
+      // means every league in this sport falls back to the name heuristic
+      // below, same as before this change.
+      let countryMap = new Map();
+      try {
+        countryMap = await getCountryMap(sid);
+      } catch (err) {
+        console.error('[london365] countries sport ' + sid + ' failed (falling back to name-based country guessing):', err.message);
+      }
+
       for (const league of leagues) {
         let games;
         try {
@@ -674,6 +729,23 @@ export async function importLondon365(opts) {
         }
         if (!Array.isArray(games) || games.length === 0) continue;
         if (matchCap) games = games.slice(0, matchCap);
+
+        const countryId = league.country_id != null ? String(league.country_id) : null;
+        const countryName = countryId ? countryMap.get(countryId) : null;
+        if (countryId && !countryName) {
+          console.warn('[london365] WARNING: unknown country_id=' + countryId + ' for league=' + league.name + ' (id=' + league.id + ')');
+        }
+        const leagueKeyResolved = leagueKeyFromCountry(countryName, league.name);
+        console.log(
+          '[london365] league ' + league.id + ' -> ' + league.name + ' -> ' +
+          (countryName || '(fallback: ' + leagueCountryToken(league.name) + ')')
+        );
+        leagueById.set(String(league.id), {
+          key: leagueKeyResolved,
+          name: league.name,
+          countryId: countryId,
+          countryName: countryName || null,
+        });
 
         for (const game of games) {
           let rows = [];
@@ -697,14 +769,20 @@ export async function importLondon365(opts) {
           rows = hydrateRowNames(rows.filter(function (r) { return r ? !Number.isNaN(r.coef) : false; }));
           if (!rows.length) continue;
 
+          const commenceTime = isoFromWholeDate(game.whole_date, game.game_date, game.game_time);
+          if (!commenceTime) {
+            console.warn('[london365] skipping game ' + game.id + ' (' + league.name + '): missing/unparseable kickoff date from provider');
+            continue;
+          }
+
           const ev = buildEvent(
             game.id,
             game.home_team,
             game.away_team,
-            isoFromWholeDate(game.whole_date, game.game_date, game.game_time),
+            commenceTime,
             rows
           );
-          await upsertMatch(ev, leagueKey(league.name), statusFromCommence(ev.commence_time), null);
+          await upsertMatch(ev, leagueKeyResolved, statusFromCommence(ev.commence_time), null);
           matchCount++;
           coefficientCount += rows.length;
           leaguesSeen.add(league.name);
@@ -777,10 +855,14 @@ export async function syncLondon365Live() {
       if (!rows.length) rows = parseOddString(g.odd);
       const odds = hydrateRowNames(rows.filter(function (o) { return o ? !Number.isNaN(o.coef) : false; }));
       if (!odds.length) continue;
-      const ev = buildEvent(g.id, g.home_team, g.away_team, isoFromWholeDate(g.whole_date, g.game_date, g.game_time), odds);
+      const ev = buildEvent(g.id, g.home_team, g.away_team, isoFromWholeDate(g.whole_date, g.game_date, g.game_time) || new Date().toISOString(), odds);
       const score = parseScore(g.result);
       const minute = g.current_minute || null;
-      const prev = await upsertMatch(ev, g.league || '', 'LIVE', score, { minute: minute, apiStatus: g.api_status });
+      // Prefer the country-accurate key resolved from the real league_id
+      // (set during the last full import) over the raw league name the
+      // live feed carries — same event, same country/league identity.
+      const resolvedLeague = g.league_id != null ? leagueById.get(String(g.league_id)) : null;
+      const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : (g.league || ''), 'LIVE', score, { minute: minute, apiStatus: g.api_status });
       await recordGoalIfChanged(ev, score, minute, prev);
       gamesSynced++;
     }
@@ -863,12 +945,13 @@ export async function applySocketGame(g, status) {
   await ensureMarketNamesLoaded();
   const odds = hydrateRowNames(parseOddString(g.odd).filter(function (o) { return o ? !Number.isNaN(o.coef) : false; }));
   if (!odds.length) return false;
-  const commence = isoFromWholeDate(g.whole_date, g.game_date, g.game_time);
+  const commence = isoFromWholeDate(g.whole_date, g.game_date, g.game_time) || new Date().toISOString();
   const ev = buildEvent(g.id, g.home_team, g.away_team, commence, odds);
   const score = parseScore(g.result);
   const minute = g.current_minute || null;
   const resolved = status || (minute ? 'LIVE' : statusFromCommence(commence));
-  const prev = await upsertMatch(ev, g.league || '', resolved, score, { minute: minute, apiStatus: g.api_status });
+  const resolvedLeague = g.league_id != null ? leagueById.get(String(g.league_id)) : null;
+  const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : (g.league || ''), resolved, score, { minute: minute, apiStatus: g.api_status });
   await recordGoalIfChanged(ev, score, minute, prev);
   return true;
 }
