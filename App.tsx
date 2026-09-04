@@ -580,17 +580,27 @@ const App: React.FC = () => {
   const isCountryFilter = (key: string) => key.startsWith(COUNTRY_FILTER_PREFIX);
   const countryFromFilter = (key: string) => key.slice(COUNTRY_FILTER_PREFIX.length);
 
-  // Ndeshjet e ardhshme brenda zgjedhjes aktuale (të gjitha / të preferuarat /
-  // shtet / ligë), PA filtrin e datës.
+  // Ndeshjet e ardhshme + ato LIVE, brenda zgjedhjes aktuale (të gjitha /
+  // të preferuarat / shtet / ligë), PA filtrin e datës. London365 (dhe çdo
+  // bookmaker real) i shfaq ndeshjet LIVE brenda vetë ligës/shtetit të tyre
+  // (zakonisht në krye), NUK i fsheh vetëm te tab-i "Live In-Play" — nëse i
+  // përjashtonim këtu, hapja e Francës ndërkohë që PSG-Monaco është live do
+  // ta linte ligën "bosh" edhe pse ndeshja ekziston dhe është plotësisht e
+  // vlefshme për t'u shikuar/bastuar.
   const scopedUpcoming = useMemo(() => searchFiltered
-    .filter((m) => m.status === MatchStatus.UPCOMING)
+    .filter((m) => m.status === MatchStatus.UPCOMING || m.status === MatchStatus.LIVE)
     .filter((m) => {
       if (currentLeague === 'All Top Football') return true;
       if (currentLeague === 'FAVORITES') return favoriteTeams.has(m.homeTeam) || favoriteTeams.has(m.awayTeam) || favoriteLeagues.has(m.league);
       if (isCountryFilter(currentLeague)) return leagueCountry(m.league) === countryFromFilter(currentLeague);
       return m.league === currentLeague;
     })
-    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()),
+    // LIVE në krye (siç e bën London365 — ndeshja që po luhet tani është
+    // gjithmonë prioritet), pastaj UPCOMING sipas orarit të fillimit.
+    .sort((a, b) => {
+      if (a.status !== b.status) return a.status === MatchStatus.LIVE ? -1 : 1;
+      return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [matches, searchQuery, currentLeague, favoriteTeams, favoriteLeagues]);
 
