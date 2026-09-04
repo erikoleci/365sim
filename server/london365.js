@@ -695,6 +695,12 @@ export async function importLondon365(opts) {
   let coefficientCount = 0;
   let detailOkCount = 0;
   let detailFailCount = 0;
+  let skippedDateCount = 0;
+  // Every league seen this run, with how many of its games actually made it
+  // into matches_cache vs got skipped for a bad date — so "England only
+  // shows 3 leagues" or "Premier League has 0 matches" can be confirmed or
+  // ruled out directly from this one log line instead of guessed at.
+  const leagueSummary = new Map(); // countryName -> [{ name, id, imported, skipped }]
 
   try {
     for (const sid of sports) {
@@ -746,6 +752,10 @@ export async function importLondon365(opts) {
           countryId: countryId,
           countryName: countryName || null,
         });
+        const summaryKey = countryName || '(fallback: ' + leagueCountryToken(league.name) + ')';
+        const summaryEntry = { name: league.name, id: String(league.id), imported: 0, skipped: 0, providerGames: games.length };
+        if (!leagueSummary.has(summaryKey)) leagueSummary.set(summaryKey, []);
+        leagueSummary.get(summaryKey).push(summaryEntry);
 
         for (const game of games) {
           let rows = [];
@@ -771,7 +781,12 @@ export async function importLondon365(opts) {
 
           const commenceTime = isoFromWholeDate(game.whole_date, game.game_date, game.game_time);
           if (!commenceTime) {
-            console.warn('[london365] skipping game ' + game.id + ' (' + league.name + '): missing/unparseable kickoff date from provider');
+            skippedDateCount++;
+            summaryEntry.skipped++;
+            console.warn(
+              '[london365] skipping game ' + game.id + ' (' + league.name + '): missing/unparseable kickoff date — raw fields: ' +
+              'whole_date=' + JSON.stringify(game.whole_date) + ' game_date=' + JSON.stringify(game.game_date) + ' game_time=' + JSON.stringify(game.game_time)
+            );
             continue;
           }
 
@@ -784,6 +799,7 @@ export async function importLondon365(opts) {
           );
           await upsertMatch(ev, leagueKeyResolved, statusFromCommence(ev.commence_time), null);
           matchCount++;
+          summaryEntry.imported++;
           coefficientCount += rows.length;
           leaguesSeen.add(league.name);
         }
@@ -796,9 +812,20 @@ export async function importLondon365(opts) {
       '[london365] import done: ' + matchCount + ' matches, ' + coefficientCount + ' coefficients, ' +
       leaguesSeen.size + ' leagues (full-detail fetch: ' + detailOkCount + ' ok / ' + detailFailCount + ' failed' +
       (full && detailFailCount > detailOkCount ? ' — MOSTLY FAILING, matches are likely showing only sparse list-level odds, not the full market catalog' : '') +
+      ', ' + skippedDateCount + ' games skipped for bad dates' +
       ')'
     );
-    return { matches: matchCount, coefficients: coefficientCount, leagues: leaguesSeen.size, detailOkCount, detailFailCount };
+    // Per-country league breakdown: leagues the provider actually returned
+    // for this run, and how many of each league's games made it in vs got
+    // skipped — the direct answer to "why does England only show 3 leagues"
+    // or "why does Premier League have 0 matches" without guessing.
+    for (const [country, leaguesForCountry] of leagueSummary.entries()) {
+      console.log(
+        '[london365] ' + country + ': ' + leaguesForCountry.length + ' leagues — ' +
+        leaguesForCountry.map((l) => l.name + ' (id=' + l.id + ', provider=' + l.providerGames + ', imported=' + l.imported + ', skipped=' + l.skipped + ')').join('; ')
+      );
+    }
+    return { matches: matchCount, coefficients: coefficientCount, leagues: leaguesSeen.size, detailOkCount, detailFailCount, skippedDateCount };
   } finally {
     importRunning = false;
   }
