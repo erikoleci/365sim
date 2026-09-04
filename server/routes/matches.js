@@ -359,13 +359,14 @@ router.get('/', async (req, res) => {
   // the l365 rows. dedupeMatches() guarantees a sparse provider card can
   // never hide the richer LondonPro365 one.
   if (!ODDS_API_KEY || !ODDS_API_ENABLED) {
-    try {
-      await refreshApiFootball();
-    } catch (err) {
-      console.error('Error refreshing API-Football:', err.message);
-    }
+    // STRICT LondonPro365-only mode: return ONLY l365-* rows. Legacy cache
+    // rows from other providers (The Odds API, API-Football, Sportmonks,
+    // oddspapi, bsd, highlightly, oddsapiio) stay in the DB for bet
+    // settlement/history but are never listed here, so their sparse 2-4
+    // market cards can no longer appear next to the full LondonPro365
+    // catalog. No provider refresh is triggered in this branch either.
     ensureLondon365Import();
-    const { rows } = await pool.query('SELECT * FROM matches_cache ORDER BY start_time ASC');
+    const { rows } = await pool.query("SELECT * FROM matches_cache WHERE id LIKE 'l365-%' ORDER BY start_time ASC");
     return res.json({ matches: dedupeMatches(rows.map(mapEventToMatch)), hasLiveApiKey: false });
   }
 
