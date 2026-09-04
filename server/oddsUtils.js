@@ -25,7 +25,11 @@ export const MARKET_LABELS = {
 // sends extra market keys) they show up automatically, with no code change
 // required here or in the frontend (MatchDetail.tsx already iterates
 // match.markets[] generically — see components/MatchDetail.tsx).
-function getMarketMeta(key) {
+// When the provider supplies its own market label/category (LondonPro365
+// does, with ~100 distinct markets), that wins so every market shows with
+// its real name and its real grouping tab.
+function getMarketMeta(key, label, category) {
+  if (label) return { name: label, category: category || (MARKET_LABELS[key] && MARKET_LABELS[key].category) || 'other' };
   if (MARKET_LABELS[key]) return MARKET_LABELS[key];
   const name = key
     .split('_')
@@ -142,17 +146,21 @@ export function diffOddsChanges(matchId, oldEv, newEv) {
 
 export function mapEventToMatch(row) {
   const ev = JSON.parse(row.raw_json);
-  const marketMap = new Map();
+  const marketMap = new Map(); // key -> { label, category, outMap }
 
   for (const bookmaker of ev.bookmakers || []) {
     for (const market of bookmaker.markets || []) {
-      if (!marketMap.has(market.key)) marketMap.set(market.key, new Map());
-      const outMap = marketMap.get(market.key);
+      if (!marketMap.has(market.key)) {
+        marketMap.set(market.key, { label: market.label, category: market.category, outMap: new Map() });
+      }
+      const entry = marketMap.get(market.key);
+      if (!entry.label && market.label) entry.label = market.label;
+      if (!entry.category && market.category) entry.category = market.category;
       for (const outcome of market.outcomes || []) {
         const id = outcomeId(market.key, outcome, ev);
-        const existing = outMap.get(id);
+        const existing = entry.outMap.get(id);
         if (!existing || outcome.price > existing.odds) {
-          outMap.set(id, {
+          entry.outMap.set(id, {
             id,
             name: translateOutcomeName(market.key, id, outcome, ev),
             odds: outcome.price,
@@ -164,14 +172,14 @@ export function mapEventToMatch(row) {
     }
   }
 
-  const markets = Array.from(marketMap.entries()).map(([key, outMap]) => {
-    const meta = getMarketMeta(key);
+  const markets = Array.from(marketMap.entries()).map(([key, entry]) => {
+    const meta = getMarketMeta(key, entry.label, entry.category);
     return {
       id: `${row.id}-${key}`,
       marketKey: key,
       name: meta.name,
       category: meta.category,
-      options: sortOptions(key, Array.from(outMap.values())),
+      options: sortOptions(key, Array.from(entry.outMap.values())),
     };
   });
 

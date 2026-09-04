@@ -11,7 +11,8 @@
 //   LONDON365_ENABLED            1 (default) or 0
 //   LONDON365_API                default https://eccoplay365.com
 //   LONDON365_ORIGIN             default https://londonpro365.com
-//   LONDON365_SPORTS             csv sport ids, default 1 (Soccer)
+//   LONDON365_SPORTS             csv sport ids, or 'all' (default) to
+//                                discover every sport the provider exposes
 //   LONDON365_LEAGUES            league cap per sport, 0 = all
 //   LONDON365_FULL               1 = fetch every market via detail endpoint
 //   LONDON365_LIVE_INTERVAL_MS   default 30000 (min 10000)
@@ -24,7 +25,27 @@ import { pushOddsChanged, pushGoal } from './ws.js';
 const ENABLED = (process.env.LONDON365_ENABLED || '1') === '1';
 const API_BASE = process.env.LONDON365_API || 'https://eccoplay365.com';
 const SITE_ORIGIN = process.env.LONDON365_ORIGIN || 'https://londonpro365.com';
-const SPORTS = (process.env.LONDON365_SPORTS || '1').split(',').map(Number).filter(Boolean);
+// 'all' (default) discovers every sport the provider exposes so no match is
+// hidden; a csv like "1,2,5" restricts the import to those sport ids.
+const SPORTS_RAW = (process.env.LONDON365_SPORTS || 'all').trim();
+let resolvedSports = null;
+
+export async function resolveSports() {
+  if (resolvedSports) return resolvedSports;
+  if (SPORTS_RAW !== 'all') {
+    resolvedSports = SPORTS_RAW.split(',').map(Number).filter(Boolean);
+    return resolvedSports;
+  }
+  try {
+    const sports = await api('/ajax/sports');
+    const ids = Array.isArray(sports) ? sports.map((s) => Number(s.id)).filter(Boolean) : [];
+    resolvedSports = ids.length ? ids : [1];
+  } catch (err) {
+    console.error('[london365] sports discovery failed, falling back to Soccer:', err.message);
+    resolvedSports = [1];
+  }
+  return resolvedSports;
+}
 const LEAGUE_LIMIT = Number(process.env.LONDON365_LEAGUES || 0);
 const FULL_DETAIL = (process.env.LONDON365_FULL || '1') === '1';
 const LIVE_INTERVAL_MS = Math.max(10000, Number(process.env.LONDON365_LIVE_INTERVAL_MS || 30000));
@@ -127,16 +148,48 @@ export function leagueKey(name) {
   return 'l365_' + leagueCountryToken(name) + '_' + (slug(name) || 'league');
 }
 
-// Map a LondonPro365 market label to a canonical market key so the existing
-// outcomeId/translateOutcomeName logic produces HOME/DRAW/AWAY and Over/Under
-// with points. Unknown markets still render generically in MatchDetail.
-export function mapMarketKey(name) {
-  const n = String(name || '').toLowerCase();
-  if ((n.indexOf('rezultat') !== -1 && n.indexOf('final') !== -1) || n.indexOf('1x2') !== -1 || n.indexOf('fitues') !== -1) return 'h2h';
-  if (n.indexOf('dopio') !== -1 || n.indexOf('double') !== -1) return 'double_chance';
-  if (n.indexOf('total') !== -1 || n.indexOf('golave') !== -1) return 'totals';
-  if (n.indexOf('handicap') !== -1 || n.indexOf('handikap') !== -1 || n.indexOf('hendikep') !== -1) return 'spreads';
-  return slug(name) || 'other';
+// Decode the HTML entities the provider embeds in market names. Built with
+// String.fromCharCode so no raw ampersand appears in this source file.
+export function decodeMarketName(s) {
+  const amp = String.fromCharCode(38);
+  return String(s || '')
+    .split(amp + 'amp;').join(amp)
+    .split(amp + 'quot;').join(String.fromCharCode(34))
+    .split(amp + '#039;').join(String.fromCharCode(39))
+    .split(amp + '#39;').join(String.fromCharCode(39));
+}
+
+// Canonical keys are reserved ONLY for the exact match-level main markets
+// whose settlement and Albanian translation logic we understand. Every other
+// provider market gets its OWN unique key (name + provider marketId) so all
+// ~100 markets and 900+ coefficients survive to the frontend instead of being
+// collapsed by a loose keyword match and then deduplicated away — the old
+// rules merged e.g. "Rezultati Pjeses se Pare", "Booking 1x2" and the final
+// 1X2 into one h2h bucket, silently dropping most of their coefficients.
+const CANONICAL_MARKETS = {
+  'rezultat final': 'h2h',
+  'rezultati final': 'h2h',
+  '1x2': 'h2h',
+  'dopio shans': 'double_chance',
+  'double chance': 'double_chance',
+  'totali i golave': 'totals',
+  'gol/jogol': 'btts',
+  'gol-jogol': 'btts',
+  'handikap': 'spreads',
+  'home no bet': 'draw_no_bet',
+  'away no bet': 'draw_no_bet',
+};
+
+// The set of canonical keys, used by buildEvent to detect when two DIFFERENT
+// provider market ids claim the same canonical name — the second one is then
+// given its own unique key instead of being merged (and deduplicated) away.
+export const CANONICAL_KEYS = new Set(Object.values(CANONICAL_MARKETS));
+
+export function mapMarketKey(name, marketId) {
+  const n = decodeMarketName(name).toLowerCase().trim();
+  if (CANONICAL_MARKETS[n]) return CANONICAL_MARKETS[n];
+  if (!n) return 'other';
+  return slug(n) + (marketId ? '_m' + marketId : '');
 }
 
 function totalsOutcome(option) {
@@ -180,15 +233,21 @@ export function buildEvent(gameId, homeTeam, awayTeam, commenceTime, rows) {
     bookmakers: [{ title: 'LondonPro365', markets: [] }],
   };
   const byKey = new Map();
+  const canonicalOwner = new Map(); // canonical key -> marketId of first claim
   for (const r of rows) {
-    const marketName = r.marketName || r.market || ('market-' + r.marketId);
-    const key = mapMarketKey(marketName);
-    if (!byKey.has(key)) byKey.set(key, { key: key, label: marketName, outcomes: [] });
+    const marketName = decodeMarketName(r.marketName || r.market || ('Market ' + r.marketId));
+    let key = mapMarketKey(marketName, r.marketId);
+    if (CANONICAL_KEYS.has(key)) {
+      const owner = canonicalOwner.get(key);
+      if (owner === undefined) canonicalOwner.set(key, r.marketId);
+      else if (owner !== String(r.marketId)) key = slug(marketName) + '_m' + r.marketId;
+    }
+    if (!byKey.has(key)) byKey.set(key, { key: key, label: marketName, category: r.category || null, outcomes: [] });
     const opt = outcomeFromOption(key, r.option, ev);
     byKey.get(key).outcomes.push({ name: opt.name, price: r.coef, point: opt.point, id: r.coefId });
   }
   ev.bookmakers[0].markets = Array.from(byKey.values()).map(function (m) {
-    return { key: m.key, outcomes: m.outcomes };
+    return { key: m.key, label: m.label, category: m.category, outcomes: m.outcomes };
   });
   return ev;
 }
@@ -243,21 +302,22 @@ async function upsertMatch(ev, league, status, liveScores, liveInfo) {
         const oldEv = JSON.parse(existing.raw_json);
         const oldCount = countOutcomes(oldEv);
         const newCount = countOutcomes(ev);
-        if (oldCount && Math.sign(newCount - oldCount) === -1) {
-          // Transient/incomplete provider response: keep the richer cached
-          // odds intact and only refresh scores/minute via the UPDATE below.
-          rawToStore = existing.raw_json;
-        } else {
-          const changes = diffOddsChanges(ev.id, oldEv, ev);
-          for (const c of changes) {
-            await pool.query(
-              `INSERT INTO odds_history (match_id, market_id, selection_id, old_odds, new_odds, changed_by, reason, created_at)
-               VALUES ($1,$2,$3,$4,$5,'SYSTEM','london365_refresh',$6)`,
-              [c.matchId, c.marketId, c.selectionId, c.oldOdds, c.newOdds, now]
-            );
-          }
-          if (changes.length) pushOddsChanged(ev.id, { changes: changes });
+        // Live/socket payloads only carry the main markets. Instead of
+        // discarding them (old behavior) or letting them clobber the full
+        // catalog, merge them into the cached event: prices update for the
+        // markets they carry, every other market and coefficient survives.
+        let effective = ev;
+        if (oldCount && Math.sign(newCount - oldCount) === -1) effective = mergeEvents(oldEv, ev);
+        rawToStore = JSON.stringify(effective);
+        const changes = diffOddsChanges(ev.id, oldEv, effective);
+        for (const c of changes) {
+          await pool.query(
+            `INSERT INTO odds_history (match_id, market_id, selection_id, old_odds, new_odds, changed_by, reason, created_at)
+             VALUES ($1,$2,$3,$4,$5,'SYSTEM','london365_refresh',$6)`,
+            [c.matchId, c.marketId, c.selectionId, c.oldOdds, c.newOdds, now]
+          );
         }
+        if (changes.length) pushOddsChanged(ev.id, { changes: changes });
       } catch (err) {
         console.error('[london365] odds diff failed for ' + ev.id + ':', err.message);
       }
@@ -301,6 +361,60 @@ function countOutcomes(ev) {
     for (const mk of markets) n += (mk.outcomes || []).length;
   }
   return n;
+}
+
+// Merge a (usually partial) live event into the richer cached event:
+// outcomes are matched by provider coefId, prices updated, unknown markets
+// appended, everything else left untouched.
+function mergeEvents(oldEv, newEv) {
+  const merged = JSON.parse(JSON.stringify(oldEv));
+  const markets = (merged.bookmakers && merged.bookmakers[0] && merged.bookmakers[0].markets) || [];
+  const byKey = new Map(markets.map(function (m) { return [m.key, m]; }));
+  const newMarkets = (newEv.bookmakers && newEv.bookmakers[0] && newEv.bookmakers[0].markets) || [];
+  for (const nm of newMarkets) {
+    const old = byKey.get(nm.key);
+    if (!old) { markets.push(nm); byKey.set(nm.key, nm); continue; }
+    const byId = new Map((old.outcomes || []).map(function (o) { return [String(o.id), o]; }));
+    for (const no of nm.outcomes || []) {
+      const ex = byId.get(String(no.id));
+      if (ex) {
+        ex.price = no.price;
+        if (no.point !== undefined) ex.point = no.point;
+      } else {
+        (old.outcomes = old.outcomes || []).push(no);
+        byId.set(String(no.id), no);
+      }
+    }
+  }
+  return merged;
+}
+
+// The livegames/socket packed odd strings omit the market NAME (only the
+// marketId is present). Learn names from the detail responses so a live row
+// for market 1 maps to the same canonical 'h2h' key as the full import
+// instead of creating a duplicate 'market_1' bucket.
+let marketNamesLoaded = false;
+const marketNameById = new Map();
+
+async function ensureMarketNamesLoaded() {
+  if (marketNamesLoaded) return;
+  marketNamesLoaded = true;
+  try {
+    const saved = await getKV('l365_market_names', {});
+    for (const entry of Object.entries(saved || {})) marketNameById.set(entry[0], entry[1]);
+  } catch (err) { /* KV not ready yet; names get learned during imports */ }
+}
+
+function rememberMarketName(marketId, name) {
+  const key = String(marketId || '');
+  if (key && name && !marketNameById.has(key)) marketNameById.set(key, decodeMarketName(name));
+}
+
+function hydrateRowNames(rows) {
+  for (const r of rows) {
+    if (!r.marketName && r.marketId) r.marketName = marketNameById.get(String(r.marketId)) || null;
+  }
+  return rows;
 }
 
 // Serialize DB writes across the full import, the live polling loop, and the
@@ -355,7 +469,8 @@ export async function importLondon365(opts) {
   if (importRunning) return { skipped: true, reason: 'import already running' };
   importRunning = true;
 
-  const sports = opts.sports || SPORTS;
+  await ensureMarketNamesLoaded();
+  const sports = opts.sports || (await resolveSports());
   const full = opts.full === undefined ? FULL_DETAIL : !!opts.full;
   const leagueCap = opts.leagues === undefined ? LEAGUE_LIMIT : Number(opts.leagues) || 0;
   const matchCap = Number(opts.matches) || 0;
@@ -407,12 +522,14 @@ export async function importLondon365(opts) {
                 for (const market of detail) {
                   if (!Array.isArray(market)) continue;
                   for (const m of market) {
+                    rememberMarketName(m.market_id, m.market);
                     rows.push({
                       coefId: String(m.id),
                       coef: parseFloat(m.odd),
                       option: (m.market_option || '').trim(),
                       marketId: String(m.market_id),
                       marketName: m.market || null,
+                      category: m.mainCategory ? decodeMarketName(m.mainCategory) : null,
                     });
                   }
                 }
@@ -424,7 +541,7 @@ export async function importLondon365(opts) {
             }
           }
           if (!rows.length) rows = parseOddString(game.odd);
-          rows = rows.filter(function (r) { return r ? !Number.isNaN(r.coef) : false; });
+          rows = hydrateRowNames(rows.filter(function (r) { return r ? !Number.isNaN(r.coef) : false; }));
           if (!rows.length) continue;
 
           const ev = buildEvent(
@@ -442,6 +559,7 @@ export async function importLondon365(opts) {
       }
     }
     await setKV('l365_leagues', Array.from(leaguesSeen));
+    await setKV('l365_market_names', Object.fromEntries(marketNameById));
     await setKV('l365_last_import', Date.now());
     console.log(
       '[london365] import done: ' + matchCount + ' matches, ' + coefficientCount + ' coefficients, ' +
@@ -474,9 +592,10 @@ export function ensureLondon365Import() {
 // Live sync: in-play scores plus real-time odds movement.
 export async function syncLondon365Live() {
   if (!ENABLED) return { games: 0 };
+  await ensureMarketNamesLoaded();
   let gamesSynced = 0;
 
-  for (const sid of SPORTS) {
+  for (const sid of await resolveSports()) {
     let games;
     try {
       games = await api('/ajax/livegames', { method: 'POST', body: { sport: sid, market_type: 1 } });
@@ -487,7 +606,7 @@ export async function syncLondon365Live() {
     if (!Array.isArray(games)) continue;
 
     for (const g of games) {
-      const odds = parseOddString(g.odd).filter(function (o) { return o ? !Number.isNaN(o.coef) : false; });
+      const odds = hydrateRowNames(parseOddString(g.odd).filter(function (o) { return o ? !Number.isNaN(o.coef) : false; }));
       if (!odds.length) continue;
       const ev = buildEvent(g.id, g.home_team, g.away_team, isoFromWholeDate(null, g.game_date, g.game_time), odds);
       const score = parseScore(g.result);
@@ -546,7 +665,8 @@ export async function applySocketCoefs(gameId, coefs) {
 
 export async function applySocketGame(g, status) {
   if (!g || !g.id) return false;
-  const odds = parseOddString(g.odd).filter(function (o) { return o ? !Number.isNaN(o.coef) : false; });
+  await ensureMarketNamesLoaded();
+  const odds = hydrateRowNames(parseOddString(g.odd).filter(function (o) { return o ? !Number.isNaN(o.coef) : false; }));
   if (!odds.length) return false;
   const commence = isoFromWholeDate(g.whole_date, g.game_date, g.game_time);
   const ev = buildEvent(g.id, g.home_team, g.away_team, commence, odds);
@@ -605,7 +725,7 @@ export function startLondon365LiveLoop() {
       console.error('[london365] initial live sync failed:', err.message);
     });
   }, 5000);
-  console.log('[london365] live loop started, every ' + LIVE_INTERVAL_MS + 'ms for sports ' + SPORTS.join(','));
+  console.log('[london365] live loop started, every ' + LIVE_INTERVAL_MS + 'ms (sports: ' + (SPORTS_RAW === 'all' ? 'all discovered' : SPORTS_RAW) + ')');
 }
 
 export async function getLondon365Status() {
@@ -618,7 +738,7 @@ export async function getLondon365Status() {
     enabled: ENABLED,
     socketConnected: socketConnected,
     apiBase: API_BASE,
-    sports: SPORTS,
+    sports: resolvedSports || SPORTS_RAW,
     fullDetail: FULL_DETAIL,
     leagueLimit: LEAGUE_LIMIT,
     liveIntervalMs: LIVE_INTERVAL_MS,

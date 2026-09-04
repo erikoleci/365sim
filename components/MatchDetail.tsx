@@ -87,21 +87,23 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
   }, [match.id, hasLiveData]);
 
   const CATEGORY_LABELS: Record<string, string> = {
-    All: 'Kryesore',
-    main: '45/90',
+    All: 'Të Gjitha',
+    main: 'Kryesore',
     goals: 'Golat',
     btts: 'Gol/JoGol',
-    handicap: 'Azian',
+    handicap: 'Hendikep',
     cards: 'Kartona',
     corners: 'Korne',
     scorers: 'Golashenues',
     other: 'Speciale',
   };
 
-  // Extract unique categories
+  // Extract unique categories in provider order (Kryesore first, then the
+  // rest exactly as the source lists them) — never alphabetically sorted,
+  // so the tab strip mirrors the real bookmaker layout.
   const categories = useMemo(() => {
     const cats = new Set(match.markets.map(m => m.category || 'other'));
-    return ['All', ...Array.from(cats).sort()];
+    return ['All', ...Array.from(cats)];
   }, [match]);
 
   const filteredMarkets = match.markets.filter(m => activeTab === 'All' || m.category === activeTab);

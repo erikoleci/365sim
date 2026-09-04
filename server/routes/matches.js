@@ -298,10 +298,13 @@ router.get('/', async (req, res) => {
     console.error('Error refreshing odds:', err.message);
   }
 
+  // LondonPro365 rows (id 'l365-%') are ALWAYS included — the user wants
+  // every match and every coefficient from that source visible regardless
+  // of which The Odds API leagues the whitelist currently covers.
   const { rows } = req.query.league
-    ? await pool.query('SELECT * FROM matches_cache WHERE league = $1 ORDER BY start_time ASC', [req.query.league])
+    ? await pool.query('SELECT * FROM matches_cache WHERE league = $1 OR id LIKE $2 ORDER BY start_time ASC', [req.query.league, 'l365-%'])
     : lastTopLeagueKeys.length
-      ? await pool.query('SELECT * FROM matches_cache WHERE league = ANY($1::text[]) ORDER BY start_time ASC', [[...lastTopLeagueKeys, 'oddsapiio_albania_superiore', ...apiFootballLeagueSlugs()]])
+      ? await pool.query("SELECT * FROM matches_cache WHERE league = ANY($1::text[]) OR id LIKE 'l365-%' ORDER BY start_time ASC", [[...lastTopLeagueKeys, 'oddsapiio_albania_superiore', ...apiFootballLeagueSlugs()]])
       : await pool.query('SELECT * FROM matches_cache ORDER BY start_time ASC');
 
   res.json({ matches: rows.map(mapEventToMatch), hasLiveApiKey: true });

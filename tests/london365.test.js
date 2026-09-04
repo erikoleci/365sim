@@ -44,12 +44,40 @@ describe('london365 parseOddString', function () {
 });
 
 describe('london365 mapMarketKey', function () {
-  it('maps Albanian market labels onto canonical keys', function () {
-    expect(mapMarketKey('Rezultati Final')).toBe('h2h');
-    expect(mapMarketKey('1X2')).toBe('h2h');
-    expect(mapMarketKey('Totali i Golave')).toBe('totals');
-    expect(mapMarketKey('Handikapi Azian')).toBe('spreads');
-    expect(mapMarketKey('Dopio')).toBe('double_chance');
+  it('maps ONLY the exact main markets onto canonical keys', function () {
+    expect(mapMarketKey('Rezultat Final', '1')).toBe('h2h');
+    expect(mapMarketKey('1X2', '9')).toBe('h2h');
+    expect(mapMarketKey('Totali i Golave', '40')).toBe('totals');
+    expect(mapMarketKey('Handikap', '60')).toBe('spreads');
+    expect(mapMarketKey('Dopio Shans', '3')).toBe('double_chance');
+    expect(mapMarketKey('Gol/JoGol', '41')).toBe('btts');
+  });
+
+  it('gives every other market its own unique key so no coefficient is merged away', function () {
+    const firstHalf = mapMarketKey('Rezultati Pjesës së Parë', '12');
+    const booking = mapMarketKey('Booking 1x2', '80');
+    expect(firstHalf).toBe('rezultati_pjes_s_s_par_m12');
+    expect(booking).toBe('booking_1x2_m80');
+    expect(firstHalf).not.toBe('h2h');
+    expect(booking).not.toBe('h2h');
+    // Two different provider ids for the same non-canonical name stay separate.
+    expect(mapMarketKey('Korneret', '90')).not.toBe(mapMarketKey('Korneret', '91'));
+  });
+
+  it('keeps two same-named handicap markets separate inside one event', function () {
+    const rows = parseOddString(
+      '1|1.9|1|60|Handikap,2|1.9|2|60|Handikap,3|1.8|1|61|Handikap,4|2.0|2|61|Handikap'
+    );
+    const ev = buildEvent(5, 'A', 'B', '2026-09-05T18:00:00.000Z', rows);
+    const markets = ev.bookmakers[0].markets;
+    expect(markets).toHaveLength(2);
+    expect(markets.reduce(function (n, m) { return n + m.outcomes.length; }, 0)).toBe(4);
+  });
+
+  it('decodes HTML entities in market names', function () {
+    expect(mapMarketKey('Rezultat Final &amp; Numri i Golave', '70')).toBe(
+      'rezultat_final_numri_i_golave_m70'
+    );
   });
 
   it('slugs unknown markets instead of dropping them', function () {
@@ -74,13 +102,32 @@ describe('london365 buildEvent', function () {
   });
 
   it('turns Over/Under options into name plus point pairs', function () {
-    const rows = parseOddString('1|1.8|Mbi 2.5|77|Totali,2|2.0|Nen 2.5|77|Totali');
+    const rows = parseOddString('1|1.8|Mbi 2.5|77|Totali i Golave,2|2.0|Nen 2.5|77|Totali i Golave');
     const ev = buildEvent(7, 'A', 'B', '2026-09-05T18:00:00.000Z', rows);
     const totals = ev.bookmakers[0].markets.find(function (m) { return m.key === 'totals'; });
     expect(totals.outcomes).toEqual([
       { name: 'Over', price: 1.8, point: 2.5, id: '1' },
       { name: 'Under', price: 2.0, point: 2.5, id: '2' },
     ]);
+  });
+
+  it('keeps every market and coefficient separate (no silent merging)', function () {
+    const rows = parseOddString(
+      '1|2.09|1|1|Rezultat Final,2|3.45|X|1|Rezultat Final,3|3.45|2|1|Rezultat Final,' +
+      '4|2.48|1|12|Rezultati Pjesës së Parë,5|2.10|X|12|Rezultati Pjesës së Parë,6|3.68|2|12|Rezultati Pjesës së Parë,' +
+      '7|1.92|Tek|30|Tek/Cift,8|1.79|Cift|30|Tek/Cift'
+    );
+    const ev = buildEvent(9, 'A', 'B', '2026-09-05T18:00:00.000Z', rows);
+    const markets = ev.bookmakers[0].markets;
+    expect(markets).toHaveLength(3);
+    const totalOutcomes = markets.reduce(function (n, m) { return n + m.outcomes.length; }, 0);
+    expect(totalOutcomes).toBe(8);
+    const h2h = markets.find(function (m) { return m.key === 'h2h'; });
+    expect(h2h.outcomes.map(function (o) { return o.name; })).toEqual(['A', 'Draw', 'B']);
+    const half = markets.find(function (m) { return m.key.indexOf('rezultati_pjes') === 0; });
+    expect(half.outcomes).toHaveLength(3);
+    const tek = markets.find(function (m) { return m.key.indexOf('tek_cift') === 0; });
+    expect(tek.outcomes.map(function (o) { return o.name; })).toEqual(['Tek', 'Cift']);
   });
 });
 
