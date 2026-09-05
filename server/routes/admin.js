@@ -27,16 +27,25 @@ function toPublicUser(row) {
 
 // Manually trigger a full import of every LondonPro365 sport, league, match,
 // market, and coefficient into matches_cache (the throttle guard is inside).
+// Fire-and-forget: a full import can take several minutes (one HTTP request
+// per league + per game when full detail is on), which is longer than
+// Render's own reverse-proxy timeout — waiting for it here would always end
+// in a 502 to the browser even though the import keeps running fine in the
+// background. So we kick it off and respond immediately; check progress via
+// GET /london365/status (matches count + lastImport timestamp) instead.
 router.post('/london365/import', async (req, res) => {
   const body = req.body || {};
-  const result = await importLondon365({
+  importLondon365({
     sports: body.sports,
     leagues: body.leagues,
     matches: body.matches,
     full: body.full,
+  }).then((result) => {
+    logAudit(req.user, 'LONDON365_IMPORT', 'london365', result).catch(() => {});
+  }).catch((err) => {
+    console.error('[admin] london365 import failed:', err.message);
   });
-  await logAudit(req.user, 'LONDON365_IMPORT', 'london365', result);
-  res.json(result);
+  res.json({ started: true, note: 'Import running in the background — poll GET /api/admin/london365/status for progress (matches count, lastImport timestamp).' });
 });
 
 router.get('/london365/status', async (req, res) => {
