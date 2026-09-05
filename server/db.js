@@ -26,6 +26,17 @@ export const pool = new Pool({
   idleTimeoutMillis: 30000,
 });
 
+// REQUIRED by node-postgres: an idle client in the pool can be dropped by
+// the server at any time (exactly what "Connection terminated unexpectedly"
+// is — Neon free-tier closing an idle connection). Without a listener here,
+// that error has nowhere to go but an uncaught 'error' event on the Pool,
+// which crashes the entire Node process. This does not touch any in-flight
+// query — pg already rejects that query's own promise separately; this only
+// stops the background/idle-client error from taking the whole server down.
+pool.on('error', function (err) {
+  console.error('[db] idle client error (pool recovers automatically):', err.message);
+});
+
 export async function initDb() {
   await pool.query('SELECT 1');
   await pool.query(`
