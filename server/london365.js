@@ -14,7 +14,20 @@
 //   LONDON365_SPORTS             csv sport ids, or 'all' (default) to
 //                                discover every sport the provider exposes
 //   LONDON365_LEAGUES            league cap per sport, 0 = all
-//   LONDON365_FULL               1 = fetch every market via detail endpoint
+//   LONDON365_PRIORITY_COUNTRIES csv of real country names (as returned by
+//                                /ajax/countries, e.g. "England,France,Spain,
+//                                Italy,Germany") — when set, ONLY these
+//                                countries get the expensive full-detail
+//                                fetch (every market/coefficient); every
+//                                other country still imports (basic 1X2 +
+//                                whatever the list endpoint already includes)
+//                                but skips the extra per-game detail request.
+//                                Lets you keep full depth for the leagues
+//                                that matter most while running "all sports,
+//                                no league cap" on limited server memory.
+//                                Empty/unset (default) = full detail for
+//                                everyone, same as before this option existed.
+//   LONDON365_FULL                1 = fetch every market via detail endpoint
 //   LONDON365_LIVE_INTERVAL_MS   default 30000 (min 10000)
 //   LONDON365_IMPORT_THROTTLE_MS default 600000
 
@@ -48,6 +61,15 @@ export async function resolveSports() {
   return resolvedSports;
 }
 const LEAGUE_LIMIT = Number(process.env.LONDON365_LEAGUES || 0);
+// Empty set = no restriction = full detail for every country (old behavior).
+const PRIORITY_COUNTRIES = new Set(
+  (process.env.LONDON365_PRIORITY_COUNTRIES || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+);
+const wantsFullDetailFor = (countryName) =>
+  !PRIORITY_COUNTRIES.size || (countryName && PRIORITY_COUNTRIES.has(countryName.toLowerCase()));
 const FULL_DETAIL = (process.env.LONDON365_FULL || '1') === '1';
 const LIVE_INTERVAL_MS = Math.max(10000, Number(process.env.LONDON365_LIVE_INTERVAL_MS || 30000));
 const IMPORT_THROTTLE_MS = Number(process.env.LONDON365_IMPORT_THROTTLE_MS || 600000);
@@ -757,9 +779,17 @@ export async function importLondon365(opts) {
         if (!leagueSummary.has(summaryKey)) leagueSummary.set(summaryKey, []);
         leagueSummary.get(summaryKey).push(summaryEntry);
 
+        // Full per-game detail (every market) is the expensive part — one
+        // extra HTTP request + a fixed delay per game. When priority
+        // countries are configured, everyone else skips straight to the
+        // list-level odds (still real matches, still 1X2 + main markets,
+        // just not the full catalog) so the priority leagues can run with
+        // no league/sport cap without exhausting memory or request budget.
+        const fetchFullDetail = full && wantsFullDetailFor(countryName);
+
         for (const game of games) {
           let rows = [];
-          if (full) {
+          if (fetchFullDetail) {
             try {
               // Gentle pacing: hammering a real bookmaker backend with one
               // detail request per game, back-to-back, is exactly the
@@ -1099,6 +1129,7 @@ export async function getLondon365Status() {
     sports: resolvedSports || SPORTS_RAW,
     fullDetail: FULL_DETAIL,
     leagueLimit: LEAGUE_LIMIT,
+    priorityCountries: Array.from(PRIORITY_COUNTRIES),
     liveIntervalMs: LIVE_INTERVAL_MS,
     matches: rows[0].matches,
     liveMatches: rows[0].live,
