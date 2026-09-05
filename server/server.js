@@ -108,6 +108,19 @@ process.on('unhandledRejection', (err) => {
 
 app.get('/api/health', (req, res) => res.status(dbReady ? 200 : 503).json({ ok: true, db: dbReady ? 'up' : 'down' }));
 
+// Mobile-friendly, no-login diagnostic: open this URL directly in any
+// browser address bar (no console, no fetch, no CORS, no Bearer token) to
+// see the same data as /api/admin/london365/status. Protected by a static
+// key (LONDON365_STATUS_KEY env var) instead of a JWT specifically so it can
+// be a plain URL. Disabled entirely (404) unless that env var is set.
+app.get('/api/london365-status', async (req, res) => {
+  const key = process.env.LONDON365_STATUS_KEY;
+  if (!key) return res.status(404).json({ error: 'not enabled — set LONDON365_STATUS_KEY to use this' });
+  if (req.query.key !== key) return res.status(403).json({ error: 'wrong key' });
+  const { getLondon365Status } = await import('./london365.js');
+  res.json(await getLondon365Status());
+});
+
 // Serve the built frontend (npm run build -> dist/) from the same origin/process
 // as the API. This avoids CORS and cross-domain /api URL issues in production.
 // If dist/ doesn't exist (e.g. pure API-only deploy), this is skipped silently.
