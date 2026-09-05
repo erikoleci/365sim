@@ -70,6 +70,15 @@ const PRIORITY_COUNTRIES = new Set(
 );
 const wantsFullDetailFor = (countryName) =>
   !PRIORITY_COUNTRIES.size || (countryName && PRIORITY_COUNTRIES.has(countryName.toLowerCase()));
+// Used ONLY to decide sort order before an optional LEAGUE_LIMIT cap is
+// applied, so a cap (if configured) can never cut off the leagues people
+// actually check. Falls back to the obvious big leagues even when
+// LONDON365_PRIORITY_COUNTRIES isn't set, unlike PRIORITY_COUNTRIES above
+// (which intentionally means "no restriction" when empty for the
+// full-detail-vs-list-only decision — a separate, unrelated concern).
+const SORT_PRIORITY_COUNTRIES = PRIORITY_COUNTRIES.size
+  ? PRIORITY_COUNTRIES
+  : new Set(['england', 'spain', 'italy', 'germany', 'france', 'brazil', 'portugal', 'netherlands']);
 const FULL_DETAIL = (process.env.LONDON365_FULL || '1') === '1';
 const LIVE_INTERVAL_MS = Math.max(10000, Number(process.env.LONDON365_LIVE_INTERVAL_MS || 30000));
 const IMPORT_THROTTLE_MS = Number(process.env.LONDON365_IMPORT_THROTTLE_MS || 600000);
@@ -738,7 +747,6 @@ export async function importLondon365(opts) {
         continue;
       }
       if (!Array.isArray(leagues)) continue;
-      if (leagueCap) leagues = leagues.slice(0, leagueCap);
 
       // Real country.id -> country.name map for this sport (cached — see
       // getCountryMap). A failure here never aborts the import: it just
@@ -758,15 +766,23 @@ export async function importLondon365(opts) {
       // through, this guarantees the leagues people actually check
       // (England/France/Spain/Italy/Germany) are already in by the time
       // that happens, instead of depending on provider order/luck.
-      if (PRIORITY_COUNTRIES.size) {
-        leagues = leagues.slice().sort((a, b) => {
+      //
+      // CRITICAL: this sort MUST happen BEFORE leagueCap is applied below.
+      // Slicing first (the old order) truncated the list using nothing but
+      // the provider's own arbitrary ordering, so if LONDON365_LEAGUES is
+      // set to any cap, whichever countries happen to come first from the
+      // provider get in and everyone else (regardless of priority) is
+      // silently cut off — exactly what caused England/Spain/Germany/France
+      // to disappear from the main feed while still showing up in the
+      // sidebar (which lists leagues independently of this cap).
+      leagues = leagues.slice().sort((a, b) => {
           const an = countryMap.get(String(a.country_id)) || '';
           const bn = countryMap.get(String(b.country_id)) || '';
-          const aPriority = PRIORITY_COUNTRIES.has(an.toLowerCase()) ? 0 : 1;
-          const bPriority = PRIORITY_COUNTRIES.has(bn.toLowerCase()) ? 0 : 1;
+          const aPriority = SORT_PRIORITY_COUNTRIES.has(an.toLowerCase()) ? 0 : 1;
+          const bPriority = SORT_PRIORITY_COUNTRIES.has(bn.toLowerCase()) ? 0 : 1;
           return aPriority - bPriority;
         });
-      }
+      if (leagueCap) leagues = leagues.slice(0, leagueCap);
 
       for (const league of leagues) {
         // Resolve country BEFORE the games fetch — otherwise a league with
