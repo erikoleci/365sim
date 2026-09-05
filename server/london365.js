@@ -769,21 +769,35 @@ export async function importLondon365(opts) {
       }
 
       for (const league of leagues) {
-        let games;
-        try {
-          games = await api('/ajax/gamesByLeague/' + league.id);
-        } catch (err) {
-          console.error('[london365] games for ' + league.name + ' failed:', err.message);
-          continue;
-        }
-        if (!Array.isArray(games) || games.length === 0) continue;
-        if (matchCap) games = games.slice(0, matchCap);
-
+        // Resolve country BEFORE the games fetch — otherwise a league with
+        // zero current games (very normal, most leagues are between
+        // matchdays most of the time) or a failed games fetch skipped
+        // silently, leaving zero trace in the logs. This was invisible for
+        // exactly the leagues people check most (Premier League, La Liga)
+        // whenever the provider had nothing/failed for them at that moment.
         const countryId = league.country_id != null ? String(league.country_id) : null;
         const countryName = countryId ? countryMap.get(countryId) : null;
         if (countryId && !countryName) {
           console.warn('[london365] WARNING: unknown country_id=' + countryId + ' for league=' + league.name + ' (id=' + league.id + ')');
         }
+        const isPriority = countryName && PRIORITY_COUNTRIES.has(countryName.toLowerCase());
+
+        let games;
+        try {
+          games = await api('/ajax/gamesByLeague/' + league.id);
+        } catch (err) {
+          console.error('[london365] games for ' + league.name + ' (' + (countryName || '?') + ') failed:', err.message);
+          continue;
+        }
+        if (!Array.isArray(games) || games.length === 0) {
+          // Only log the empty case for priority countries — for everyone
+          // else this is routine (most leagues have nothing on a given day)
+          // and would just flood the log.
+          if (isPriority) console.log('[london365] ' + league.name + ' (' + countryName + '): provider returned 0 games right now');
+          continue;
+        }
+        if (matchCap) games = games.slice(0, matchCap);
+
         const leagueKeyResolved = leagueKeyFromCountry(countryName, league.name);
         console.log(
           '[london365] league ' + league.id + ' -> ' + league.name + ' -> ' +
@@ -875,6 +889,18 @@ export async function importLondon365(opts) {
         '[london365] ' + country + ': ' + leaguesForCountry.length + ' leagues — ' +
         leaguesForCountry.map((l) => l.name + ' (id=' + l.id + ', provider=' + l.providerGames + ', imported=' + l.imported + ', skipped=' + l.skipped + ')').join('; ')
       );
+    }
+    // Loud, unmissable final check: any priority country that got NOTHING
+    // this run (no leagues with games right now, or every games-fetch for
+    // it failed) — the single line worth searching the log for.
+    if (PRIORITY_COUNTRIES.size) {
+      const seenPriority = new Set(
+        Array.from(leagueSummary.keys()).map((c) => c.toLowerCase())
+      );
+      const missing = Array.from(PRIORITY_COUNTRIES).filter((c) => !seenPriority.has(c));
+      if (missing.length) {
+        console.warn('[london365] PRIORITY COUNTRY WITH ZERO LEAGUES THIS RUN: ' + missing.join(', '));
+      }
     }
     return { matches: matchCount, coefficients: coefficientCount, leagues: leaguesSeen.size, detailOkCount, detailFailCount, skippedDateCount };
   } finally {
