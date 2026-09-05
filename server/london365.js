@@ -972,17 +972,29 @@ export async function syncLondon365Live() {
     }
   }
 
-  // End detection: a cached LIVE l365 match that is no longer in the live
-  // feed and started >2.5h ago has finished — settle it with the last
-  // known score so the final result shows on the right of the card.
+  // End detection: a cached LIVE l365 match no longer in the live feed has
+  // finished — settle it with the last known score so the final result
+  // shows on the right of the card. Two independent triggers:
+  //  1. It hasn't been updated (fetched_at) in a while — this is the one
+  //     that actually matters in practice: a match can vanish from the live
+  //     feed the moment it ends, at ANY real-game-time (45+2', 90+5', a
+  //     match delayed/extended into extra time...). Gating only on kickoff
+  //     time (old behavior) left it frozen at its last score/minute for up
+  //     to ~2.5h after it had actually finished.
+  //  2. Kickoff was >2.5h ago — pure safety net for the rare case a match
+  //     was somehow never freshly fetched at all (fetched_at stuck at
+  //     import time), so it doesn't wait on trigger 1 forever.
   try {
     const { rows } = await pool.query(
-      "SELECT id, live_home_score, live_away_score, start_time FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
+      "SELECT id, live_home_score, live_away_score, start_time, fetched_at FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
     );
-    const cutoff = Date.now() - 2.5 * 60 * 60 * 1000;
+    const kickoffCutoff = Date.now() - 2.5 * 60 * 60 * 1000;
+    const staleCutoff = Date.now() - 8 * 60 * 1000; // no update in 8 minutes while "live" = provider stopped sending it
     for (const row of rows) {
       if (liveIds.has(row.id)) continue;
-      if (Date.parse(row.start_time) > cutoff) continue;
+      const stale = Number(row.fetched_at) < staleCutoff;
+      const oldKickoff = Date.parse(row.start_time) < kickoffCutoff;
+      if (!stale && !oldKickoff) continue;
       const home = row.live_home_score ?? 0;
       const away = row.live_away_score ?? 0;
       await pool.query("UPDATE matches_cache SET live_status = 'ended' WHERE id = $1", [row.id]);
