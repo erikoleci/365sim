@@ -580,15 +580,17 @@ const App: React.FC = () => {
   const isCountryFilter = (key: string) => key.startsWith(COUNTRY_FILTER_PREFIX);
   const countryFromFilter = (key: string) => key.slice(COUNTRY_FILTER_PREFIX.length);
 
-  // Ndeshjet e ardhshme + ato LIVE, brenda zgjedhjes aktuale (të gjitha /
-  // të preferuarat / shtet / ligë), PA filtrin e datës. London365 (dhe çdo
-  // bookmaker real) i shfaq ndeshjet LIVE brenda vetë ligës/shtetit të tyre
-  // (zakonisht në krye), NUK i fsheh vetëm te tab-i "Live In-Play" — nëse i
-  // përjashtonim këtu, hapja e Francës ndërkohë që PSG-Monaco është live do
-  // ta linte ligën "bosh" edhe pse ndeshja ekziston dhe është plotësisht e
-  // vlefshme për t'u shikuar/bastuar.
+  // Ndeshjet e ardhshme, brenda zgjedhjes aktuale (të gjitha / të
+  // preferuarat / shtet / ligë), PA filtrin e datës. LIVE përfshihet VETËM
+  // kur ka një filtër specifik vendi/lige (jo te "Të gjitha" e përgjithshme,
+  // e as te "Favoritet") — sepse "Të gjitha" këtu do të thotë "të gjitha ato
+  // që do të vijnë", ndërsa live ka tab-in e vet ("Live In-Play"). Por nëse
+  // hap Francën ndërkohë që PSG-Monaco është live, s'ka kuptim ta fshehim —
+  // ndeshja ekziston, është pjesë e vetë ligës/vendit që zgjodhe.
+  const includeLiveInScope = isCountryFilter(currentLeague) ||
+    (currentLeague !== 'All Top Football' && currentLeague !== 'FAVORITES');
   const scopedUpcoming = useMemo(() => searchFiltered
-    .filter((m) => m.status === MatchStatus.UPCOMING || m.status === MatchStatus.LIVE)
+    .filter((m) => m.status === MatchStatus.UPCOMING || (includeLiveInScope && m.status === MatchStatus.LIVE))
     .filter((m) => {
       if (currentLeague === 'All Top Football') return true;
       if (currentLeague === 'FAVORITES') return favoriteTeams.has(m.homeTeam) || favoriteTeams.has(m.awayTeam) || favoriteLeagues.has(m.league);
@@ -602,7 +604,7 @@ const App: React.FC = () => {
       return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [matches, searchQuery, currentLeague, favoriteTeams, favoriteLeagues]);
+    [matches, searchQuery, currentLeague, favoriteTeams, favoriteLeagues, includeLiveInScope]);
 
   const dateScopedUpcoming = useMemo(
     () => scopedUpcoming.filter((m) => selectedDate === 'ALL' || albaniaDateKey(m.startTime) === selectedDate),
