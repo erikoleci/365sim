@@ -70,6 +70,28 @@ const PRIORITY_COUNTRIES = new Set(
 );
 const wantsFullDetailFor = (countryName) =>
   !PRIORITY_COUNTRIES.size || (countryName && PRIORITY_COUNTRIES.has(countryName.toLowerCase()));
+// Skip minor/youth/regional leagues so the import spends its time+requests
+// on what people actually check (top flight + main cup per country) instead
+// of burning through e.g. Brazil's dozens of state championships (Gaucho,
+// Carioca, Paulista, Amazonense...) or U20/women/amateur competitions for
+// every single country. LONDON365_MAJOR_ONLY=0 disables this (full catalog,
+// old/slower behavior).
+const MAJOR_LEAGUES_ONLY = (process.env.LONDON365_MAJOR_ONLY || '1') === '1';
+const MINOR_LEAGUE_PATTERN = /\bu-?1[0-9]\b|\bu-?2[0-3]\b|\byouth\b|\bjunior\b|\breserves?\b|\bwomen'?s?\b|\bfemale\b|\bfeminin[ao]?\b|\bamateur\b|\bacademy\b|\bfriendl(y|ies)\b|\besoccer\b|\be-?soccer\b|\bsimulated\b|\bvirtual\b/i;
+// Brazil specifically has ~25 STATE championships running in parallel
+// (Serie A/B/C/D are the national ones worth keeping; everything named
+// after a state — Gaucho, Carioca, Paulista, Mineiro, Baiano, Amazonense,
+// Catarinense, Cearense, Potiguar, Goiano, Alagoano, Capixaba, Sergipano,
+// Paraense, Matogrossense, Pernambucano, Brasilia — is a minor regional
+// league). Copa do Brasil (the national cup) is always kept.
+const BRAZIL_STATE_LEAGUE_PATTERN = /gaucho|carioca|paulista|mineiro|baiano|amazonense|catarinense|cearense|potiguar|goiano|alagoano|capixaba|sergipano|paraense|matogrossense|pernambucano|brasilia(?!ns)/i;
+function isMinorLeague(name, countryName) {
+  if (!MAJOR_LEAGUES_ONLY) return false;
+  const n = String(name || '');
+  if (MINOR_LEAGUE_PATTERN.test(n)) return true;
+  if ((countryName || '').toLowerCase() === 'brazil' && BRAZIL_STATE_LEAGUE_PATTERN.test(n) && !/copa do brasil/i.test(n)) return true;
+  return false;
+}
 // Used ONLY to decide sort order before an optional LEAGUE_LIMIT cap is
 // applied, so a cap (if configured) can never cut off the leagues people
 // actually check. Falls back to the obvious big leagues even when
@@ -797,6 +819,7 @@ export async function importLondon365(opts) {
           console.warn('[london365] WARNING: unknown country_id=' + countryId + ' for league=' + league.name + ' (id=' + league.id + ')');
         }
         const isPriority = countryName && PRIORITY_COUNTRIES.has(countryName.toLowerCase());
+        if (isMinorLeague(league.name, countryName)) continue;
 
         let games;
         try {
