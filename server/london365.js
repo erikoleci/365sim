@@ -725,7 +725,11 @@ export async function importLondon365(opts) {
   const leagueSummary = new Map(); // countryName -> [{ name, id, imported, skipped }]
 
   try {
-    for (const sid of sports) {
+    // Soccer (sport id 1) first, always — it's where every priority country
+    // config lives and what people actually check first. Same interruption
+    // concern as the league-level sort above, one level up.
+    const sportsOrdered = sports.slice().sort((a, b) => (Number(a) === 1 ? 0 : 1) - (Number(b) === 1 ? 0 : 1));
+    for (const sid of sportsOrdered) {
       let leagues;
       try {
         leagues = await api('/ajax/leagues/' + sid);
@@ -745,6 +749,23 @@ export async function importLondon365(opts) {
         countryMap = await getCountryMap(sid);
       } catch (err) {
         console.error('[london365] countries sport ' + sid + ' failed (falling back to name-based country guessing):', err.message);
+      }
+
+      // Process priority-country leagues FIRST, regardless of whether
+      // LONDON365_PRIORITY_COUNTRIES is set at all. The provider's own
+      // league order has no relation to which leagues matter most to us —
+      // if the import gets interrupted (crash, redeploy, throttle) partway
+      // through, this guarantees the leagues people actually check
+      // (England/France/Spain/Italy/Germany) are already in by the time
+      // that happens, instead of depending on provider order/luck.
+      if (PRIORITY_COUNTRIES.size) {
+        leagues = leagues.slice().sort((a, b) => {
+          const an = countryMap.get(String(a.country_id)) || '';
+          const bn = countryMap.get(String(b.country_id)) || '';
+          const aPriority = PRIORITY_COUNTRIES.has(an.toLowerCase()) ? 0 : 1;
+          const bPriority = PRIORITY_COUNTRIES.has(bn.toLowerCase()) ? 0 : 1;
+          return aPriority - bPriority;
+        });
       }
 
       for (const league of leagues) {
