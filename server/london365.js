@@ -77,6 +77,16 @@ const wantsFullDetailFor = (countryName) =>
 // every single country. LONDON365_MAJOR_ONLY=0 disables this (full catalog,
 // old/slower behavior).
 const MAJOR_LEAGUES_ONLY = (process.env.LONDON365_MAJOR_ONLY || '1') === '1';
+// Countries excluded entirely (no leagues, no matches at all) — csv of real
+// country names, comma-separated, case-insensitive. Brazil is excluded by
+// default per explicit request: its huge volume of state/regional
+// competitions was cluttering the feed and it isn't a priority market.
+const EXCLUDED_COUNTRIES = new Set(
+  (process.env.LONDON365_EXCLUDE_COUNTRIES || 'brazil')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+);
 const MINOR_LEAGUE_PATTERN = /\bu-?1[0-9]\b|\bu-?2[0-3]\b|\byouth\b|\bjunior\b|\breserves?\b|\bwomen'?s?\b|\bfemale\b|\bfeminin[ao]?\b|\bamateur\b|\bacademy\b|\bfriendl(y|ies)\b|\besoccer\b|\be-?soccer\b|\bsimulated\b|\bvirtual\b/i;
 // Brazil specifically has ~25 STATE championships running in parallel
 // (Serie A/B/C/D are the national ones worth keeping; everything named
@@ -819,6 +829,7 @@ export async function importLondon365(opts) {
           console.warn('[london365] WARNING: unknown country_id=' + countryId + ' for league=' + league.name + ' (id=' + league.id + ')');
         }
         const isPriority = countryName && PRIORITY_COUNTRIES.has(countryName.toLowerCase());
+        if (countryName && EXCLUDED_COUNTRIES.has(countryName.toLowerCase())) continue;
         if (isMinorLeague(league.name, countryName)) continue;
 
         let games;
@@ -1195,6 +1206,26 @@ export async function repairSparseEvents(opts) {
 }
 
 let liveTimer = null;
+
+// One-time cleanup so an excluded country's matches disappear immediately
+// on deploy instead of only stopping new ones from being added (existing
+// rows would otherwise sit in matches_cache until they naturally age out).
+// Safe to call on every boot — it's a no-op once already cleaned up.
+export async function purgeExcludedCountries() {
+  if (!EXCLUDED_COUNTRIES.size) return;
+  for (const country of EXCLUDED_COUNTRIES) {
+    const token = leagueCountryToken(country) === 'other' ? slugDash(country) : leagueCountryToken(country);
+    try {
+      const { rowCount } = await pool.query(
+        `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league LIKE $1`,
+        [`l365_${token}__%`]
+      );
+      if (rowCount) console.log(`[london365] purged ${rowCount} existing ${country} matches (excluded country)`);
+    } catch (err) {
+      console.error(`[london365] failed purging excluded country ${country}:`, err.message);
+    }
+  }
+}
 
 export function startLondon365LiveLoop() {
   if (!ENABLED || liveTimer) return;
