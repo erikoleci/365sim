@@ -29,3 +29,4 @@ dist-ssr
 server/data/*.db
 server/data/*.db-*
 coverage
+package-lock.json

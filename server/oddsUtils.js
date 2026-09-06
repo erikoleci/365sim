@@ -144,6 +144,20 @@ export function diffOddsChanges(matchId, oldEv, newEv) {
   return changes;
 }
 
+// Defensive status normalization at the API boundary (requirement: a stale
+// scraped LIVE/UPCOMING flag must never contradict the real kickoff time —
+// an old match must never be shown as UPCOMING just because some upstream
+// write never flipped its status).
+//   future kickoff        -> UPCOMING (always, regardless of any stale flag)
+//   DB/source says FINISHED -> FINISHED
+//   otherwise (past kickoff, not finished) -> LIVE
+function normalizeStatus(startTime, dbStatus) {
+  const kickoff = Date.parse(startTime);
+  if (!Number.isNaN(kickoff) && kickoff > Date.now()) return 'UPCOMING';
+  if (dbStatus === 'FINISHED') return 'FINISHED';
+  return 'LIVE';
+}
+
 export function mapEventToMatch(row) {
   const ev = JSON.parse(row.raw_json);
   const marketMap = new Map(); // key -> { label, category, outMap }
@@ -183,6 +197,7 @@ export function mapEventToMatch(row) {
     };
   });
 
+  const status = normalizeStatus(row.start_time, row.status);
   return {
     id: row.id,
     league: row.league,
@@ -195,14 +210,14 @@ export function mapEventToMatch(row) {
     homeTeamLogo: ev.home_team_logo || undefined,
     awayTeamLogo: ev.away_team_logo || undefined,
     startTime: row.start_time,
-    status: row.status,
+    status,
     markets,
     bookmakerCount: (ev.bookmakers || []).length,
     liveHomeScore: row.live_home_score ?? undefined,
     liveAwayScore: row.live_away_score ?? undefined,
     currentMinute: row.live_minute ?? undefined,
     liveStatus: row.live_status ?? undefined,
-    score: row.status === 'FINISHED' && row.result_home !== null && row.result_away !== null
+    score: status === 'FINISHED' && row.result_home !== null && row.result_away !== null
       ? { home: row.result_home, away: row.result_away, htHome: 0, htAway: 0, homeYellowCards: 0, awayYellowCards: 0, homeCorners: 0, awayCorners: 0, scorers: [] }
       : undefined,
   };

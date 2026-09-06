@@ -104,6 +104,11 @@ beforeEach(function () {
   mocks.liveStats.clear();
   Object.keys(mocks.kv).forEach(function (k) { delete mocks.kv[k]; });
   vi.clearAllMocks();
+  // Relative to "now" so this test never rots into a false failure as real
+  // time passes (a hardcoded date eventually becomes "the past", and a
+  // fixture meant to be UPCOMING would then correctly — per the status
+  // normalization rules — come back as LIVE instead, which is not a bug).
+  const futureDateStr = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   liveGames = [{
     id: 200, league: 'Serie A', name: 'X vs Y', home_team: 'X', away_team: 'Y',
     game_date: '2026-09-03', game_time: '18:00', result: '1-0',
@@ -114,7 +119,7 @@ beforeEach(function () {
     const pathname = new URL(url).pathname;
     if (pathname === '/ajax/leagues/1') return jsonResponse([{ id: 11, name: 'Premier League' }]);
     if (pathname === '/ajax/gamesByLeague/11') {
-      return jsonResponse([{ id: 100, home_team: 'Arsenal', away_team: 'Chelsea', game_date: '2026-09-05', game_time: '18:00', odd: PREMATCH_ODD }]);
+      return jsonResponse([{ id: 100, home_team: 'Arsenal', away_team: 'Chelsea', game_date: futureDateStr, game_time: '18:00', odd: PREMATCH_ODD }]);
     }
     if (pathname === '/ajax/prematchgame/100') {
       return jsonResponse([[

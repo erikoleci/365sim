@@ -3,12 +3,6 @@ import pool, { getKV, setKV } from '../db.js';
 import { mapEventToMatch, diffOddsChanges } from '../oddsUtils.js';
 import { pushOddsChanged, pushGoal } from '../ws.js';
 import { settleMatch } from '../matchSettlement.js';
-import { refreshOddsPapi } from '../oddspapi.js';
-import { refreshBsd } from '../bsd.js';
-import { refreshHighlightly } from '../highlightly.js';
-import { refreshOddsApiIo, refreshPrimaryLeagues } from '../oddsapiio.js';
-import { refreshApiFootball, apiFootballLeagueSlugs } from '../apiFootballRefresh.js';
-import { refreshSportmonks } from '../sportmonks.js';
 import { ensureLondon365Import } from '../london365.js';
 
 const router = express.Router();
@@ -370,7 +364,27 @@ router.get('/', async (req, res) => {
     return res.json({ matches: dedupeMatches(rows.map(mapEventToMatch)), hasLiveApiKey: false });
   }
 
+  let apiFootballLeagueSlugs = () => [];
   try {
+    // Legacy non-LondonPro365 providers (The Odds API, oddspapi, bsd,
+    // highlightly, oddsapiio, API-Football, Sportmonks) are ONLY loaded
+    // here — inside the ODDS_API_ENABLED=1 branch — via dynamic import.
+    // With the default ODDS_API_ENABLED=0, this whole branch (and every
+    // one of these modules) never even loads into the running process, so
+    // they cannot be "part of the active runtime" in any sense: not
+    // imported, not executed, no module-level code runs. LondonPro365 is
+    // the only match source that's ever actually active by default.
+    const [
+      { refreshOddsPapi }, { refreshBsd }, { refreshHighlightly },
+      { refreshOddsApiIo, refreshPrimaryLeagues },
+      { refreshApiFootball, apiFootballLeagueSlugs: slugsFn },
+      { refreshSportmonks },
+    ] = await Promise.all([
+      import('../oddspapi.js'), import('../bsd.js'), import('../highlightly.js'),
+      import('../oddsapiio.js'), import('../apiFootballRefresh.js'), import('../sportmonks.js'),
+    ]);
+    apiFootballLeagueSlugs = slugsFn;
+
     const leagues = await getSoccerLeagues();
     const targetLeagues = req.query.league
       ? leagues.filter((l) => l.key === req.query.league)
