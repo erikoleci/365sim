@@ -207,7 +207,7 @@ function slugDash(s) {
 //   4. Otherwise 'other' (grouped as "Të tjera" on the frontend).
 const COUNTRY_NAMES_BY_LENGTH_DESC = [
   'united arab emirates', 'south africa', 'south korea', 'saudi arabia', 'czech republic',
-  'costa rica', 'el salvador', 'hong kong', 'united states',
+  'costa rica', 'el salvador', 'hong kong', 'united states', 'bahrain',
   'england', 'spain', 'italy', 'germany', 'france', 'brazil', 'argentina', 'portugal',
   'netherlands', 'holland', 'belgium', 'turkey', 'greece', 'scotland', 'switzerland',
   'austria', 'denmark', 'sweden', 'norway', 'russia', 'poland', 'mexico', 'japan',
@@ -229,13 +229,20 @@ const COUNTRY_NAME_TO_TOKEN = {
   norway: 'norway', russia: 'russia', poland: 'poland', mexico: 'mexico', japan: 'japan',
   'south korea': 'korea', korea: 'korea', china: 'china', australia: 'australia', chile: 'chile',
   colombia: 'colombia', albania: 'albania', croatia: 'croatia', serbia: 'serbia', romania: 'romania',
-  ukraine: 'ukraine', 'saudi arabia': 'saudi', kosovo: 'kosovo',
+  ukraine: 'ukraine', 'saudi arabia': 'saudi', kosovo: 'kosovo', bahrain: 'bahrain', 'hong kong': 'hong-kong-china',
   world: 'fifa', europe: 'uefa', international: 'uefa',
   india: 'india', indonesia: 'indonesia', malaysia: 'malaysia', myanmar: 'myanmar',
 };
 // Specific -> broad. Anything that could collide with a broader pattern
 // below it (Brazilian state leagues vs. Italy's "Serie A/B") MUST come
-// first, since leagueCountryToken() returns on the FIRST match.
+// first, since leagueCountryToken() returns on the FIRST match. The
+// international/regional-body hints (UEFA/FIFA/CONMEBOL/AFC/ASEAN) MUST
+// also come before the bare national-competition-name hints (e.g. "premier
+// league" -> england, "championship" -> england) — those are dangerously
+// generic and match plenty of OTHER countries' domestic top flights
+// ("Bahrain Premier League", "Hong Kong Premier League") and regional
+// qualifiers ("ASEAN Championship Qualifying") that have nothing to do
+// with England.
 const LEAGUE_COUNTRY_HINTS = [
   // Brazilian state championships — contain "serie a"/"serie b" just like
   // Italy's, so this MUST be checked before the generic Italy pattern.
@@ -243,6 +250,7 @@ const LEAGUE_COUNTRY_HINTS = [
   [/champions league|europa league|conference league|uefa|super cup/, 'uefa'],
   [/world cup|fifa|nations league/, 'fifa'],
   [/copa america|conmebol|libertadores|sudamericana/, 'conmebol'],
+  [/afc|asian cup|asean/, 'afc'],
   [/premier league|championship|league one|league two|fa cup|efl/, 'england'],
   [/la liga|copa del rey|segunda/, 'spain'],
   [/serie a|serie b|coppa italia/, 'italy'],
@@ -1016,7 +1024,7 @@ export async function syncLondon365Live() {
       // (set during the last full import) over the raw league name the
       // live feed carries — same event, same country/league identity.
       const resolvedLeague = g.league_id != null ? leagueById.get(String(g.league_id)) : null;
-      const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : (g.league || ''), 'LIVE', score, { minute: minute, apiStatus: g.api_status });
+      const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : leagueKeyFromCountry(null, g.league || ''), 'LIVE', score, { minute: minute, apiStatus: g.api_status });
       await recordGoalIfChanged(ev, score, minute, prev);
       gamesSynced++;
     }
@@ -1117,7 +1125,7 @@ export async function applySocketGame(g, status) {
   const minute = g.current_minute || null;
   const resolved = status || (minute ? 'LIVE' : statusFromCommence(commence));
   const resolvedLeague = g.league_id != null ? leagueById.get(String(g.league_id)) : null;
-  const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : (g.league || ''), resolved, score, { minute: minute, apiStatus: g.api_status });
+  const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : leagueKeyFromCountry(null, g.league || ''), resolved, score, { minute: minute, apiStatus: g.api_status });
   await recordGoalIfChanged(ev, score, minute, prev);
   return true;
 }

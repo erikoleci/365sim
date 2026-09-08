@@ -513,6 +513,15 @@ const App: React.FC = () => {
     [/thailand|nonthaburi/, 'thailand'],
     [/tunisia|monastir/, 'tunisia'],
     [/morocco|casablanca/, 'morocco'],
+    [/bahrain/, 'bahrain'],
+    [/hong kong/, 'hong-kong-china'],
+    // --- 3) Nderkombetare (kontrollohen PARA kompeticioneve kombetare "te
+    //     zhveshura" me poshte, sepse "ASEAN Championship Qualifying" perben
+    //     fjalen "championship" dhe do perputhej gabimisht me Anglinë nese ky
+    //     kontroll do vinte pas — nje kompeticion nderkombetar/rajonal duhet
+    //     te fitoje mbi nje fjale te pergjithshme si "championship"/"premier
+    //     league" qe shume vende e perdorin per ligen e tyre kombetare.) ---
+    [/afc|asian cup|asean|fiba|world cup|world club|club friendlies|europe friendlies|women.{0,4}s friendly|uefa|champions league|europa league|conference league|nations league|intercontinental/, 'international'],
     // --- 2) Kompeticione kombetare pa emer shteti ne rresht ---
     [/premier league|championship|fa cup|efl|league one|league two|development league/, 'england'],
     [/serie a|serie b|serie c/, 'italy'],
@@ -529,8 +538,6 @@ const App: React.FC = () => {
     [/kategoria superiore/, 'albania'],
     [/sleague/, 'singapore'],
     [/prva liga|druga liga|superliga/, 'serbia'],
-    // --- 3) Nderkombetare ---
-    [/afc|asian cup|asean|fiba|world cup|world club|club friendlies|europe friendlies|women.{0,4}s friendly|uefa|champions league|europa league|conference league|nations league|intercontinental/, 'international'],
   ];
 
   const leagueCountryToken = (key: string): string | null => {

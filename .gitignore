@@ -30,3 +30,4 @@ server/data/*.db
 server/data/*.db-*
 coverage
 package-lock.json
+pnpm-workspace.yaml
