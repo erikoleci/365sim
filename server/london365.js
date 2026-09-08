@@ -127,7 +127,11 @@ function isMinorLeague(name, countryName) {
 // full-detail-vs-list-only decision — a separate, unrelated concern).
 const SORT_PRIORITY_COUNTRIES = PRIORITY_COUNTRIES.size
   ? PRIORITY_COUNTRIES
-  : new Set(['england', 'spain', 'italy', 'germany', 'france', 'brazil', 'portugal', 'netherlands']);
+  : new Set(['international', 'uefa', 'england', 'spain', 'italy', 'germany', 'france', 'brazil', 'portugal', 'netherlands']);
+// International/continental competitions (Champions League, Europa League,
+// World Cup qualifiers, Nations League...) go EVEN BEFORE the top domestic
+// leagues — checked first in the priority comparator below.
+const TOP_PRIORITY_COUNTRIES = new Set(['international', 'uefa', 'world', 'europe']);
 const FULL_DETAIL = (process.env.LONDON365_FULL || '1') === '1';
 const LIVE_INTERVAL_MS = Math.max(10000, Number(process.env.LONDON365_LIVE_INTERVAL_MS || 30000));
 const IMPORT_THROTTLE_MS = Number(process.env.LONDON365_IMPORT_THROTTLE_MS || 600000);
@@ -831,13 +835,33 @@ export async function importLondon365(opts) {
         .filter(([, name]) => !EXCLUDED_COUNTRIES.has(String(name).toLowerCase()))
         .filter(([, name]) => !ONLY_COUNTRIES.size || ONLY_COUNTRIES.has(String(name).toLowerCase()))
         .sort((a, b) => {
-          const aPriority = SORT_PRIORITY_COUNTRIES.has(a[1].toLowerCase()) ? 0 : 1;
-          const bPriority = SORT_PRIORITY_COUNTRIES.has(b[1].toLowerCase()) ? 0 : 1;
-          return aPriority - bPriority;
+          const rank = (name) => {
+            const n = String(name).toLowerCase();
+            if (TOP_PRIORITY_COUNTRIES.has(n)) return 0; // International/UEFA/World first, always
+            if (SORT_PRIORITY_COUNTRIES.has(n)) return 1; // then England/Spain/Italy/Germany/France/...
+            return 2; // everyone else
+          };
+          return rank(a[1]) - rank(b[1]);
         });
 
+      // RESUME CURSOR — a redeploy/env-var-change/crash mid-import used to
+      // always restart processing from index 0 of the (priority-sorted)
+      // list, i.e. it NEVER got past England if anything interrupted it
+      // before finishing. We now persist which country we finished last and
+      // rotate the list to continue from there, so repeated interruptions
+      // make forward progress across the whole catalog instead of hammering
+      // the same first few countries forever. Once a full pass completes,
+      // the cursor resets to the top so priority countries get refreshed
+      // regularly on a healthy/uninterrupted run.
+      const cursorCountry = await getKV('l365_country_cursor', null);
+      let orderedCountryEntries = countryEntries;
+      if (cursorCountry) {
+        const idx = countryEntries.findIndex(([, name]) => name === cursorCountry);
+        if (idx > 0) orderedCountryEntries = [...countryEntries.slice(idx), ...countryEntries.slice(0, idx)];
+      }
+
       let leagues = [];
-      for (const [countryId, countryName] of countryEntries) {
+      for (const [countryId, countryName] of orderedCountryEntries) {
         let countryLeagues;
         try {
           countryLeagues = await api('/ajax/leagues/' + countryId);
@@ -846,7 +870,12 @@ export async function importLondon365(opts) {
           continue;
         }
         if (Array.isArray(countryLeagues)) leagues.push(...countryLeagues);
+        await setKV('l365_country_cursor', countryName);
       }
+      // Full pass completed with nothing left to interrupt it — reset the
+      // cursor so the next run starts from the top (International/England)
+      // again instead of resuming mid-list forever.
+      await setKV('l365_country_cursor', null);
       if (leagueCap) leagues = leagues.slice(0, leagueCap);
 
       for (const league of leagues) {
