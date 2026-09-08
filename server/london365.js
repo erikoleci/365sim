@@ -87,6 +87,23 @@ const EXCLUDED_COUNTRIES = new Set(
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean)
 );
+// Opposite of EXCLUDED_COUNTRIES: when set, ONLY these countries are
+// imported at all — everything else is skipped outright (not just
+// deprioritized like PRIORITY_COUNTRIES, and not just missing full detail).
+// This is the real fix for "too much load"/"too many countries" — every
+// other lever (leagueCap, MAJOR_ONLY, PRIORITY_COUNTRIES) still walks every
+// country's leagues, it just trims what happens per league. This one skips
+// the country's leagues entirely before any games/detail requests happen,
+// which is what actually cuts import time+request volume down when running
+// on a constrained host. Empty = no restriction (import every country, old
+// behavior). A league whose country can't be resolved at all is skipped
+// when this allowlist is active, since there's no way to know if it belongs.
+const ONLY_COUNTRIES = new Set(
+  (process.env.LONDON365_ONLY_COUNTRIES || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+);
 const MINOR_LEAGUE_PATTERN = /\bu-?1[0-9]\b|\bu-?2[0-3]\b|\byouth\b|\bjunior\b|\breserves?\b|\bwomen'?s?\b|\bfemale\b|\bfeminin[ao]?\b|\bamateur\b|\bacademy\b|\bfriendl(y|ies)\b|\besoccer\b|\be-?soccer\b|\bsimulated\b|\bvirtual\b/i;
 // Brazil specifically has ~25 STATE championships running in parallel
 // (Serie A/B/C/D are the national ones worth keeping; everything named
@@ -838,6 +855,7 @@ export async function importLondon365(opts) {
         }
         const isPriority = countryName && PRIORITY_COUNTRIES.has(countryName.toLowerCase());
         if (countryName && EXCLUDED_COUNTRIES.has(countryName.toLowerCase())) continue;
+        if (ONLY_COUNTRIES.size && !(countryName && ONLY_COUNTRIES.has(countryName.toLowerCase()))) continue;
         if (isMinorLeague(league.name, countryName)) continue;
 
         let games;
@@ -1006,6 +1024,15 @@ export async function syncLondon365Live() {
 
     for (const g of games) {
       if (!g || !g.id) continue;
+      const resolvedLeagueEarly = g.league_id != null ? leagueById.get(String(g.league_id)) : null;
+      // Same country allowlist as the prematch import — a live match from a
+      // country outside LONDON365_ONLY_COUNTRIES shouldn't sneak into the
+      // feed just because it's currently in-play. Unresolvable leagues
+      // (leagueById miss, e.g. right after a restart) are let through here
+      // since we can't yet know their country; the games loop below still
+      // routes them through the same key builder either way.
+      if (ONLY_COUNTRIES.size && resolvedLeagueEarly && resolvedLeagueEarly.countryName &&
+          !ONLY_COUNTRIES.has(resolvedLeagueEarly.countryName.toLowerCase())) continue;
       liveIds.add('l365-' + g.id);
       let rows = [];
       try {
@@ -1267,6 +1294,7 @@ export async function getLondon365Status() {
     fullDetail: FULL_DETAIL,
     leagueLimit: LEAGUE_LIMIT,
     priorityCountries: Array.from(PRIORITY_COUNTRIES),
+    onlyCountries: Array.from(ONLY_COUNTRIES),
     liveIntervalMs: LIVE_INTERVAL_MS,
     matches: rows[0].matches,
     liveMatches: rows[0].live,
