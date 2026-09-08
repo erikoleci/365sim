@@ -17,6 +17,11 @@ const App: React.FC = () => {
 
   // --- Data State (from backend, not localStorage) ---
   const [matches, setMatches] = useState<Match[]>([]);
+  // League key -> the name EXACTLY as LondonPro365's own API returns it
+  // (untouched — no re-slugging/re-titlecasing). Populated from every
+  // /matches response; leagueLabel() below prefers this over any derived
+  // fallback.
+  const [leagueNames, setLeagueNames] = useState<Record<string, string>>({});
   const [myBets, setMyBets] = useState<Bet[]>([]);
   const [adminUsers, setAdminUsers] = useState<User[]>([]);
   const [adminAllBets, setAdminAllBets] = useState<any[]>([]);
@@ -86,8 +91,9 @@ const App: React.FC = () => {
     if (!currentUser || currentView !== 'sports') return;
     setIsLoading((prev) => (matches.length === 0 ? true : prev));
     try {
-      const { matches: fresh } = await api.fetchMatches();
+      const { matches: fresh, leagueNames: freshLeagueNames } = await api.fetchMatches();
       setMatches(fresh);
+      if (freshLeagueNames) setLeagueNames((prev) => ({ ...prev, ...freshLeagueNames }));
       setLoadError(null);
     } catch (e) {
       console.error('Failed to load matches', e);
@@ -302,8 +308,10 @@ const App: React.FC = () => {
   const leagueLabel = (key: string) =>
     key === 'All Top Football'
       ? 'Të Gjitha Kampionatet'
-      : LEAGUE_LABELS[key] ||
-        // Strip "<provider>_<country>__" so the row doesn't redundantly repeat
+      : leagueNames[key] || LEAGUE_LABELS[key] ||
+        // Only reached when we have no raw name for this key at all (e.g. a
+        // league not seen since the last server restart). Strip
+        // "<provider>_<country>__" so the row doesn't redundantly repeat
         // the country name that's already shown in the group header above it
         // (e.g. "l365_brazil__amazonense_serie_b" -> "Amazonense Serie B",
         // not "Brazil Amazonense Serie B").

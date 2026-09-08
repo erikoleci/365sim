@@ -82,6 +82,7 @@ import {
   applySocketGame,
   markLondon365GameEnded,
   removeSocketCoef,
+  getLondon365LeagueNames,
 } from '../server/london365.js';
 import { pushGoal, pushOddsChanged } from '../server/ws.js';
 
@@ -145,6 +146,12 @@ describe('london365 REST import', function () {
     const ev = JSON.parse(row.raw_json);
     expect(ev.bookmakers[0].markets[0].key).toBe('h2h');
     expect(ev.bookmakers[0].markets[0].outcomes).toHaveLength(3);
+  });
+
+  it('exposes the league name exactly as the provider returned it, untouched', async function () {
+    await importLondon365({ sports: [1], full: true });
+    const names = getLondon365LeagueNames();
+    expect(names['l365_england__premier_league']).toBe('Premier League');
   });
 });
 

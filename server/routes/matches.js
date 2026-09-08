@@ -1,7 +1,7 @@
 import express from 'express';
 import pool from '../db.js';
 import { mapEventToMatch } from '../oddsUtils.js';
-import { ensureLondon365Import } from '../london365.js';
+import { ensureLondon365Import, getLondon365LeagueNames } from '../london365.js';
 
 const router = express.Router();
 
@@ -102,7 +102,7 @@ router.get('/', async (req, res) => {
     ? await pool.query('SELECT * FROM matches_cache WHERE league = $1 ORDER BY start_time ASC', [req.query.league])
     : await pool.query("SELECT * FROM matches_cache WHERE id LIKE 'l365-%' ORDER BY start_time ASC");
   console.log(`[matches] GET / -> ${rows.length} cached row(s)${req.query.league ? ` for league=${req.query.league}` : ''}`);
-  res.json({ matches: dedupeMatches(rows.map(mapEventToMatch)) });
+  res.json({ matches: dedupeMatches(rows.map(mapEventToMatch)), leagueNames: getLondon365LeagueNames() });
 });
 
 router.get('/:id/odds-history', async (req, res) => {

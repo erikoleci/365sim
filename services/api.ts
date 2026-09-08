@@ -67,7 +67,7 @@ export function logout() {
 
 // --- Matches ---
 
-export async function fetchMatches(league?: string): Promise<{ matches: Match[] }> {
+export async function fetchMatches(league?: string): Promise<{ matches: Match[]; leagueNames?: Record<string, string> }> {
   const qs = league && league !== 'All Top Football' ? `?league=${encodeURIComponent(league)}` : '';
   return request(`/matches${qs}`);
 }

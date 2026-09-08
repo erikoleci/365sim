@@ -363,6 +363,19 @@ export async function loadPersistedLeagueMap() {
   }
 }
 
+// Key -> the league name EXACTLY as the provider's API returned it
+// (league.name, untouched — no slugging, no re-titlecasing, no prefix
+// stripping). The frontend uses this verbatim wherever a name is available
+// instead of re-deriving a display label from the slugified key, which is
+// lossy (e.g. "LaLiga" -> slug "laliga" -> re-titlecased "Laliga").
+export function getLondon365LeagueNames() {
+  const names = {};
+  for (const entry of leagueById.values()) {
+    if (entry && entry.key && entry.name) names[entry.key] = entry.name;
+  }
+  return names;
+}
+
 // Confirmed directly against the live provider — the FULL /ajax/countries/1
 // response, pasted verbatim by the site owner (not partial, not guessed).
 // Used as a hard override on top of whatever /ajax/countries/{sportId}
