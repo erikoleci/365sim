@@ -69,7 +69,8 @@ const PRIORITY_COUNTRIES = new Set(
     .filter(Boolean)
 );
 const wantsFullDetailFor = (countryName) =>
-  !PRIORITY_COUNTRIES.size || (countryName && PRIORITY_COUNTRIES.has(countryName.toLowerCase()));
+  !PRIORITY_COUNTRIES.size ||
+  (countryName && (PRIORITY_COUNTRIES.has(countryName.toLowerCase()) || TOP_PRIORITY_COUNTRIES.has(countryName.toLowerCase())));
 // Skip minor/youth/regional leagues so the import spends its time+requests
 // on what people actually check (top flight + main cup per country) instead
 // of burning through e.g. Brazil's dozens of state championships (Gaucho,
@@ -894,6 +895,7 @@ export async function importLondon365(opts) {
   let detailOkCount = 0;
   let detailFailCount = 0;
   let skippedDateCount = 0;
+  let skippedNoOddsCount = 0;
   // Every league seen this run, with how many of its games actually made it
   // into matches_cache vs got skipped for a bad date — so "England only
   // shows 3 leagues" or "Premier League has 0 matches" can be confirmed or
@@ -1094,7 +1096,15 @@ export async function importLondon365(opts) {
           }
           if (!rows.length) rows = parseOddString(game.odd);
           rows = hydrateRowNames(rows.filter(function (r) { return r ? !Number.isNaN(r.coef) : false; }));
-          if (!rows.length) continue;
+          if (!rows.length) {
+            skippedNoOddsCount++;
+            summaryEntry.skipped++;
+            console.warn(
+              '[london365] skipping game ' + game.id + ' (' + league.name + '): zero usable odds rows — ' +
+              'fetchFullDetail=' + fetchFullDetail + ', raw odd field: ' + JSON.stringify(game.odd)
+            );
+            continue;
+          }
 
           const commenceTime = isoFromWholeDate(game.whole_date, game.game_date, game.game_time);
           if (!commenceTime) {
@@ -1149,6 +1159,7 @@ export async function importLondon365(opts) {
       leaguesSeen.size + ' leagues (full-detail fetch: ' + detailOkCount + ' ok / ' + detailFailCount + ' failed' +
       (full && detailFailCount > detailOkCount ? ' — MOSTLY FAILING, matches are likely showing only sparse list-level odds, not the full market catalog' : '') +
       ', ' + skippedDateCount + ' games skipped for bad dates' +
+      ', ' + skippedNoOddsCount + ' games skipped for zero usable odds' +
       ')'
     );
     // Per-country league breakdown: leagues the provider actually returned
@@ -1173,7 +1184,7 @@ export async function importLondon365(opts) {
         console.warn('[london365] PRIORITY COUNTRY WITH ZERO LEAGUES THIS RUN: ' + missing.join(', '));
       }
     }
-    return { matches: matchCount, coefficients: coefficientCount, leagues: leaguesSeen.size, detailOkCount, detailFailCount, skippedDateCount };
+    return { matches: matchCount, coefficients: coefficientCount, leagues: leaguesSeen.size, detailOkCount, detailFailCount, skippedDateCount, skippedNoOddsCount };
   } finally {
     importRunning = false;
   }
