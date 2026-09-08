@@ -340,6 +340,23 @@ const countryMapCache = new Map(); // sportId -> { fetchedAt, countryMap }
 // country-accurate key the import pass computed, instead of falling back
 // to a raw league name string.
 const leagueById = new Map();
+let leagueByIdLoaded = false;
+// Loads the persisted leagueById map (saved at the end of every completed
+// import — see importLondon365) so it's populated immediately on boot,
+// before the live loop's first event ever needs it, instead of starting
+// empty and only filling in as the slow full-import loop happens to reach
+// each league again.
+export async function loadPersistedLeagueMap() {
+  if (leagueByIdLoaded) return;
+  leagueByIdLoaded = true;
+  try {
+    const saved = await getKV('l365_league_map', {});
+    for (const [id, entry] of Object.entries(saved || {})) leagueById.set(id, entry);
+    if (leagueById.size) console.log('[london365] restored ' + leagueById.size + ' league->country mappings from a previous import');
+  } catch (err) {
+    console.error('[london365] failed loading persisted league map:', err.message);
+  }
+}
 
 // Confirmed directly against the live provider (real request/response pairs
 // pasted by the site owner, not guessed): country.id -> real country name
@@ -1046,6 +1063,14 @@ export async function importLondon365(opts) {
     await setKV('l365_league_cursor', null);
     await setKV('l365_country_cursor', null);
     await setKV('l365_market_names', Object.fromEntries(marketNameById));
+    // Persist leagueById (id -> {key, name, countryId, countryName}) so a
+    // fresh server boot doesn't start with it EMPTY. Without this, any live
+    // socket event that arrives before the (slow) full-import loop has
+    // re-reached that specific league falls back to name-only guessing —
+    // wrong for a bare league name with no country word in it at all
+    // ("Premier League", "Nations League"...), which is exactly how this
+    // provider names most leagues.
+    await setKV('l365_league_map', Object.fromEntries(leagueById));
     await setKV('l365_last_import', Date.now());
     console.log(
       '[london365] import done: ' + matchCount + ' matches, ' + coefficientCount + ' coefficients, ' +

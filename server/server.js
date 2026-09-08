@@ -23,7 +23,7 @@ import scrapeRouter from './routes/scrape.js';
 import favoritesRouter from './routes/favorites.js';
 import { initDb } from './db.js';
 import { initWebSocket } from './ws.js';
-import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues } from './london365.js';
+import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, loadPersistedLeagueMap } from './london365.js';
 import { startLondon365Socket } from './london365Socket.js';
 
 let dbReady = false;
@@ -165,6 +165,7 @@ async function start() {
   // never blocks startup), start the in-play REST safety-net loop, and open the
   // native Socket.IO feed for sub-second odds/score/lifecycle updates.
   ensureLondon365Import();
+  loadPersistedLeagueMap().catch((err) => console.error('[server] loadPersistedLeagueMap failed:', err.message));
   purgeExcludedCountries().catch((err) => console.error('[server] purgeExcludedCountries failed:', err.message));
   purgeStaleLeagues().catch((err) => console.error('[server] purgeStaleLeagues failed:', err.message));
   startLondon365LiveLoop();
