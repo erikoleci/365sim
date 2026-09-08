@@ -1600,6 +1600,28 @@ export async function purgeCountriesNotInOnlyList() {
   }
 }
 
+// Hard reset: wipes EVERY l365-* row and every piece of in-memory/persisted
+// state (resume cursors, leagueById, the name-alias index, the accumulated
+// leagueNames list) so the next import genuinely starts from zero with
+// current code — instead of layering another purge pass on top of however
+// many months-old rows/aliases/cursors have accumulated across every past
+// bug fix. Guarded behind LONDON365_FORCE_RESET=1 specifically so this only
+// ever runs when explicitly asked for (env var on Render, one redeploy),
+// never automatically.
+export async function wipeLondon365Data() {
+  const { rowCount } = await pool.query(`DELETE FROM matches_cache WHERE id LIKE 'l365-%'`);
+  await setKV('l365_leagues', []);
+  await setKV('l365_league_map', {});
+  await setKV('l365_last_import', 0);
+  await setKV('l365_country_cursor', null);
+  await setKV('l365_league_cursor', null);
+  leagueById.clear();
+  leagueNameIndex.clear();
+  countryMapCache.clear();
+  console.log(`[london365] HARD RESET: wiped ${rowCount} rows + all cursors/caches (LONDON365_FORCE_RESET=1) — next import starts completely from zero`);
+  return rowCount;
+}
+
 // One-time cleanup of the OLD league-key format (single underscore, e.g.
 // "l365_england_premier_league") from before the country segment was
 // switched to a "__"-delimited prefix (leagueKeyFromCountry above). Rows

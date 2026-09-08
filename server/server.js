@@ -23,7 +23,7 @@ import scrapeRouter from './routes/scrape.js';
 import favoritesRouter from './routes/favorites.js';
 import { initDb } from './db.js';
 import { initWebSocket } from './ws.js';
-import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCountriesNotInOnlyList, loadPersistedLeagueMap } from './london365.js';
+import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCountriesNotInOnlyList, wipeLondon365Data, loadPersistedLeagueMap } from './london365.js';
 import { startLondon365Socket } from './london365Socket.js';
 
 let dbReady = false;
@@ -164,11 +164,26 @@ async function start() {
   // LondonPro365 provider: seed the full catalog in the background (throttled,
   // never blocks startup), start the in-play REST safety-net loop, and open the
   // native Socket.IO feed for sub-second odds/score/lifecycle updates.
-  ensureLondon365Import();
-  loadPersistedLeagueMap().catch((err) => console.error('[server] loadPersistedLeagueMap failed:', err.message));
-  purgeExcludedCountries().catch((err) => console.error('[server] purgeExcludedCountries failed:', err.message));
-  purgeStaleLeagues().catch((err) => console.error('[server] purgeStaleLeagues failed:', err.message));
-  purgeLegacyLeagueKeyFormat().catch((err) => console.error('[server] purgeLegacyLeagueKeyFormat failed:', err.message));
+  //
+  // LONDON365_FORCE_RESET=1 wipes every l365 row + cursor/cache BEFORE any of
+  // that starts, so the next import is a genuinely clean slate instead of
+  // layering on top of however much has accumulated across every past fix.
+  // Remove the env var again after one successful deploy with it set — it's
+  // not meant to run on every boot.
+  (async () => {
+    if (process.env.LONDON365_FORCE_RESET === '1') {
+      try {
+        await wipeLondon365Data();
+      } catch (err) {
+        console.error('[server] wipeLondon365Data failed:', err.message);
+      }
+    }
+    ensureLondon365Import();
+    loadPersistedLeagueMap().catch((err) => console.error('[server] loadPersistedLeagueMap failed:', err.message));
+    purgeExcludedCountries().catch((err) => console.error('[server] purgeExcludedCountries failed:', err.message));
+    purgeStaleLeagues().catch((err) => console.error('[server] purgeStaleLeagues failed:', err.message));
+    purgeLegacyLeagueKeyFormat().catch((err) => console.error('[server] purgeLegacyLeagueKeyFormat failed:', err.message));
+  })();
   // Runs against whatever leagueById the persisted map just restored — a
   // second, fuller pass happens automatically at the end of every completed
   // import (once leagueNameIndex has this run's real data), this is just
