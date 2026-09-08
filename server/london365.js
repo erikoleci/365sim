@@ -334,6 +334,20 @@ const countryMapCache = new Map(); // sportId -> { fetchedAt, countryMap }
 // to a raw league name string.
 const leagueById = new Map();
 
+// Confirmed directly against the live provider (real request/response pairs
+// pasted by the site owner, not guessed): country.id -> real country name
+// for sport_id=1 (soccer). Used as a hard override on top of whatever
+// /ajax/countries/{sportId} returns, so these specific countries can NEVER
+// be mis-mapped even if the provider ever renames/reorders/omits them.
+const CONFIRMED_COUNTRY_IDS = {
+  57: 'Italy', 85: 'Spain', 34: 'Germany', 32: 'France',
+  // country_id 19 and 13 are both continental/international competition
+  // buckets (UEFA Champions/Europa/Conference League, Copa Libertadores,
+  // Copa Sudamericana, CONCACAF, AFC, UEFA Nations League) — not a single
+  // country, so both map to the same "International" token.
+  19: 'International', 13: 'International',
+};
+
 async function getCountryMap(sportId) {
   const cached = countryMapCache.get(sportId);
   if (cached && Date.now() - cached.fetchedAt < COUNTRY_MAP_CACHE_MS) return cached.countryMap;
@@ -342,6 +356,9 @@ async function getCountryMap(sportId) {
   const countryMap = new Map(
     (Array.isArray(countries) ? countries : []).map((c) => [String(c.id), c.name])
   );
+  if (String(sportId) === '1') {
+    for (const [id, name] of Object.entries(CONFIRMED_COUNTRY_IDS)) countryMap.set(String(id), name);
+  }
   console.log('[london365] loaded ' + countryMap.size + ' countries for sport ' + sportId);
   countryMapCache.set(sportId, { fetchedAt: Date.now(), countryMap: countryMap });
   return countryMap;
