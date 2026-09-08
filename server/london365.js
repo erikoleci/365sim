@@ -892,10 +892,29 @@ export async function importLondon365(opts) {
       // Full pass completed with nothing left to interrupt it — reset the
       // cursor so the next run starts from the top (International/England)
       // again instead of resuming mid-list forever.
-      await setKV('l365_country_cursor', null);
       if (leagueCap) leagues = leagues.slice(0, leagueCap);
 
+      // RESUME CURSOR (correct spot this time) — the SLOW part of the
+      // import is THIS loop (one HTTP request per league for games, then
+      // one more per game for full market detail), not the league-list
+      // collection above (which is fast, just metadata, and normally
+      // finishes even on an interrupted run). A redeploy/crash/env-var
+      // change used to always restart THIS loop from leagues[0] — which,
+      // since leagues[] is built in country-priority order, meant it kept
+      // re-doing International/England's leagues and never reliably got
+      // through Spain/Italy/Germany/France on a host that redeploys often.
+      // Persist the last successfully-processed league id and rotate the
+      // array to continue right after it; once a full lap completes with
+      // nothing left to interrupt it, the cursor clears so priority
+      // leagues resume getting refreshed first on healthy runs.
+      const leagueCursor = await getKV('l365_league_cursor', null);
+      if (leagueCursor) {
+        const idx = leagues.findIndex((l) => String(l.id) === String(leagueCursor));
+        if (idx >= 0 && idx + 1 < leagues.length) leagues = [...leagues.slice(idx + 1), ...leagues.slice(0, idx + 1)];
+      }
+
       for (const league of leagues) {
+        await setKV('l365_league_cursor', league.id);
         // Resolve country BEFORE the games fetch — otherwise a league with
         // zero current games (very normal, most leagues are between
         // matchdays most of the time) or a failed games fetch skipped
@@ -1014,6 +1033,11 @@ export async function importLondon365(opts) {
       }
     }
     await setKV('l365_leagues', Array.from(leaguesSeen));
+    // A full pass finished with nothing left to interrupt it — clear both
+    // resume cursors so the next run starts from the top (International
+    // first) again instead of resuming mid-list forever.
+    await setKV('l365_league_cursor', null);
+    await setKV('l365_country_cursor', null);
     await setKV('l365_market_names', Object.fromEntries(marketNameById));
     await setKV('l365_last_import', Date.now());
     console.log(
