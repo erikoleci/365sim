@@ -123,6 +123,11 @@ function isMinorLeague(name, countryName) {
   if (!MAJOR_LEAGUES_ONLY) return false;
   const n = String(name || '');
   if (MINOR_LEAGUE_PATTERN.test(n)) return true;
+  // The country bucket itself can be amateur/youth-only (e.g. "Austria
+  // Amateur", "Germany Amateur", "England Amateur", "International Youth"
+  // from CONFIRMED_COUNTRY_IDS) even when a league's own name inside it
+  // doesn't contain any of those words (e.g. "Regionalliga West").
+  if (MINOR_LEAGUE_PATTERN.test(String(countryName || ''))) return true;
   if ((countryName || '').toLowerCase() === 'brazil' && BRAZIL_STATE_LEAGUE_PATTERN.test(n) && !/copa do brasil/i.test(n)) return true;
   return false;
 }
@@ -358,18 +363,35 @@ export async function loadPersistedLeagueMap() {
   }
 }
 
-// Confirmed directly against the live provider (real request/response pairs
-// pasted by the site owner, not guessed): country.id -> real country name
-// for sport_id=1 (soccer). Used as a hard override on top of whatever
-// /ajax/countries/{sportId} returns, so these specific countries can NEVER
-// be mis-mapped even if the provider ever renames/reorders/omits them.
+// Confirmed directly against the live provider — the FULL /ajax/countries/1
+// response, pasted verbatim by the site owner (not partial, not guessed).
+// Used as a hard override on top of whatever /ajax/countries/{sportId}
+// returns, so classification for these countries is always by id, never by
+// name-guessing a league's own name (which is what caused the Spain
+// pollution bug: id 85 alone is clean, so any wrong-country leagues were a
+// classification bug on our side, not a provider data issue).
 const CONFIRMED_COUNTRY_IDS = {
   64: 'England', 57: 'Italy', 85: 'Spain', 34: 'Germany', 32: 'France',
-  // country_id 19 and 13 are both continental/international competition
-  // buckets (UEFA Champions/Europa/Conference League, Copa Libertadores,
-  // Copa Sudamericana, CONCACAF, AFC, UEFA Nations League) — not a single
-  // country, so both map to the same "International" token.
-  19: 'International', 13: 'International',
+  // country_id 13 and 19 are both continental/international competition
+  // buckets (UEFA Champions/Europa/Conference League, Nations League, Copa
+  // Libertadores/Sudamericana, CONCACAF, AFC) — not a single country, so
+  // both fold into the same "International" token.
+  13: 'International', 19: 'International',
+  73: 'Belgium', 55: 'Norway', 95: 'Denmark', 42: 'Sweden', 45: 'Iceland',
+  35: 'Mexico', 1: 'Brazil', 53: 'Croatia', 65: 'Austria', 70: 'Czech Republic',
+  41: 'Finland', 56: 'Peru', 22: 'Russia', 111: 'Scotland', 84: 'Slovakia',
+  89: 'Slovenia', 102: 'Switzerland', 21: 'USA', 91: 'Australia', 44: 'Netherlands',
+  93: 'Portugal', 246: 'Singapore', 81: 'Turkey', 63: 'Poland', 259: 'Argentina',
+  23: 'Chile', 24: 'Ireland', 50: 'Japan', 2: 'Uruguay', 39: 'Israel',
+  97: 'Greece', 54: 'Romania', 31: 'Bulgaria', 163: 'Malaysia', 110: 'Ukraine',
+  100: 'Belarus', 68: 'Estonia', 76: 'Austria Amateur', 130: 'Cyprus', 103: 'Germany Amateur',
+  241: 'Northern Ireland', 156: 'Wales', 121: 'Serbia', 139: 'Bosnia & Herzegovina', 122: 'Lithuania',
+  129: 'Latvia', 25: 'Ecuador', 141: 'Faroe Islands', 66: 'England Amateur', 118: 'Georgia',
+  92: 'Colombia', 114: 'Kazakhstan', 36: 'Paraguay', 46: 'Costa Rica', 62: 'Republic of Korea',
+  105: 'Armenia', 227: 'United Arab Emirates', 279: 'Algeria', 40: 'Egypt', 245: 'Saudi Arabia',
+  115: 'South Africa', 37: 'Qatar', 51: 'Guatemala', 235: 'El Salvador', 341: 'Indonesia',
+  281: 'Bolivia', 151: 'Montenegro', 149: 'San Marino', 80: 'Canada', 28: 'International Youth',
+  394: 'Iraq', 29: 'Tanzania', 286: 'Uganda',
 };
 
 async function getCountryMap(sportId) {
