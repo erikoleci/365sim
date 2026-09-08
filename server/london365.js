@@ -345,6 +345,36 @@ const countryMapCache = new Map(); // sportId -> { fetchedAt, countryMap }
 // country-accurate key the import pass computed, instead of falling back
 // to a raw league name string.
 const leagueById = new Map();
+// Reverse index for the live/socket fallback path: normalized league text
+// (with or without a leading country name — see registerLeagueName) -> the
+// same {key, name, countryId, countryName} entry as leagueById. Needed
+// because the live feed and the prematch list endpoint don't always agree
+// on league naming for the exact same competition — the live feed's
+// g.league has been observed as "England Premier League" while the
+// prematch import (which has the real league_id) knows it as plain
+// "Premier League". Without this, those two strings produced two different
+// keys (l365_england__england_premier_league vs l365_england__premier_league)
+// — same league, split into two sidebar entries, one of them always empty.
+const leagueNameIndex = new Map();
+function normalizeLeagueText(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+function registerLeagueName(entry) {
+  const plain = normalizeLeagueText(entry.name);
+  if (plain) leagueNameIndex.set(plain, entry);
+  if (entry.countryName) {
+    const withCountry = normalizeLeagueText(entry.countryName + ' ' + entry.name);
+    if (withCountry) leagueNameIndex.set(withCountry, entry);
+  }
+}
+// Looks up a raw league string (as the live feed sends it) against every
+// league name/alias seen during the last full import — before falling back
+// to pure name-guessing (leagueCountryToken). Exact-normalized match only
+// (no fuzzy matching): safe, since a miss just falls through to the
+// existing fallback behavior rather than risking a wrong merge.
+function resolveLeagueByName(rawName) {
+  return leagueNameIndex.get(normalizeLeagueText(rawName)) || null;
+}
 let leagueByIdLoaded = false;
 // Loads the persisted leagueById map (saved at the end of every completed
 // import — see importLondon365) so it's populated immediately on boot,
@@ -356,7 +386,7 @@ export async function loadPersistedLeagueMap() {
   leagueByIdLoaded = true;
   try {
     const saved = await getKV('l365_league_map', {});
-    for (const [id, entry] of Object.entries(saved || {})) leagueById.set(id, entry);
+    for (const [id, entry] of Object.entries(saved || {})) { leagueById.set(id, entry); registerLeagueName(entry); }
     if (leagueById.size) console.log('[london365] restored ' + leagueById.size + ' league->country mappings from a previous import');
   } catch (err) {
     console.error('[london365] failed loading persisted league map:', err.message);
@@ -1030,6 +1060,7 @@ export async function importLondon365(opts) {
           countryId: countryId,
           countryName: effectiveCountryName || null,
         });
+        registerLeagueName(leagueById.get(String(league.id)));
         const summaryKey = effectiveCountryName || '(fallback: ' + leagueCountryToken(league.name) + ')';
         const summaryEntry = { name: league.name, id: String(league.id), imported: 0, skipped: 0, providerGames: games.length };
         if (!leagueSummary.has(summaryKey)) leagueSummary.set(summaryKey, []);
@@ -1106,6 +1137,12 @@ export async function importLondon365(opts) {
     // ("Premier League", "Nations League"...), which is exactly how this
     // provider names most leagues.
     await setKV('l365_league_map', Object.fromEntries(leagueById));
+    // Now that this run's leagueNameIndex is fully populated (every real
+    // league name/alias we know about), sweep any already-existing rows
+    // stuck under a redundant country-prefixed key ("England Premier
+    // League") — they'd otherwise sit there forever as an empty duplicate
+    // next to the correctly-updating real-named league.
+    await purgeCountryPrefixedDuplicateLeagues();
     await setKV('l365_last_import', Date.now());
     console.log(
       '[london365] import done: ' + matchCount + ' matches, ' + coefficientCount + ' coefficients, ' +
@@ -1182,7 +1219,7 @@ export async function syncLondon365Live() {
 
     for (const g of games) {
       if (!g || !g.id) continue;
-      const resolvedLeagueEarly = g.league_id != null ? leagueById.get(String(g.league_id)) : null;
+      const resolvedLeagueEarly = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
       // Same country allowlist as the prematch import — a live match from a
       // country outside LONDON365_ONLY_COUNTRIES shouldn't sneak into the
       // feed just because it's currently in-play. Unresolvable leagues
@@ -1206,9 +1243,15 @@ export async function syncLondon365Live() {
       const score = parseScore(g.result);
       const minute = g.current_minute || null;
       // Prefer the country-accurate key resolved from the real league_id
-      // (set during the last full import) over the raw league name the
-      // live feed carries — same event, same country/league identity.
-      const resolvedLeague = g.league_id != null ? leagueById.get(String(g.league_id)) : null;
+      // (set during the last full import); if that's missing, try matching
+      // the live feed's own league text against every real league name/alias
+      // seen during the last import (resolveLeagueByName) BEFORE falling
+      // back to pure guessing — the live feed and prematch endpoint don't
+      // always agree on naming for the same league (e.g. "England Premier
+      // League" vs "Premier League"), and guessing from the raw text alone
+      // used to create a second, wrongly-named duplicate of an already-known
+      // league instead of landing on its real name.
+      const resolvedLeague = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
       const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : leagueKeyFromCountry(null, g.league || ''), 'LIVE', score, { minute: minute, apiStatus: g.api_status });
       await recordGoalIfChanged(ev, score, minute, prev);
       gamesSynced++;
@@ -1309,7 +1352,7 @@ export async function applySocketGame(g, status) {
   const score = parseScore(g.result);
   const minute = g.current_minute || null;
   const resolved = status || (minute ? 'LIVE' : statusFromCommence(commence));
-  const resolvedLeague = g.league_id != null ? leagueById.get(String(g.league_id)) : null;
+  const resolvedLeague = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
   const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : leagueKeyFromCountry(null, g.league || ''), resolved, score, { minute: minute, apiStatus: g.api_status });
   await recordGoalIfChanged(ev, score, minute, prev);
   return true;
@@ -1430,6 +1473,49 @@ export async function purgeStaleLeagues() {
     } catch (err) {
       console.error(`[london365] failed purging stale keyword "${kw}":`, err.message);
     }
+  }
+}
+
+// Purges rows whose league key redundantly repeats the country in the
+// league-name portion itself — e.g. "l365_england__england_premier_league"
+// sitting next to the correctly-named "l365_england__premier_league" for
+// the exact same competition. This happens when a live/socket payload's
+// own g.league text came through as "England Premier League" (some
+// providers name it that way on the live feed even though the prematch
+// list endpoint calls the same league plain "Premier League") and no
+// league_id was available to resolve it properly at write time. The
+// in-memory alias index (resolveLeagueByName) stops this going forward;
+// this cleans up whatever already landed in the DB before that existed.
+// Runs after every completed import, using that run's own countryMap so
+// "does the league-name half start with the country name" is checked
+// against real country names, not a guess.
+export async function purgeCountryPrefixedDuplicateLeagues() {
+  try {
+    const { rows } = await pool.query(
+      "SELECT DISTINCT league FROM matches_cache WHERE id LIKE 'l365-%' AND league LIKE '%\\_\\_%'"
+    );
+    let purged = 0;
+    for (const { league: key } of rows) {
+      const m = /^l365_([a-z0-9-]+)__(.+)$/.exec(key);
+      if (!m) continue;
+      const [, countryToken, leagueSlug] = m;
+      // Bad pattern: league-name slug literally starts with the country
+      // token again ("england" + "_premier_league" -> "england_premier_league").
+      if (!leagueSlug.startsWith(countryToken + '_')) continue;
+      const strippedSlug = leagueSlug.slice(countryToken.length + 1);
+      const cleanKey = 'l365_' + countryToken + '__' + strippedSlug;
+      if (cleanKey === key) continue; // nothing left after stripping — not actually a duplicate
+      const { rowCount } = await pool.query(
+        `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league = $1`,
+        [key]
+      );
+      purged += rowCount;
+      if (rowCount) console.log(`[london365] purged ${rowCount} rows under redundant "${key}" (real name is "${cleanKey}")`);
+    }
+    return purged;
+  } catch (err) {
+    console.error('[london365] failed purging country-prefixed duplicate leagues:', err.message);
+    return 0;
   }
 }
 
