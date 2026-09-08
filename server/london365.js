@@ -149,6 +149,12 @@ const FULL_DETAIL = (process.env.LONDON365_FULL || '1') === '1';
 const LIVE_INTERVAL_MS = Math.max(10000, Number(process.env.LONDON365_LIVE_INTERVAL_MS || 30000));
 const IMPORT_THROTTLE_MS = Number(process.env.LONDON365_IMPORT_THROTTLE_MS || 600000);
 const DETAIL_DELAY_MS = Math.max(0, Number(process.env.LONDON365_DETAIL_DELAY_MS || 150));
+// How many games' detail fetches run in flight at once (each still paced by
+// its own DETAIL_DELAY_MS). Default 4 — a meaningful speedup over strictly
+// sequential without meaningfully raising per-provider request rate (this
+// host has been redeployed often enough that a fully sequential pass rarely
+// finished even the priority countries before being interrupted).
+const DETAIL_CONCURRENCY = Math.max(1, Number(process.env.LONDON365_DETAIL_CONCURRENCY || 4));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const HEADERS = {
@@ -1076,59 +1082,66 @@ export async function importLondon365(opts) {
         // no league/sport cap without exhausting memory or request budget.
         const fetchFullDetail = full && wantsFullDetailFor(countryName);
 
-        for (const game of games) {
-          let rows = [];
-          if (fetchFullDetail) {
-            try {
-              // Gentle pacing: hammering a real bookmaker backend with one
-              // detail request per game, back-to-back, is exactly the
-              // pattern anti-bot/rate-limit rules key on. A failed detail
-              // fetch silently falls back to the sparse list-level odds
-              // below; the periodic repairSparseEvents pass restores the
-              // full market catalog for those games afterwards.
-              if (DETAIL_DELAY_MS) await sleep(DETAIL_DELAY_MS);
-              rows = await fetchDetailRows(game.id);
-              detailOkCount++;
-            } catch (err) {
-              detailFailCount++;
-              console.error('[london365] detail ' + game.id + ' failed (falling back to sparse list odds):', err.message);
+        // Bounded concurrency instead of one game at a time: this host gets
+        // redeployed often enough (by design — frequent small fixes) that a
+        // purely sequential detail-fetch loop rarely got a chance to finish
+        // even the priority countries before being interrupted, restarting
+        // the whole pass. Processing DETAIL_CONCURRENCY games at once cuts
+        // wall-clock time roughly by that factor while each individual
+        // request still gets its own DETAIL_DELAY_MS pacing — so per-request
+        // load on the provider is unchanged, only the number of requests
+        // in flight at once goes up a little.
+        const concurrency = fetchFullDetail ? DETAIL_CONCURRENCY : games.length || 1;
+        for (let i = 0; i < games.length; i += concurrency) {
+          const batch = games.slice(i, i + concurrency);
+          await Promise.all(batch.map(async (game) => {
+            let rows = [];
+            if (fetchFullDetail) {
+              try {
+                if (DETAIL_DELAY_MS) await sleep(DETAIL_DELAY_MS);
+                rows = await fetchDetailRows(game.id);
+                detailOkCount++;
+              } catch (err) {
+                detailFailCount++;
+                console.error('[london365] detail ' + game.id + ' failed (falling back to sparse list odds):', err.message);
+              }
             }
-          }
-          if (!rows.length) rows = parseOddString(game.odd);
-          rows = hydrateRowNames(rows.filter(function (r) { return r ? !Number.isNaN(r.coef) : false; }));
-          if (!rows.length) {
-            skippedNoOddsCount++;
-            summaryEntry.skipped++;
-            console.warn(
-              '[london365] skipping game ' + game.id + ' (' + league.name + '): zero usable odds rows — ' +
-              'fetchFullDetail=' + fetchFullDetail + ', raw odd field: ' + JSON.stringify(game.odd)
-            );
-            continue;
-          }
+            if (!rows.length) rows = parseOddString(game.odd);
+            rows = hydrateRowNames(rows.filter(function (r) { return r ? !Number.isNaN(r.coef) : false; }));
+            if (!rows.length) {
+              skippedNoOddsCount++;
+              summaryEntry.skipped++;
+              console.warn(
+                '[london365] skipping game ' + game.id + ' (' + league.name + '): zero usable odds rows — ' +
+                'fetchFullDetail=' + fetchFullDetail + ', raw odd field: ' + JSON.stringify(game.odd)
+              );
+              return;
+            }
 
-          const commenceTime = isoFromWholeDate(game.whole_date, game.game_date, game.game_time);
-          if (!commenceTime) {
-            skippedDateCount++;
-            summaryEntry.skipped++;
-            console.warn(
-              '[london365] skipping game ' + game.id + ' (' + league.name + '): missing/unparseable kickoff date — raw fields: ' +
-              'whole_date=' + JSON.stringify(game.whole_date) + ' game_date=' + JSON.stringify(game.game_date) + ' game_time=' + JSON.stringify(game.game_time)
-            );
-            continue;
-          }
+            const commenceTime = isoFromWholeDate(game.whole_date, game.game_date, game.game_time);
+            if (!commenceTime) {
+              skippedDateCount++;
+              summaryEntry.skipped++;
+              console.warn(
+                '[london365] skipping game ' + game.id + ' (' + league.name + '): missing/unparseable kickoff date — raw fields: ' +
+                'whole_date=' + JSON.stringify(game.whole_date) + ' game_date=' + JSON.stringify(game.game_date) + ' game_time=' + JSON.stringify(game.game_time)
+              );
+              return;
+            }
 
-          const ev = buildEvent(
-            game.id,
-            game.home_team,
-            game.away_team,
-            commenceTime,
-            rows
-          );
-          await upsertMatch(ev, leagueKeyResolved, statusFromCommence(ev.commence_time), null);
-          matchCount++;
-          summaryEntry.imported++;
-          coefficientCount += rows.length;
-          leaguesSeen.add(league.name);
+            const ev = buildEvent(
+              game.id,
+              game.home_team,
+              game.away_team,
+              commenceTime,
+              rows
+            );
+            await upsertMatch(ev, leagueKeyResolved, statusFromCommence(ev.commence_time), null);
+            matchCount++;
+            summaryEntry.imported++;
+            coefficientCount += rows.length;
+            leaguesSeen.add(league.name);
+          }));
         }
       }
     }
