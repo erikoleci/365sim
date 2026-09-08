@@ -1333,6 +1333,39 @@ export async function repairSparseEvents(opts) {
 
 let liveTimer = null;
 
+// One-time cleanup so leagues that shouldn't exist under the CURRENT rules
+// (excluded countries, or minor/youth/regional leagues per
+// LONDON365_MAJOR_ONLY) disappear immediately instead of lingering forever
+// as stale rows imported under an OLDER, buggier country-detection pass —
+// which is exactly how e.g. "Italy Brasileiro Serie A" ended up sitting
+// under Italy: it was imported back when country detection guessed from
+// the league NAME (a "serie a"/"serie b" substring match), well before the
+// country_id-based fix. That stale row's league key already says
+// "l365_italy__...", so purgeExcludedCountries() (which matches on the
+// CURRENT country prefix) never touches it. This sweeps by keyword
+// instead, regardless of whatever country prefix a stale row currently has.
+const STALE_LEAGUE_KEYWORDS = [
+  'brasileiro', 'brasileirao', 'amazonense', 'gaucho', 'carioca', 'paulista',
+  'catarinense', 'mineiro', 'baiano', 'cearense', 'potiguar', 'goiano',
+  'alagoano', 'capixaba', 'sergipano', 'paraense', 'matogrossense',
+  'pernambucano', 'copa_do_brasil',
+  'u19', 'u20', 'u21', 'u23', 'women', 'youth', 'junior', 'reserve',
+  'amateur', 'academy', 'friendly', 'esoccer', 'virtual', 'simulated',
+];
+export async function purgeStaleLeagues() {
+  for (const kw of STALE_LEAGUE_KEYWORDS) {
+    try {
+      const { rowCount } = await pool.query(
+        `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league ILIKE $1`,
+        [`%${kw}%`]
+      );
+      if (rowCount) console.log(`[london365] purged ${rowCount} stale rows matching "${kw}" (excluded/minor league, imported under an older classification)`);
+    } catch (err) {
+      console.error(`[london365] failed purging stale keyword "${kw}":`, err.message);
+    }
+  }
+}
+
 // One-time cleanup so an excluded country's matches disappear immediately
 // on deploy instead of only stopping new ones from being added (existing
 // rows would otherwise sit in matches_cache until they naturally age out).
