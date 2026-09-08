@@ -23,7 +23,7 @@ import scrapeRouter from './routes/scrape.js';
 import favoritesRouter from './routes/favorites.js';
 import { initDb } from './db.js';
 import { initWebSocket } from './ws.js';
-import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, loadPersistedLeagueMap } from './london365.js';
+import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, loadPersistedLeagueMap } from './london365.js';
 import { startLondon365Socket } from './london365Socket.js';
 
 let dbReady = false;
@@ -168,6 +168,7 @@ async function start() {
   loadPersistedLeagueMap().catch((err) => console.error('[server] loadPersistedLeagueMap failed:', err.message));
   purgeExcludedCountries().catch((err) => console.error('[server] purgeExcludedCountries failed:', err.message));
   purgeStaleLeagues().catch((err) => console.error('[server] purgeStaleLeagues failed:', err.message));
+  purgeLegacyLeagueKeyFormat().catch((err) => console.error('[server] purgeLegacyLeagueKeyFormat failed:', err.message));
   startLondon365LiveLoop();
   startLondon365Socket();
   // Periodically restore full market detail for events whose initial detail

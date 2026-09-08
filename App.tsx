@@ -284,20 +284,20 @@ const App: React.FC = () => {
   // Albanian display labels; anything unmapped falls back to a prettified
   // version of the key so a new/unexpected league never shows the raw slug.
   const LEAGUE_LABELS: Record<string, string> = {
-    'soccer_epl': 'Anglia - Premier League',
-    'soccer_spain_la_liga': 'Spanja - La Liga',
-    'soccer_italy_serie_a': 'Italia - Serie A',
-    'soccer_germany_bundesliga': 'Gjermania - Bundesliga',
-    'soccer_france_ligue_one': 'Franca - Ligue 1',
+    'soccer_epl': 'Premier League',
+    'soccer_spain_la_liga': 'La Liga',
+    'soccer_italy_serie_a': 'Serie A',
+    'soccer_germany_bundesliga': 'Bundesliga',
+    'soccer_france_ligue_one': 'Ligue 1',
     'soccer_uefa_champs_league': 'UEFA Champions League',
     'soccer_uefa_champs_league_qualification': 'UEFA Champions League - Kualifikuese',
     'soccer_uefa_europa_league': 'UEFA Europa League',
     'soccer_uefa_europa_conference_league': 'UEFA Conference League',
     'soccer_fifa_world_cup': 'Kampionati Botëror',
     'soccer_fifa_world_cup_qualifiers_europe': 'Kualifikueset Botërore - Evropa',
-    'soccer_usa_mls': 'SHBA - MLS',
-    'soccer_brazil_campeonato': 'Brazil - Serie A',
-    'oddsapiio_albania_superiore': 'Shqipëri - Kategoria Superiore',
+    'soccer_usa_mls': 'MLS',
+    'soccer_brazil_campeonato': 'Serie A',
+    'oddsapiio_albania_superiore': 'Kategoria Superiore',
   };
   const leagueLabel = (key: string) =>
     key === 'All Top Football'

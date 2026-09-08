@@ -1418,6 +1418,26 @@ export async function purgeExcludedCountries() {
   }
 }
 
+// One-time cleanup of the OLD league-key format (single underscore, e.g.
+// "l365_england_premier_league") from before the country segment was
+// switched to a "__"-delimited prefix (leagueKeyFromCountry above). Rows
+// under the old key stopped being refreshed the moment the code migrated,
+// so they sit there as dead duplicates of the correctly-updating new-format
+// row for the same real competition — e.g. "England Premier League" (old,
+// stale, no matches) next to "Premier League" (new, live-updated) in the
+// sidebar. Every current l365 key contains "__"; anything under an l365-%
+// id without it is unambiguously pre-migration and safe to drop.
+export async function purgeLegacyLeagueKeyFormat() {
+  try {
+    const { rowCount } = await pool.query(
+      `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league LIKE 'l365\\_%' ESCAPE '\\' AND strpos(league, '__') = 0`
+    );
+    if (rowCount) console.log(`[london365] purged ${rowCount} rows under the old pre-migration league-key format (dead duplicate leagues)`);
+  } catch (err) {
+    console.error('[london365] failed purging legacy league-key format:', err.message);
+  }
+}
+
 export function startLondon365LiveLoop() {
   if (!ENABLED || liveTimer) return;
   liveTimer = setInterval(function () {
