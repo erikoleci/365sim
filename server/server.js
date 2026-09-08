@@ -151,9 +151,6 @@ async function start() {
 
   const httpServer = app.listen(PORT, () => {
     console.log(`365sim backend listening on http://localhost:${PORT}`);
-    if (!process.env.ODDS_API_KEY) {
-      console.warn('WARNING: ODDS_API_KEY is not set — /api/matches will return an empty list until you add one in .env');
-    }
     if (!process.env.JWT_SECRET) {
       console.error(
         'SECURITY WARNING: JWT_SECRET is not set. Using an insecure hardcoded fallback ' +

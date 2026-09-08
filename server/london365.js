@@ -793,18 +793,9 @@ export async function importLondon365(opts) {
   try {
     // Soccer (sport id 1) first, always — it's where every priority country
     // config lives and what people actually check first. Same interruption
-    // concern as the league-level sort above, one level up.
+    // concern as the league-level sort below, one level up.
     const sportsOrdered = sports.slice().sort((a, b) => (Number(a) === 1 ? 0 : 1) - (Number(b) === 1 ? 0 : 1));
     for (const sid of sportsOrdered) {
-      let leagues;
-      try {
-        leagues = await api('/ajax/leagues/' + sid);
-      } catch (err) {
-        console.error('[london365] leagues sport ' + sid + ' failed:', err.message);
-        continue;
-      }
-      if (!Array.isArray(leagues)) continue;
-
       // Real country.id -> country.name map for this sport (cached — see
       // getCountryMap). A failure here never aborts the import: it just
       // means every league in this sport falls back to the name heuristic
@@ -816,29 +807,46 @@ export async function importLondon365(opts) {
         console.error('[london365] countries sport ' + sid + ' failed (falling back to name-based country guessing):', err.message);
       }
 
-      // Process priority-country leagues FIRST, regardless of whether
-      // LONDON365_PRIORITY_COUNTRIES is set at all. The provider's own
-      // league order has no relation to which leagues matter most to us —
-      // if the import gets interrupted (crash, redeploy, throttle) partway
-      // through, this guarantees the leagues people actually check
-      // (England/France/Spain/Italy/Germany) are already in by the time
-      // that happens, instead of depending on provider order/luck.
+      // CONFIRMED against the live provider (real request/response pairs,
+      // not guessed): /ajax/leagues/{X} is keyed by COUNTRY id, not sport
+      // id — every league object it returns shares the SAME country_id as
+      // whatever id you passed in (e.g. /ajax/leagues/64 -> only England's
+      // leagues, every one with country_id: "64"). There is no single
+      // "all leagues for this sport" endpoint. The previous code called
+      // /ajax/leagues/{sportId} once (e.g. /ajax/leagues/1) expecting every
+      // country's leagues back — that request is really just "leagues of
+      // country #1" (whatever the provider's country id 1 actually is),
+      // which is exactly why the import only ever saw ~14 leagues total and
+      // England/France/Spain/Italy/Germany (real country ids like 64) never
+      // appeared. The correct path is sport -> countries -> leagues(per
+      // country) -> games, so we now fetch /ajax/leagues/{countryId} once
+      // per country instead.
       //
-      // CRITICAL: this sort MUST happen BEFORE leagueCap is applied below.
-      // Slicing first (the old order) truncated the list using nothing but
-      // the provider's own arbitrary ordering, so if LONDON365_LEAGUES is
-      // set to any cap, whichever countries happen to come first from the
-      // provider get in and everyone else (regardless of priority) is
-      // silently cut off — exactly what caused England/Spain/Germany/France
-      // to disappear from the main feed while still showing up in the
-      // sidebar (which lists leagues independently of this cap).
-      leagues = leagues.slice().sort((a, b) => {
-          const an = countryMap.get(String(a.country_id)) || '';
-          const bn = countryMap.get(String(b.country_id)) || '';
-          const aPriority = SORT_PRIORITY_COUNTRIES.has(an.toLowerCase()) ? 0 : 1;
-          const bPriority = SORT_PRIORITY_COUNTRIES.has(bn.toLowerCase()) ? 0 : 1;
+      // Countries are visited priority-first (same rationale the old
+      // pre-cap sort used) so a redeploy/crash/throttle mid-import still
+      // lands England/Spain/Italy/Germany/France before anything else, and
+      // EXCLUDED_COUNTRIES/ONLY_COUNTRIES are applied here — before any
+      // network call — so an unwanted country never even costs a request.
+      const countryEntries = Array.from(countryMap.entries()) // [countryId, countryName][]
+        .filter(([, name]) => !EXCLUDED_COUNTRIES.has(String(name).toLowerCase()))
+        .filter(([, name]) => !ONLY_COUNTRIES.size || ONLY_COUNTRIES.has(String(name).toLowerCase()))
+        .sort((a, b) => {
+          const aPriority = SORT_PRIORITY_COUNTRIES.has(a[1].toLowerCase()) ? 0 : 1;
+          const bPriority = SORT_PRIORITY_COUNTRIES.has(b[1].toLowerCase()) ? 0 : 1;
           return aPriority - bPriority;
         });
+
+      let leagues = [];
+      for (const [countryId, countryName] of countryEntries) {
+        let countryLeagues;
+        try {
+          countryLeagues = await api('/ajax/leagues/' + countryId);
+        } catch (err) {
+          console.error('[london365] leagues for country ' + countryName + ' (id=' + countryId + ') failed:', err.message);
+          continue;
+        }
+        if (Array.isArray(countryLeagues)) leagues.push(...countryLeagues);
+      }
       if (leagueCap) leagues = leagues.slice(0, leagueCap);
 
       for (const league of leagues) {

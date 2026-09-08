@@ -117,9 +117,10 @@ beforeEach(function () {
   }];
   global.fetch = vi.fn(function (url) {
     const pathname = new URL(url).pathname;
-    if (pathname === '/ajax/leagues/1') return jsonResponse([{ id: 11, name: 'Premier League' }]);
+    if (pathname === '/ajax/countries/1') return jsonResponse([{ id: 64, name: 'England' }]);
+    if (pathname === '/ajax/leagues/64') return jsonResponse([{ id: 11, name: 'Premier League', country_id: '64' }]);
     if (pathname === '/ajax/gamesByLeague/11') {
-      return jsonResponse([{ id: 100, home_team: 'Arsenal', away_team: 'Chelsea', game_date: futureDateStr, game_time: '18:00', odd: PREMATCH_ODD }]);
+      return jsonResponse([{ id: 100, home_team: 'Arsenal', away_team: 'Chelsea', game_date: futureDateStr, game_time: '18:00', odd: PREMATCH_ODD, country: 'England', country_id: '64' }]);
     }
     if (pathname === '/ajax/prematchgame/100') {
       return jsonResponse([[

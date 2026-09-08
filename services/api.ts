@@ -67,14 +67,9 @@ export function logout() {
 
 // --- Matches ---
 
-export async function fetchMatches(league?: string): Promise<{ matches: Match[]; hasLiveApiKey: boolean }> {
+export async function fetchMatches(league?: string): Promise<{ matches: Match[] }> {
   const qs = league && league !== 'All Top Football' ? `?league=${encodeURIComponent(league)}` : '';
   return request(`/matches${qs}`);
-}
-
-export async function fetchLeagues(): Promise<{ key: string; title: string; group: string }[]> {
-  const data = await request<{ leagues: { key: string; title: string; group: string }[] }>('/matches/leagues');
-  return data.leagues;
 }
 
 export interface LiveStatistics {

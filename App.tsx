@@ -17,7 +17,6 @@ const App: React.FC = () => {
 
   // --- Data State (from backend, not localStorage) ---
   const [matches, setMatches] = useState<Match[]>([]);
-  const [hasApiKey, setHasApiKey] = useState(true); // assume true until first load tells us otherwise
   const [myBets, setMyBets] = useState<Bet[]>([]);
   const [adminUsers, setAdminUsers] = useState<User[]>([]);
   const [adminAllBets, setAdminAllBets] = useState<any[]>([]);
@@ -87,9 +86,8 @@ const App: React.FC = () => {
     if (!currentUser || currentView !== 'sports') return;
     setIsLoading((prev) => (matches.length === 0 ? true : prev));
     try {
-      const { matches: fresh, hasLiveApiKey } = await api.fetchMatches();
+      const { matches: fresh } = await api.fetchMatches();
       setMatches(fresh);
-      setHasApiKey(hasLiveApiKey);
       setLoadError(null);
     } catch (e) {
       console.error('Failed to load matches', e);
