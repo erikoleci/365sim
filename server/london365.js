@@ -874,18 +874,31 @@ export async function importLondon365(opts) {
         }
         if (matchCap) games = games.slice(0, matchCap);
 
-        const leagueKeyResolved = leagueKeyFromCountry(countryName, league.name);
+        // Ground-truth cross-check: every game from /ajax/gamesByLeague
+        // carries its own `country`/`country_id` fields directly, no join
+        // needed — self-verified against the live provider. If the
+        // countries-endpoint lookup above came up empty (unknown/missing
+        // country_id, or the countries call itself failed for this sport),
+        // this recovers the correct country from the games response itself
+        // instead of falling all the way back to the name-guessing
+        // heuristic. Doesn't override a countryName we already trust.
+        const effectiveCountryName = countryName || (games[0] && games[0].country) || null;
+        if (!countryName && effectiveCountryName) {
+          console.log('[london365] recovered country="' + effectiveCountryName + '" for league=' + league.name + ' from game payload (countries lookup missed it)');
+        }
+
+        const leagueKeyResolved = leagueKeyFromCountry(effectiveCountryName, league.name);
         console.log(
           '[london365] league ' + league.id + ' -> ' + league.name + ' -> ' +
-          (countryName || '(fallback: ' + leagueCountryToken(league.name) + ')')
+          (effectiveCountryName || '(fallback: ' + leagueCountryToken(league.name) + ')')
         );
         leagueById.set(String(league.id), {
           key: leagueKeyResolved,
           name: league.name,
           countryId: countryId,
-          countryName: countryName || null,
+          countryName: effectiveCountryName || null,
         });
-        const summaryKey = countryName || '(fallback: ' + leagueCountryToken(league.name) + ')';
+        const summaryKey = effectiveCountryName || '(fallback: ' + leagueCountryToken(league.name) + ')';
         const summaryEntry = { name: league.name, id: String(league.id), imported: 0, skipped: 0, providerGames: games.length };
         if (!leagueSummary.has(summaryKey)) leagueSummary.set(summaryKey, []);
         leagueSummary.get(summaryKey).push(summaryEntry);
