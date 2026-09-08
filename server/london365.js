@@ -364,7 +364,7 @@ export async function loadPersistedLeagueMap() {
 // /ajax/countries/{sportId} returns, so these specific countries can NEVER
 // be mis-mapped even if the provider ever renames/reorders/omits them.
 const CONFIRMED_COUNTRY_IDS = {
-  57: 'Italy', 85: 'Spain', 34: 'Germany', 32: 'France',
+  64: 'England', 57: 'Italy', 85: 'Spain', 34: 'Germany', 32: 'France',
   // country_id 19 and 13 are both continental/international competition
   // buckets (UEFA Champions/Europa/Conference League, Copa Libertadores,
   // Copa Sudamericana, CONCACAF, AFC, UEFA Nations League) — not a single
