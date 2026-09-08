@@ -23,7 +23,7 @@ import scrapeRouter from './routes/scrape.js';
 import favoritesRouter from './routes/favorites.js';
 import { initDb } from './db.js';
 import { initWebSocket } from './ws.js';
-import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, loadPersistedLeagueMap } from './london365.js';
+import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCountriesNotInOnlyList, loadPersistedLeagueMap } from './london365.js';
 import { startLondon365Socket } from './london365Socket.js';
 
 let dbReady = false;
@@ -174,6 +174,7 @@ async function start() {
   // import (once leagueNameIndex has this run's real data), this is just
   // for immediate cleanup right after boot using last run's saved map.
   purgeCountryPrefixedDuplicateLeagues().catch((err) => console.error('[server] purgeCountryPrefixedDuplicateLeagues failed:', err.message));
+  purgeCountriesNotInOnlyList().catch((err) => console.error('[server] purgeCountriesNotInOnlyList failed:', err.message));
   startLondon365LiveLoop();
   startLondon365Socket();
   // Periodically restore full market detail for events whose initial detail

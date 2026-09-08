@@ -1166,6 +1166,7 @@ export async function importLondon365(opts) {
     // League") — they'd otherwise sit there forever as an empty duplicate
     // next to the correctly-updating real-named league.
     await purgeCountryPrefixedDuplicateLeagues();
+    await purgeCountriesNotInOnlyList();
     await setKV('l365_last_import', Date.now());
     console.log(
       '[london365] import done: ' + matchCount + ' matches, ' + coefficientCount + ' coefficients, ' +
@@ -1560,6 +1561,42 @@ export async function purgeExcludedCountries() {
     } catch (err) {
       console.error(`[london365] failed purging excluded country ${country}:`, err.message);
     }
+  }
+}
+
+// Same idea as purgeExcludedCountries, but for LONDON365_ONLY_COUNTRIES
+// (an allow-list instead of a deny-list): rows already sitting in
+// matches_cache from BEFORE this env var was set (or from before it was set
+// to this exact value) belong to countries no longer in scope, and would
+// otherwise linger in the sidebar — with stale, never-updating data — until
+// they naturally age out. This deletes them outright the moment the allow-
+// list changes, so switching to a tighter scope takes effect immediately
+// instead of "the new setting only affects what gets ADDED from now on".
+// Safe / cheap to call every boot and after every import: no-op once
+// everything already matches the current allow-list.
+export async function purgeCountriesNotInOnlyList() {
+  if (!ONLY_COUNTRIES.size) return 0;
+  const allowedTokens = new Set(
+    Array.from(ONLY_COUNTRIES).map((name) => (leagueCountryToken(name) === 'other' ? slugDash(name) : leagueCountryToken(name)))
+  );
+  try {
+    const { rows } = await pool.query("SELECT DISTINCT league FROM matches_cache WHERE id LIKE 'l365-%'");
+    let purged = 0;
+    for (const { league: key } of rows) {
+      const m = /^l365_([a-z0-9-]+)__/.exec(key);
+      if (!m) continue; // pre-migration format, handled by purgeLegacyLeagueKeyFormat instead
+      if (allowedTokens.has(m[1])) continue;
+      const { rowCount } = await pool.query(
+        `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league = $1`,
+        [key]
+      );
+      purged += rowCount;
+      if (rowCount) console.log(`[london365] purged ${rowCount} rows under "${key}" (country "${m[1]}" not in LONDON365_ONLY_COUNTRIES)`);
+    }
+    return purged;
+  } catch (err) {
+    console.error('[london365] failed purging countries outside ONLY_COUNTRIES:', err.message);
+    return 0;
   }
 }
 
