@@ -104,6 +104,13 @@ const ONLY_COUNTRIES = new Set(
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean)
 );
+// International/continental competitions (Champions League, Europa League,
+// Nations League, World Cup qualifiers...) are never excludable via
+// LONDON365_ONLY_COUNTRIES — someone listing "england,spain,italy,..." to
+// trim the domestic-league catalog down almost certainly still wants
+// Champions League etc, which live under their own "International" country
+// bucket, not under any single nation.
+if (ONLY_COUNTRIES.size) ONLY_COUNTRIES.add('international');
 const MINOR_LEAGUE_PATTERN = /\bu-?1[0-9]\b|\bu-?2[0-3]\b|\byouth\b|\bjunior\b|\breserves?\b|\bwomen'?s?\b|\bfemale\b|\bfeminin[ao]?\b|\bamateur\b|\bacademy\b|\bfriendl(y|ies)\b|\besoccer\b|\be-?soccer\b|\bsimulated\b|\bvirtual\b/i;
 // Brazil specifically has ~25 STATE championships running in parallel
 // (Serie A/B/C/D are the national ones worth keeping; everything named
