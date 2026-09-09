@@ -49,7 +49,7 @@ const allowedOrigins = (process.env.FRONTEND_ORIGIN || '')
   .map((o) => o.trim())
   .filter(Boolean);
 
-app.use(cors(
+app.use('/api', cors(
   allowedOrigins.length
     ? {
         origin: (origin, callback) => {
