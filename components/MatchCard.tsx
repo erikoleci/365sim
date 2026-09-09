@@ -17,11 +17,48 @@ interface MatchRowProps {
 
 // Real in-play clock: the provider reports minutes like "62:14" — render the
 // running minute plus the game half (Pjesa I / Pushim / Pjesa II / Shtesë).
-export function parseLiveClock(minute?: string): { minute: number; half: string } | null {
-  const m = parseInt(String(minute || '').match(/^\d+/)?.[0] ?? '', 10);
+export function parseLiveClock(minute?: string): { minute: number; second: number; half: string } | null {
+  const match = String(minute || '').match(/^(\d+):?(\d{1,2})?/);
+  if (!match) return null;
+  const m = parseInt(match[1], 10);
   if (Number.isNaN(m)) return null;
+  const s = match[2] ? parseInt(match[2], 10) : 0;
   const half = m < 45 ? 'Pjesa I' : m < 46 ? 'Pushim' : m < 90 ? 'Pjesa II' : m < 105 ? 'Shtesë' : 'Penallti';
-  return { minute: m, half };
+  return { minute: m, second: Number.isNaN(s) ? 0 : s, half };
+}
+
+// The server only pushes a fresh minute every ~30s (live sync interval) or
+// on a socket event — without this, the on-screen clock sits frozen between
+// updates instead of counting up like the provider's own site does. Ticks
+// once per second client-side from the last known {minute:second}, and
+// snaps back to the real value the moment a fresh one arrives (socket poll
+// or REST refresh), so it never drifts far from the truth.
+function useTickingClock(rawMinute?: string): { minute: number; half: string } | null {
+  const base = parseLiveClock(rawMinute);
+  const [, forceTick] = React.useState(0);
+  const baseRef = React.useRef<{ totalSeconds: number; receivedAt: number } | null>(null);
+
+  React.useEffect(() => {
+    if (!base) {
+      baseRef.current = null;
+      return;
+    }
+    baseRef.current = { totalSeconds: base.minute * 60 + base.second, receivedAt: Date.now() };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawMinute]);
+
+  React.useEffect(() => {
+    if (!base) return;
+    const id = setInterval(() => forceTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [!!base]);
+
+  if (!base || !baseRef.current) return base ? { minute: base.minute, half: base.half } : null;
+  const elapsed = Math.floor((Date.now() - baseRef.current.receivedAt) / 1000);
+  const totalSeconds = baseRef.current.totalSeconds + Math.max(0, elapsed);
+  const minute = Math.floor(totalSeconds / 60);
+  const half = minute < 45 ? 'Pjesa I' : minute < 46 ? 'Pushim' : minute < 90 ? 'Pjesa II' : minute < 105 ? 'Shtesë' : 'Penallti';
+  return { minute, half };
 }
 
 const StarButton: React.FC<{ active: boolean; onClick: (e: React.MouseEvent) => void }> = ({ active, onClick }) => (
@@ -56,7 +93,7 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
   const matchWinnerMarket = h2hMarket
     ? { ...h2hMarket, options: h2hMarket.options.filter(o => o.id === 'HOME' || o.id === 'DRAW' || o.id === 'AWAY') }
     : undefined;
-  const liveClock = parseLiveClock(match.currentMinute);
+  const liveClock = useTickingClock(match.currentMinute);
 
   // Odds-movement arrows in the list view, same approach as MatchDetail:
   // remember last-seen price per selection, flash up/down briefly on change.
