@@ -487,9 +487,27 @@ async function getCountryMap(sportId) {
 // Preferred key builder: resolves the country from the provider's REAL
 // country name (via country.id <- league.country_id), falling back to the
 // name-heuristic above only when that real name isn't available.
+// Strip a leading "<country> " word-sequence from a raw league name before
+// it becomes the competition-slug half of a key — SAFELY (word-by-word
+// compare, not a blind string replace) — so a provider name like "England
+// Premier League" produces the same grouping key as "Premier League" would
+// (l365_england__premier_league either way), instead of baking the country
+// in twice (l365_england__england_premier_league). The raw name itself is
+// never mutated — this only affects the derived grouping key.
+function stripRedundantCountryWords(countryName, leagueName) {
+  const name = String(leagueName || '');
+  if (!countryName) return name;
+  const countryWords = String(countryName).toLowerCase().split(/\s+/).filter(Boolean);
+  const nameWords = name.split(/\s+/).filter(Boolean);
+  if (!countryWords.length || nameWords.length <= countryWords.length) return name;
+  const matches = countryWords.every((w, i) => (nameWords[i] || '').toLowerCase() === w);
+  return matches ? nameWords.slice(countryWords.length).join(' ') : name;
+}
+
 export function leagueKeyFromCountry(countryName, leagueName) {
   const token = countryName ? (slugDash(countryName) || 'other') : leagueCountryToken(leagueName);
-  return 'l365_' + token + '__' + (slug(leagueName) || 'league');
+  const competitionName = countryName ? stripRedundantCountryWords(countryName, leagueName) : leagueName;
+  return 'l365_' + token + '__' + (slug(competitionName) || 'league');
 }
 
 // Build the same provider_country_slug league key format The Odds API uses
