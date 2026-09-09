@@ -140,6 +140,22 @@ if (fs.existsSync(distPath)) {
 }
 
 async function start() {
+  console.log(
+    '[boot] commit=' + (process.env.RENDER_GIT_COMMIT || 'unknown') +
+    ' branch=' + (process.env.RENDER_GIT_BRANCH || 'unknown') +
+    ' service=' + (process.env.RENDER_SERVICE_NAME || 'unknown')
+  );
+  if (process.env.DATABASE_URL) {
+    try {
+      const u = new URL(process.env.DATABASE_URL);
+      console.log('[boot] DATABASE_URL -> host=' + u.hostname + ' port=' + (u.port || '5432') + ' database=' + u.pathname.replace(/^\//, ''));
+    } catch (err) {
+      console.error('[boot] DATABASE_URL is set but failed to parse:', err.message);
+    }
+  } else {
+    console.error('[boot] DATABASE_URL is NOT set — every DB query will fail.');
+  }
+
   try {
     await initDb();
     dbReady = true;

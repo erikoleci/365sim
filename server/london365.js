@@ -112,6 +112,30 @@ const ONLY_COUNTRIES = new Set(
 // Champions League etc, which live under their own "International" country
 // bucket, not under any single nation.
 if (ONLY_COUNTRIES.size) ONLY_COUNTRIES.add('international');
+// TEST MODE: restrict ingestion to a fixed whitelist of leagues (5 top
+// domestic leagues + UCL/UEL), processed with bounded parallelism across
+// leagues instead of the normal sequential loop. Off by default — normal
+// production runs are completely untouched by this.
+const TEST_MODE = process.env.LONDON365_TEST_MODE === '1';
+const TEST_LEAGUE_NAMES = new Set([
+  'premier league', 'la liga', 'bundesliga', 'ligue 1', 'serie a',
+  'champions league', 'uefa champions league', 'europa league', 'uefa europa league',
+]);
+const TEST_CONCURRENCY = Math.max(1, Number(process.env.LONDON365_TEST_CONCURRENCY || 6));
+// Minimal bounded-concurrency runner (no new dependency): at most `limit`
+// items of `items` are in flight via `worker` at once.
+async function runWithConcurrency(items, limit, worker) {
+  let i = 0;
+  const n = Math.min(limit, items.length);
+  await Promise.all(
+    new Array(n).fill(0).map(async function () {
+      while (i < items.length) {
+        const idx = i++;
+        await worker(items[idx]);
+      }
+    })
+  );
+}
 const MINOR_LEAGUE_PATTERN = /\bu-?1[0-9]\b|\bu-?2[0-3]\b|\byouth\b|\bjunior\b|\breserves?\b|\bwomen'?s?\b|\bfemale\b|\bfeminin[ao]?\b|\bamateur\b|\bacademy\b|\bfriendl(y|ies)\b|\besoccer\b|\be-?soccer\b|\bsimulated\b|\bvirtual\b/i;
 // Brazil specifically has ~25 STATE championships running in parallel
 // (Serie A/B/C/D are the national ones worth keeping; everything named
@@ -991,6 +1015,13 @@ export async function importLondon365(opts) {
       // again instead of resuming mid-list forever.
       if (leagueCap) leagues = leagues.slice(0, leagueCap);
 
+      if (TEST_MODE) {
+        const before = leagues.length;
+        leagues = leagues.filter((l) => TEST_LEAGUE_NAMES.has(String(l.name || '').toLowerCase()));
+        console.log('[london365] TEST MODE: England, Spain, Germany, France, Italy + UCL + UEL');
+        console.log('[london365] parallel workers: ' + TEST_CONCURRENCY + ' (' + leagues.length + '/' + before + ' leagues matched)');
+      }
+
       // RESUME CURSOR (correct spot this time) — the SLOW part of the
       // import is THIS loop (one HTTP request per league for games, then
       // one more per game for full market detail), not the league-list
@@ -1004,14 +1035,15 @@ export async function importLondon365(opts) {
       // array to continue right after it; once a full lap completes with
       // nothing left to interrupt it, the cursor clears so priority
       // leagues resume getting refreshed first on healthy runs.
-      const leagueCursor = await getKV('l365_league_cursor', null);
+      const leagueCursor = TEST_MODE ? null : await getKV('l365_league_cursor', null);
       if (leagueCursor) {
         const idx = leagues.findIndex((l) => String(l.id) === String(leagueCursor));
         if (idx >= 0 && idx + 1 < leagues.length) leagues = [...leagues.slice(idx + 1), ...leagues.slice(0, idx + 1)];
       }
 
-      for (const league of leagues) {
-        await setKV('l365_league_cursor', league.id);
+      const processLeague = async (league) => {
+        const t0 = TEST_MODE ? Date.now() : 0;
+        if (!TEST_MODE) await setKV('l365_league_cursor', league.id);
         // Resolve country BEFORE the games fetch — otherwise a league with
         // zero current games (very normal, most leagues are between
         // matchdays most of the time) or a failed games fetch skipped
@@ -1024,23 +1056,23 @@ export async function importLondon365(opts) {
           console.warn('[london365] WARNING: unknown country_id=' + countryId + ' for league=' + league.name + ' (id=' + league.id + ')');
         }
         const isPriority = countryName && PRIORITY_COUNTRIES.has(countryName.toLowerCase());
-        if (countryName && EXCLUDED_COUNTRIES.has(countryName.toLowerCase())) continue;
-        if (ONLY_COUNTRIES.size && !(countryName && ONLY_COUNTRIES.has(countryName.toLowerCase()))) continue;
-        if (isMinorLeague(league.name, countryName)) continue;
+        if (countryName && EXCLUDED_COUNTRIES.has(countryName.toLowerCase())) return;
+        if (ONLY_COUNTRIES.size && !(countryName && ONLY_COUNTRIES.has(countryName.toLowerCase()))) return;
+        if (isMinorLeague(league.name, countryName)) return;
 
         let games;
         try {
           games = await api('/ajax/gamesByLeague/' + league.id);
         } catch (err) {
           console.error('[london365] games for ' + league.name + ' (' + (countryName || '?') + ') failed:', err.message);
-          continue;
+          return;
         }
         if (!Array.isArray(games) || games.length === 0) {
           // Only log the empty case for priority countries — for everyone
           // else this is routine (most leagues have nothing on a given day)
           // and would just flood the log.
           if (isPriority) console.log('[london365] ' + league.name + ' (' + countryName + '): provider returned 0 games right now');
-          continue;
+          return;
         }
         if (matchCap) games = games.slice(0, matchCap);
 
@@ -1142,6 +1174,15 @@ export async function importLondon365(opts) {
             coefficientCount += rows.length;
             leaguesSeen.add(league.name);
           }));
+        }
+        if (TEST_MODE) console.log('[london365] TEST MODE: ' + league.name + ' done in ' + (Date.now() - t0) + 'ms');
+      };
+
+      if (TEST_MODE) {
+        await runWithConcurrency(leagues, TEST_CONCURRENCY, processLeague);
+      } else {
+        for (const league of leagues) {
+          await processLeague(league);
         }
       }
     }
