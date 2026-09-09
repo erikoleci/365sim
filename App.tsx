@@ -38,6 +38,15 @@ const App: React.FC = () => {
   const [currentLeague, setCurrentLeague] = useState('All Top Football');
   const [selectedDate, setSelectedDate] = useState('ALL'); // 'ALL' or 'YYYY-MM-DD' (local date)
   const [isLoading, setIsLoading] = useState(false);
+  // Tracks whether we've EVER successfully loaded matches, across the whole
+  // component lifetime — not derived from the current matches array. Using
+  // matches.length===0 as the "first load" signal meant a single empty/slow
+  // background refresh (a transient backend hiccup, a purge job momentarily
+  // clearing rows) got misread as "first load" and re-showed the full-screen
+  // spinner, wiping out matches that were already visible on screen. This
+  // ref makes "have we loaded before" independent of what the last fetch
+  // happened to return.
+  const hasLoadedMatchesOnceRef = useRef(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [currentView, setCurrentView] = useState<'sports' | 'casino'>('sports');
   const [searchQuery, setSearchQuery] = useState('');
@@ -89,19 +98,20 @@ const App: React.FC = () => {
   // All filtering (live / league / search) happens client-side below.
   const loadMatches = useCallback(async () => {
     if (!currentUser || currentView !== 'sports') return;
-    setIsLoading((prev) => (matches.length === 0 ? true : prev));
+    setIsLoading((prev) => (hasLoadedMatchesOnceRef.current ? prev : true));
     try {
       const { matches: fresh, leagueNames: freshLeagueNames } = await api.fetchMatches();
       setMatches(fresh);
       if (freshLeagueNames) setLeagueNames((prev) => ({ ...prev, ...freshLeagueNames }));
       setLoadError(null);
+      hasLoadedMatchesOnceRef.current = true;
     } catch (e) {
       console.error('Failed to load matches', e);
       setLoadError('S\'arritëm të lidhemi me serverin. Kontrollo internetin dhe provo përsëri.');
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser, currentView, matches.length]);
+  }, [currentUser, currentView]);
 
   useEffect(() => {
     loadMatches();
@@ -719,6 +729,7 @@ const App: React.FC = () => {
     setCurrentView('sports');
     setMatches([]);
     setMyBets([]);
+    hasLoadedMatchesOnceRef.current = false;
   };
 
   // --- Admin: user management (all calls hit the real backend now) ---
