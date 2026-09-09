@@ -1295,32 +1295,43 @@ export async function syncLondon365Live() {
       if (ONLY_COUNTRIES.size && resolvedLeagueEarly && resolvedLeagueEarly.countryName &&
           !ONLY_COUNTRIES.has(resolvedLeagueEarly.countryName.toLowerCase())) continue;
       liveIds.add('l365-' + g.id);
-      let rows = [];
+      // Each game processed independently: one malformed/failing game must
+      // never abort the whole sync cycle. Before this, an uncaught error
+      // here (e.g. a bad upsert) threw past this loop entirely, skipping
+      // every remaining live game AND the end-detection sweep below for
+      // that whole cycle — repeated every ~30s, a stuck live match could
+      // sit frozen for hours since the cleanup that would have settled it
+      // never got a chance to run.
       try {
-        if (DETAIL_DELAY_MS) await sleep(DETAIL_DELAY_MS);
-        rows = await fetchLiveRows(g.id);
+        let rows = [];
+        try {
+          if (DETAIL_DELAY_MS) await sleep(DETAIL_DELAY_MS);
+          rows = await fetchLiveRows(g.id);
+        } catch (err) {
+          console.error('[london365] livegame detail ' + g.id + ' failed (falling back to packed list odds):', err.message);
+        }
+        if (!rows.length) rows = parseOddString(g.odd);
+        const odds = hydrateRowNames(rows.filter(function (o) { return o ? !Number.isNaN(o.coef) : false; }));
+        if (!odds.length) continue;
+        const ev = buildEvent(g.id, g.home_team, g.away_team, isoFromWholeDate(g.whole_date, g.game_date, g.game_time) || new Date().toISOString(), odds);
+        const score = parseScore(g.result);
+        const minute = g.current_minute || null;
+        // Prefer the country-accurate key resolved from the real league_id
+        // (set during the last full import); if that's missing, try matching
+        // the live feed's own league text against every real league name/alias
+        // seen during the last import (resolveLeagueByName) BEFORE falling
+        // back to pure guessing — the live feed and prematch endpoint don't
+        // always agree on naming for the same league (e.g. "England Premier
+        // League" vs "Premier League"), and guessing from the raw text alone
+        // used to create a second, wrongly-named duplicate of an already-known
+        // league instead of landing on its real name.
+        const resolvedLeague = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
+        const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : leagueKeyFromCountry(null, g.league || ''), 'LIVE', score, { minute: minute, apiStatus: g.api_status });
+        await recordGoalIfChanged(ev, score, minute, prev);
+        gamesSynced++;
       } catch (err) {
-        console.error('[london365] livegame detail ' + g.id + ' failed (falling back to packed list odds):', err.message);
+        console.error('[london365] live game ' + g.id + ' failed to process (skipping, sync continues):', err.message);
       }
-      if (!rows.length) rows = parseOddString(g.odd);
-      const odds = hydrateRowNames(rows.filter(function (o) { return o ? !Number.isNaN(o.coef) : false; }));
-      if (!odds.length) continue;
-      const ev = buildEvent(g.id, g.home_team, g.away_team, isoFromWholeDate(g.whole_date, g.game_date, g.game_time) || new Date().toISOString(), odds);
-      const score = parseScore(g.result);
-      const minute = g.current_minute || null;
-      // Prefer the country-accurate key resolved from the real league_id
-      // (set during the last full import); if that's missing, try matching
-      // the live feed's own league text against every real league name/alias
-      // seen during the last import (resolveLeagueByName) BEFORE falling
-      // back to pure guessing — the live feed and prematch endpoint don't
-      // always agree on naming for the same league (e.g. "England Premier
-      // League" vs "Premier League"), and guessing from the raw text alone
-      // used to create a second, wrongly-named duplicate of an already-known
-      // league instead of landing on its real name.
-      const resolvedLeague = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
-      const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : leagueKeyFromCountry(null, g.league || ''), 'LIVE', score, { minute: minute, apiStatus: g.api_status });
-      await recordGoalIfChanged(ev, score, minute, prev);
-      gamesSynced++;
     }
   }
 
