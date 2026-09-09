@@ -13,7 +13,7 @@ import helmet from 'helmet';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import authRouter, { JWT_SECRET } from './routes/auth.js';
 import matchesRouter from './routes/matches.js';
@@ -94,7 +94,7 @@ function keyByUserOrIp(req) {
       // invalid/expired token — fall through to IP-based keying below
     }
   }
-  return ipKeyGenerator(req);
+  return req.ip;
 }
 
 // General API protection: generous enough for normal browsing/polling, but
