@@ -15,13 +15,20 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
-  // --- Data State (from backend, not localStorage) ---
-  const [matches, setMatches] = useState<Match[]>([]);
+  // --- Data State (from backend; matches/leagueNames seed from a
+  // localStorage snapshot of the last successful fetch so returning
+  // users see their matches instantly instead of the loading spinner
+  // — the background refresh below then replaces this with live data) ---
+  const [matches, setMatches] = useState<Match[]>(() => {
+    try { return JSON.parse(localStorage.getItem('cachedMatches') || '[]'); } catch { return []; }
+  });
   // League key -> the name EXACTLY as LondonPro365's own API returns it
   // (untouched — no re-slugging/re-titlecasing). Populated from every
   // /matches response; leagueLabel() below prefers this over any derived
   // fallback.
-  const [leagueNames, setLeagueNames] = useState<Record<string, string>>({});
+  const [leagueNames, setLeagueNames] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem('cachedLeagueNames') || '{}'); } catch { return {}; }
+  });
   const [myBets, setMyBets] = useState<Bet[]>([]);
   const [adminUsers, setAdminUsers] = useState<User[]>([]);
   const [adminAllBets, setAdminAllBets] = useState<any[]>([]);
@@ -46,7 +53,7 @@ const App: React.FC = () => {
   // spinner, wiping out matches that were already visible on screen. This
   // ref makes "have we loaded before" independent of what the last fetch
   // happened to return.
-  const hasLoadedMatchesOnceRef = useRef(false);
+  const hasLoadedMatchesOnceRef = useRef(matches.length > 0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [currentView, setCurrentView] = useState<'sports' | 'casino'>('sports');
   const [searchQuery, setSearchQuery] = useState('');
@@ -102,7 +109,14 @@ const App: React.FC = () => {
     try {
       const { matches: fresh, leagueNames: freshLeagueNames } = await api.fetchMatches();
       setMatches(fresh);
-      if (freshLeagueNames) setLeagueNames((prev) => ({ ...prev, ...freshLeagueNames }));
+      try { localStorage.setItem('cachedMatches', JSON.stringify(fresh)); } catch {}
+      if (freshLeagueNames) {
+        setLeagueNames((prev) => {
+          const next = { ...prev, ...freshLeagueNames };
+          try { localStorage.setItem('cachedLeagueNames', JSON.stringify(next)); } catch {}
+          return next;
+        });
+      }
       setLoadError(null);
       hasLoadedMatchesOnceRef.current = true;
     } catch (e) {
