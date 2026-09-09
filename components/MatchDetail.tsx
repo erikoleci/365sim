@@ -88,8 +88,29 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
     load();
     // Live games: keep stats, events, minute and odds fresh on their own
     // cadence while the detail panel is open, without any manual refresh.
+    // This polling interval is only the fallback safety net — the socket
+    // subscription below is the real-time path and fires immediately on
+    // every goal/card, same as the provider's own feed.
     const interval = match.status === MatchStatus.LIVE ? setInterval(load, 15000) : null;
-    return () => { cancelled = true; if (interval) clearInterval(interval); };
+
+    let socket: WebSocket | null = null;
+    if (match.status === MatchStatus.LIVE) {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
+      socket.onopen = () => socket!.send(JSON.stringify({ type: 'subscribe', topic: `match:${match.id}` }));
+      socket.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'GOAL' || msg.type === 'CARD') load();
+        } catch { /* ignore malformed message */ }
+      };
+    }
+
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+      socket?.close();
+    };
   }, [match.id, hasLiveData, match.status]);
 
   const CATEGORY_LABELS: Record<string, string> = {

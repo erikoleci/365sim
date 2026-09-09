@@ -97,4 +97,11 @@ export const pushMatchStarted = (matchId) => {
   broadcast(`match:${matchId}`, { type: 'MATCH_STARTED' });
   broadcast('live', { matchId, type: 'MATCH_STARTED' });
 };
+// Card events from the dedicated live-match-detail feed (see
+// london365GameDetails.js). Same shape/topics as pushGoal so the frontend
+// can react the same way once it subscribes to match:<id>.
+export const pushCardEvent = (matchId, data) => {
+  broadcast(`match:${matchId}`, { type: 'CARD', ...data });
+  broadcast('live', { matchId, type: 'CARD', ...data });
+};
 export const pushUserNotification = (userId, data) => broadcast(`user:${userId}`, { type: 'NOTIFICATION', ...data });

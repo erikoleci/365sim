@@ -892,7 +892,7 @@ function withDbLock(fn) {
 // Record a goal exactly once: only when the score actually moved compared to
 // what we last persisted (or when a first non-zero score appears). Repeated
 // polls and socket ticks for the same score are no-ops.
-async function recordGoalIfChanged(ev, score, minute, prev) {
+export async function recordGoalIfChanged(ev, score, minute, prev) {
   if (!score) return;
   const prevHome = prev ? prev.live_home_score : null;
   const prevAway = prev ? prev.live_away_score : null;

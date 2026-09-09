@@ -24,7 +24,7 @@ import favoritesRouter from './routes/favorites.js';
 import { initDb } from './db.js';
 import { initWebSocket } from './ws.js';
 import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCountriesNotInOnlyList, wipeLondon365Data, loadPersistedLeagueMap } from './london365.js';
-import { startLondon365Socket } from './london365Socket.js';
+import { startLondon365Socket, startLondon365GameDetailsSocket } from './london365Socket.js';
 
 let dbReady = false;
 
@@ -208,6 +208,7 @@ async function start() {
   purgeCountriesNotInOnlyList().catch((err) => console.error('[server] purgeCountriesNotInOnlyList failed:', err.message));
   startLondon365LiveLoop();
   startLondon365Socket();
+  startLondon365GameDetailsSocket();
   // Periodically restore full market detail for events whose initial detail
   // fetch failed (provider rate limits on hosting). Without this, most
   // LondonPro365 matches on Render only show the sparse 1-4 list-level
