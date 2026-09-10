@@ -24,7 +24,7 @@ import scrapeRouter from './routes/scrape.js';
 import favoritesRouter from './routes/favorites.js';
 import { initDb } from './db.js';
 import { initWebSocket } from './ws.js';
-import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCountriesNotInOnlyList, wipeLondon365Data, loadPersistedLeagueMap } from './london365.js';
+import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCrossCountryMisclassifiedLeagues, purgeCountriesNotInOnlyList, wipeLondon365Data, loadPersistedLeagueMap } from './london365.js';
 import { startLondon365Socket, startLondon365GameDetailsSocket } from './london365Socket.js';
 
 let dbReady = false;
@@ -231,6 +231,7 @@ async function start() {
   // import (once leagueNameIndex has this run's real data), this is just
   // for immediate cleanup right after boot using last run's saved map.
   purgeCountryPrefixedDuplicateLeagues().catch((err) => console.error('[server] purgeCountryPrefixedDuplicateLeagues failed:', err.message));
+  purgeCrossCountryMisclassifiedLeagues().catch((err) => console.error('[server] purgeCrossCountryMisclassifiedLeagues failed:', err.message));
   purgeCountriesNotInOnlyList().catch((err) => console.error('[server] purgeCountriesNotInOnlyList failed:', err.message));
   startLondon365LiveLoop();
   startLondon365Socket();
