@@ -29,7 +29,7 @@
 // unverified fields above.
 
 import pool from './db.js';
-import { pushCardEvent } from './ws.js';
+import { pushCardEvent, pushLiveTick } from './ws.js';
 import { recordGoalIfChanged, minuteToNumber } from './london365.js';
 import { parseGameDetails } from './gameDetailsParser.js';
 export { parseGameDetails };
@@ -84,6 +84,29 @@ export async function applyGameDetails(raw) {
   const minuteDisplay = row.live_minute || null; // verified source, see header comment
   console.log(`[live] EID=${eid} score=${attrs.SC || '?'} minute=${minuteDisplay || '?'}`);
 
+  // BUG FIX: this fast (~1/sec) socket used to only ever write the score
+  // into `live_statistics` (via recordGoalIfChanged below) and never into
+  // matches_cache.live_home_score/live_away_score — the columns actually
+  // read by GET /api/matches and GET /api/matches/:id (see routes/matches.js
+  // and oddsUtils.mapEventToMatch). Those columns were only ever refreshed
+  // by the *separate* 30s REST live loop (syncLondon365Live in london365.js).
+  // Net effect: a client that (re)loads the match list, or reconnects after
+  // missing the one-off pushGoal broadcast, could sit on a stale score for
+  // up to ~30s even though this socket had the correct value the instant it
+  // arrived — exactly the "provider is live but the page doesn't reflect it"
+  // symptom. Now the confirmed score is written here immediately, so
+  // matches_cache is never behind what this socket already knows.
+  let homeScoreForBroadcast = row.live_home_score;
+  let awayScoreForBroadcast = row.live_away_score;
+  if (score && (score.home !== row.live_home_score || score.away !== row.live_away_score)) {
+    await pool.query(
+      'UPDATE matches_cache SET live_home_score = $1, live_away_score = $2 WHERE id = $3',
+      [score.home, score.away, matchId]
+    );
+    homeScoreForBroadcast = score.home;
+    awayScoreForBroadcast = score.away;
+  }
+
   if (score) {
     const ev = { id: matchId, home_team: attrs.H || row.home_team, away_team: attrs.A || row.away_team };
     const prevScoreRow = { live_home_score: row.live_home_score, live_away_score: row.live_away_score };
@@ -94,6 +117,18 @@ export async function applyGameDetails(raw) {
       console.log(`[live-event] GOAL EID=${eid} team=${team} score=${score.home}-${score.away} minute=${minuteDisplay || '?'}`);
     }
   }
+
+  // Broadcast on EVERY processed update (not only when the score changes),
+  // so a connected client's minute/score get resynced at this feed's real
+  // ~1/sec cadence instead of waiting on the next goal or the slow 60s
+  // match-list poll. Only ever carries values already verified elsewhere
+  // (matches_cache.live_minute / live_home_score / live_away_score) — never
+  // derived from the unconfirmed T/H1-H8/A1-A8 fields (see header comment).
+  pushLiveTick(matchId, {
+    minute: minuteDisplay || undefined,
+    homeScore: homeScoreForBroadcast ?? undefined,
+    awayScore: awayScoreForBroadcast ?? undefined,
+  });
 
   const yc1 = Number(attrs.YC1) || 0, yc2 = Number(attrs.YC2) || 0;
   const rc1 = Number(attrs.RC1) || 0, rc2 = Number(attrs.RC2) || 0;

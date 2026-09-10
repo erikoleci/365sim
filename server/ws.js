@@ -104,4 +104,15 @@ export const pushCardEvent = (matchId, data) => {
   broadcast(`match:${matchId}`, { type: 'CARD', ...data });
   broadcast('live', { matchId, type: 'CARD', ...data });
 };
+// Fired on EVERY processed update from the fast (~1/sec) gamedetails
+// socket — not just when the score changes — so a connected client's
+// minute/score stay resynced against the verified source (matches_cache)
+// at the feed's real cadence instead of only on a goal or the slow 60s
+// poll. Payload only ever carries values already confirmed elsewhere
+// (matches_cache.live_minute, live_home_score/away_score) — this never
+// invents a minute from the unverified T/H1-H8 fields.
+export const pushLiveTick = (matchId, data) => {
+  broadcast(`match:${matchId}`, { type: 'LIVE_TICK', ...data });
+  broadcast('live', { matchId, type: 'LIVE_TICK', ...data });
+};
 export const pushUserNotification = (userId, data) => broadcast(`user:${userId}`, { type: 'NOTIFICATION', ...data });

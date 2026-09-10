@@ -184,6 +184,26 @@ const App: React.FC = () => {
               liveAwayScore: msg.awayScore ?? m.liveAwayScore,
               currentMinute: msg.minute ?? m.currentMinute,
             } : m));
+          } else if (msg.type === 'LIVE_TICK') {
+            // Fast (~1/sec) resync from the gamedetails feed: keeps the
+            // score/minute already shown in sync with the provider without
+            // waiting for a goal or the slow 60s match-list poll. No full
+            // reload — this only ever carries fields already verified on
+            // the server (see server/london365GameDetails.js), so it's
+            // safe/cheap to apply directly to local state every time.
+            setMatches((current) => current.map((m) => m.id === msg.matchId ? {
+              ...m,
+              liveHomeScore: msg.homeScore ?? m.liveHomeScore,
+              liveAwayScore: msg.awayScore ?? m.liveAwayScore,
+              currentMinute: msg.minute ?? m.currentMinute,
+            } : m));
+          } else if (msg.type === 'CARD') {
+            // Was previously ignored entirely (no branch matched 'CARD'),
+            // so a yellow/red card from the live feed never reached the UI
+            // until the next 60s reload. A card doesn't change the score,
+            // so just nudge a reload of that data rather than guessing at
+            // a card-count field shape here.
+            loadMatches();
           } else if (msg.type === 'LIVE_EVENT') {
             loadMatches();
           } else if (msg.type === 'MATCH_STARTED') {
