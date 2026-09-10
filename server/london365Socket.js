@@ -165,6 +165,12 @@ export async function startLondon365GameDetailsSocket() {
 
   gameDetailsSocket.on('connect', function () {
     console.log('[london365-gamedetails] connected to ' + GAMEDETAILS_SOCKET_URL);
+    // CRITICAL: without joining a room, the provider's server accepts the
+    // connection but never actually streams any "gamedetails" events — the
+    // socket looks "connected" in logs while silently receiving nothing.
+    // Mirrors the exact join pattern the odds socket uses successfully
+    // against the sibling server (see startLondon365Socket above).
+    gameDetailsSocket.emit('connectToRoom', { room: 'inplay' });
   });
   gameDetailsSocket.on('disconnect', function () {
     console.warn('[london365-gamedetails] disconnected — socket.io will auto-reconnect');
@@ -175,11 +181,36 @@ export async function startLondon365GameDetailsSocket() {
 
   // The feed sends one flat XML-attribute string per update — see
   // parseGameDetails in gameDetailsParser.js for the exact shape.
+  let gameDetailsCount = 0;
   gameDetailsSocket.on('gamedetails', function (raw) {
+    gameDetailsCount++;
+    if (gameDetailsCount <= 3 || gameDetailsCount % 200 === 0) {
+      console.log('[london365-gamedetails] received #' + gameDetailsCount + ':', String(raw).slice(0, 200));
+    }
     applyGameDetails(raw).catch(function (err) {
       console.error('[london365-gamedetails] apply failed:', err.message);
     });
   });
+
+  // Diagnostic-only: socket.io v2 has no onAny(), so this reaches into the
+  // underlying Engine.IO transport to log every raw packet regardless of
+  // its event name — the only way to tell, from Render/Koyeb logs alone,
+  // whether "gamedetails" is really the right event name/room for this
+  // server, or whether the connection is silently receiving nothing (or
+  // something under a different name) after connecting successfully.
+  // Off by default; set LONDON365_GAMEDETAILS_DEBUG=1 temporarily to see it.
+  if (process.env.LONDON365_GAMEDETAILS_DEBUG === '1') {
+    let packetCount = 0;
+    const logRawPacket = function (packet) {
+      packetCount++;
+      if (packetCount <= 20 || packetCount % 100 === 0) {
+        console.log('[london365-gamedetails][debug] raw packet #' + packetCount + ':', JSON.stringify(packet).slice(0, 300));
+      }
+    };
+    if (gameDetailsSocket.io && gameDetailsSocket.io.engine) {
+      gameDetailsSocket.io.engine.on('packet', logRawPacket);
+    }
+  }
 
   console.log('[london365-gamedetails] starting live-detail socket feed for ' + GAMEDETAILS_SOCKET_URL);
 }
