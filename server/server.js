@@ -14,7 +14,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import rateLimit from 'express-rate-limit';
-import authRouter from './routes/auth.js';
+import jwt from 'jsonwebtoken';
+import authRouter, { JWT_SECRET } from './routes/auth.js';
 import matchesRouter from './routes/matches.js';
 import betsRouter from './routes/bets.js';
 import adminRouter from './routes/admin.js';
@@ -23,7 +24,7 @@ import scrapeRouter from './routes/scrape.js';
 import favoritesRouter from './routes/favorites.js';
 import { initDb } from './db.js';
 import { initWebSocket } from './ws.js';
-import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCountriesNotInOnlyList, wipeLondon365Data, loadPersistedLeagueMap } from './london365.js';
+import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCrossCountryMisclassifiedLeagues, purgeCountriesNotInOnlyList, wipeLondon365Data, loadPersistedLeagueMap } from './london365.js';
 import { startLondon365Socket, startLondon365GameDetailsSocket } from './london365Socket.js';
 
 let dbReady = false;
@@ -72,14 +73,39 @@ const authLimiter = rateLimit({
   message: { error: 'Shumë përpjekje. Provo përsëri pas disa minutash.' },
 });
 
+// Key by the AUTHENTICATED USER when the request carries a valid JWT,
+// falling back to IP only for logged-out requests. Keying by IP alone (the
+// old behavior) meant every device sharing a public IP — same WiFi/office,
+// or a mobile carrier's shared/CGNAT IP, which is common — drew from the
+// SAME 120-req/min bucket. In practice that meant a second admin (or any
+// second user) opening the site could exhaust the shared bucket and make
+// the FIRST person's session appear to silently stop working, even though
+// nothing was wrong with their own usage. Per-user keys mean one person's
+// traffic can never count against another's, no matter how many people
+// share a network.
+function keyByUserOrIp(req) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (token) {
+    try {
+      const { id } = jwt.verify(token, JWT_SECRET);
+      if (id) return 'user:' + id;
+    } catch {
+      // invalid/expired token — fall through to IP-based keying below
+    }
+  }
+  return req.ip;
+}
+
 // General API protection: generous enough for normal browsing/polling, but
 // stops scripted abuse (e.g. spam bet placement, scraping matches on a tight
-// loop) from one IP.
+// loop) from one identity.
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: keyByUserOrIp,
   message: { error: 'Shumë kërkesa. Provo përsëri pas pak.' },
 });
 
@@ -205,6 +231,7 @@ async function start() {
   // import (once leagueNameIndex has this run's real data), this is just
   // for immediate cleanup right after boot using last run's saved map.
   purgeCountryPrefixedDuplicateLeagues().catch((err) => console.error('[server] purgeCountryPrefixedDuplicateLeagues failed:', err.message));
+  purgeCrossCountryMisclassifiedLeagues().catch((err) => console.error('[server] purgeCrossCountryMisclassifiedLeagues failed:', err.message));
   purgeCountriesNotInOnlyList().catch((err) => console.error('[server] purgeCountriesNotInOnlyList failed:', err.message));
   startLondon365LiveLoop();
   startLondon365Socket();

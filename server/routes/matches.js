@@ -98,9 +98,25 @@ function dedupeMatches(list) {
 // regardless of import progress.
 router.get('/', async (req, res) => {
   ensureLondon365Import();
+  // Bounded by time: the UI only ever shows "today" through ~7 days ahead,
+  // plus recently-finished/live matches from the last couple of days — so
+  // there's no reason to keep pulling EVERY match_cache row ever imported
+  // (which only grows over time and was making first-load, especially for
+  // a brand-new visitor with no local cache, get slower and slower as the
+  // table accumulated old finished fixtures with their full raw_json
+  // market blobs). start_time is TEXT, so the timestamptz cast is required
+  // for a valid comparison (see server/oddsUtils.js normalizeStatus for
+  // the same pattern).
   const { rows } = req.query.league
     ? await pool.query('SELECT * FROM matches_cache WHERE league = $1 ORDER BY start_time ASC', [req.query.league])
-    : await pool.query("SELECT * FROM matches_cache WHERE id LIKE 'l365-%' ORDER BY start_time ASC");
+    : await pool.query(
+        `SELECT * FROM matches_cache
+         WHERE id LIKE 'l365-%'
+           AND start_time_tz(start_time) > NOW() - interval '2 days'
+           AND start_time_tz(start_time) < NOW() + interval '10 days'
+         ORDER BY start_time ASC
+         LIMIT 4000`
+      );
   console.log(`[matches] GET / -> ${rows.length} cached row(s)${req.query.league ? ` for league=${req.query.league}` : ''}`);
   res.json({ matches: dedupeMatches(rows.map(mapEventToMatch)), leagueNames: getLondon365LeagueNames() });
 });

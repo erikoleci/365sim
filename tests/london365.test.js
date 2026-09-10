@@ -154,9 +154,28 @@ describe('london365 date and score helpers', function () {
 
 describe('london365 leagueKey', function () {
   it('builds a provider_country_slug key so App.tsx groups it under the right flag', function () {
-    expect(leagueKey('Premier League')).toBe('l365_england__premier_league');
+    // A bare "Premier League" with no country context (no country_id, no
+    // "England " prefix) now falls to "other" rather than guessing England —
+    // the old generic "premier league" -> england hint used to sit here, but
+    // it also silently mis-bucketed foreign leagues that happen to contain
+    // the same words, e.g. "Dominica Premier League" / "Singapore Premier
+    // League 2" (confirmed from the live sidebar). Real English leagues are
+    // resolved via the authoritative country_id path in normal operation;
+    // this keyword-only path is just the last-resort name-guess fallback.
+    expect(leagueKey('Premier League')).toBe('l365_other__premier_league');
+    // leagueKey() (the plain name-only fallback) doesn't strip a redundant
+    // leading country word — that's leagueKeyFromCountry()'s job on the
+    // authoritative country_id path; purgeCountryPrefixedDuplicateLeagues()
+    // cleans up any of these that land in the DB via this fallback. What
+    // matters here is just that the COUNTRY classification is correct.
+    expect(leagueKey('England Premier League')).toBe('l365_england__england_premier_league');
     expect(leagueKey('Serie A')).toBe('l365_italy__serie_a');
     expect(leagueKey('UEFA Champions League')).toBe('l365_uefa__uefa_champions_league');
+  });
+
+  it('does not mis-bucket a foreign league that shares a competition-name word with England', function () {
+    expect(leagueKey('Dominica Premier League')).not.toMatch(/^l365_england__/);
+    expect(leagueKey('Singapore Premier League 2')).not.toMatch(/^l365_england__/);
   });
 
   it('falls back to the "other" country token for an unrecognized league name', function () {

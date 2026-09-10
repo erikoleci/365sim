@@ -315,7 +315,15 @@ const LEAGUE_COUNTRY_HINTS = [
   [/world cup|fifa|nations league/, 'fifa'],
   [/copa america|conmebol|libertadores|sudamericana/, 'conmebol'],
   [/afc|asian cup|asean/, 'afc'],
-  [/premier league|championship|league one|league two|fa cup|efl/, 'england'],
+  // NOTE: a bare "premier league"/"championship" hint used to sit here,
+  // defaulting to England. Removed — it's exactly the kind of dangerously
+  // generic match the comment above warns about: it silently mis-bucketed
+  // "Dominica Premier League" and "Singapore Premier League 2" as English
+  // competitions (confirmed from the live sidebar). Real English top-flight
+  // leagues always resolve via the authoritative country_id path (or the
+  // "starts with country name" / colon-prefix rules above); an unresolved
+  // league with a generic name is far safer left in "other" than
+  // confidently mislabeled.
   [/la liga|copa del rey|segunda/, 'spain'],
   [/serie a|serie b|coppa italia/, 'italy'],
   [/bundesliga|dfb.?pokal/, 'germany'],
@@ -1324,12 +1332,22 @@ export async function syncLondon365Live() {
       const resolvedLeagueEarly = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
       // Same country allowlist as the prematch import — a live match from a
       // country outside LONDON365_ONLY_COUNTRIES shouldn't sneak into the
-      // feed just because it's currently in-play. Unresolvable leagues
-      // (leagueById miss, e.g. right after a restart) are let through here
-      // since we can't yet know their country; the games loop below still
-      // routes them through the same key builder either way.
-      if (ONLY_COUNTRIES.size && resolvedLeagueEarly && resolvedLeagueEarly.countryName &&
-          !ONLY_COUNTRIES.has(resolvedLeagueEarly.countryName.toLowerCase())) continue;
+      // feed just because it's currently in-play. Previously, an
+      // unresolvable league (leagueById miss — e.g. right after a
+      // FORCE_RESET/restart, before the main import loop has repopulated
+      // leagueById) was let through unconditionally, since we "couldn't yet
+      // know their country". In practice this was a real hole: for the
+      // whole window before leagueById catches up, EVERY country's live
+      // games passed straight through this filter and got cached — which is
+      // exactly how India/Malaysia matches kept reappearing after a reset
+      // even with ONLY_COUNTRIES set. Now falls back to the same
+      // name-based guess (leagueCountryToken) applySocketGame uses, so an
+      // unresolved league is judged by its own name instead of let through.
+      if (ONLY_COUNTRIES.size) {
+        const countryName = (resolvedLeagueEarly && resolvedLeagueEarly.countryName) || null;
+        const token = countryName ? countryName.toLowerCase() : leagueCountryToken(g.league || '');
+        if (!ONLY_COUNTRIES.has(token)) continue;
+      }
       liveIds.add('l365-' + g.id);
       // Each game processed independently: one malformed/failing game must
       // never abort the whole sync cycle. Before this, an uncaught error
@@ -1473,6 +1491,16 @@ export async function applySocketGame(g, status) {
   const minute = g.current_minute || null;
   const resolved = status || (minute ? 'LIVE' : statusFromCommence(commence));
   const resolvedLeague = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
+  // Same ONLY_COUNTRIES gate the REST import applies (see the import loop
+  // above) — without this, the live odds socket's 'new-game'/'new-live-game'
+  // events bypass the country allowlist entirely and insert matches from
+  // excluded countries (e.g. India/Malaysia showing up even with
+  // ONLY_COUNTRIES="england,france,spain,italy,germany,portugal").
+  if (ONLY_COUNTRIES.size) {
+    const countryName = (resolvedLeague && resolvedLeague.countryName) || null;
+    const token = countryName ? countryName.toLowerCase() : leagueCountryToken(g.league || '');
+    if (!ONLY_COUNTRIES.has(token)) return false;
+  }
   const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : leagueKeyFromCountry(null, g.league || ''), resolved, score, { minute: minute, apiStatus: g.api_status });
   await recordGoalIfChanged(ev, score, minute, prev);
   return true;
@@ -1595,6 +1623,48 @@ export async function purgeStaleLeagues() {
     }
   }
 }
+
+// Purges rows bucketed under one country whose league-name slug contains
+// another country's name — e.g. "l365_england__dominica_premier_league" or
+// "...__singapore_premier_league_2". These came from the now-removed
+// generic "premier league"/"championship" -> england keyword hint (see
+// LEAGUE_COUNTRY_HINTS above) confidently mis-bucketing foreign leagues
+// that happen to share a common competition-name word. A real competition
+// never has a DIFFERENT country's name baked into it, so this is a safe,
+// general check — not specific to England or to Dominica/Singapore.
+export async function purgeCrossCountryMisclassifiedLeagues() {
+  try {
+    const { rows } = await pool.query(
+      "SELECT DISTINCT league FROM matches_cache WHERE id LIKE 'l365-%' AND league LIKE 'l365\\_%\\_\\_%'"
+    );
+    let purged = 0;
+    for (const { league: key } of rows) {
+      const m = /^l365_([a-z0-9-]+)__(.+)$/.exec(key);
+      if (!m) continue;
+      const [, countryToken, leagueSlug] = m;
+      const slugText = leagueSlug.replace(/_/g, ' ');
+      for (const countryName of COUNTRY_NAMES_BY_LENGTH_DESC) {
+        const otherToken = COUNTRY_NAME_TO_TOKEN[countryName] || slugDash(countryName);
+        if (!otherToken || otherToken === countryToken) continue;
+        if (!slugText.includes(countryName)) continue;
+        const { rowCount } = await pool.query(
+          `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league = $1`,
+          [key]
+        );
+        purged += rowCount;
+        if (rowCount) {
+          console.log(`[london365] purged ${rowCount} rows under "${key}" — bucketed as "${countryToken}" but name contains "${countryName}"`);
+        }
+        break;
+      }
+    }
+    return purged;
+  } catch (err) {
+    console.error('[london365] failed purging cross-country misclassified leagues:', err.message);
+    return 0;
+  }
+}
+
 
 // Purges rows whose league key redundantly repeats the country in the
 // league-name portion itself — e.g. "l365_england__england_premier_league"

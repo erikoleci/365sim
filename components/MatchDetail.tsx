@@ -3,6 +3,7 @@ import { Match, MatchStatus } from '../types';
 import * as api from '../services/api';
 import type { LiveStatistics, MatchEvent } from '../services/api';
 import LivePitch from './LivePitch';
+import { LONDON365_EVENT_LABELS, LONDON365_STAT_LABELS } from '../utils/london365Labels';
 
 interface MatchDetailProps {
   match: Match;
@@ -11,13 +12,22 @@ interface MatchDetailProps {
   selectedIds: string[];
 }
 
+// GOAL/YELLOW_CARD/RED_CARD are OUR internal match_events.type enum (set by
+// applyGameDetails on the backend) — kept as-is for consistency with
+// settlement/other code that reads this column. Only the DISPLAY text here
+// is aligned to the provider's own confirmed wording (LONDON365_EVENT_LABELS,
+// captured verbatim from a real socket payload — see utils/london365Labels.ts)
+// instead of an invented label. The rest of that dictionary (Pushim,
+// Ndeshja_Mbaroi, Sulm, Zoteron_topin, etc.) is included so it renders
+// correctly the moment a real feed for those event types is identified —
+// none of them are emitted by anything today, so they simply never appear.
 const EVENT_LABELS: Record<string, string> = {
-  GOAL: '⚽ Gol',
-  YELLOW_CARD: '🟨 Kartonë i verdhë',
-  RED_CARD: '🟥 Kartonë i kuq',
-  SUBSTITUTION: '🔄 Zëvendësim',
-  CORNER: '🚩 Korner',
-  VAR: '📺 VAR',
+  GOAL: `⚽ ${LONDON365_EVENT_LABELS.Gol}`,
+  YELLOW_CARD: `🟨 ${LONDON365_EVENT_LABELS.Karton_i_verdhe}`,
+  RED_CARD: `🟥 ${LONDON365_EVENT_LABELS.Karton_i_kuq}`,
+  SUBSTITUTION: `🔄 ${LONDON365_EVENT_LABELS.Nderrim}`,
+  CORNER: `🚩 ${LONDON365_EVENT_LABELS.Korne}`,
+  VAR: `📺 ${LONDON365_EVENT_LABELS.VAR}`,
 };
 
 const StatBar: React.FC<{ label: string; home: number | null; away: number | null; suffix?: string }> = ({ label, home, away, suffix = '' }) => {
@@ -251,10 +261,10 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
               <div className="text-[10px] text-brand-textMuted uppercase text-center mb-4">
                 Statistika nga burimi i të dhënave — jo verifikim zyrtar
               </div>
-              <StatBar label="Posedimi" home={liveDetail.statistics.possession_home} away={liveDetail.statistics.possession_away} suffix="%" />
-              <StatBar label="Gjuajtje" home={liveDetail.statistics.shots_home} away={liveDetail.statistics.shots_away} />
-              <StatBar label="Gjuajtje në portë" home={liveDetail.statistics.shots_on_target_home} away={liveDetail.statistics.shots_on_target_away} />
-              <StatBar label="Korner" home={liveDetail.statistics.corners_home} away={liveDetail.statistics.corners_away} />
+              <StatBar label={LONDON365_STAT_LABELS.Statistika_ZoterimTopi.replace(' %', '')} home={liveDetail.statistics.possession_home} away={liveDetail.statistics.possession_away} suffix="%" />
+              <StatBar label={LONDON365_STAT_LABELS.Statistika_Goditje_ne_porte} home={liveDetail.statistics.shots_on_target_home} away={liveDetail.statistics.shots_on_target_away} />
+              <StatBar label={LONDON365_STAT_LABELS.Statistika_Goditje_jasht_porte} home={liveDetail.statistics.shots_home != null && liveDetail.statistics.shots_on_target_home != null ? liveDetail.statistics.shots_home - liveDetail.statistics.shots_on_target_home : null} away={liveDetail.statistics.shots_away != null && liveDetail.statistics.shots_on_target_away != null ? liveDetail.statistics.shots_away - liveDetail.statistics.shots_on_target_away : null} />
+              <StatBar label="Korne" home={liveDetail.statistics.corners_home} away={liveDetail.statistics.corners_away} />
               <StatBar label="Kartonë" home={liveDetail.statistics.cards_home} away={liveDetail.statistics.cards_away} />
               <StatBar label="xG" home={liveDetail.statistics.xg_home} away={liveDetail.statistics.xg_away} />
             </div>

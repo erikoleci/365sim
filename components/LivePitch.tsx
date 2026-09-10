@@ -9,9 +9,9 @@ interface LivePitchProps {
 }
 
 // Animated pitch view for live matches. Possession dot position is driven
-// by real possession_home/possession_away from the stats feed when
-// available (Sportmonks), falling back to a 50/50 center position if the
-// provider hasn't returned possession data yet.
+// by real possession_home/possession_away when the live-detail feed
+// provides them — nothing is shown (no dot, no "Sulm" label) when it
+// doesn't, rather than defaulting to a fake 50/50 split.
 const LivePitch: React.FC<LivePitchProps> = ({ match, stats }) => {
   const isLive = match.status === MatchStatus.LIVE;
   if (!isLive) return null;
@@ -40,17 +40,23 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats }) => {
         <rect x="356" y="60" width="40" height="100" fill="none" stroke="#fff" strokeWidth="2" />
       </svg>
 
-      {/* Possession dot — animates smoothly toward whichever side has the ball, driven by real stats */}
-      <div
-        className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-brand-yellow shadow-lg transition-all duration-1000 ease-in-out animate-pulse"
-        style={{ left: `${dotLeftPct}%` }}
-      />
-
-      <div className="absolute bottom-2 left-3 text-white z-10">
-        <div className="text-xs font-bold leading-tight">{attackingSide}</div>
-        <div className="text-[11px] text-brand-yellow font-semibold leading-tight">Sulm</div>
-      </div>
-
+      {/* Possession dot + attacking-side label — ONLY when the feed actually
+          has real possession numbers. No fallback/default position: an
+          always-on indicator defaulting to 50/50 would silently show the
+          home team as "attacking" on every match with no real data behind
+          it, which is exactly the fabricated-live-data problem to avoid. */}
+      {stats?.possession_home != null && (
+        <>
+          <div
+            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-brand-yellow shadow-lg transition-all duration-1000 ease-in-out animate-pulse"
+            style={{ left: `${dotLeftPct}%` }}
+          />
+          <div className="absolute bottom-2 left-3 text-white z-10">
+            <div className="text-xs font-bold leading-tight">{attackingSide}</div>
+            <div className="text-[11px] text-brand-yellow font-semibold leading-tight">Sulm</div>
+          </div>
+        </>
+      )}
       <div className="absolute top-2 left-3 text-white text-xs font-bold">{match.homeTeam}</div>
       <div className="absolute top-2 right-3 text-white text-xs font-bold">{match.awayTeam}</div>
       <div className="absolute top-8 left-1/2 -translate-x-1/2 text-white font-mono font-bold text-xl">
