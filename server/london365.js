@@ -1456,6 +1456,16 @@ export async function applySocketGame(g, status) {
   const minute = g.current_minute || null;
   const resolved = status || (minute ? 'LIVE' : statusFromCommence(commence));
   const resolvedLeague = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
+  // Same ONLY_COUNTRIES gate the REST import applies (see the import loop
+  // above) — without this, the live odds socket's 'new-game'/'new-live-game'
+  // events bypass the country allowlist entirely and insert matches from
+  // excluded countries (e.g. India/Malaysia showing up even with
+  // ONLY_COUNTRIES="england,france,spain,italy,germany,portugal").
+  if (ONLY_COUNTRIES.size) {
+    const countryName = (resolvedLeague && resolvedLeague.countryName) || null;
+    const token = countryName ? countryName.toLowerCase() : leagueCountryToken(g.league || '');
+    if (!ONLY_COUNTRIES.has(token)) return false;
+  }
   const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : leagueKeyFromCountry(null, g.league || ''), resolved, score, { minute: minute, apiStatus: g.api_status });
   await recordGoalIfChanged(ev, score, minute, prev);
   return true;
