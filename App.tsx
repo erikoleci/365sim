@@ -91,11 +91,25 @@ const App: React.FC = () => {
   const favoriteLeagues = useMemo(() => new Set(favorites.filter(f => f.type === 'LEAGUE').map(f => f.value)), [favorites]);
 
   const toggleFavorite = useCallback(async (type: 'TEAM' | 'LEAGUE', value: string) => {
+    // Optimistic: flip the star and update the count immediately on click —
+    // don't make the user wait a full round-trip to see it react. Reconcile
+    // with the server's response right after, and roll back to the exact
+    // previous state if the request fails, instead of leaving the UI out of
+    // sync with a silent console.error as the only trace.
+    let previous: api.Favorite[] = [];
+    setFavorites((current) => {
+      previous = current;
+      const alreadyFavorited = current.some((f) => f.type === type && f.value === value);
+      return alreadyFavorited
+        ? current.filter((f) => !(f.type === type && f.value === value))
+        : [...current, { type, value }];
+    });
     try {
       const { favorites: f } = await api.toggleFavorite(type, value);
       setFavorites(f);
     } catch (e) {
       console.error('Failed to toggle favorite', e);
+      setFavorites(previous);
     }
   }, []);
 
@@ -340,6 +354,30 @@ const App: React.FC = () => {
         // (e.g. "l365_brazil__amazonense_serie_b" -> "Amazonense Serie B",
         // not "Brazil Amazonense Serie B").
         key.replace(/^(soccer|l365)_[a-z0-9-]+__/, '').replace(/^(soccer|l365)_/, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/\b\w/g, (c) => c.toUpperCase());
+
+  // Within a country, most people only care about the flagship top-flight
+  // league (and, for "Ndërkombëtare", the big UEFA competitions) — everything
+  // else (development leagues, reserve/U19 sides, obscure cups) is noise
+  // they'd rather find themselves by opening the country/league picker. So
+  // the flagship leagues sort first; everything else falls back to
+  // alphabetical, exactly as before.
+  const FLAGSHIP_LEAGUE_NAMES = [
+    'premier league', 'laliga', 'la liga', 'serie a', 'bundesliga', 'ligue 1',
+    'primeira liga', 'eredivisie', 'jupiler pro league', 'super lig',
+    'uefa champions league', 'champions league',
+    'uefa europa league', 'europa league',
+    'uefa europa conference league', 'conference league',
+    'uefa nations league',
+  ];
+  const leagueImportanceRank = (key: string) => {
+    const label = leagueLabel(key).toLowerCase();
+    const idx = FLAGSHIP_LEAGUE_NAMES.findIndex((name) => label === name || label.includes(name));
+    return idx === -1 ? 999 : idx;
+  };
+  const byLeagueImportance = (a: string, b: string) => {
+    const ra = leagueImportanceRank(a), rb = leagueImportanceRank(b);
+    return ra !== rb ? ra - rb : leagueLabel(a).localeCompare(leagueLabel(b));
+  };
 
   // Autocomplete suggestions — split into teams / leagues / direct match
   // hits so the dropdown can show each kind separately, instant (no
@@ -679,7 +717,7 @@ const App: React.FC = () => {
     return countryNames.map((country) => [
       country,
       Object.keys(byCountry[country])
-        .sort((a, b) => leagueLabel(a).localeCompare(leagueLabel(b)))
+        .sort(byLeagueImportance)
         .map((league) => [league, byCountry[country][league]] as [string, Match[]]),
     ] as [string, [string, Match[]][]]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -696,7 +734,7 @@ const App: React.FC = () => {
       if (!groups[country]) groups[country] = [];
       groups[country].push(league);
     });
-    Object.values(groups).forEach((arr) => arr.sort((a, b) => leagueLabel(a).localeCompare(leagueLabel(b))));
+    Object.values(groups).forEach((arr) => arr.sort(byLeagueImportance));
     // Biggest European leagues first (what most people are looking for),
     // then every other country alphabetically, then continental/
     // international competitions (Champions League, World Cup, etc.) at
