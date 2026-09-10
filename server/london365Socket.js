@@ -200,10 +200,23 @@ export async function startLondon365GameDetailsSocket() {
   // The feed sends one flat XML-attribute string per update — see
   // parseGameDetails in gameDetailsParser.js for the exact shape.
   let gameDetailsCount = 0;
+  // Opt-in, single-match full trace: the normal sampled/truncated log below
+  // is fine for "is the socket alive" checks, but useless for figuring out
+  // what H1-H8/A1-A8 actually mean — that needs every update for ONE EID,
+  // untruncated, with a real wall-clock timestamp so it can be lined up
+  // against what londonpro365.com's own live match center shows for that
+  // same match at that same moment (attacks, corners, shots, possession).
+  // Set LONDON365_GAMEDETAILS_CAPTURE_EID=<the EID> temporarily while
+  // watching one live match; leave unset otherwise (this is not meant to
+  // run permanently — it logs every single update, no sampling).
+  const CAPTURE_EID = process.env.LONDON365_GAMEDETAILS_CAPTURE_EID || null;
   gameDetailsSocket.on('gamedetails', function (raw) {
     gameDetailsCount++;
     if (gameDetailsCount <= 3 || gameDetailsCount % 200 === 0) {
       console.log('[london365-gamedetails] received #' + gameDetailsCount + ':', String(raw).slice(0, 200));
+    }
+    if (CAPTURE_EID && String(raw).includes('EID="' + CAPTURE_EID + '"')) {
+      console.log('[london365-gamedetails][capture ' + new Date().toISOString() + ']', String(raw));
     }
     applyGameDetails(raw).catch(function (err) {
       console.error('[london365-gamedetails] apply failed:', err.message);
