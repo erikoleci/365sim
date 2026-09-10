@@ -616,10 +616,27 @@ export async function fetchLiveRows(gameId) {
   const detail = await api('/ajax/livegame/' + gameId, { retries: 4 });
   const rows = [];
   const groups = Array.isArray(detail) ? detail : [];
+  // The detail response repeats result/current_minute/api_status on every
+  // single market row (confirmed against the live provider — real payload,
+  // 2026-09-10). These are the ONLY reliably-populated source for live score
+  // and clock; the /ajax/livegames LIST endpoint's own g.result/g.current_minute
+  // (used as a fallback by callers) is not confirmed and was leaving the
+  // on-screen minute/score empty. Captured once from the first row and
+  // attached as rows.meta below — attaching a property to the array instead
+  // of changing the return shape keeps every existing caller (which treats
+  // the result as a plain array) working unmodified.
+  let meta = null;
   for (const group of groups) {
     if (!Array.isArray(group)) continue;
     for (const m of group) {
       if (!m) continue;
+      if (!meta) {
+        meta = {
+          minute: m.current_minute || null,
+          result: m.result || null,
+          apiStatus: m.api_status != null ? String(m.api_status) : null,
+        };
+      }
       rememberMarketName(m.market_id, m.market);
       rows.push({
         coefId: String(m.id),
@@ -631,6 +648,7 @@ export async function fetchLiveRows(gameId) {
       });
     }
   }
+  rows.meta = meta;
   return rows;
 }
 
@@ -1322,9 +1340,11 @@ export async function syncLondon365Live() {
       // never got a chance to run.
       try {
         let rows = [];
+        let liveMeta = null;
         try {
           if (DETAIL_DELAY_MS) await sleep(DETAIL_DELAY_MS);
           rows = await fetchLiveRows(g.id);
+          liveMeta = rows.meta || null;
         } catch (err) {
           console.error('[london365] livegame detail ' + g.id + ' failed (falling back to packed list odds):', err.message);
         }
@@ -1332,8 +1352,13 @@ export async function syncLondon365Live() {
         const odds = hydrateRowNames(rows.filter(function (o) { return o ? !Number.isNaN(o.coef) : false; }));
         if (!odds.length) continue;
         const ev = buildEvent(g.id, g.home_team, g.away_team, isoFromWholeDate(g.whole_date, g.game_date, g.game_time) || new Date().toISOString(), odds);
-        const score = parseScore(g.result);
-        const minute = g.current_minute || null;
+        // liveMeta comes from /ajax/livegame/{id} (per-game detail, confirmed
+        // against the live provider) and is far more reliable than g.result/
+        // g.current_minute from the /ajax/livegames LIST response, which was
+        // leaving score/minute empty for most matches — see fetchLiveRows.
+        const score = parseScore((liveMeta && liveMeta.result) || g.result);
+        const minute = (liveMeta && liveMeta.minute) || g.current_minute || null;
+        const apiStatus = (liveMeta && liveMeta.apiStatus) != null ? liveMeta.apiStatus : g.api_status;
         // Prefer the country-accurate key resolved from the real league_id
         // (set during the last full import); if that's missing, try matching
         // the live feed's own league text against every real league name/alias
@@ -1344,7 +1369,7 @@ export async function syncLondon365Live() {
         // used to create a second, wrongly-named duplicate of an already-known
         // league instead of landing on its real name.
         const resolvedLeague = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
-        const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : leagueKeyFromCountry(null, g.league || ''), 'LIVE', score, { minute: minute, apiStatus: g.api_status });
+        const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : leagueKeyFromCountry(null, g.league || ''), 'LIVE', score, { minute: minute, apiStatus: apiStatus });
         await recordGoalIfChanged(ev, score, minute, prev);
         gamesSynced++;
       } catch (err) {
