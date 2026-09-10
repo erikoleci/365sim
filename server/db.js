@@ -221,12 +221,21 @@ export async function initDb() {
   await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS live_status TEXT;`);
 
   // Expression index for start_time::timestamptz comparisons (used by the
-  // bounded /api/matches query in server/routes/matches.js — a plain index
-  // on the raw TEXT column doesn't get used for a CAST comparison). Kept
-  // as its own guarded call: if any legacy row has a start_time that can't
-  // cast to timestamptz, this fails without taking down the rest of boot.
+  // bounded /api/matches query in server/routes/matches.js). Postgres
+  // refuses a plain `start_time::timestamptz` expression index because the
+  // text->timestamptz cast is officially STABLE, not IMMUTABLE (it can, in
+  // general, depend on the session's TimeZone setting). Our start_time
+  // strings are always explicit UTC ISO-8601 (with a 'Z'/offset suffix),
+  // so the result is actually always the same regardless of session
+  // timezone — safe to wrap in a genuinely-immutable SQL function so
+  // Postgres will accept indexing it.
   try {
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_matches_cache_start_time_tz ON matches_cache ((start_time::timestamptz));`);
+    await pool.query(`
+      CREATE OR REPLACE FUNCTION start_time_tz(text) RETURNS timestamptz AS $$
+        SELECT $1::timestamptz
+      $$ LANGUAGE sql IMMUTABLE STRICT;
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_matches_cache_start_time_tz ON matches_cache (start_time_tz(start_time));`);
   } catch (err) {
     console.error('[db] could not create idx_matches_cache_start_time_tz (a legacy row likely has a non-castable start_time) — the bounded /api/matches query will fall back to a slower sequential scan:', err.message);
   }

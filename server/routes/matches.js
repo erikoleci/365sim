@@ -112,8 +112,8 @@ router.get('/', async (req, res) => {
     : await pool.query(
         `SELECT * FROM matches_cache
          WHERE id LIKE 'l365-%'
-           AND start_time::timestamptz > NOW() - interval '2 days'
-           AND start_time::timestamptz < NOW() + interval '10 days'
+           AND start_time_tz(start_time) > NOW() - interval '2 days'
+           AND start_time_tz(start_time) < NOW() + interval '10 days'
          ORDER BY start_time ASC
          LIMIT 4000`
       );
