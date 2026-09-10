@@ -42,7 +42,17 @@ const App: React.FC = () => {
   // mixed into the home feed by default.
   const [showLiveOnly, setShowLiveOnly] = useState(false);
   const [detailMatchId, setDetailMatchId] = useState<string | null>(null);
-  const [currentLeague, setCurrentLeague] = useState('All Top Football');
+  // Persisted like `matches`/`leagueNames` above: without this, every page
+  // refresh reset the view to 'All Top Football' even though the cached
+  // matches were already there, so the league someone actually wanted only
+  // appeared after they clicked it again by hand.
+  const [currentLeague, setCurrentLeagueState] = useState(() => {
+    try { return localStorage.getItem('currentLeague') || 'All Top Football'; } catch { return 'All Top Football'; }
+  });
+  const setCurrentLeague = useCallback((league: string) => {
+    setCurrentLeagueState(league);
+    try { localStorage.setItem('currentLeague', league); } catch {}
+  }, []);
   const [selectedDate, setSelectedDate] = useState('ALL'); // 'ALL' or 'YYYY-MM-DD' (local date)
   const [isLoading, setIsLoading] = useState(false);
   // Tracks whether we've EVER successfully loaded matches, across the whole
