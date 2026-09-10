@@ -315,7 +315,15 @@ const LEAGUE_COUNTRY_HINTS = [
   [/world cup|fifa|nations league/, 'fifa'],
   [/copa america|conmebol|libertadores|sudamericana/, 'conmebol'],
   [/afc|asian cup|asean/, 'afc'],
-  [/premier league|championship|league one|league two|fa cup|efl/, 'england'],
+  // NOTE: a bare "premier league"/"championship" hint used to sit here,
+  // defaulting to England. Removed — it's exactly the kind of dangerously
+  // generic match the comment above warns about: it silently mis-bucketed
+  // "Dominica Premier League" and "Singapore Premier League 2" as English
+  // competitions (confirmed from the live sidebar). Real English top-flight
+  // leagues always resolve via the authoritative country_id path (or the
+  // "starts with country name" / colon-prefix rules above); an unresolved
+  // league with a generic name is far safer left in "other" than
+  // confidently mislabeled.
   [/la liga|copa del rey|segunda/, 'spain'],
   [/serie a|serie b|coppa italia/, 'italy'],
   [/bundesliga|dfb.?pokal/, 'germany'],
@@ -1570,6 +1578,48 @@ export async function purgeStaleLeagues() {
     }
   }
 }
+
+// Purges rows bucketed under one country whose league-name slug contains
+// another country's name — e.g. "l365_england__dominica_premier_league" or
+// "...__singapore_premier_league_2". These came from the now-removed
+// generic "premier league"/"championship" -> england keyword hint (see
+// LEAGUE_COUNTRY_HINTS above) confidently mis-bucketing foreign leagues
+// that happen to share a common competition-name word. A real competition
+// never has a DIFFERENT country's name baked into it, so this is a safe,
+// general check — not specific to England or to Dominica/Singapore.
+export async function purgeCrossCountryMisclassifiedLeagues() {
+  try {
+    const { rows } = await pool.query(
+      "SELECT DISTINCT league FROM matches_cache WHERE id LIKE 'l365-%' AND league LIKE 'l365\\_%\\_\\_%'"
+    );
+    let purged = 0;
+    for (const { league: key } of rows) {
+      const m = /^l365_([a-z0-9-]+)__(.+)$/.exec(key);
+      if (!m) continue;
+      const [, countryToken, leagueSlug] = m;
+      const slugText = leagueSlug.replace(/_/g, ' ');
+      for (const countryName of COUNTRY_NAMES_BY_LENGTH_DESC) {
+        const otherToken = COUNTRY_NAME_TO_TOKEN[countryName] || slugDash(countryName);
+        if (!otherToken || otherToken === countryToken) continue;
+        if (!slugText.includes(countryName)) continue;
+        const { rowCount } = await pool.query(
+          `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league = $1`,
+          [key]
+        );
+        purged += rowCount;
+        if (rowCount) {
+          console.log(`[london365] purged ${rowCount} rows under "${key}" — bucketed as "${countryToken}" but name contains "${countryName}"`);
+        }
+        break;
+      }
+    }
+    return purged;
+  } catch (err) {
+    console.error('[london365] failed purging cross-country misclassified leagues:', err.message);
+    return 0;
+  }
+}
+
 
 // Purges rows whose league key redundantly repeats the country in the
 // league-name portion itself — e.g. "l365_england__england_premier_league"
