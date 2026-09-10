@@ -1314,12 +1314,22 @@ export async function syncLondon365Live() {
       const resolvedLeagueEarly = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
       // Same country allowlist as the prematch import — a live match from a
       // country outside LONDON365_ONLY_COUNTRIES shouldn't sneak into the
-      // feed just because it's currently in-play. Unresolvable leagues
-      // (leagueById miss, e.g. right after a restart) are let through here
-      // since we can't yet know their country; the games loop below still
-      // routes them through the same key builder either way.
-      if (ONLY_COUNTRIES.size && resolvedLeagueEarly && resolvedLeagueEarly.countryName &&
-          !ONLY_COUNTRIES.has(resolvedLeagueEarly.countryName.toLowerCase())) continue;
+      // feed just because it's currently in-play. Previously, an
+      // unresolvable league (leagueById miss — e.g. right after a
+      // FORCE_RESET/restart, before the main import loop has repopulated
+      // leagueById) was let through unconditionally, since we "couldn't yet
+      // know their country". In practice this was a real hole: for the
+      // whole window before leagueById catches up, EVERY country's live
+      // games passed straight through this filter and got cached — which is
+      // exactly how India/Malaysia matches kept reappearing after a reset
+      // even with ONLY_COUNTRIES set. Now falls back to the same
+      // name-based guess (leagueCountryToken) applySocketGame uses, so an
+      // unresolved league is judged by its own name instead of let through.
+      if (ONLY_COUNTRIES.size) {
+        const countryName = (resolvedLeagueEarly && resolvedLeagueEarly.countryName) || null;
+        const token = countryName ? countryName.toLowerCase() : leagueCountryToken(g.league || '');
+        if (!ONLY_COUNTRIES.has(token)) continue;
+      }
       liveIds.add('l365-' + g.id);
       // Each game processed independently: one malformed/failing game must
       // never abort the whole sync cycle. Before this, an uncaught error
