@@ -220,6 +220,17 @@ export async function initDb() {
   await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS live_minute TEXT;`);
   await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS live_status TEXT;`);
 
+  // Expression index for start_time::timestamptz comparisons (used by the
+  // bounded /api/matches query in server/routes/matches.js — a plain index
+  // on the raw TEXT column doesn't get used for a CAST comparison). Kept
+  // as its own guarded call: if any legacy row has a start_time that can't
+  // cast to timestamptz, this fails without taking down the rest of boot.
+  try {
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_matches_cache_start_time_tz ON matches_cache ((start_time::timestamptz));`);
+  } catch (err) {
+    console.error('[db] could not create idx_matches_cache_start_time_tz (a legacy row likely has a non-castable start_time) — the bounded /api/matches query will fall back to a slower sequential scan:', err.message);
+  }
+
   const { rows } = await pool.query('SELECT COUNT(*)::int AS c FROM users');
   if (rows[0].c === 0) {
     await pool.query(
