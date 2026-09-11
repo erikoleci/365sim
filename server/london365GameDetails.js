@@ -47,6 +47,28 @@ function parseScore(sc) {
 // diff — never produces a false card duplicate.
 const lastSeen = new Map();
 const unknownEidWarned = new Set();
+// EID -> last {minute, homeScore, awayScore, ts} actually sent over the
+// 'live' WS broadcast. applyGameDetails runs ~1/sec per live match from
+// the provider feed, but minute/score rarely change that often (minute
+// only moves via the separate 30s REST loop; score only on a goal) —
+// broadcasting every single tick to every connected client regardless
+// was pure wasted outbound bandwidth on a metered host (this was the
+// single biggest driver once the REST poll fallback was already cut down
+// and the frontend moved off this host). RESYNC_MS still forces an
+// occasional re-send even with no change, as a safety net against a
+// client missing a message, just far less often than 1/sec.
+const lastBroadcast = new Map();
+const LIVE_TICK_RESYNC_MS = 15000;
+
+// Test-only: clears in-memory state between test cases so each test is
+// independent (lastSeen/lastBroadcast are intentionally module-level, not
+// per-call, in production — see comments above).
+export function __resetLiveStateForTests() {
+  lastSeen.clear();
+  lastBroadcast.clear();
+  unknownEidWarned.clear();
+}
+
 
 export async function applyGameDetails(raw) {
   const attrs = parseGameDetails(raw);
@@ -124,11 +146,27 @@ export async function applyGameDetails(raw) {
   // match-list poll. Only ever carries values already verified elsewhere
   // (matches_cache.live_minute / live_home_score / live_away_score) — never
   // derived from the unconfirmed T/H1-H8/A1-A8 fields (see header comment).
-  pushLiveTick(matchId, {
+  // Broadcast only when a connected client would actually see something
+  // different (score/minute changed), or every LIVE_TICK_RESYNC_MS as a
+  // safety net — not on every ~1/sec provider tick regardless of content.
+  // Values are still only ever the already-verified matches_cache ones
+  // (see header comment) — this only changes WHEN we send, never WHAT.
+  const nowTs = Date.now();
+  const prevBroadcast = lastBroadcast.get(matchId);
+  const tickPayload = {
     minute: minuteDisplay || undefined,
     homeScore: homeScoreForBroadcast ?? undefined,
     awayScore: awayScoreForBroadcast ?? undefined,
-  });
+  };
+  const changed = !prevBroadcast
+    || prevBroadcast.minute !== tickPayload.minute
+    || prevBroadcast.homeScore !== tickPayload.homeScore
+    || prevBroadcast.awayScore !== tickPayload.awayScore;
+  const dueForResync = !prevBroadcast || (nowTs - prevBroadcast.ts) >= LIVE_TICK_RESYNC_MS;
+  if (changed || dueForResync) {
+    pushLiveTick(matchId, tickPayload);
+    lastBroadcast.set(matchId, { ...tickPayload, ts: nowTs });
+  }
 
   const yc1 = Number(attrs.YC1) || 0, yc2 = Number(attrs.YC2) || 0;
   const rc1 = Number(attrs.RC1) || 0, rc2 = Number(attrs.RC2) || 0;
