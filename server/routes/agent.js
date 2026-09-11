@@ -163,7 +163,35 @@ router.get('/users/:id/tickets', async (req, res) => {
     'SELECT * FROM bets WHERE user_id = $1 ORDER BY created_at DESC LIMIT 500',
     [req.params.id]
   );
-  res.json({ tickets: bets });
+  if (bets.length === 0) return res.json({ tickets: [] });
+
+  // Pull every selection (match, market, pick, odds, won/lost) for those
+  // tickets in one query, then group in JS — this is what lets the Agent
+  // actually see WHICH matches a user bet on and whether each leg won or
+  // lost, not just the ticket-level stake/status.
+  const betIds = bets.map((b) => b.id);
+  const { rows: selections } = await pool.query(
+    'SELECT * FROM bet_selections WHERE bet_id = ANY($1) ORDER BY id ASC',
+    [betIds]
+  );
+  const selectionsByBet = new Map();
+  for (const sel of selections) {
+    if (!selectionsByBet.has(sel.bet_id)) selectionsByBet.set(sel.bet_id, []);
+    selectionsByBet.get(sel.bet_id).push({
+      matchId: sel.match_id, matchHome: sel.match_home, matchAway: sel.match_away,
+      marketId: sel.market_id, marketName: sel.market_name,
+      selectionId: sel.selection_id, selectionName: sel.selection_name,
+      odds: sel.odds, status: sel.status,
+    });
+  }
+
+  res.json({
+    tickets: bets.map((b) => ({
+      id: b.id, type: b.type, stake: b.stake, totalOdds: b.total_odds,
+      potentialReturn: b.potential_return, status: b.status, createdAt: b.created_at,
+      selections: selectionsByBet.get(b.id) || [],
+    })),
+  });
 });
 
 // Summary performance per user (turnover, wins, losses, pending) — powers
@@ -184,6 +212,68 @@ router.get('/performance', async (req, res) => {
     [req.user.id]
   );
   res.json({ users: rows });
+});
+
+// Pure, independently-testable month-boundary calculation — the part most
+// likely to have an off-by-one bug (December rollover, month padding).
+// Exported so tests/agent.test.js can verify it directly without spinning
+// up Express or a DB.
+export function monthRange(monthParam) {
+  const valid = typeof monthParam === 'string' && /^\d{4}-\d{2}$/.test(monthParam);
+  const now = new Date();
+  const [year, month] = valid
+    ? monthParam.split('-').map(Number)
+    : [now.getUTCFullYear(), now.getUTCMonth() + 1];
+
+  const rangeStart = Date.UTC(year, month - 1, 1);
+  const rangeEnd = Date.UTC(month === 12 ? year + 1 : year, month === 12 ? 0 : month, 1);
+  return { year, month, rangeStart, rangeEnd, label: `${year}-${String(month).padStart(2, '0')}` };
+}
+
+// Monthly summary across ALL of this agent's users combined, plus a
+// per-user breakdown for the same month (spec: "AGENT MONTHLY SUMMARY" +
+// "User Breakdown"). `month` is 'YYYY-MM'; defaults to the current month.
+router.get('/reports/monthly', async (req, res) => {
+  const { year, month, rangeStart, rangeEnd, label } = monthRange(req.query.month);
+
+  const { rows: totalsRows } = await pool.query(
+    `SELECT COUNT(DISTINCT u.id)::int AS total_users,
+            COALESCE(COUNT(b.id), 0)::int AS total_tickets,
+            COALESCE(SUM(b.stake), 0) AS turnover,
+            COALESCE(SUM(CASE WHEN b.status = 'WON' THEN b.potential_return - b.stake ELSE 0 END), 0) AS wins,
+            COALESCE(SUM(CASE WHEN b.status = 'LOST' THEN b.stake ELSE 0 END), 0) AS losses,
+            COALESCE(SUM(CASE WHEN b.status = 'PENDING' THEN b.stake ELSE 0 END), 0) AS pending
+     FROM users u
+     LEFT JOIN bets b ON b.user_id = u.id AND b.created_at >= $2 AND b.created_at < $3
+     WHERE u.agent_id = $1`,
+    [req.user.id, rangeStart, rangeEnd]
+  );
+
+  const { rows: perUser } = await pool.query(
+    `SELECT u.id, u.name, u.username,
+            COALESCE(COUNT(b.id), 0)::int AS tickets,
+            COALESCE(SUM(b.stake), 0) AS turnover,
+            COALESCE(SUM(CASE WHEN b.status = 'WON' THEN b.potential_return - b.stake ELSE 0 END), 0) AS wins,
+            COALESCE(SUM(CASE WHEN b.status = 'LOST' THEN b.stake ELSE 0 END), 0) AS losses,
+            COALESCE(SUM(CASE WHEN b.status = 'PENDING' THEN b.stake ELSE 0 END), 0) AS pending
+     FROM users u
+     LEFT JOIN bets b ON b.user_id = u.id AND b.created_at >= $2 AND b.created_at < $3
+     WHERE u.agent_id = $1
+     GROUP BY u.id
+     ORDER BY turnover DESC`,
+    [req.user.id, rangeStart, rangeEnd]
+  );
+
+  const t = totalsRows[0];
+  res.json({
+    month: label,
+    totals: {
+      totalUsers: t.total_users, totalTickets: t.total_tickets, turnover: t.turnover,
+      wins: t.wins, losses: t.losses, pending: t.pending,
+      netResult: Number(t.losses) - Number(t.wins),
+    },
+    users: perUser,
+  });
 });
 
 export default router;

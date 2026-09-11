@@ -71,6 +71,7 @@ const mocks = vi.hoisted(function () {
 vi.mock('../server/db.js', () => ({ default: mocks.pool, pool: mocks.pool }));
 
 const { transferBalance } = await import('../server/ledger.js');
+const { monthRange } = await import('../server/routes/agent.js');
 
 beforeEach(() => {
   mocks.reset();
@@ -124,5 +125,37 @@ describe('transferBalance — Owner -> Agent -> User ledger', () => {
     const result = await transferBalance({ actorId: 'owner-1', sourceId: null, targetId: 'user-1', amount: 25, type: 'ADMIN_CREDIT' });
     expect(result.sourceBefore).toBeNull();
     expect(mocks.users.get('user-1').balance).toBe(75);
+  });
+});
+
+describe('monthRange — monthly report date boundaries', () => {
+  it('computes [start, end) for a normal month', () => {
+    const r = monthRange('2026-03');
+    expect(r.label).toBe('2026-03');
+    expect(new Date(r.rangeStart).toISOString()).toBe('2026-03-01T00:00:00.000Z');
+    expect(new Date(r.rangeEnd).toISOString()).toBe('2026-04-01T00:00:00.000Z');
+  });
+
+  it('rolls over the year correctly for December', () => {
+    const r = monthRange('2026-12');
+    expect(new Date(r.rangeStart).toISOString()).toBe('2026-12-01T00:00:00.000Z');
+    expect(new Date(r.rangeEnd).toISOString()).toBe('2027-01-01T00:00:00.000Z');
+  });
+
+  it('a bet created exactly at rangeEnd belongs to the NEXT month, not this one', () => {
+    const r = monthRange('2026-03');
+    // rangeEnd is used as an exclusive upper bound (b.created_at < rangeEnd)
+    // by the route's SQL — this just documents/locks that boundary value.
+    expect(r.rangeEnd).toBe(Date.UTC(2026, 3, 1));
+  });
+
+  it('falls back to the current month for a missing/invalid month param', () => {
+    const now = new Date();
+    const r = monthRange(undefined);
+    expect(r.year).toBe(now.getUTCFullYear());
+    expect(r.month).toBe(now.getUTCMonth() + 1);
+
+    const rBad = monthRange('not-a-month');
+    expect(rBad.label).toBe(r.label);
   });
 });
