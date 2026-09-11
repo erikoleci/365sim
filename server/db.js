@@ -220,6 +220,43 @@ export async function initDb() {
   await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS live_minute TEXT;`);
   await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS live_status TEXT;`);
 
+  // --- Owner -> Agent -> User hierarchy (additive) ---
+  // agent_id: which AGENT this user was created/managed by. NULL for ADMIN
+  // (owner) rows and for any pre-existing USER row created before this
+  // migration — those keep behaving exactly as before (managed directly by
+  // ADMIN, same as today), nothing retroactively changes for them.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS agent_id TEXT REFERENCES users(id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_agent_id ON users (agent_id);`);
+  // Enable/disable an AGENT or USER account without deleting it. Defaults to
+  // true so every existing row (and every row created by existing code
+  // paths that don't know about this column) is unaffected/still active.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;`);
+
+  // Ledger: append-only record of every balance movement in the
+  // Owner->Agent->User chain. This is additive/new — it does NOT replace or
+  // intercept the existing `balance` column or any existing
+  // `UPDATE users SET balance = balance +/- $1` call site (bets.js,
+  // casino.js, matchSettlement.js, existing admin credit endpoint keep
+  // working unchanged). Only the new agent-hierarchy endpoints write here.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS transactions (
+      id SERIAL PRIMARY KEY,
+      actor_id TEXT NOT NULL REFERENCES users(id),
+      source_id TEXT REFERENCES users(id),
+      target_id TEXT NOT NULL REFERENCES users(id),
+      amount DOUBLE PRECISION NOT NULL,
+      type TEXT NOT NULL,
+      reference TEXT,
+      source_balance_before DOUBLE PRECISION,
+      source_balance_after DOUBLE PRECISION,
+      target_balance_before DOUBLE PRECISION NOT NULL,
+      target_balance_after DOUBLE PRECISION NOT NULL,
+      created_at BIGINT NOT NULL
+    );
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_transactions_target_id ON transactions (target_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_transactions_source_id ON transactions (source_id);`);
+
   // Expression index for start_time::timestamptz comparisons (used by the
   // bounded /api/matches query in server/routes/matches.js). Postgres
   // refuses a plain `start_time::timestamptz` expression index because the
@@ -242,17 +279,23 @@ export async function initDb() {
 
   const { rows } = await pool.query('SELECT COUNT(*)::int AS c FROM users');
   if (rows[0].c === 0) {
+    // Three-tier demo seed: Owner (admin/admin) -> Agent (root/root) ->
+    // User (user/user), with the user already linked to the agent via
+    // agent_id so the Owner->Agent->User hierarchy has real data to show
+    // immediately on a fresh install, with no manual setup.
     await pool.query(
-      `INSERT INTO users (id, name, username, password_hash, balance, role, avatar, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8), ($9,$10,$11,$12,$13,$14,$15,$16)`,
+      `INSERT INTO users (id, name, username, password_hash, balance, role, avatar, agent_id, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9), ($10,$11,$12,$13,$14,$15,$16,$17,$18), ($19,$20,$21,$22,$23,$24,$25,$26,$27)`,
       [
-        'admin-1', 'Administrator', 'root', bcrypt.hashSync('root', 10), 100000, 'ADMIN', '', Date.now(),
-        'user-1', 'Test User', 'user', bcrypt.hashSync('user', 10), 1000, 'USER', '', Date.now(),
+        'owner-1', 'Owner', 'admin', bcrypt.hashSync('admin', 10), 1000000, 'ADMIN', '', null, Date.now(),
+        'agent-1', 'Agent', 'root', bcrypt.hashSync('root', 10), 100000, 'AGENT', '', null, Date.now(),
+        'user-1', 'Test User', 'user', bcrypt.hashSync('user', 10), 1000, 'USER', '', 'agent-1', Date.now(),
       ]
     );
     console.log('Seeded TEST accounts (local use only):');
-    console.log('  admin -> username: root / password: root');
-    console.log('  user  -> username: user / password: user');
+    console.log('  owner (Owner/Admin) -> username: admin / password: admin');
+    console.log('  agent (Agent)       -> username: root  / password: root');
+    console.log('  user  (User)        -> username: user  / password: user  (linked to agent "root")');
     console.log('WARNING: these are weak credentials for local testing — do not use in production.');
   }
 }

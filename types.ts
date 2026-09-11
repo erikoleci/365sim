@@ -1,5 +1,6 @@
 export enum UserRole {
   USER = 'USER',
+  AGENT = 'AGENT',
   ADMIN = 'ADMIN'
 }
 
@@ -11,6 +12,8 @@ export interface User {
   balance: number;
   role: UserRole;
   avatar: string;
+  isActive?: boolean;
+  agentId?: string | null;
 }
 
 export enum MatchStatus {
