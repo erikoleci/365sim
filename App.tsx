@@ -3,7 +3,7 @@ import Navbar from './components/Navbar';
 import MatchRow from './components/MatchCard';
 import MatchDetail from './components/MatchDetail';
 import BetSlip from './components/BetSlip';
-import AdminPanel from './components/AdminPanel';
+import OwnerDashboard from './components/OwnerDashboard';
 import Login from './components/Login';
 import CasinoHub from './components/CasinoHub';
 import { User, Match, Bet, UserRole, BetSelectionItem, MatchStatus } from './types';
@@ -296,7 +296,10 @@ const App: React.FC = () => {
     }
   }, [currentUser]);
 
-  useEffect(() => { if (showAdmin) loadAdminData(); }, [showAdmin, loadAdminData]);
+  // Owner/Admin data loads as soon as they log in (not gated on the old
+  // showAdmin overlay toggle anymore) so the new standalone OwnerDashboard
+  // page below has data immediately, with no play-first flash.
+  useEffect(() => { if (showAdmin || currentUser?.role === UserRole.ADMIN) loadAdminData(); }, [showAdmin, currentUser, loadAdminData]);
 
   // Admin Panel: close on click-outside. adminPanelRef wraps only the
   // <main> content area where AdminPanel renders, so a click on the Admin
@@ -979,6 +982,26 @@ const App: React.FC = () => {
 
   if (!currentUser) return <Login onAuthenticated={handleAuthenticated} />;
 
+  // Owner (ADMIN) gets a completely separate, simple, read-first page —
+  // never the sportsbook/casino shell below, so the Owner literally has no
+  // way to place a bet or play. Reports come first; management (existing
+  // AdminPanel: users/tickets/audit) is one tab away when needed.
+  if (currentUser.role === UserRole.ADMIN) {
+    return (
+      <OwnerDashboard
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        users={adminUsers}
+        allBets={adminAllBets}
+        onCreateUser={handleCreateUser}
+        onDeleteUser={handleDeleteUser}
+        onAddCredit={handleAddCredit}
+        onResetPassword={handleResetPassword}
+        onCancelBet={handleCancelBet}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-brand-bg text-brand-text flex flex-col font-sans selection:bg-brand-header selection:text-white pb-16 md:pb-0">
       <Navbar
@@ -1076,14 +1099,7 @@ const App: React.FC = () => {
         )}
 
         <main ref={adminPanelRef as React.RefObject<HTMLElement>} className="flex-1 min-w-0 mb-20 md:mb-0">
-          {showAdmin && currentUser.role === UserRole.ADMIN ? (
-            <AdminPanel
-              users={adminUsers} allBets={adminAllBets}
-              onCreateUser={handleCreateUser} onDeleteUser={handleDeleteUser}
-              onAddCredit={handleAddCredit} onResetPassword={handleResetPassword}
-              onCancelBet={handleCancelBet}
-            />
-          ) : currentView === 'casino' ? (
+          {currentView === 'casino' ? (
             <CasinoHub userBalance={currentUser.balance} onSetBalance={(balance) => setCurrentUser((p) => p ? { ...p, balance } : p)} />
           ) : detailMatch ? (
             <MatchDetail

@@ -232,6 +232,35 @@ export async function adminSettleMatch(matchId: string, homeScore: number, awayS
   );
 }
 
+// --- Owner: Agent hierarchy (reports only, Owner never plays) ---
+
+export interface AdminOverview {
+  agents: { total: number; active: number; totalBalance: number };
+  users: { total: number; active: number; totalBalance: number };
+  tickets: { total: number; turnover: number; wins: number; losses: number; pending: number; pendingCount: number };
+  netResult: number;
+}
+export async function adminFetchOverview() {
+  return request<AdminOverview>('/admin/overview');
+}
+
+export async function adminFetchAgents(): Promise<User[]> {
+  const data = await request<{ agents: User[] }>('/admin/agents');
+  return data.agents;
+}
+
+export async function adminCreateAgent(a: { name: string; username: string; password: string; balance: number }) {
+  return request<{ agent: User }>('/admin/agents', { method: 'POST', body: JSON.stringify(a) });
+}
+
+export interface AgentUserPerformance {
+  id: string; name: string; username: string; balance: number; is_active: boolean;
+  tickets: number; turnover: number; wins: number; losses: number; pending: number;
+}
+export async function adminFetchAgentPerformance(agentId: string) {
+  return request<{ agent: User; users: AgentUserPerformance[] }>(`/admin/agents/${agentId}/performance`);
+}
+
 // --- Casino (server-authoritative: every game is deducted/resolved/paid
 // out on the backend, never mutated purely client-side) ---
 
