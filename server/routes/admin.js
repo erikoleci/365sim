@@ -20,6 +20,7 @@ function toPublicUser(row) {
   return {
     id: row.id, name: row.name, username: row.username,
     balance: row.balance, role: row.role, avatar: row.avatar,
+    isActive: row.is_active, agentId: row.agent_id,
   };
 }
 
@@ -88,6 +89,93 @@ router.post('/users', async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
   await logAudit(req.user, 'USER_CREATE', id, { username, balance: Number(balance) || 0 });
   res.status(201).json({ user: toPublicUser(rows[0]) });
+});
+
+// --- AGENTS (Owner manages the Agent tier; existing /users endpoints above
+// are untouched and keep creating plain USER rows exactly as before) ---
+
+// System-wide snapshot for the Owner dashboard: counts + money totals only
+// (no per-user drill-down here — that's /agents/:id/performance below, or
+// the existing GET /users for a flat list). This is what "Owner sees only
+// reports" maps to: aggregate numbers, not a sportsbook UI.
+router.get('/overview', async (req, res) => {
+  const [agentsCount, usersCount, betsAgg] = await Promise.all([
+    pool.query(`SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE is_active)::int AS active,
+                        COALESCE(SUM(balance), 0) AS total_balance
+                 FROM users WHERE role = 'AGENT'`),
+    pool.query(`SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE is_active)::int AS active,
+                        COALESCE(SUM(balance), 0) AS total_balance
+                 FROM users WHERE role = 'USER'`),
+    pool.query(`SELECT COUNT(*)::int AS total_tickets,
+                        COALESCE(SUM(stake), 0) AS turnover,
+                        COALESCE(SUM(CASE WHEN status = 'WON' THEN potential_return - stake ELSE 0 END), 0) AS wins,
+                        COALESCE(SUM(CASE WHEN status = 'LOST' THEN stake ELSE 0 END), 0) AS losses,
+                        COALESCE(SUM(CASE WHEN status = 'PENDING' THEN stake ELSE 0 END), 0) AS pending,
+                        COUNT(*) FILTER (WHERE status = 'PENDING')::int AS pending_tickets
+                 FROM bets`),
+  ]);
+  res.json({
+    agents: { total: agentsCount.rows[0].total, active: agentsCount.rows[0].active, totalBalance: agentsCount.rows[0].total_balance },
+    users: { total: usersCount.rows[0].total, active: usersCount.rows[0].active, totalBalance: usersCount.rows[0].total_balance },
+    tickets: {
+      total: betsAgg.rows[0].total_tickets,
+      turnover: betsAgg.rows[0].turnover,
+      wins: betsAgg.rows[0].wins,
+      losses: betsAgg.rows[0].losses,
+      pending: betsAgg.rows[0].pending,
+      pendingCount: betsAgg.rows[0].pending_tickets,
+    },
+    netResult: Number(betsAgg.rows[0].losses) - Number(betsAgg.rows[0].wins),
+  });
+});
+
+router.get('/agents', async (req, res) => {
+  const { rows } = await pool.query(`SELECT * FROM users WHERE role = 'AGENT' ORDER BY created_at DESC`);
+  res.json({ agents: rows.map(toPublicUser) });
+});
+
+router.post('/agents', async (req, res) => {
+  const { name, username, password, balance } = req.body || {};
+  if (!name || !username || !password) {
+    return res.status(400).json({ error: 'name, username, and password are required' });
+  }
+  const { rows: existingRows } = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
+  if (existingRows[0]) return res.status(409).json({ error: 'Username already taken' });
+
+  const id = randomUUID();
+  const hash = bcrypt.hashSync(password, 10);
+  await pool.query(
+    `INSERT INTO users (id, name, username, password_hash, balance, role, avatar, created_at)
+     VALUES ($1,$2,$3,$4,$5,'AGENT',$6,$7)`,
+    [id, name, username, hash, Number(balance) || 0, '', Date.now()]
+  );
+
+  const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+  await logAudit(req.user, 'AGENT_CREATE', id, { username, balance: Number(balance) || 0 });
+  res.status(201).json({ agent: toPublicUser(rows[0]) });
+});
+
+// Owner drill-down: Agent -> its Users, with the same turnover/wins/losses
+// breakdown the agent itself sees in GET /api/agent/performance.
+router.get('/agents/:id/performance', async (req, res) => {
+  const { rows: agentRows } = await pool.query(`SELECT * FROM users WHERE id = $1 AND role = 'AGENT'`, [req.params.id]);
+  if (!agentRows[0]) return res.status(404).json({ error: 'Agent not found' });
+
+  const { rows } = await pool.query(
+    `SELECT u.id, u.name, u.username, u.balance, u.is_active,
+            COALESCE(COUNT(b.id), 0)::int AS tickets,
+            COALESCE(SUM(b.stake), 0) AS turnover,
+            COALESCE(SUM(CASE WHEN b.status = 'WON' THEN b.potential_return - b.stake ELSE 0 END), 0) AS wins,
+            COALESCE(SUM(CASE WHEN b.status = 'LOST' THEN b.stake ELSE 0 END), 0) AS losses,
+            COALESCE(SUM(CASE WHEN b.status = 'PENDING' THEN b.stake ELSE 0 END), 0) AS pending
+     FROM users u
+     LEFT JOIN bets b ON b.user_id = u.id
+     WHERE u.agent_id = $1
+     GROUP BY u.id
+     ORDER BY u.created_at DESC`,
+    [req.params.id]
+  );
+  res.json({ agent: toPublicUser(agentRows[0]), users: rows });
 });
 
 router.delete('/users/:id', async (req, res) => {

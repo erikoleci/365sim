@@ -82,6 +82,9 @@ router.post('/login', async (req, res) => {
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return res.status(401).json({ error: 'Invalid username or password' });
   }
+  if (user.is_active === false) {
+    return res.status(403).json({ error: 'Account is disabled' });
+  }
   const token = signToken(user);
   res.json({ token, user: toPublicUser(user) });
 });
