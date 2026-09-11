@@ -9,6 +9,7 @@ import express from 'express';
 // starts or connection drops).
 import 'express-async-errors';
 import cors from 'cors';
+import compression from 'compression';
 import helmet from 'helmet';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -42,6 +43,11 @@ app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 
 app.use(helmet());
+// Bandwidth is metered on Render's free tier (5 GB/month) — the API
+// responses here are JSON (matches list, odds, live ticks), which
+// compresses very well. Cuts outbound bytes ~70-80% at negligible CPU
+// cost, so it's on for every response, not just the biggest ones.
+app.use(compression());
 // Restrict cross-origin requests to known frontend origin(s). Falls back to
 // allowing all origins only when FRONTEND_ORIGIN is unset (e.g. local dev
 // where frontend and API are served together on one origin anyway).

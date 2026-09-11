@@ -12,8 +12,19 @@ import { albaniaDateKey, albaniaTodayKey } from './utils/albaniaTime';
 
 const App: React.FC = () => {
   // --- Auth State ---
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [authChecked, setAuthChecked] = useState(false);
+  // Same idea as the matches cache below: seed from the last known user so
+  // a refresh shows the app instantly instead of a full-screen spinner
+  // gating EVERYTHING (including already-cached matches) behind a fresh
+  // network round-trip to /auth/me. The real verification still runs in
+  // the effect below and will log the person out if the token turns out
+  // to be expired/invalid — this only skips the WAIT when we already have
+  // a very-likely-valid session.
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    try { return JSON.parse(localStorage.getItem('cachedUser') || 'null'); } catch { return null; }
+  });
+  const [authChecked, setAuthChecked] = useState(() => {
+    try { return !!api.getToken() && !!localStorage.getItem('cachedUser'); } catch { return false; }
+  });
 
   // --- Data State (from backend; matches/leagueNames seed from a
   // localStorage snapshot of the last successful fetch so returning
@@ -85,6 +96,16 @@ const App: React.FC = () => {
     })();
   }, []);
 
+  // Keep the optimistic cache above in sync with whatever currentUser
+  // actually is (login, logout, balance updates, or the background
+  // verification above correcting/clearing a stale session).
+  useEffect(() => {
+    try {
+      if (currentUser) localStorage.setItem('cachedUser', JSON.stringify(currentUser));
+      else localStorage.removeItem('cachedUser');
+    } catch {}
+  }, [currentUser]);
+
   useEffect(() => {
     if (!currentUser) { setFavorites([]); return; }
     (async () => {
@@ -153,7 +174,14 @@ const App: React.FC = () => {
 
   useEffect(() => {
     loadMatches();
-    const interval = setInterval(loadMatches, 60000); // refresh odds every minute
+    // Was 60s. WebSocket (below) already pushes odds/score/live-tick
+    // updates in real time, so this REST re-fetch of the *entire* matches
+    // list is now only a slow safety net for the rare missed/dropped
+    // socket message — not the primary update path. Every client re-
+    // downloading the full match list every 60s was the single biggest
+    // driver of Render's 5GB/month bandwidth cap, multiplied by however
+    // many people had the page open.
+    const interval = setInterval(loadMatches, 5 * 60 * 1000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, currentView]);
