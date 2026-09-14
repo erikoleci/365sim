@@ -37,6 +37,8 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
 
   const [showCreateAgent, setShowCreateAgent] = useState(false);
   const [newAgent, setNewAgent] = useState({ name: '', username: '', password: '', balance: 0 });
+  const [agentAmount, setAgentAmount] = useState<Record<string, string>>({});
+  const [agentActionBusy, setAgentActionBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -81,6 +83,22 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
       await load();
     } catch (err: any) {
       alert(err.message || 'Krijimi i agjentit deshtoi');
+    }
+  };
+
+  const fundAgent = async (agentId: string, direction: 'credit' | 'debit') => {
+    const amount = Number(agentAmount[agentId]);
+    if (!amount || amount <= 0) return;
+    setAgentActionBusy(agentId);
+    try {
+      if (direction === 'credit') await api.adminCreditAgent(agentId, amount);
+      else await api.adminDebitAgent(agentId, amount);
+      setAgentAmount((p) => ({ ...p, [agentId]: '' }));
+      await load();
+    } catch (err: any) {
+      alert(err.message || 'Veprimi deshtoi');
+    } finally {
+      setAgentActionBusy(null);
     }
   };
 
@@ -151,17 +169,34 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                     {agents.length === 0 && <div className="px-4 py-6 text-sm text-brand-textMuted">Ende s'ka agjente.</div>}
                     {agents.map((a) => (
                       <div key={a.id}>
-                        <button onClick={() => toggleAgent(a.id)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-[#333] text-left">
-                          <div className="flex items-center gap-2">
+                        <div className="w-full flex items-center justify-between px-4 py-3 hover:bg-[#333]">
+                          <button onClick={() => toggleAgent(a.id)} className="flex items-center gap-2 text-left flex-1">
                             <span className={'w-2 h-2 rounded-full ' + (a.isActive === false ? 'bg-red-500' : 'bg-green-500')} />
                             <span className="font-semibold">{a.name}</span>
                             <span className="text-xs text-brand-textMuted">@{a.username}</span>
+                          </button>
+                          <div className="flex items-center gap-2 text-sm" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="number" placeholder="Shuma" value={agentAmount[a.id] || ''}
+                              onChange={(e) => setAgentAmount((p) => ({ ...p, [a.id]: e.target.value }))}
+                              className="input !w-24 text-xs"
+                            />
+                            <button
+                              disabled={agentActionBusy === a.id}
+                              onClick={() => fundAgent(a.id, 'credit')}
+                              title="Shto fonde nga balanca e Owner-it"
+                              className="text-xs px-2 py-1.5 rounded bg-green-700 hover:bg-green-600 font-bold disabled:opacity-50"
+                            >+</button>
+                            <button
+                              disabled={agentActionBusy === a.id}
+                              onClick={() => fundAgent(a.id, 'debit')}
+                              title="Terhiq fonde te balanca e Owner-it"
+                              className="text-xs px-2 py-1.5 rounded bg-red-800 hover:bg-red-700 font-bold disabled:opacity-50"
+                            >−</button>
+                            <span className="text-brand-yellow font-bold w-20 text-right">{money(a.balance)}</span>
+                            <button onClick={() => toggleAgent(a.id)} className="text-brand-textMuted text-xs w-4">{expandedAgent === a.id ? '−' : '+'}</button>
                           </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="text-brand-yellow font-bold">{money(a.balance)}</span>
-                            <span className="text-brand-textMuted text-xs">{expandedAgent === a.id ? '(-)' : '(+)'}</span>
-                          </div>
-                        </button>
+                        </div>
                         {expandedAgent === a.id && (
                           <div className="bg-[#2a2a2a] px-4 py-3">
                             {!agentDetail[a.id] ? (

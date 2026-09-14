@@ -318,4 +318,76 @@ export async function setKV(key, value) {
   );
 }
 
+// Storage on the free-tier PG plan is capped (e.g. 1GB on Aiven's free
+// service) and several tables are append-only with no natural expiry:
+// odds_history grows on every odds tick, match_events on every live event,
+// audit_log on every admin/agent action, matches_cache accumulates finished
+// matches forever. Left unbounded these eventually fill the disk and the
+// whole app stops writing. This prunes rows old enough that nothing in the
+// app still reads them (settlement/reports only look at `bets`/`transactions`,
+// not at raw odds/event history), then reclaims the freed disk space.
+//
+// Retention windows are deliberately generous — this is about preventing
+// unbounded growth, not about minimizing storage aggressively.
+const RETENTION_MS = {
+  oddsHistoryDays: 30,
+  matchEventsDays: 30,
+  auditLogDays: 90, // kept longer: security/audit trail
+  finishedMatchesDays: 7,
+};
+
+export async function cleanupOldData() {
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const results = {};
+  try {
+    results.odds_history = (await pool.query(
+      'DELETE FROM odds_history WHERE created_at < $1',
+      [now - RETENTION_MS.oddsHistoryDays * day]
+    )).rowCount;
+
+    results.match_events = (await pool.query(
+      'DELETE FROM match_events WHERE created_at < $1',
+      [now - RETENTION_MS.matchEventsDays * day]
+    )).rowCount;
+
+    results.audit_log = (await pool.query(
+      'DELETE FROM audit_log WHERE created_at < $1',
+      [now - RETENTION_MS.auditLogDays * day]
+    )).rowCount;
+
+    // Only finished matches, and only once well past their kick-off, so we
+    // never touch anything a user could still be looking at (live or
+    // upcoming) or that settlement/reports might still need shortly after
+    // full-time.
+    results.matches_cache = (await pool.query(
+      `DELETE FROM matches_cache
+       WHERE status = 'FINISHED'
+         AND updated_at < $1`,
+      [now - RETENTION_MS.finishedMatchesDays * day]
+    )).rowCount;
+
+    // live_statistics is keyed by match_id (PRIMARY KEY, one row per match,
+    // overwritten in place) — clean up rows whose match no longer exists in
+    // matches_cache so it doesn't grow unbounded either.
+    results.live_statistics = (await pool.query(
+      `DELETE FROM live_statistics ls
+       WHERE NOT EXISTS (SELECT 1 FROM matches_cache mc WHERE mc.id = ls.match_id)`
+    )).rowCount;
+
+    const totalDeleted = Object.values(results).reduce((a, b) => a + b, 0);
+    if (totalDeleted > 0) {
+      // VACUUM can't run inside a transaction/prepared statement in some
+      // pooled setups; ANALYZE alone is safe and still updates planner
+      // stats. Actual disk reclaim happens on Postgres's own autovacuum —
+      // this just keeps stats fresh so queries stay fast as tables churn.
+      await pool.query('ANALYZE odds_history, match_events, audit_log, matches_cache, live_statistics');
+    }
+    console.log('[cleanupOldData]', results);
+  } catch (err) {
+    console.error('[cleanupOldData] failed:', err.message);
+  }
+  return results;
+}
+
 export default pool;

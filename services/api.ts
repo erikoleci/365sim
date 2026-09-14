@@ -268,6 +268,18 @@ export async function adminCreateAgent(a: { name: string; username: string; pass
   return request<{ agent: User }>('/admin/agents', { method: 'POST', body: JSON.stringify(a) });
 }
 
+export async function adminCreditAgent(agentId: string, amount: number) {
+  return request<{ balance: number; ownerBalance: number }>(`/admin/agents/${agentId}/credit`, {
+    method: 'POST', body: JSON.stringify({ amount }),
+  });
+}
+
+export async function adminDebitAgent(agentId: string, amount: number) {
+  return request<{ balance: number; ownerBalance: number }>(`/admin/agents/${agentId}/debit`, {
+    method: 'POST', body: JSON.stringify({ amount }),
+  });
+}
+
 export interface AgentUserPerformance {
   id: string; name: string; username: string; balance: number; is_active: boolean;
   tickets: number; turnover: number; wins: number; losses: number; pending: number;
