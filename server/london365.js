@@ -33,7 +33,7 @@
 
 import pool, { getKV, setKV } from './db.js';
 import { diffOddsChanges } from './oddsUtils.js';
-import { pushOddsChanged, pushGoal } from './ws.js';
+import { pushOddsChanged, pushGoal, pushMatchEnded } from './ws.js';
 import { settleMatch } from './matchSettlement.js';
 
 const ENABLED = (process.env.LONDON365_ENABLED || '1') === '1';
@@ -1422,6 +1422,7 @@ export async function syncLondon365Live() {
       const home = row.live_home_score ?? 0;
       const away = row.live_away_score ?? 0;
       await pool.query("UPDATE matches_cache SET live_status = 'ended' WHERE id = $1", [row.id]);
+      pushMatchEnded(row.id, { homeScore: home, awayScore: away });
       try {
         await settleMatch(row.id, home, away);
         console.log('[london365] auto-settled ' + row.id + ' ' + home + '-' + away);
@@ -1509,10 +1510,17 @@ export async function applySocketGame(g, status) {
 export async function markLondon365GameEnded(gameId) {
   const id = 'l365-' + gameId;
   return withDbLock(async () => {
+    const { rows } = await pool.query(
+      'SELECT live_home_score, live_away_score FROM matches_cache WHERE id = $1', [id]
+    );
     const res = await pool.query(
       `UPDATE matches_cache SET status = 'FINISHED', live_status = 'ended' WHERE id = $1 AND status = 'LIVE'`,
       [id]
     );
+    if (res && res.rowCount) {
+      const row = rows[0] || {};
+      pushMatchEnded(id, { homeScore: row.live_home_score ?? 0, awayScore: row.live_away_score ?? 0 });
+    }
     return res ? res.rowCount : 0;
   });
 }

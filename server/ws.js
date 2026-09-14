@@ -97,6 +97,17 @@ export const pushMatchStarted = (matchId) => {
   broadcast(`match:${matchId}`, { type: 'MATCH_STARTED' });
   broadcast('live', { matchId, type: 'MATCH_STARTED' });
 };
+// Fired the moment a match is confirmed finished (either the live-feed
+// end-detection sweep in syncLondon365Live, or a provider 'game ended'
+// event) — WITHOUT this, a finished match kept sitting in the frontend's
+// live list until the next slow REST poll (up to 5 minutes, widened for
+// bandwidth — see App.tsx) caught up, which is exactly the "kan mbaruar
+// varja por akoma shfaqet live" symptom. Carries the final score so the
+// frontend can show it immediately without a round-trip.
+export const pushMatchEnded = (matchId, data) => {
+  broadcast(`match:${matchId}`, { type: 'MATCH_ENDED', ...data });
+  broadcast('live', { matchId, type: 'MATCH_ENDED', ...data });
+};
 // Card events from the dedicated live-match-detail feed (see
 // london365GameDetails.js). Same shape/topics as pushGoal so the frontend
 // can react the same way once it subscribes to match:<id>.
