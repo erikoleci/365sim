@@ -35,15 +35,36 @@ function toPublicUser(row) {
 }
 
 // Middleware to protect routes
-export function requireAuth(req, res, next) {
+export async function requireAuth(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Missing token' });
+
+  let payload;
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
+    payload = jwt.verify(token, JWT_SECRET);
   } catch {
     return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+
+  // JWTs are valid for 7 days, but an account's `is_active`/`role` can
+  // change at any moment (an Agent disabling a User, an Owner disabling an
+  // Agent, a promotion/demotion). Without this check, a disabled account
+  // could keep placing bets, crediting users, or reading data for up to 7
+  // more days on an old token -- checking the DB on every request closes
+  // that gap. This is one indexed primary-key lookup, so the cost is small.
+  try {
+    const { rows } = await pool.query('SELECT id, role, is_active FROM users WHERE id = $1', [payload.id]);
+    const user = rows[0];
+    if (!user) return res.status(401).json({ error: 'Account no longer exists' });
+    if (user.is_active === false) return res.status(403).json({ error: 'Account is disabled' });
+    // Trust the DB for role/is_active (source of truth, can change after
+    // the token was issued); keep id/username from the verified payload.
+    req.user = { id: payload.id, username: payload.username, role: user.role };
+    next();
+  } catch (err) {
+    console.error('[auth] requireAuth DB check failed:', err.message);
+    res.status(500).json({ error: 'Authentication check failed' });
   }
 }
 
