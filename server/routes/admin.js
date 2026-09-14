@@ -343,8 +343,26 @@ router.patch('/bet-selections/:id', async (req, res) => {
   const selection = rows[0];
   if (!selection) return res.status(404).json({ error: 'Selection not found' });
 
-  await pool.query('UPDATE bet_selections SET status = $1 WHERE id = $2', [status, selection.id]);
-  await recomputeBetStatus(selection.bet_id);
+  // Same BEGIN/COMMIT + FOR UPDATE pattern as settleMatch/bets-cancel above:
+  // without an explicit transaction here, recomputeBetStatus's FOR UPDATE
+  // lock would be released the instant its own SELECT finished (autocommit
+  // per-statement), giving zero protection against a concurrent
+  // settleMatch() call racing on the same bet. Wrapping both statements in
+  // one transaction also means a crash between them can't leave the leg
+  // marked WON/LOST while the bet's overall status/balance never updates.
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('UPDATE bet_selections SET status = $1 WHERE id = $2', [status, selection.id]);
+    await recomputeBetStatus(selection.bet_id, client);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+
   await logAudit(req.user, 'SELECTION_OVERRIDE', String(selection.id), { betId: selection.bet_id, status, matchId: selection.match_id });
   res.json({ ok: true });
 });

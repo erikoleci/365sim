@@ -28,8 +28,18 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored }) {
 
 // Recompute a bet's overall status from its legs, and pay out balance
 // exactly once, the moment it transitions into WON.
+//
+// `FOR UPDATE` on the bet row is what makes this safe under concurrent
+// calls (e.g. the admin manual-settle route and the automatic live
+// poller both reacting to the same match around the same time): it
+// forces a second concurrent call for the same betId to block until the
+// first one commits, then re-read the ALREADY-UPDATED status — so its
+// `nextStatus === bet.status` check below correctly short-circuits
+// instead of paying out a second time. Without this lock, two
+// transactions could both read stale status='PENDING' before either
+// commits and both credit the user's balance.
 export async function recomputeBetStatus(betId, client = pool) {
-  const { rows: betRows } = await client.query('SELECT * FROM bets WHERE id = $1', [betId]);
+  const { rows: betRows } = await client.query('SELECT * FROM bets WHERE id = $1 FOR UPDATE', [betId]);
   const bet = betRows[0];
   if (!bet) return;
   const { rows: legs } = await client.query('SELECT * FROM bet_selections WHERE bet_id = $1', [betId]);
