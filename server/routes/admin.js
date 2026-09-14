@@ -5,6 +5,7 @@ import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { settleMatch, recomputeBetStatus } from '../matchSettlement.js';
 import { logAudit } from '../auditLog.js';
+import { transferBalance } from '../ledger.js';
 import { importLondon365, getLondon365Status, getLondon365CountryDebug } from '../london365.js';
 
 const router = express.Router();
@@ -139,20 +140,88 @@ router.post('/agents', async (req, res) => {
   if (!name || !username || !password) {
     return res.status(400).json({ error: 'name, username, and password are required' });
   }
+  const startBalance = Number(balance) || 0;
+  if (startBalance < 0) return res.status(400).json({ error: 'balance cannot be negative' });
+
   const { rows: existingRows } = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
   if (existingRows[0]) return res.status(409).json({ error: 'Username already taken' });
 
+  const { rows: ownerRows } = await pool.query('SELECT balance FROM users WHERE id = $1', [req.user.id]);
+  if (startBalance > 0 && (!ownerRows[0] || ownerRows[0].balance < startBalance)) {
+    return res.status(400).json({ error: 'Insufficient owner balance to fund initial balance' });
+  }
+
   const id = randomUUID();
   const hash = bcrypt.hashSync(password, 10);
+  // Insert with balance=0, then move the requested starting balance out of
+  // the Owner's own balance via transferBalance() below — this is what
+  // gives the initial funding a `transactions` row (source_id = owner,
+  // target_id = agent), exactly like Agent -> User creation funding
+  // already does in agent.js. A raw `balance = $N` in the INSERT would
+  // create money the ledger never sees, breaking Owner's own reports.
   await pool.query(
     `INSERT INTO users (id, name, username, password_hash, balance, role, avatar, created_at)
-     VALUES ($1,$2,$3,$4,$5,'AGENT',$6,$7)`,
-    [id, name, username, hash, Number(balance) || 0, '', Date.now()]
+     VALUES ($1,$2,$3,$4,0,'AGENT',$5,$6)`,
+    [id, name, username, hash, '', Date.now()]
   );
 
+  if (startBalance > 0) {
+    await transferBalance({
+      actorId: req.user.id, sourceId: req.user.id, targetId: id,
+      amount: startBalance, type: 'OWNER_CREATE_AGENT_FUND', reference: username,
+    });
+  }
+
   const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
-  await logAudit(req.user, 'AGENT_CREATE', id, { username, balance: Number(balance) || 0 });
+  await logAudit(req.user, 'AGENT_CREATE', id, { username, balance: startBalance });
   res.status(201).json({ agent: toPublicUser(rows[0]) });
+});
+
+// Top up an EXISTING agent's balance out of the Owner's own balance. There
+// was previously no way to do this after agent creation — funding only
+// happened once, at creation time.
+router.post('/agents/:id/credit', async (req, res) => {
+  const { amount } = req.body || {};
+  if (typeof amount !== 'number' || amount <= 0) {
+    return res.status(400).json({ error: 'amount must be a positive number' });
+  }
+  const { rows } = await pool.query(`SELECT * FROM users WHERE id = $1 AND role = 'AGENT'`, [req.params.id]);
+  if (!rows[0]) return res.status(404).json({ error: 'Agent not found' });
+
+  try {
+    const result = await transferBalance({
+      actorId: req.user.id, sourceId: req.user.id, targetId: req.params.id,
+      amount, type: 'OWNER_TO_AGENT', reference: rows[0].username,
+    });
+    await logAudit(req.user, 'AGENT_CREDIT', req.params.id, { amount, username: rows[0].username });
+    res.json({ balance: result.targetAfter, ownerBalance: result.sourceAfter });
+  } catch (err) {
+    if (err.message === 'Insufficient balance') return res.status(400).json({ error: 'Insufficient owner balance' });
+    throw err;
+  }
+});
+
+// Withdraw funds back from an agent into the Owner's own balance (the
+// reverse of the above) — mirrors the existing Agent -> User debit route.
+router.post('/agents/:id/debit', async (req, res) => {
+  const { amount } = req.body || {};
+  if (typeof amount !== 'number' || amount <= 0) {
+    return res.status(400).json({ error: 'amount must be a positive number' });
+  }
+  const { rows } = await pool.query(`SELECT * FROM users WHERE id = $1 AND role = 'AGENT'`, [req.params.id]);
+  if (!rows[0]) return res.status(404).json({ error: 'Agent not found' });
+
+  try {
+    const result = await transferBalance({
+      actorId: req.user.id, sourceId: req.params.id, targetId: req.user.id,
+      amount, type: 'AGENT_TO_OWNER', reference: rows[0].username,
+    });
+    await logAudit(req.user, 'AGENT_DEBIT', req.params.id, { amount, username: rows[0].username });
+    res.json({ balance: result.sourceAfter, ownerBalance: result.targetAfter });
+  } catch (err) {
+    if (err.message === 'Insufficient balance') return res.status(400).json({ error: 'Insufficient agent balance' });
+    throw err;
+  }
 });
 
 // Owner drill-down: Agent -> its Users, with the same turnover/wins/losses
