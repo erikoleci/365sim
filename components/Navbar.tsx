@@ -45,13 +45,13 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
 
         {/* User Utilities */}
         <div className="flex items-center gap-2 md:gap-4 text-xs">
-          {currentUser.role === UserRole.ADMIN && (
+          {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.AGENT) && (
             <button 
               data-admin-toggle
               onClick={onOpenAdmin}
               className="bg-brand-headerDark hover:bg-black/20 text-brand-yellow px-2 md:px-3 py-1.5 rounded font-bold border border-brand-yellow/30 transition-colors uppercase tracking-wide text-[10px] md:text-xs whitespace-nowrap"
             >
-              Admin
+              {currentUser.role === UserRole.AGENT ? 'Userat e Mi' : 'Admin'}
             </button>
           )}
 

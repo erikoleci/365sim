@@ -25,12 +25,15 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   currentUser, onLogout, users, allBets,
   onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet,
 }) => {
-  const [tab, setTab] = useState<'reports' | 'manage'>('reports');
+  const [tab, setTab] = useState<'reports' | 'monthly' | 'manage'>('reports');
   const [overview, setOverview] = useState<api.AdminOverview | null>(null);
   const [agents, setAgents] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
   const [agentDetail, setAgentDetail] = useState<Record<string, api.AgentUserPerformance[]>>({});
+
+  const [monthly, setMonthly] = useState<api.AdminMonthlyReport | null>(null);
+  const [monthInput, setMonthInput] = useState('');
 
   const [showCreateAgent, setShowCreateAgent] = useState(false);
   const [newAgent, setNewAgent] = useState({ name: '', username: '', password: '', balance: 0 });
@@ -51,6 +54,11 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   }, []);
 
   useEffect(() => { if (tab === 'reports') load(); }, [tab, load]);
+
+  useEffect(() => {
+    if (tab !== 'monthly') return;
+    api.adminFetchMonthlyReport(monthInput || undefined).then(setMonthly).catch((e) => console.error(e));
+  }, [tab, monthInput]);
 
   const toggleAgent = async (agentId: string) => {
     if (expandedAgent === agentId) { setExpandedAgent(null); return; }
@@ -107,13 +115,13 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
       </header>
 
       <nav className="flex gap-1 px-4 pt-3 border-b border-[#333]">
-        {(['reports', 'manage'] as const).map((t) => (
+        {(['reports', 'monthly', 'manage'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-bold rounded-t uppercase tracking-wide ${tab === t ? 'bg-brand-panel text-brand-yellow border border-b-0 border-[#444]' : 'text-brand-textMuted hover:text-white'}`}
           >
-            {t === 'reports' ? 'Raporte' : 'Menaxho'}
+            {t === 'reports' ? 'Raporte' : t === 'monthly' ? 'Raporti Mujor' : 'Menaxho'}
           </button>
         ))}
       </nav>
@@ -232,6 +240,60 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
               </>
             ) : (
               <div className="text-red-400 text-sm">Ngarkimi deshtoi.</div>
+            )}
+          </div>
+        )}
+
+        {tab === 'monthly' && (
+          <div className="bg-brand-panel border border-[#444] rounded p-4">
+            <div className="flex items-center gap-2 mb-4">
+              <label className="text-xs text-brand-textMuted">Muaji:</label>
+              <input type="month" value={monthInput} onChange={(e) => setMonthInput(e.target.value)} className="input w-40" />
+            </div>
+            {!monthly ? (
+              <div className="text-sm text-brand-textMuted">Duke ngarkuar...</div>
+            ) : (
+              <>
+                <div className="text-xs text-brand-textMuted mb-2">
+                  Muaji: {monthly.month} - {monthly.totals.totalAgents} agjente, {monthly.totals.totalUsers} usera
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+                  <KpiCard label="Kupona" value={String(monthly.totals.totalTickets)} />
+                  <KpiCard label="Xhiro" value={money(monthly.totals.turnover)} />
+                  <KpiCard label="Fitime" value={money(monthly.totals.wins)} positive />
+                  <KpiCard label="Humbje" value={money(monthly.totals.losses)} positive={false} />
+                  <KpiCard label="Neto" value={money(monthly.totals.netResult)} positive={monthly.totals.netResult >= 0} />
+                </div>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-brand-textMuted text-left border-b border-[#444]">
+                      <th className="py-1.5 pr-2">Agjenti</th>
+                      <th className="py-1.5 pr-2">Usera</th>
+                      <th className="py-1.5 pr-2">Kupona</th>
+                      <th className="py-1.5 pr-2">Xhiro</th>
+                      <th className="py-1.5 pr-2">Fitime</th>
+                      <th className="py-1.5 pr-2">Humbje</th>
+                      <th className="py-1.5 pr-2">Pending</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monthly.agents.map((a) => (
+                      <tr key={a.id} className="border-b border-[#333]">
+                        <td className="py-1.5 pr-2">{a.name} <span className="text-brand-textMuted">@{a.username}</span></td>
+                        <td className="py-1.5 pr-2">{a.total_users}</td>
+                        <td className="py-1.5 pr-2">{a.tickets}</td>
+                        <td className="py-1.5 pr-2">{money(a.turnover)}</td>
+                        <td className="py-1.5 pr-2 text-green-400">{money(a.wins)}</td>
+                        <td className="py-1.5 pr-2 text-red-400">{money(a.losses)}</td>
+                        <td className="py-1.5 pr-2">{money(a.pending)}</td>
+                      </tr>
+                    ))}
+                    {monthly.agents.length === 0 && (
+                      <tr><td colSpan={7} className="py-4 text-center text-brand-textMuted">S'ka te dhena per kete muaj.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </>
             )}
           </div>
         )}

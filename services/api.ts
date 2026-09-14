@@ -288,6 +288,76 @@ export async function adminFetchAgentPerformance(agentId: string) {
   return request<{ agent: User; users: AgentUserPerformance[] }>(`/admin/agents/${agentId}/performance`);
 }
 
+// --- Agent: self-play + manage own Users ---
+
+export async function agentFetchMe() {
+  return request<{ agent: User }>('/agent/me');
+}
+
+export async function agentFetchUsers(): Promise<User[]> {
+  const data = await request<{ users: User[] }>('/agent/users');
+  return data.users;
+}
+
+export async function agentCreateUser(u: { name: string; username: string; password: string; initialBalance?: number }) {
+  return request<{ user: User }>('/agent/users', { method: 'POST', body: JSON.stringify(u) });
+}
+
+export async function agentSetUserActive(userId: string, active: boolean) {
+  return request<{ ok: true }>(`/agent/users/${userId}/active`, { method: 'PATCH', body: JSON.stringify({ active }) });
+}
+
+export async function agentCreditUser(userId: string, amount: number) {
+  return request<{ balance: number; agentBalance: number }>(`/agent/users/${userId}/credit`, { method: 'POST', body: JSON.stringify({ amount }) });
+}
+
+export async function agentDebitUser(userId: string, amount: number) {
+  return request<{ balance: number; agentBalance: number }>(`/agent/users/${userId}/debit`, { method: 'POST', body: JSON.stringify({ amount }) });
+}
+
+export interface AgentTicketSelection {
+  matchId: string; matchHome: string; matchAway: string;
+  marketId: string; marketName: string; selectionId: string; selectionName: string;
+  odds: number; status: string;
+}
+export interface AgentTicket {
+  id: string; type: string; stake: number; totalOdds: number; potentialReturn: number;
+  status: string; createdAt: number; selections: AgentTicketSelection[];
+}
+export async function agentFetchUserTickets(userId: string) {
+  const data = await request<{ tickets: AgentTicket[] }>(`/agent/users/${userId}/tickets`);
+  return data.tickets;
+}
+
+export async function agentFetchPerformance() {
+  const data = await request<{ users: AgentUserPerformance[] }>('/agent/performance');
+  return data.users;
+}
+
+export interface AgentMonthlyReport {
+  month: string;
+  totals: { totalUsers: number; totalTickets: number; turnover: number; wins: number; losses: number; pending: number; netResult: number };
+  users: { id: string; name: string; username: string; tickets: number; turnover: number; wins: number; losses: number; pending: number }[];
+}
+export async function agentFetchMonthlyReport(month?: string) {
+  const q = month ? `?month=${encodeURIComponent(month)}` : '';
+  return request<AgentMonthlyReport>(`/agent/reports/monthly${q}`);
+}
+
+export async function agentDeleteUser(userId: string) {
+  return request<{ ok: true }>(`/agent/users/${userId}`, { method: 'DELETE' });
+}
+
+export interface AdminMonthlyReport {
+  month: string;
+  totals: { totalAgents: number; totalUsers: number; totalTickets: number; turnover: number; wins: number; losses: number; pending: number; netResult: number };
+  agents: { id: string; name: string; username: string; total_users: number; tickets: number; turnover: number; wins: number; losses: number; pending: number }[];
+}
+export async function adminFetchMonthlyReport(month?: string) {
+  const q = month ? `?month=${encodeURIComponent(month)}` : '';
+  return request<AdminMonthlyReport>(`/admin/reports/monthly${q}`);
+}
+
 // --- Casino (server-authoritative: every game is deducted/resolved/paid
 // out on the backend, never mutated purely client-side) ---
 

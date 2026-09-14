@@ -7,6 +7,7 @@ import { settleMatch, recomputeBetStatus } from '../matchSettlement.js';
 import { logAudit } from '../auditLog.js';
 import { transferBalance } from '../ledger.js';
 import { importLondon365, getLondon365Status, getLondon365CountryDebug } from '../london365.js';
+import { monthRange } from './agent.js';
 
 const router = express.Router();
 
@@ -133,6 +134,57 @@ router.get('/overview', async (req, res) => {
 router.get('/agents', async (req, res) => {
   const { rows } = await pool.query(`SELECT * FROM users WHERE role = 'AGENT' ORDER BY created_at DESC`);
   res.json({ agents: rows.map(toPublicUser) });
+});
+
+// System-wide monthly report: totals across ALL agents+users combined, plus
+// a per-agent breakdown for that month (spec: "OWNER MONTHLY SUMMARY" +
+// "Agent Breakdown"). Reuses the same month-boundary helper as the Agent's
+// own monthly report for consistency.
+router.get('/reports/monthly', async (req, res) => {
+  const { rangeStart, rangeEnd, label } = monthRange(req.query.month);
+
+  const { rows: totalsRows } = await pool.query(
+    `SELECT COUNT(DISTINCT a.id)::int AS total_agents,
+            COUNT(DISTINCT u.id)::int AS total_users,
+            COALESCE(COUNT(b.id), 0)::int AS total_tickets,
+            COALESCE(SUM(b.stake), 0) AS turnover,
+            COALESCE(SUM(CASE WHEN b.status = 'WON' THEN b.potential_return - b.stake ELSE 0 END), 0) AS wins,
+            COALESCE(SUM(CASE WHEN b.status = 'LOST' THEN b.stake ELSE 0 END), 0) AS losses,
+            COALESCE(SUM(CASE WHEN b.status = 'PENDING' THEN b.stake ELSE 0 END), 0) AS pending
+     FROM users a
+     LEFT JOIN users u ON u.agent_id = a.id
+     LEFT JOIN bets b ON b.user_id = u.id AND b.created_at >= $1 AND b.created_at < $2
+     WHERE a.role = 'AGENT'`,
+    [rangeStart, rangeEnd]
+  );
+
+  const { rows: perAgent } = await pool.query(
+    `SELECT a.id, a.name, a.username,
+            COUNT(DISTINCT u.id)::int AS total_users,
+            COALESCE(COUNT(b.id), 0)::int AS tickets,
+            COALESCE(SUM(b.stake), 0) AS turnover,
+            COALESCE(SUM(CASE WHEN b.status = 'WON' THEN b.potential_return - b.stake ELSE 0 END), 0) AS wins,
+            COALESCE(SUM(CASE WHEN b.status = 'LOST' THEN b.stake ELSE 0 END), 0) AS losses,
+            COALESCE(SUM(CASE WHEN b.status = 'PENDING' THEN b.stake ELSE 0 END), 0) AS pending
+     FROM users a
+     LEFT JOIN users u ON u.agent_id = a.id
+     LEFT JOIN bets b ON b.user_id = u.id AND b.created_at >= $1 AND b.created_at < $2
+     WHERE a.role = 'AGENT'
+     GROUP BY a.id
+     ORDER BY turnover DESC`,
+    [rangeStart, rangeEnd]
+  );
+
+  const t = totalsRows[0];
+  res.json({
+    month: label,
+    totals: {
+      totalAgents: t.total_agents, totalUsers: t.total_users, totalTickets: t.total_tickets,
+      turnover: t.turnover, wins: t.wins, losses: t.losses, pending: t.pending,
+      netResult: Number(t.losses) - Number(t.wins),
+    },
+    agents: perAgent,
+  });
 });
 
 router.post('/agents', async (req, res) => {
