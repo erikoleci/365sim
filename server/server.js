@@ -24,7 +24,7 @@ import agentRouter from './routes/agent.js';
 import casinoRouter from './routes/casino.js';
 import scrapeRouter from './routes/scrape.js';
 import favoritesRouter from './routes/favorites.js';
-import { initDb } from './db.js';
+import { initDb, cleanupOldData } from './db.js';
 import { initWebSocket } from './ws.js';
 import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCrossCountryMisclassifiedLeagues, purgeCountriesNotInOnlyList, wipeLondon365Data, loadPersistedLeagueMap } from './london365.js';
 import { startLondon365Socket, startLondon365GameDetailsSocket } from './london365Socket.js';
@@ -250,6 +250,11 @@ async function start() {
   // markets instead of the full catalog.
   setTimeout(function () { repairSparseEvents({ limit: 40 }).catch(function () {}); }, 45 * 1000);
   setInterval(function () { repairSparseEvents({ limit: 40 }).catch(function () {}); }, 3 * 60 * 1000);
+  // Prevent the free-tier PG storage cap from filling up with unbounded
+  // append-only history (odds_history, match_events, audit_log) and stale
+  // finished matches. First run 2 min after boot, then every 6 hours.
+  setTimeout(function () { cleanupOldData().catch(function () {}); }, 2 * 60 * 1000);
+  setInterval(function () { cleanupOldData().catch(function () {}); }, 6 * 60 * 60 * 1000);
 }
 
 start().catch((err) => {
