@@ -4,6 +4,7 @@ import MatchRow from './components/MatchCard';
 import MatchDetail from './components/MatchDetail';
 import BetSlip from './components/BetSlip';
 import OwnerDashboard from './components/OwnerDashboard';
+import AgentUsersPanel from './components/AgentUsersPanel';
 import Login from './components/Login';
 import CasinoHub from './components/CasinoHub';
 import { User, Match, Bet, UserRole, BetSelectionItem, MatchStatus } from './types';
@@ -1098,7 +1099,12 @@ const App: React.FC = () => {
         )}
 
         <main ref={adminPanelRef as React.RefObject<HTMLElement>} className="flex-1 min-w-0 mb-20 md:mb-0">
-          {currentView === 'casino' ? (
+          {showAdmin && currentUser.role === UserRole.AGENT ? (
+            <AgentUsersPanel
+              currentUser={currentUser}
+              onBalanceChanged={(balance) => setCurrentUser((p) => (p ? { ...p, balance } : p))}
+            />
+          ) : currentView === 'casino' ? (
             <CasinoHub userBalance={currentUser.balance} onSetBalance={(balance) => setCurrentUser((p) => p ? { ...p, balance } : p)} />
           ) : detailMatch ? (
             <MatchDetail
