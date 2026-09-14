@@ -261,7 +261,40 @@ const App: React.FC = () => {
               liveAwayScore: msg.awayScore ?? m.liveAwayScore,
             } : m));
           } else if (msg.type === 'ODDS_CHANGED') {
-            loadMatches();
+            // Was calling loadMatches() here -- a FULL /api/matches reload
+            // on every single price move, anywhere in the whole list. Odds
+            // move constantly (many matches, many markets, every few
+            // seconds), so this was firing very often, and worse: a fresh
+            // JSON response replaces EVERY match object with a new
+            // reference, defeating React.memo on MatchRow for the ENTIRE
+            // list (not just the one match whose price moved) — every row
+            // re-rendered on every price tick anywhere. On a phone with a
+            // long visible list this is exactly the kind of thing that
+            // shows up as scroll jank / the whole screen feeling laggy.
+            // msg.changes carries {marketId, selectionId, newOdds} per
+            // outcome that actually moved (see diffOddsChanges), and those
+            // ids are built the identical way on both sides
+            // (`${matchId}-${marketKey}` / outcomeId) — so we can patch
+            // just the affected option's price in place instead.
+            const changes: { marketId: string; selectionId: string; newOdds?: number }[] = Array.isArray(msg.changes) ? msg.changes : [];
+            if (changes.length) {
+              setMatches((current) => current.map((m) => {
+                if (m.id !== msg.matchId) return m;
+                let touched = false;
+                const markets = m.markets.map((mk) => {
+                  const relevant = changes.filter((c) => c.marketId === mk.id);
+                  if (!relevant.length) return mk;
+                  const options = mk.options.map((opt) => {
+                    const c = relevant.find((c) => c.selectionId === opt.id);
+                    if (!c || typeof c.newOdds !== 'number') return opt;
+                    touched = true;
+                    return { ...opt, odds: c.newOdds };
+                  });
+                  return touched ? { ...mk, options } : mk;
+                });
+                return touched ? { ...m, markets } : m;
+              }));
+            }
           }
         } catch { /* ignore malformed socket messages */ }
       };
