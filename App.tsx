@@ -247,6 +247,19 @@ const App: React.FC = () => {
           } else if (msg.type === 'MATCH_STARTED') {
             setMatches((current) => current.map((m) => m.id === msg.matchId ? { ...m, status: MatchStatus.LIVE, isLive: true } : m));
             loadMatches();
+          } else if (msg.type === 'MATCH_ENDED') {
+            // Without this, a match that just finished stayed in the "Live"
+            // list — frozen at its last score — until the next slow REST
+            // poll (widened to 5 min for bandwidth) caught up. Apply the
+            // final score and flip status immediately so it drops out of
+            // any Live-only view right away instead of minutes later.
+            setMatches((current) => current.map((m) => m.id === msg.matchId ? {
+              ...m,
+              status: MatchStatus.FINISHED,
+              isLive: false,
+              liveHomeScore: msg.homeScore ?? m.liveHomeScore,
+              liveAwayScore: msg.awayScore ?? m.liveAwayScore,
+            } : m));
           } else if (msg.type === 'ODDS_CHANGED') {
             loadMatches();
           }

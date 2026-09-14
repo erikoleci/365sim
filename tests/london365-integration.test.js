@@ -16,6 +16,10 @@ const mocks = vi.hoisted(function () {
       const row = store.get(params[0]);
       return Promise.resolve({ rows: row ? [row] : [] });
     }
+    if (s.indexOf('SELECT live_home_score, live_away_score FROM matches_cache') === 0) {
+      const row = store.get(params[0]);
+      return Promise.resolve({ rows: row ? [{ live_home_score: row.live_home_score, live_away_score: row.live_away_score }] : [] });
+    }
     if (s.indexOf('INSERT INTO matches_cache') === 0) {
       store.set(params[0], {
         id: params[0], league: params[1], home_team: params[2], away_team: params[3],
@@ -72,7 +76,7 @@ vi.mock('../server/db.js', function () {
   return { default: { query: mocks.query }, getKV: mocks.getKV, setKV: mocks.setKV };
 });
 vi.mock('../server/ws.js', function () {
-  return { pushOddsChanged: vi.fn(), pushGoal: vi.fn() };
+  return { pushOddsChanged: vi.fn(), pushGoal: vi.fn(), pushMatchEnded: vi.fn() };
 });
 
 import {
