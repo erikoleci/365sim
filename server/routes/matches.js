@@ -96,8 +96,33 @@ function dedupeMatches(list) {
 // ran recently or is in progress — see LONDON365_IMPORT_THROTTLE_MS) and
 // then serves whatever's currently cached, so the response is always fast
 // regardless of import progress.
+//
+// Response cache: the DB query + dedupeMatches() (fuzzy team-name matching,
+// O(n) per existing time-window group) together cost 100-200ms of pure
+// synchronous CPU time with a realistic few-thousand-match, same-kickoff-
+// time-cluster load (measured) — and because Node is single-threaded, that
+// time fully blocks EVERY other request (other phones' /api/matches calls,
+// live WebSocket broadcasts, logins) while it runs. Worse, it was being
+// redone from scratch for every single client poll even though the
+// underlying matches_cache data only actually changes when the throttled
+// import runs. Caching the fully-computed response for a few seconds means
+// many phones polling around the same time share one computation instead
+// of each paying the full cost — this is the main lever for "many phones
+// at once" responsiveness, bigger than micro-optimizing dedupeMatches
+// itself. TTL is short enough that no one perceives stale data (live
+// scores/odds flow separately over WebSocket in real time regardless).
+const MATCHES_CACHE_TTL_MS = 8000;
+const matchesResponseCache = new Map(); // key -> { body, computedAt }
+
 router.get('/', async (req, res) => {
   ensureLondon365Import();
+
+  const cacheKey = req.query.league || '__all__';
+  const cached = matchesResponseCache.get(cacheKey);
+  if (cached && Date.now() - cached.computedAt < MATCHES_CACHE_TTL_MS) {
+    return res.json(cached.body);
+  }
+
   // Bounded by time: the UI only ever shows "today" through ~7 days ahead,
   // plus recently-finished/live matches from the last couple of days — so
   // there's no reason to keep pulling EVERY match_cache row ever imported
@@ -118,7 +143,9 @@ router.get('/', async (req, res) => {
          LIMIT 4000`
       );
   console.log(`[matches] GET / -> ${rows.length} cached row(s)${req.query.league ? ` for league=${req.query.league}` : ''}`);
-  res.json({ matches: dedupeMatches(rows.map(mapEventToMatch)), leagueNames: getLondon365LeagueNames() });
+  const body = { matches: dedupeMatches(rows.map(mapEventToMatch)), leagueNames: getLondon365LeagueNames() };
+  matchesResponseCache.set(cacheKey, { body, computedAt: Date.now() });
+  res.json(body);
 });
 
 router.get('/:id/odds-history', async (req, res) => {

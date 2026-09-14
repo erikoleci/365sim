@@ -1376,6 +1376,19 @@ export async function syncLondon365Live() {
         // leaving score/minute empty for most matches — see fetchLiveRows.
         const score = parseScore((liveMeta && liveMeta.result) || g.result);
         const minute = (liveMeta && liveMeta.minute) || g.current_minute || null;
+        // Diagnostic only (no behavior change) -- helps confirm/deny the
+        // separate claim that field T can substitute as a minute source
+        // when this path is empty, without trusting that claim yet.
+        if (!minute || !score) {
+          console.warn(
+            '[london365] game ' + g.id + ' missing live data — ' +
+            'detailFetched=' + Boolean(liveMeta) +
+            ' liveMeta.minute=' + JSON.stringify(liveMeta && liveMeta.minute) +
+            ' liveMeta.result=' + JSON.stringify(liveMeta && liveMeta.result) +
+            ' list.current_minute=' + JSON.stringify(g.current_minute) +
+            ' list.result=' + JSON.stringify(g.result)
+          );
+        }
         const apiStatus = (liveMeta && liveMeta.apiStatus) != null ? liveMeta.apiStatus : g.api_status;
         // Prefer the country-accurate key resolved from the real league_id
         // (set during the last full import); if that's missing, try matching
