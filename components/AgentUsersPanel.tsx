@@ -108,6 +108,16 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
     }
   };
 
+  const doDelete = async (userId: string, username: string) => {
+    if (!window.confirm(`Fshi userin @${username}? Kjo veprim s'kthehet mbrapa.`)) return;
+    try {
+      await api.agentDeleteUser(userId);
+      await load();
+    } catch (err: any) {
+      setError(err.message || 'Fshirja deshtoi');
+    }
+  };
+
   const toggleActive = async (userId: string, active: boolean) => {
     try {
       await api.agentSetUserActive(userId, active);
@@ -209,6 +219,13 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
                         className={'text-[10px] px-2 py-1.5 rounded font-bold ' + (u.is_active === false ? 'bg-green-800 hover:bg-green-700' : 'bg-[#444] hover:bg-[#555]')}
                       >
                         {u.is_active === false ? 'Aktivizo' : 'Ç-aktivizo'}
+                      </button>
+                      <button
+                        onClick={() => doDelete(u.id, u.username)}
+                        title="Fshi (vetem nese balanca=0 dhe s'ka kupona)"
+                        className="text-[10px] px-2 py-1.5 rounded font-bold bg-red-900 hover:bg-red-800"
+                      >
+                        Fshi
                       </button>
                     </div>
                   </div>

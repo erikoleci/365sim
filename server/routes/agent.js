@@ -106,6 +106,26 @@ router.patch('/users/:id/active', async (req, res) => {
   res.json({ ok: true });
 });
 
+// Delete a user of mine. Refuses if the user still has a non-zero balance
+// or any bets on record -- money/history must never silently vanish; the
+// agent has to debit the balance to zero and there is no bet-deletion path
+// at all, so this can only ever remove a genuinely empty, unused account.
+router.delete('/users/:id', async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM users WHERE id = $1 AND agent_id = $2', [req.params.id, req.user.id]);
+  const user = rows[0];
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (Number(user.balance) !== 0) {
+    return res.status(400).json({ error: 'Terheq balancen e userit ne zero para se ta fshish' });
+  }
+  const { rows: betRows } = await pool.query('SELECT id FROM bets WHERE user_id = $1 LIMIT 1', [req.params.id]);
+  if (betRows[0]) {
+    return res.status(400).json({ error: 'Ky user ka histori kuponash, nuk mund te fshihet' });
+  }
+  await pool.query('DELETE FROM users WHERE id = $1', [req.params.id]);
+  await logAudit(req.user, 'AGENT_USER_DELETE', req.params.id, { username: user.username });
+  res.json({ ok: true });
+});
+
 // Credit: Agent -> User (moves out of the agent's own balance).
 router.post('/users/:id/credit', async (req, res) => {
   const { amount } = req.body || {};

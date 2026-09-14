@@ -332,6 +332,20 @@ export async function agentFetchMonthlyReport(month?: string) {
   return request<AgentMonthlyReport>(`/agent/reports/monthly${q}`);
 }
 
+export async function agentDeleteUser(userId: string) {
+  return request<{ ok: true }>(`/agent/users/${userId}`, { method: 'DELETE' });
+}
+
+export interface AdminMonthlyReport {
+  month: string;
+  totals: { totalAgents: number; totalUsers: number; totalTickets: number; turnover: number; wins: number; losses: number; pending: number; netResult: number };
+  agents: { id: string; name: string; username: string; total_users: number; tickets: number; turnover: number; wins: number; losses: number; pending: number }[];
+}
+export async function adminFetchMonthlyReport(month?: string) {
+  const q = month ? `?month=${encodeURIComponent(month)}` : '';
+  return request<AdminMonthlyReport>(`/admin/reports/monthly${q}`);
+}
+
 // --- Casino (server-authoritative: every game is deducted/resolved/paid
 // out on the backend, never mutated purely client-side) ---
 
