@@ -75,7 +75,7 @@ router.post('/users', async (req, res) => {
   if (existingRows[0]) return res.status(409).json({ error: 'Username already taken' });
 
   const id = randomUUID();
-  const hash = bcrypt.hashSync(password, 10);
+  const hash = await bcrypt.hash(password, 10);
   await pool.query(
     `INSERT INTO users (id, name, username, password_hash, balance, role, avatar, agent_id, created_at)
      VALUES ($1,$2,$3,$4,0,'USER',$5,$6,$7)`,

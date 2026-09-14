@@ -80,7 +80,7 @@ router.post('/register', async (req, res) => {
   if (existingRows[0]) return res.status(409).json({ error: 'Username already taken' });
 
   const id = randomUUID();
-  const hash = bcrypt.hashSync(password, 10);
+  const hash = await bcrypt.hash(password, 10);
   await pool.query(
     `INSERT INTO users (id, name, username, password_hash, balance, role, avatar, created_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
@@ -100,7 +100,7 @@ router.post('/login', async (req, res) => {
   }
   const { rows } = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
   const user = rows[0];
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+  if (!user || !(await bcrypt.compare(password, user.password_hash))) {
     return res.status(401).json({ error: 'Invalid username or password' });
   }
   if (user.is_active === false) {

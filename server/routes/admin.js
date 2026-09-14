@@ -81,7 +81,7 @@ router.post('/users', async (req, res) => {
   if (existingRows[0]) return res.status(409).json({ error: 'Username already taken' });
 
   const id = randomUUID();
-  const hash = bcrypt.hashSync(password, 10);
+  const hash = await bcrypt.hash(password, 10);
   await pool.query(
     `INSERT INTO users (id, name, username, password_hash, balance, role, avatar, created_at)
      VALUES ($1,$2,$3,$4,$5,'USER',$6,$7)`,
@@ -204,7 +204,7 @@ router.post('/agents', async (req, res) => {
   }
 
   const id = randomUUID();
-  const hash = bcrypt.hashSync(password, 10);
+  const hash = await bcrypt.hash(password, 10);
   // Insert with balance=0, then move the requested starting balance out of
   // the Owner's own balance via transferBalance() below — this is what
   // gives the initial funding a `transactions` row (source_id = owner,
@@ -329,7 +329,7 @@ router.post('/users/:id/reset-password', async (req, res) => {
   }
   const { rows } = await pool.query('SELECT id FROM users WHERE id = $1', [req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: 'User not found' });
-  const hash = bcrypt.hashSync(password, 10);
+  const hash = await bcrypt.hash(password, 10);
   await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, req.params.id]);
   await logAudit(req.user, 'PASSWORD_RESET', req.params.id, {});
   res.json({ ok: true });
