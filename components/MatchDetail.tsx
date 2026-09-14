@@ -105,8 +105,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
 
     let socket: WebSocket | null = null;
     if (match.status === MatchStatus.LIVE) {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
+      socket = new WebSocket(api.getWsUrl());
       socket.onopen = () => socket!.send(JSON.stringify({ type: 'subscribe', topic: `match:${match.id}` }));
       socket.onmessage = (event) => {
         try {

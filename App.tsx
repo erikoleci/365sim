@@ -199,8 +199,7 @@ const App: React.FC = () => {
     let cancelled = false;
 
     const connect = () => {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
+      socket = new WebSocket(api.getWsUrl());
       socket.onopen = () => {
         attempt = 0;
         setWsConnected(true);

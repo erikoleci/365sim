@@ -2,6 +2,21 @@ import { User, Match, Bet, BetSelectionItem } from '../types';
 
 const TOKEN_KEY = 'betsim_token';
 
+// Set at build time (Vercel/Cloudflare Pages env var). Empty string means
+// "same origin as the frontend" — that's still correct for local dev and
+// for a same-host deploy; only a split deploy (frontend on Vercel, API on
+// Koyeb/Render) needs this pointed at the API's own domain.
+const API_BASE = (import.meta as any).env?.VITE_API_URL || '';
+
+export function getWsUrl(): string {
+  if (API_BASE) {
+    // e.g. https://foo.koyeb.app -> wss://foo.koyeb.app/ws
+    return API_BASE.replace(/^http/, 'ws') + '/ws';
+  }
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}/ws`;
+}
+
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -19,7 +34,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const resp = await fetch(`/api${path}`, { ...options, headers });
+  const resp = await fetch(`${API_BASE}/api${path}`, { ...options, headers });
   const contentType = resp.headers.get('content-type') || '';
   const body = contentType.includes('application/json') ? await resp.json() : null;
 
