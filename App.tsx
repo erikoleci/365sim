@@ -222,6 +222,20 @@ const App: React.FC = () => {
               liveAwayScore: msg.awayScore ?? m.liveAwayScore,
               currentMinute: msg.minute ?? m.currentMinute,
             } : m));
+          } else if (msg.type === 'GOAL_DISALLOWED') {
+            // A goal that was already shown got retracted (VAR overturn /
+            // provider correction) — apply the corrected (lower) score the
+            // same way GOAL applies a new one, just without implying anyone
+            // scored. Without this, the frontend had no way to walk a goal
+            // back at all: the old code treated every score change as a new
+            // goal, so a disallowed goal showed up as a fabricated goal for
+            // the WRONG team (see server/london365.js recordGoalIfChanged).
+            setMatches((current) => current.map((m) => m.id === msg.matchId ? {
+              ...m,
+              liveHomeScore: msg.homeScore ?? m.liveHomeScore,
+              liveAwayScore: msg.awayScore ?? m.liveAwayScore,
+              currentMinute: msg.minute ?? m.currentMinute,
+            } : m));
           } else if (msg.type === 'LIVE_TICK') {
             // Fast (~1/sec) resync from the gamedetails feed: keeps the
             // score/minute already shown in sync with the provider without

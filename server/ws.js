@@ -89,6 +89,15 @@ export const pushGoal = (matchId, data) => {
   broadcast(`match:${matchId}`, { type: 'GOAL', ...data });
   broadcast('live', { matchId, type: 'GOAL', ...data });
 };
+// Fired when a provider score UPDATE actually means a goal was retracted
+// (VAR overturn / ref correction) rather than a new goal — the score for a
+// team went DOWN. Carries the corrected (lower) score so the frontend can
+// apply it the same way as a GOAL, but callers can distinguish the two to
+// show "gol i anuluar" instead of a goal celebration.
+export const pushGoalDisallowed = (matchId, data) => {
+  broadcast(`match:${matchId}`, { type: 'GOAL_DISALLOWED', ...data });
+  broadcast('live', { matchId, type: 'GOAL_DISALLOWED', ...data });
+};
 export const pushOddsChanged = (matchId, data) => {
   broadcast(`match:${matchId}`, { type: 'ODDS_CHANGED', ...data });
   broadcast('odds', { matchId, type: 'ODDS_CHANGED', ...data });

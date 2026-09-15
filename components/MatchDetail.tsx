@@ -110,7 +110,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
       socket.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          if (msg.type === 'GOAL' || msg.type === 'CARD' || msg.type === 'MATCH_ENDED') load();
+          if (msg.type === 'GOAL' || msg.type === 'GOAL_DISALLOWED' || msg.type === 'CARD' || msg.type === 'MATCH_ENDED') load();
         } catch { /* ignore malformed message */ }
       };
     }
