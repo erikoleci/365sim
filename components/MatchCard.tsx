@@ -33,7 +33,7 @@ export function parseLiveClock(minute?: string): { minute: number; second: numbe
 // once per second client-side from the last known {minute:second}, and
 // snaps back to the real value the moment a fresh one arrives (socket poll
 // or REST refresh), so it never drifts far from the truth.
-function useTickingClock(rawMinute?: string): { minute: number; half: string } | null {
+function useTickingClock(rawMinute?: string): { minute: number; second: number; half: string } | null {
   const base = parseLiveClock(rawMinute);
   const [, forceTick] = React.useState(0);
   const baseRef = React.useRef<{ totalSeconds: number; receivedAt: number } | null>(null);
@@ -53,12 +53,21 @@ function useTickingClock(rawMinute?: string): { minute: number; half: string } |
     return () => clearInterval(id);
   }, [!!base]);
 
-  if (!base || !baseRef.current) return base ? { minute: base.minute, half: base.half } : null;
+  if (!base || !baseRef.current) return base;
   const elapsed = Math.floor((Date.now() - baseRef.current.receivedAt) / 1000);
   const totalSeconds = baseRef.current.totalSeconds + Math.max(0, elapsed);
   const minute = Math.floor(totalSeconds / 60);
+  const second = totalSeconds % 60;
   const half = minute < 45 ? 'Pjesa I' : minute < 46 ? 'Pushim' : minute < 90 ? 'Pjesa II' : minute < 105 ? 'Shtesë' : 'Penallti';
-  return { minute, half };
+  return { minute, second, half };
+}
+
+// "61:01" gjatë lojës normale; kur provideri s'jep fare minutë (vetëm "LIVE"
+// gjenerik), s'ka çfarë të shfaqet me sekonda — kthehet null dhe thirrësi
+// bie mbrapa te fallback-u ekzistues ('LIVE').
+export function formatLiveClock(clock: { minute: number; second: number } | null): string | null {
+  if (!clock) return null;
+  return `${clock.minute}:${String(clock.second).padStart(2, '0')}`;
 }
 
 const StarButton: React.FC<{ active: boolean; onClick: (e: React.MouseEvent) => void }> = ({ active, onClick }) => (
@@ -141,7 +150,7 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
         <div className="text-xs text-brand-textMuted w-12 text-center flex flex-col items-center justify-center shrink-0">
            {isLive ? (
                <div className={`font-bold leading-tight ${isHalftime(match) ? 'text-brand-yellow' : 'text-brand-accent animate-pulse'}`}>
-                   {isHalftime(match) ? 'Pushim' : (liveClock ? `${liveClock.minute}'` : (match.currentMinute ? `${match.currentMinute}'` : 'LIVE'))}
+                   {isHalftime(match) ? 'Pushim' : (liveClock ? formatLiveClock(liveClock) : (match.currentMinute ? `${match.currentMinute}'` : 'LIVE'))}
                    {liveClock && !isHalftime(match) && <div className="text-[9px] font-semibold text-brand-yellow normal-case leading-none mt-0.5">{liveClock.half}</div>}
                </div>
            ) : (
