@@ -1307,6 +1307,29 @@ export function ensureLondon365Import() {
 
 // Live sync: in-play scores plus REAL-TIME FULL market catalog. The list
 // endpoint (/ajax/livegames) only carries the packed 1X2 odds, but every
+// Per-match count of consecutive live-sync cycles (~LIVE_INTERVAL_MS apart,
+// default 30s) where the provider's live list did NOT include a match we
+// still have marked LIVE in the DB. Confirming across 2+ independent passes
+// (instead of a single miss) protects against a one-off transient gap in
+// the provider's feed being mistaken for the match actually ending. This is
+// what lets a genuinely-finished match get corrected within ~30-60s after
+// a server restart, instead of waiting on the much longer time-based
+// fallbacks below (8 min staleness / 2.5h since kickoff) -- important
+// because right after a restart (or the process waking from a host's
+// free-tier sleep), `fetched_at` on an already-finished match can still
+// look recent even though the match ended while the process was down.
+const missedLiveCycles = new Map();
+
+// Pure decision logic, exported for direct testing: should a match that's
+// marked LIVE in the DB but missing from the provider's current live list
+// be settled as finished right now?
+export function shouldSettleMissingLiveMatch({ consecutiveMisses, fetchedAt, startTime, now = Date.now() }) {
+  const confirmedMissing = consecutiveMisses >= 2;
+  const stale = Number(fetchedAt) < now - 8 * 60 * 1000;
+  const oldKickoff = Date.parse(startTime) < now - 2.5 * 60 * 60 * 1000;
+  return confirmedMissing || stale || oldKickoff;
+}
+
 // live game exposes its complete market set on /ajax/livegame/{id} — same
 // row shape as the prematch detail endpoint — so we fetch it per game and
 // merge it into the cached event. Games that leave the live feed are
@@ -1411,27 +1434,37 @@ export async function syncLondon365Live() {
 
   // End detection: a cached LIVE l365 match no longer in the live feed has
   // finished — settle it with the last known score so the final result
-  // shows on the right of the card. Two independent triggers:
-  //  1. It hasn't been updated (fetched_at) in a while — this is the one
-  //     that actually matters in practice: a match can vanish from the live
-  //     feed the moment it ends, at ANY real-game-time (45+2', 90+5', a
-  //     match delayed/extended into extra time...). Gating only on kickoff
-  //     time (old behavior) left it frozen at its last score/minute for up
-  //     to ~2.5h after it had actually finished.
-  //  2. Kickoff was >2.5h ago — pure safety net for the rare case a match
+  // shows on the right of the card. Three independent triggers (any one
+  // is enough):
+  //  1. Missing from the live feed for 2 consecutive sync cycles
+  //     (~30-60s, including the very first cycle right after boot/restart)
+  //     — this is what makes a server restart converge fast: fetched_at
+  //     alone can still look "recent" right after boot even if the match
+  //     actually finished while the process was down.
+  //  2. It hasn't been updated (fetched_at) in 8+ minutes — catches a
+  //     match that vanished from the feed at ANY real-game-time (45+2',
+  //     90+5', extra time...) even during steady-state operation, in case
+  //     the 2-cycle check above ever misses (e.g. a live-loop error skips
+  //     a cycle for this game specifically).
+  //  3. Kickoff was >2.5h ago — pure safety net for the rare case a match
   //     was somehow never freshly fetched at all (fetched_at stuck at
-  //     import time), so it doesn't wait on trigger 1 forever.
+  //     import time), so it doesn't wait on triggers 1/2 forever.
   try {
     const { rows } = await pool.query(
       "SELECT id, live_home_score, live_away_score, start_time, fetched_at FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
     );
-    const kickoffCutoff = Date.now() - 2.5 * 60 * 60 * 1000;
-    const staleCutoff = Date.now() - 8 * 60 * 1000; // no update in 8 minutes while "live" = provider stopped sending it
     for (const row of rows) {
-      if (liveIds.has(row.id)) continue;
-      const stale = Number(row.fetched_at) < staleCutoff;
-      const oldKickoff = Date.parse(row.start_time) < kickoffCutoff;
-      if (!stale && !oldKickoff) continue;
+      if (liveIds.has(row.id)) {
+        missedLiveCycles.delete(row.id);
+        continue;
+      }
+      const misses = (missedLiveCycles.get(row.id) || 0) + 1;
+      missedLiveCycles.set(row.id, misses);
+      const shouldSettle = shouldSettleMissingLiveMatch({
+        consecutiveMisses: misses, fetchedAt: row.fetched_at, startTime: row.start_time,
+      });
+      if (!shouldSettle) continue;
+      missedLiveCycles.delete(row.id);
       const home = row.live_home_score ?? 0;
       const away = row.live_away_score ?? 0;
       await pool.query("UPDATE matches_cache SET live_status = 'ended' WHERE id = $1", [row.id]);
