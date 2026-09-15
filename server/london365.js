@@ -769,7 +769,7 @@ export function minuteToNumber(minute) {
 }
 
 async function upsertMatch(ev, league, status, liveScores, liveInfo) {
-  return withDbLock(async () => {
+  return withDbLock(ev.id, async () => {
     const now = Date.now();
     const { rows } = await pool.query(
       'SELECT raw_json, status, live_home_score, live_away_score, live_minute FROM matches_cache WHERE id = $1',
@@ -905,13 +905,30 @@ function hydrateRowNames(rows) {
   return rows;
 }
 
-// Serialize DB writes across the full import, the live polling loop, and the
-// Socket.IO feed so a slow import never interleaves partial odds with a
-// live patch for the same match.
-let dbWriteLock = Promise.resolve();
-function withDbLock(fn) {
-  const run = dbWriteLock.then(fn, fn);
-  dbWriteLock = run.then(function () {}, function () {});
+// Serialize DB writes to the SAME match across the full import, the live
+// polling loop, and the Socket.IO feed, so a slow import step never
+// interleaves partial odds with a live patch for that match. Keyed per
+// match id (not a single global lock) so N live matches updating around
+// the same time process in parallel instead of queuing behind one another
+// one at a time — with many live matches (a busy Saturday), a single
+// global lock meant every match's update waited for every other match's
+// full read-modify-write DB round trip to finish first, adding real,
+// growing latency exactly when responsiveness matters most. Different
+// matches now only ever block each other if they happen to share a key,
+// which never happens (each match's key is its own id).
+const dbWriteLocks = new Map(); // matchId -> tail Promise of that match's write queue
+export function withDbLock(key, fn) {
+  const prevTail = dbWriteLocks.get(key) || Promise.resolve();
+  const run = prevTail.then(fn, fn);
+  const settled = run.then(function () {}, function () {});
+  dbWriteLocks.set(key, settled);
+  // Once this chain link resolves, free the map entry if nothing newer has
+  // queued behind it in the meantime — otherwise the map would grow
+  // forever, holding one entry per match id ever seen for the life of the
+  // process.
+  settled.then(function () {
+    if (dbWriteLocks.get(key) === settled) dbWriteLocks.delete(key);
+  });
   return run;
 }
 
@@ -1526,7 +1543,7 @@ export async function syncLondon365Live() {
 
 export async function applySocketCoefs(gameId, coefs) {
   const id = 'l365-' + gameId;
-  return withDbLock(async () => {
+  return withDbLock(id, async () => {
     const { rows } = await pool.query('SELECT raw_json FROM matches_cache WHERE id = $1', [id]);
     if (!rows.length || !rows[0].raw_json) return 0;
     let ev;
@@ -1590,7 +1607,7 @@ export async function applySocketGame(g, status) {
 
 export async function markLondon365GameEnded(gameId) {
   const id = 'l365-' + gameId;
-  return withDbLock(async () => {
+  return withDbLock(id, async () => {
     const { rows } = await pool.query(
       'SELECT live_home_score, live_away_score FROM matches_cache WHERE id = $1', [id]
     );
@@ -1609,7 +1626,7 @@ export async function markLondon365GameEnded(gameId) {
 export async function removeSocketCoef(gameId, coefId) {
   const id = 'l365-' + gameId;
   if (!coefId) return 0;
-  return withDbLock(async () => {
+  return withDbLock(id, async () => {
     const { rows } = await pool.query('SELECT raw_json FROM matches_cache WHERE id = $1', [id]);
     if (!rows.length || !rows[0].raw_json) return 0;
     let ev;
