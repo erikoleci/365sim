@@ -33,7 +33,7 @@
 
 import pool, { getKV, setKV } from './db.js';
 import { diffOddsChanges } from './oddsUtils.js';
-import { pushOddsChanged, pushGoal, pushMatchEnded } from './ws.js';
+import { pushOddsChanged, pushGoal, pushGoalDisallowed, pushMatchEnded } from './ws.js';
 import { settleMatch } from './matchSettlement.js';
 
 const ENABLED = (process.env.LONDON365_ENABLED || '1') === '1';
@@ -918,29 +918,64 @@ function withDbLock(fn) {
 // Record a goal exactly once: only when the score actually moved compared to
 // what we last persisted (or when a first non-zero score appears). Repeated
 // polls and socket ticks for the same score are no-ops.
+// BUG FIX: this used to treat ANY score change as a goal — including when
+// the score goes DOWN (VAR overturns/disallows an earlier goal, or the
+// provider corrects a miskeyed score). `Math.sign(score.home - prevHome)`
+// being anything other than 1 fell through to "away scored", so a
+// disallowed HOME goal was logged and broadcast as an AWAY goal — a
+// completely fabricated event pushed to every connected client. Now each
+// team's delta is checked independently: a positive delta records/pushes a
+// real goal as before; a negative delta means a previously-logged goal for
+// that team must be retracted (delete the most recent GOAL match_event for
+// them) and broadcasts GOAL_DISALLOWED with the corrected score instead of
+// GOAL — never invents which team "scored" when nobody did.
 export async function recordGoalIfChanged(ev, score, minute, prev) {
   if (!score) return;
   const prevHome = prev ? prev.live_home_score : null;
   const prevAway = prev ? prev.live_away_score : null;
   const hadScoreBefore = prevHome != null && prevAway != null;
-  const scoreChanged = hadScoreBefore
-    ? (score.home !== prevHome || score.away !== prevAway)
-    : Math.sign(score.home + score.away) === 1;
-  if (!scoreChanged) return;
-  const scoringTeam = hadScoreBefore && Math.sign(score.home - prevHome) === 1 ? ev.home_team : ev.away_team;
+  const homeDelta = hadScoreBefore ? score.home - prevHome : score.home;
+  const awayDelta = hadScoreBefore ? score.away - prevAway : score.away;
+  if (homeDelta === 0 && awayDelta === 0) return;
   const now = Date.now();
-  await pool.query(
-    `INSERT INTO match_events (match_id, minute, type, team, detail, created_at)
-     VALUES ($1,$2,'GOAL',$3,$4,$5)`,
-    [ev.id, minuteToNumber(minute), scoringTeam, score.home + '-' + score.away, now]
-  );
+
+  async function logGoal(team) {
+    await pool.query(
+      `INSERT INTO match_events (match_id, minute, type, team, detail, created_at)
+       VALUES ($1,$2,'GOAL',$3,$4,$5)`,
+      [ev.id, minuteToNumber(minute), team, score.home + '-' + score.away, now]
+    );
+  }
+  async function retractLastGoal(team) {
+    const { rows } = await pool.query(
+      `SELECT id FROM match_events WHERE match_id = $1 AND type = 'GOAL' AND team = $2 ORDER BY created_at DESC LIMIT 1`,
+      [ev.id, team]
+    );
+    if (rows[0]) await pool.query('DELETE FROM match_events WHERE id = $1', [rows[0].id]);
+  }
+
+  if (homeDelta > 0) await logGoal(ev.home_team);
+  else if (homeDelta < 0) await retractLastGoal(ev.home_team);
+  if (awayDelta > 0) await logGoal(ev.away_team);
+  else if (awayDelta < 0) await retractLastGoal(ev.away_team);
+
   await pool.query(
     `INSERT INTO live_statistics (match_id, home_score, away_score, updated_at)
      VALUES ($1,$2,$3,$4)
      ON CONFLICT (match_id) DO UPDATE SET home_score = excluded.home_score, away_score = excluded.away_score, updated_at = excluded.updated_at`,
     [ev.id, score.home, score.away, now]
   );
-  pushGoal(ev.id, { homeScore: score.home, awayScore: score.away, scoringTeam: scoringTeam, minute: minute || undefined });
+
+  if (homeDelta > 0) {
+    pushGoal(ev.id, { homeScore: score.home, awayScore: score.away, scoringTeam: ev.home_team, minute: minute || undefined });
+  } else if (awayDelta > 0) {
+    pushGoal(ev.id, { homeScore: score.home, awayScore: score.away, scoringTeam: ev.away_team, minute: minute || undefined });
+  }
+  if (homeDelta < 0) {
+    pushGoalDisallowed(ev.id, { homeScore: score.home, awayScore: score.away, team: ev.home_team, minute: minute || undefined });
+  } else if (awayDelta < 0) {
+    pushGoalDisallowed(ev.id, { homeScore: score.home, awayScore: score.away, team: ev.away_team, minute: minute || undefined });
+  }
 }
 
 let importRunning = false;
