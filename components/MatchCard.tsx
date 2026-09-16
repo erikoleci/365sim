@@ -33,6 +33,19 @@ export function parseLiveClock(minute?: string): { minute: number; second: numbe
 // once per second client-side from the last known {minute:second}, and
 // snaps back to the real value the moment a fresh one arrives (socket poll
 // or REST refresh), so it never drifts far from the truth.
+// Pure decision extracted for direct testing (no React/DOM needed): should
+// an incoming clock value replace the currently-ticking one? Exported so
+// the "never rewind" rule can be verified in isolation from the hook.
+export function shouldAcceptNewClockBase(
+  current: { totalSeconds: number; receivedAt: number } | null,
+  incomingTotalSeconds: number,
+  now: number = Date.now()
+): boolean {
+  if (!current) return true;
+  const currentProjected = current.totalSeconds + Math.max(0, Math.floor((now - current.receivedAt) / 1000));
+  return incomingTotalSeconds >= currentProjected;
+}
+
 function useTickingClock(rawMinute?: string): { minute: number; second: number; half: string } | null {
   const base = parseLiveClock(rawMinute);
   const [, forceTick] = React.useState(0);
@@ -43,7 +56,21 @@ function useTickingClock(rawMinute?: string): { minute: number; second: number; 
       baseRef.current = null;
       return;
     }
-    baseRef.current = { totalSeconds: base.minute * 60 + base.second, receivedAt: Date.now() };
+    const incomingTotalSeconds = base.minute * 60 + base.second;
+    // Never let the displayed clock jump BACKWARD within the same match.
+    // A real match clock only ever moves forward; a lower incoming value
+    // means this update is stale/out of order relative to what we already
+    // showed (e.g. a slower REST refresh landing after a faster live tick
+    // already advanced the clock, or any other source disagreement), not a
+    // legitimate correction. Snapping back and forth on every such
+    // disagreement is exactly the kind of visibly "wrong" live clock that
+    // erodes trust — once we've shown a given point in the match, keep
+    // ticking forward from there and ignore an incoming value that would
+    // rewind it. (A genuinely different match reusing the same id is a
+    // separate, much rarer case already guarded against on the server —
+    // see upsertMatch's team-mismatch reset in server/london365.js.)
+    if (!shouldAcceptNewClockBase(baseRef.current, incomingTotalSeconds)) return;
+    baseRef.current = { totalSeconds: incomingTotalSeconds, receivedAt: Date.now() };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawMinute]);
 
