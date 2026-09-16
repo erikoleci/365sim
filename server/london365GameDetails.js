@@ -54,6 +54,9 @@ function parseScore(sc) {
 // real change after a restart is treated as "first seen" instead of a
 // diff — never produces a false card duplicate.
 const lastSeen = new Map();
+// EID -> last-touched timestamp, for ALL eids (matched or not) — used only
+// by pruneStaleLiveState below to bound the maps' growth over time.
+const lastTouched = new Map();
 const unknownEidWarned = new Set();
 // EID -> last {minute, homeScore, awayScore, ts} actually sent over the
 // 'live' WS broadcast. applyGameDetails runs ~1/sec per live match from
@@ -75,6 +78,7 @@ export function __resetLiveStateForTests() {
   lastSeen.clear();
   lastBroadcast.clear();
   unknownEidWarned.clear();
+  lastTouched.clear();
 }
 
 // MEMORY LEAK FIX: lastSeen/lastBroadcast/unknownEidWarned are module-level
@@ -88,6 +92,49 @@ export function forgetLiveState(eid) {
   lastSeen.delete(id);
   lastBroadcast.delete(id);
   unknownEidWarned.delete(id);
+  lastTouched.delete(id);
+}
+
+// MEMORY LEAK FIX #2: forgetLiveState above only ever runs for matches we
+// actually imported (called from london365.js when one of THOSE ends). The
+// gamedetails socket, however, is a GLOBAL feed — it pushes updates for
+// every live match on the provider worldwide, most of which never match
+// anything in matches_cache (different country/league — see
+// LONDON365_ONLY_COUNTRIES). Every one of those "unknown" EIDs still hit
+// the `lastSeen.set(eid, ...)` / `unknownEidWarned.add(eid)` lines below,
+// and since forgetLiveState never fires for an EID we never imported, both
+// maps grew without bound for the entire life of the process — this is
+// what was actually behind the "JavaScript heap out of memory" crash
+// (confirmed hitting the heap limit ~9 minutes after boot in production
+// logs), not any single large object. This sweep is the backstop for that:
+// called on an interval (see startStaleLiveStateSweep), it drops any EID
+// (matched or not) not touched in STALE_AFTER_MS, which is far longer than
+// any real match (including extra time/penalties) could plausibly still be
+// live, so a genuinely in-progress match is never affected.
+const STALE_AFTER_MS = 4 * 60 * 60 * 1000; // 4 hours
+export function pruneStaleLiveState(now = Date.now()) {
+  let pruned = 0;
+  for (const [eid, ts] of lastTouched) {
+    if (now - ts >= STALE_AFTER_MS) {
+      lastSeen.delete(eid);
+      unknownEidWarned.delete(eid);
+      lastTouched.delete(eid);
+      pruned++;
+    }
+  }
+  for (const [matchId, entry] of lastBroadcast) {
+    if (entry && now - entry.ts >= STALE_AFTER_MS) lastBroadcast.delete(matchId);
+  }
+  if (pruned) console.log(`[live] pruned ${pruned} stale in-memory EID entries (heap leak guard)`);
+  return pruned;
+}
+
+let staleSweepTimer = null;
+export function startStaleLiveStateSweep(intervalMs = 30 * 60 * 1000) {
+  if (staleSweepTimer) return staleSweepTimer;
+  staleSweepTimer = setInterval(() => pruneStaleLiveState(), intervalMs);
+  if (staleSweepTimer.unref) staleSweepTimer.unref();
+  return staleSweepTimer;
 }
 
 
@@ -95,6 +142,7 @@ export async function applyGameDetails(raw) {
   const attrs = parseGameDetails(raw);
   if (!attrs) return;
   const eid = attrs.EID;
+  lastTouched.set(eid, Date.now());
   const t = Number(attrs.T);
   const prevSeen = lastSeen.get(eid);
   // Tracks the card-count baseline separately from `prevSeen` itself: when
