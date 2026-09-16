@@ -120,6 +120,28 @@ const ONLY_COUNTRIES = new Set(
 // Champions League etc, which live under their own "International" country
 // bucket, not under any single nation.
 if (ONLY_COUNTRIES.size) ONLY_COUNTRIES.add('international');
+
+// The "International" country bucket covers ALL continental/international
+// competitions the provider carries — UEFA Champions/Europa/Conference
+// League and Nations League, but also things like Copa Libertadores,
+// Copa Sudamericana, AFC competitions, and CONMEBOL World Cup qualifiers.
+// Blanket-allowing the whole "International" bucket (the line above) meant
+// someone scoping LONDON365_ONLY_COUNTRIES down to European leagues still
+// got South American club competitions in their Live tab (reported: Sao
+// Paulo FC vs Boca Juniors showing up despite a europe-only country list)
+// — not a bug in the country filter itself, just too broad a carve-out.
+// Narrow it to league NAMES that are actually UEFA/European competitions.
+const EUROPEAN_INTERNATIONAL_COMPETITION_RE =
+  /\b(uefa|nations league|euro(?:pean)?\s*(?:championship|qualif))/i;
+// "Champions/Europa/Conference League" alone (no "UEFA" prefix) is also
+// common in feeds for the European competitions specifically, but AFC/CAF/
+// CONCACAF/OFC run their own "Champions League" too — so only match the
+// bare name when it is NOT prefixed by another confederation's acronym.
+const BARE_EUROPEAN_CUP_RE = /(?<!\b(?:afc|caf|concacaf|ofc)\s)\b(champions league|europa league|conference league)\b/i;
+export function isEuropeanInternationalCompetition(leagueName) {
+  const name = String(leagueName || '');
+  return EUROPEAN_INTERNATIONAL_COMPETITION_RE.test(name) || BARE_EUROPEAN_CUP_RE.test(name);
+}
 // TEST MODE: restrict ingestion to a fixed whitelist of leagues (5 top
 // domestic leagues + UCL/UEL), processed with bounded parallelism across
 // leagues instead of the normal sequential loop. Off by default — normal
@@ -1195,6 +1217,12 @@ export async function importLondon365(opts) {
         const isPriority = countryName && PRIORITY_COUNTRIES.has(countryName.toLowerCase());
         if (countryName && EXCLUDED_COUNTRIES.has(countryName.toLowerCase())) return;
         if (ONLY_COUNTRIES.size && !(countryName && ONLY_COUNTRIES.has(countryName.toLowerCase()))) return;
+        // Extra narrowing specifically for the "International" bucket (see
+        // isEuropeanInternationalCompetition comment) — only when the user
+        // has actually scoped ONLY_COUNTRIES down; with no restriction
+        // configured, every international competition is imported as before.
+        if (ONLY_COUNTRIES.size && countryName && countryName.toLowerCase() === 'international'
+            && !isEuropeanInternationalCompetition(league.name)) return;
         if (isMinorLeague(league.name, countryName)) return;
 
         let games;
@@ -1899,9 +1927,18 @@ export async function purgeCountriesNotInOnlyList() {
     const { rows } = await pool.query("SELECT DISTINCT league FROM matches_cache WHERE id LIKE 'l365-%'");
     let purged = 0;
     for (const { league: key } of rows) {
-      const m = /^l365_([a-z0-9-]+)__/.exec(key);
+      const m = /^l365_([a-z0-9-]+)__(.*)$/.exec(key);
       if (!m) continue; // pre-migration format, handled by purgeLegacyLeagueKeyFormat instead
-      if (allowedTokens.has(m[1])) continue;
+      const [, token, competitionSlug] = m;
+      if (allowedTokens.has(token)) {
+        // Still inside the allowed country set overall, but the
+        // "international" bucket needs the extra European-competition-name
+        // narrowing applied at import time (see isEuropeanInternationalCompetition)
+        // — this is what actually purges a Copa Libertadores row that was
+        // already sitting in matches_cache from before that narrowing
+        // existed, or from before ONLY_COUNTRIES was configured at all.
+        if (token !== 'international' || isEuropeanInternationalCompetition(competitionSlug.replace(/-/g, ' '))) continue;
+      }
       const { rowCount } = await pool.query(
         `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league = $1`,
         [key]
