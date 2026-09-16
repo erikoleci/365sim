@@ -13,11 +13,19 @@ const Login: React.FC<LoginProps> = ({ onAuthenticated }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [slowConnect, setSlowConnect] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsSubmitting(true);
+    setSlowConnect(false);
+    // Free-tier hosting can take 50+ seconds to wake up from idle (see
+    // services/api.ts's request() retry). A static "Please wait..." for
+    // that whole time looks identical to a genuinely frozen page, so after
+    // a few seconds switch to a message that explains what's actually
+    // happening instead of leaving the person guessing.
+    const slowTimer = setTimeout(() => setSlowConnect(true), 4000);
     try {
       const user = mode === 'login'
         ? await api.login(username, password)
@@ -26,7 +34,9 @@ const Login: React.FC<LoginProps> = ({ onAuthenticated }) => {
     } catch (err: any) {
       setError(err.message || 'Something went wrong');
     } finally {
+      clearTimeout(slowTimer);
       setIsSubmitting(false);
+      setSlowConnect(false);
     }
   };
 
@@ -92,7 +102,7 @@ const Login: React.FC<LoginProps> = ({ onAuthenticated }) => {
             disabled={isSubmitting}
             className="w-full bg-brand-header hover:bg-brand-headerDark text-white font-bold py-3 rounded transition-colors shadow-lg disabled:opacity-50"
           >
-            {isSubmitting ? 'Please wait...' : mode === 'login' ? 'Log In' : 'Create Account'}
+            {isSubmitting ? (slowConnect ? 'Duke u lidhur me serverin…' : 'Please wait...') : mode === 'login' ? 'Log In' : 'Create Account'}
           </button>
 
           <button

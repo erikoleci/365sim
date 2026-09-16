@@ -26,7 +26,7 @@ function setToken(token: string | null) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, opts: { retry?: boolean } = {}): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -34,15 +34,50 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const resp = await fetch(`${API_BASE}/api${path}`, { ...options, headers });
-  const contentType = resp.headers.get('content-type') || '';
-  const body = contentType.includes('application/json') ? await resp.json() : null;
+  // Free-tier hosting (Render et al.) spins the backend down after
+  // inactivity and can take 50+ seconds to wake back up on the next
+  // request. During that window fetch() never gets a real HTTP response
+  // at all — it just throws (connection refused/reset) — so this retries
+  // ONLY on that network-level failure, automatically riding out a cold
+  // start instead of surfacing a scary "can't connect" error on the very
+  // first request after the app has been idle. A real HTTP error response
+  // (e.g. 401 for a wrong password) means the server IS up and answered,
+  // so that path below is untouched and still fails immediately.
+  //
+  // Scoped to GET (safe/idempotent) plus explicitly-opted-in calls
+  // (login/register: a retried login is harmless, and register on a
+  // network failure never reached the server to begin with) — NOT
+  // mutating calls like placing a bet or crediting a balance by default,
+  // since fetch() throwing after the request already reached the server
+  // but before the response came back, though rare, could otherwise mean
+  // retrying resubmits something that already happened.
+  const method = (options.method || 'GET').toUpperCase();
+  const retryable = opts.retry ?? method === 'GET';
+  const maxAttempts = retryable ? 9 : 1;
+  const retryDelayMs = 5000;
 
-  if (!resp.ok) {
-    const message = body?.error || `Request failed (${resp.status})`;
-    throw new Error(message);
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    let resp: Response;
+    try {
+      resp = await fetch(`${API_BASE}/api${path}`, { ...options, headers });
+    } catch (networkErr) {
+      if (attempt < maxAttempts - 1) {
+        await new Promise((r) => setTimeout(r, retryDelayMs));
+        continue;
+      }
+      throw new Error("S'arritëm të lidhemi me serverin. Kontrollo internetin dhe provo përsëri.");
+    }
+    const contentType = resp.headers.get('content-type') || '';
+    const body = contentType.includes('application/json') ? await resp.json() : null;
+    if (!resp.ok) {
+      const message = body?.error || `Request failed (${resp.status})`;
+      throw new Error(message);
+    }
+    return body as T;
   }
-  return body as T;
+  // Unreachable in practice (the loop above always returns or throws),
+  // kept only so TypeScript sees every path returning/throwing.
+  throw new Error("S'arritëm të lidhemi me serverin. Kontrollo internetin dhe provo përsëri.");
 }
 
 // --- Auth ---
@@ -51,7 +86,7 @@ export async function login(username: string, password: string): Promise<User> {
   const data = await request<{ token: string; user: User }>('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ username, password }),
-  });
+  }, { retry: true });
   setToken(data.token);
   return data.user;
 }
@@ -60,7 +95,7 @@ export async function register(name: string, username: string, password: string)
   const data = await request<{ token: string; user: User }>('/auth/register', {
     method: 'POST',
     body: JSON.stringify({ name, username, password }),
-  });
+  }, { retry: true });
   setToken(data.token);
   return data.user;
 }
