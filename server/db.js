@@ -24,6 +24,17 @@ export const pool = new Pool({
   connectionTimeoutMillis: 15000,
   statement_timeout: 15000,
   idleTimeoutMillis: 30000,
+  // Aiven's free Postgres plan caps the WHOLE server at 20 connections
+  // total, shared across every client that's ever connected — not just
+  // this app. pg's own default (10) already eats half that on its own, and
+  // during a Render rolling deploy the OLD instance keeps its pool open
+  // for a few seconds while the NEW one starts and opens its own — briefly
+  // doubling usage right at the boundary. That's exactly when
+  // "remaining connection slots are reserved for roles with the SUPERUSER
+  // attribute" showed up in the logs. Capping lower here, plus shorter
+  // idle release, leaves headroom for that overlap instead of two
+  // instances racing to exhaust the server's entire connection budget.
+  max: 6,
 });
 
 // REQUIRED by node-postgres: an idle client in the pool can be dropped by
@@ -359,11 +370,19 @@ export async function cleanupOldData() {
     // Only finished matches, and only once well past their kick-off, so we
     // never touch anything a user could still be looking at (live or
     // upcoming) or that settlement/reports might still need shortly after
-    // full-time.
+    // full-time. BUG FIX: this referenced matches_cache.updated_at, a
+    // column that has never existed on this table (see the schema above —
+    // only fetched_at/settled_at) — the whole query failed every single
+    // time cleanup ran ("column \"updated_at\" does not exist"), silently
+    // leaving finished matches to accumulate forever, which is exactly
+    // what this function exists to prevent. settled_at is set by
+    // matchSettlement.js the moment a match is actually settled, so it's
+    // the correct column for "how long ago did this finish".
     results.matches_cache = (await pool.query(
       `DELETE FROM matches_cache
        WHERE status = 'FINISHED'
-         AND updated_at < $1`,
+         AND settled_at IS NOT NULL
+         AND settled_at < $1`,
       [now - RETENTION_MS.finishedMatchesDays * day]
     )).rowCount;
 
