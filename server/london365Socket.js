@@ -275,6 +275,21 @@ export function subscribeGameDetails(gameId) {
   }
 }
 
+// MEMORY LEAK FIX: subscribeGameDetails only ever added to
+// subscribedGameIds, with nothing anywhere removing an id once its match
+// finished. Every match that had ever gone live stayed subscribed forever,
+// and on every reconnect (see the 'connect' handler above) the ENTIRE
+// history was re-emitted to the provider — a Set that only grows, replayed
+// in full on every reconnect, for as long as the process stays up. Over
+// days of uptime with hundreds of matches/day this is exactly the kind of
+// unbounded growth that shows up as a slow heap climb ending in
+// "JavaScript heap out of memory". Called from the two places a match is
+// confirmed finished (see london365.js).
+export function unsubscribeGameDetails(gameId) {
+  const id = String(gameId || '').replace(/^l365-/, '');
+  subscribedGameIds.delete(id);
+}
+
 export function stopLondon365GameDetailsSocket() {
   if (!gameDetailsSocket) return;
   try { gameDetailsSocket.close(); } catch (err) { /* ignore */ }

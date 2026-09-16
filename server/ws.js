@@ -45,12 +45,24 @@ export function initWebSocket(httpServer) {
       }
       if (msg.type === 'unsubscribe' && typeof msg.topic === 'string') {
         socket.topics.delete(msg.topic);
-        subscribers.get(msg.topic)?.delete(socket);
+        const set = subscribers.get(msg.topic);
+        set?.delete(socket);
+        // MEMORY LEAK FIX: the Map entry itself was never removed once its
+        // Set emptied out — same unbounded-growth pattern found in the
+        // london365 live feed (see london365Socket.js/london365GameDetails.js).
+        // Per-match topics (`match:<id>`) accumulate one permanent empty-Set
+        // entry for every match ANY client has ever viewed, for the life of
+        // the process.
+        if (set && set.size === 0) subscribers.delete(msg.topic);
       }
     });
 
     socket.on('close', () => {
-      for (const topic of socket.topics) subscribers.get(topic)?.delete(socket);
+      for (const topic of socket.topics) {
+        const set = subscribers.get(topic);
+        set?.delete(socket);
+        if (set && set.size === 0) subscribers.delete(topic);
+      }
     });
   });
 

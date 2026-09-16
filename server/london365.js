@@ -35,6 +35,14 @@ import pool, { getKV, setKV } from './db.js';
 import { diffOddsChanges } from './oddsUtils.js';
 import { pushOddsChanged, pushGoal, pushGoalDisallowed, pushMatchEnded } from './ws.js';
 import { settleMatch } from './matchSettlement.js';
+// Deferred/lazy-safe: these two only import each other's functions for use
+// inside function bodies (never at module top-level), so the cycle
+// (london365.js <-> london365GameDetails.js, and via london365Socket.js)
+// resolves fine under ESM's live bindings. Used to release per-match
+// in-memory state the instant a match is confirmed finished — see the
+// MEMORY LEAK FIX comments at their definitions.
+import { forgetLiveState } from './london365GameDetails.js';
+import { unsubscribeGameDetails } from './london365Socket.js';
 
 const ENABLED = (process.env.LONDON365_ENABLED || '1') === '1';
 const API_BASE = process.env.LONDON365_API || 'https://eccoplay365.com';
@@ -1554,6 +1562,8 @@ export async function syncLondon365Live() {
       const away = row.live_away_score ?? 0;
       await pool.query("UPDATE matches_cache SET live_status = 'ended' WHERE id = $1", [row.id]);
       pushMatchEnded(row.id, { homeScore: home, awayScore: away });
+      forgetLiveState(row.id);
+      unsubscribeGameDetails(row.id);
       try {
         await settleMatch(row.id, home, away);
         console.log('[london365] auto-settled ' + row.id + ' ' + home + '-' + away);
@@ -1651,6 +1661,8 @@ export async function markLondon365GameEnded(gameId) {
     if (res && res.rowCount) {
       const row = rows[0] || {};
       pushMatchEnded(id, { homeScore: row.live_home_score ?? 0, awayScore: row.live_away_score ?? 0 });
+      forgetLiveState(id);
+      unsubscribeGameDetails(id);
     }
     return res ? res.rowCount : 0;
   });

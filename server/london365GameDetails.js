@@ -77,6 +77,19 @@ export function __resetLiveStateForTests() {
   unknownEidWarned.clear();
 }
 
+// MEMORY LEAK FIX: lastSeen/lastBroadcast/unknownEidWarned are module-level
+// maps keyed by EID that only ever grew — nothing removed an entry once its
+// match finished, so every match ever seen live stayed in memory for the
+// life of the process. Called from the two places in london365.js that
+// confirm a match has ended.
+export function forgetLiveState(eid) {
+  const id = String(eid || '').replace(/^l365-/, '');
+  if (!id) return;
+  lastSeen.delete(id);
+  lastBroadcast.delete(id);
+  unknownEidWarned.delete(id);
+}
+
 
 export async function applyGameDetails(raw) {
   const attrs = parseGameDetails(raw);
