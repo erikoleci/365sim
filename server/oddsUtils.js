@@ -198,6 +198,32 @@ export function mapEventToMatch(row) {
   });
 
   const status = normalizeStatus(row.start_time, row.status);
+
+  // Estimated first-half minute, ONLY as a fallback for when the provider
+  // hasn't returned a confirmed live_minute yet (this genuinely happens --
+  // /ajax/livegame/{id} can come back with no markets, e.g. right at
+  // kickoff or during a goal/VAR suspension, and the field stays empty).
+  // Deliberately scoped to 0-45 minutes elapsed since kickoff: within that
+  // window there's no half-time/second-half ambiguity to guess about --
+  // "elapsed wall-clock time since a known kickoff timestamp" is simple
+  // arithmetic on trustworthy data, not inventing a value. Beyond 45
+  // minutes elapsed, the real duration of stoppage time, half-time, and
+  // whether the second half has even started are all genuinely unknown
+  // without the provider's own minute/status, so this deliberately does
+  // NOT extend the estimate past that point -- showing nothing (falls
+  // back to the generic "LIVE" label) is preferred over fabricating a
+  // number that drifts further from reality the longer the match runs.
+  let estimatedMinute;
+  if (status === 'LIVE' && !row.live_minute) {
+    const rawLiveStatus = (row.live_status || '').toString().toUpperCase().trim();
+    const halfKnownNotFirstHalf = rawLiveStatus && rawLiveStatus !== '1H' && rawLiveStatus !== 'FIRST_HALF';
+    const kickoff = Date.parse(row.start_time);
+    if (!halfKnownNotFirstHalf && !Number.isNaN(kickoff)) {
+      const elapsedMin = Math.floor((Date.now() - kickoff) / 60000);
+      if (elapsedMin >= 0 && elapsedMin <= 45) estimatedMinute = String(elapsedMin);
+    }
+  }
+
   return {
     id: row.id,
     league: row.league,
@@ -215,7 +241,7 @@ export function mapEventToMatch(row) {
     bookmakerCount: (ev.bookmakers || []).length,
     liveHomeScore: row.live_home_score ?? undefined,
     liveAwayScore: row.live_away_score ?? undefined,
-    currentMinute: row.live_minute ?? undefined,
+    currentMinute: row.live_minute ?? estimatedMinute,
     liveStatus: row.live_status ?? undefined,
     score: status === 'FINISHED' && row.result_home !== null && row.result_away !== null
       ? { home: row.result_home, away: row.result_away, htHome: 0, htAway: 0, homeYellowCards: 0, awayYellowCards: 0, homeCorners: 0, awayCorners: 0, scorers: [] }

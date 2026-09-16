@@ -124,3 +124,53 @@ describe('mapEventToMatch (dynamic/unknown markets)', () => {
     expect(odds).toBe(1.85);
   });
 });
+
+describe('mapEventToMatch — estimated minute fallback (only when the provider has not confirmed one)', () => {
+  const liveRow = (overrides = {}) => ({
+    ...row(sampleEvent()),
+    status: 'LIVE',
+    live_minute: null,
+    live_status: null,
+    ...overrides,
+  });
+  const minutesAgo = (n) => new Date(Date.now() - n * 60000).toISOString();
+
+  it('estimates the minute from kickoff time when the provider has not sent one yet', () => {
+    const match = mapEventToMatch(liveRow({ start_time: minutesAgo(12) }));
+    expect(match.currentMinute).toBe('12');
+  });
+
+  it('never overrides a real, provider-confirmed minute', () => {
+    const match = mapEventToMatch(liveRow({ start_time: minutesAgo(12), live_minute: '30' }));
+    expect(match.currentMinute).toBe('30');
+  });
+
+  it('does not estimate past 45 minutes elapsed (half-time/second-half is genuinely ambiguous beyond that)', () => {
+    const match = mapEventToMatch(liveRow({ start_time: minutesAgo(60) }));
+    expect(match.currentMinute).toBeUndefined();
+  });
+
+  it('does not estimate when live_status already says we are past the first half (HT/2H/FT/etc.)', () => {
+    const ht = mapEventToMatch(liveRow({ start_time: minutesAgo(12), live_status: 'HT' }));
+    expect(ht.currentMinute).toBeUndefined();
+    const secondHalf = mapEventToMatch(liveRow({ start_time: minutesAgo(12), live_status: '2H' }));
+    expect(secondHalf.currentMinute).toBeUndefined();
+  });
+
+  it('does not estimate for a match that is not LIVE (upcoming/finished)', () => {
+    const upcoming = mapEventToMatch({ ...liveRow({ start_time: minutesAgo(-30) }), status: 'UPCOMING' });
+    expect(upcoming.currentMinute).toBeUndefined();
+  });
+
+  it('does not estimate when the kickoff time cannot be parsed', () => {
+    const match = mapEventToMatch(liveRow({ start_time: 'not-a-real-date' }));
+    expect(match.currentMinute).toBeUndefined();
+  });
+
+  it('handles the boundary at exactly 45 minutes elapsed', () => {
+    const at45 = mapEventToMatch(liveRow({ start_time: minutesAgo(45) }));
+    expect(at45.currentMinute).toBe('45');
+    const at46 = mapEventToMatch(liveRow({ start_time: minutesAgo(46) }));
+    expect(at46.currentMinute).toBeUndefined();
+  });
+});
