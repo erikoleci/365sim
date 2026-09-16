@@ -21,7 +21,7 @@ import {
   markLondon365GameEnded,
   removeSocketCoef,
 } from './london365.js';
-import { applyGameDetails } from './london365GameDetails.js';
+import { applyGameDetails, startStaleLiveStateSweep } from './london365GameDetails.js';
 
 const SOCKET_URL = process.env.LONDON365_SOCKET || 'https://ecco.socketi355.com:1440';
 const SOCKET_ENABLED = (process.env.LONDON365_SOCKET_ENABLED || '1') === '1';
@@ -148,6 +148,15 @@ export function stopLondon365Socket() {
 // waiting for the next REST/live-loop cycle (see applyGameDetails).
 export async function startLondon365GameDetailsSocket() {
   if (!isLondon365Enabled() || !GAMEDETAILS_SOCKET_ENABLED || gameDetailsSocket) return;
+
+  // Heap-leak guard: this socket receives updates for every live match on
+  // the provider worldwide, and most never match anything we imported (see
+  // pruneStaleLiveState's comment in london365GameDetails.js for why that
+  // otherwise grows the in-memory tracking maps without bound). Starting
+  // the sweep here ties its lifetime to this socket's, and it's a no-op
+  // (early-returns) if already running, so this is safe even if this
+  // function is ever called more than once.
+  startStaleLiveStateSweep();
 
   let io;
   try {
