@@ -768,14 +768,40 @@ export function minuteToNumber(minute) {
   return m ? Number(m[1]) : null;
 }
 
-async function upsertMatch(ev, league, status, liveScores, liveInfo) {
+export async function upsertMatch(ev, league, status, liveScores, liveInfo) {
   return withDbLock(ev.id, async () => {
     const now = Date.now();
     const { rows } = await pool.query(
-      'SELECT raw_json, status, live_home_score, live_away_score, live_minute FROM matches_cache WHERE id = $1',
+      'SELECT raw_json, status, live_home_score, live_away_score, live_minute, home_team, away_team FROM matches_cache WHERE id = $1',
       [ev.id]
     );
-    const existing = rows[0];
+    let existing = rows[0];
+
+    // Defends against the provider reusing an id (EID) for a LATER,
+    // unrelated real-world match once the earlier one is done with it —
+    // production data has shown this happening (see the T-field comment in
+    // london365GameDetails.js: same EID, score AND the per-EID counter both
+    // went backwards over time, which a genuine correction to the SAME
+    // match cannot do). Detected conservatively: the two teams playing are
+    // a fact that cannot change mid-match, so if the incoming event's team
+    // names don't match what's on record for this id, treat it as a fresh
+    // match rather than a continuation. This matters most for a match we'd
+    // previously marked FINISHED: the UPSERT below has a "status can never
+    // leave FINISHED" guard (so a stray late update can't un-finish an
+    // already-settled match) — without this check, that guard would also
+    // permanently trap a genuinely NEW live match under a reused id at
+    // status=FINISHED forever, since it inherits the old match's row.
+    const isDifferentMatch = existing && ev.home_team && ev.away_team
+      && (existing.home_team !== ev.home_team || existing.away_team !== ev.away_team);
+    if (isDifferentMatch) {
+      console.warn(
+        `[london365] id ${ev.id} now reports different teams (` +
+        `was "${existing.home_team}" vs "${existing.away_team}", ` +
+        `now "${ev.home_team}" vs "${ev.away_team}") — treating as a reused id / new match, ` +
+        `not a continuation of the old one`
+      );
+      existing = undefined;
+    }
 
     let rawToStore = JSON.stringify(ev);
     if (existing) {
@@ -812,13 +838,19 @@ async function upsertMatch(ev, league, status, liveScores, liveInfo) {
          home_team = excluded.home_team,
          away_team = excluded.away_team,
          start_time = excluded.start_time,
-         status = CASE WHEN matches_cache.status = 'FINISHED' THEN matches_cache.status ELSE excluded.status END,
+         status = CASE WHEN $13 THEN excluded.status
+                       WHEN matches_cache.status = 'FINISHED' THEN matches_cache.status
+                       ELSE excluded.status END,
          raw_json = excluded.raw_json,
          fetched_at = excluded.fetched_at,
-         live_home_score = COALESCE(excluded.live_home_score, matches_cache.live_home_score),
-         live_away_score = COALESCE(excluded.live_away_score, matches_cache.live_away_score),
-         live_minute = COALESCE(excluded.live_minute, matches_cache.live_minute),
-         live_status = COALESCE(excluded.live_status, matches_cache.live_status)`,
+         live_home_score = CASE WHEN $13 THEN excluded.live_home_score
+                                 ELSE COALESCE(excluded.live_home_score, matches_cache.live_home_score) END,
+         live_away_score = CASE WHEN $13 THEN excluded.live_away_score
+                                 ELSE COALESCE(excluded.live_away_score, matches_cache.live_away_score) END,
+         live_minute = CASE WHEN $13 THEN excluded.live_minute
+                             ELSE COALESCE(excluded.live_minute, matches_cache.live_minute) END,
+         live_status = CASE WHEN $13 THEN excluded.live_status
+                             ELSE COALESCE(excluded.live_status, matches_cache.live_status) END`,
       [
         ev.id, league, ev.home_team, ev.away_team, ev.commence_time, status,
         rawToStore, now,
@@ -826,6 +858,7 @@ async function upsertMatch(ev, league, status, liveScores, liveInfo) {
         liveScores ? liveScores.away : null,
         liveInfo && liveInfo.minute ? liveInfo.minute : null,
         liveInfo && liveInfo.apiStatus != null ? String(liveInfo.apiStatus) : null,
+        Boolean(isDifferentMatch),
       ]
     );
     return existing;

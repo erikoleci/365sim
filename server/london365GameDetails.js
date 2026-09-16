@@ -9,11 +9,19 @@
 //   H / A      -> home / away team name
 //   YC1 / YC2  -> yellow card count, home / away
 //   RC1 / RC2  -> red card count, home / away
-//   T          -> a per-EID counter that strictly increases with every
-//                 update (2921 -> 2922 -> 2924 -> ...). Its exact meaning
-//                 (tick? server timestamp?) is NOT confirmed, so it is
-//                 used ONLY as an opaque de-duplication/ordering key —
-//                 never displayed or treated as a minute.
+//   T          -> a per-EID counter that increases with most updates
+//                 (2921 -> 2922 -> 2924 -> ...) within a single match's
+//                 lifetime. IMPORTANT: production data has also shown T
+//                 (and the score!) going BACKWARDS for the same EID over
+//                 time -- the most plausible explanation is the provider
+//                 reusing an EID for a later, unrelated match/session once
+//                 the earlier one is done with it. So T is used only as a
+//                 same-session de-dup/ordering key, and a DECREASE is
+//                 treated as "this EID has moved on to a new session" (see
+//                 applyGameDetails below) rather than assumed to always
+//                 mean a stale duplicate. Its exact underlying meaning
+//                 (tick? server timestamp?) is still NOT confirmed, so it
+//                 is never displayed or treated as a minute.
 //
 // FIELDS DELIBERATELY NOT MAPPED (no confirmed meaning — see instructions):
 //   H1-H8, A1-A8, XY, PG, AM, TA, TT, Pj, S, KC1, KC2, TC1, TC2, VC
@@ -76,12 +84,36 @@ export async function applyGameDetails(raw) {
   const eid = attrs.EID;
   const t = Number(attrs.T);
   const prevSeen = lastSeen.get(eid);
+  // Tracks the card-count baseline separately from `prevSeen` itself: when
+  // the T-decrease branch below resets tracking for this EID (reused id /
+  // new match), the OLD match's leftover yellow/red card counts must not
+  // be used as the baseline for the new match's first diff — that would
+  // either fabricate "cards" for the new match (if its real count is lower
+  // than the old leftover) or silently miss its first real card (if the
+  // new count doesn't yet exceed the old one).
+  let cardBaseline = prevSeen;
 
-  // De-dup / ordering: T strictly increases per EID on every real update
-  // (confirmed from captured sequences). A non-increasing T for an EID
-  // we've already seen is the exact "provider re-sent the same update"
-  // case instructions #11 warns about — skip it outright.
-  if (prevSeen && Number.isFinite(t) && t <= prevSeen.t) return;
+  // De-dup / ordering within one EID's session: an EXACT repeat of the
+  // last T we saw is the "provider re-sent the identical update" case and
+  // is safe to skip outright. A DECREASE, however, is NOT treated as a
+  // stale duplicate to discard — production data has shown T (and the
+  // score) going backwards for the same EID, most plausibly because the
+  // provider reused that EID for a later, unrelated match once the
+  // earlier one ended. Silently dropping every update forever after that
+  // point (the previous behavior) would freeze a genuinely live new match
+  // on this fast socket path indefinitely, since its T would almost never
+  // climb back above the old match's peak. So a decrease instead clears
+  // this EID's tracking and falls through to processing the update
+  // normally, as if seeing this EID for the first time. This is safe even
+  // if the decrease is actually just a rare out-of-order duplicate
+  // delivery rather than a genuine reuse: recordGoalIfChanged below makes
+  // its own idempotency decision from the current DB row, not from this
+  // in-memory counter, so re-processing an identical score is still a
+  // no-op there either way.
+  if (prevSeen && Number.isFinite(t)) {
+    if (t === prevSeen.t) return;
+    if (t < prevSeen.t) { lastSeen.delete(eid); cardBaseline = null; }
+  }
 
   const matchId = 'l365-' + eid;
   const { rows } = await pool.query(
@@ -170,7 +202,7 @@ export async function applyGameDetails(raw) {
 
   const yc1 = Number(attrs.YC1) || 0, yc2 = Number(attrs.YC2) || 0;
   const rc1 = Number(attrs.RC1) || 0, rc2 = Number(attrs.RC2) || 0;
-  const prevCards = prevSeen || { yc1: 0, yc2: 0, rc1: 0, rc2: 0 };
+  const prevCards = cardBaseline || { yc1: 0, yc2: 0, rc1: 0, rc2: 0 };
   const now = Date.now();
   const minuteNum = minuteToNumber(minuteDisplay);
 
