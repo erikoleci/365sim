@@ -1199,6 +1199,7 @@ const App: React.FC = () => {
           ) : detailMatch ? (
             <MatchDetail
               match={detailMatch}
+              leagueLabel={leagueLabel(detailMatch.league)}
               onClose={() => setDetailMatchId(null)}
               onBetClick={handleToggleSelection}
               selectedIds={selectedIds}

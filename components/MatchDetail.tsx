@@ -7,6 +7,7 @@ import { LONDON365_EVENT_LABELS, LONDON365_STAT_LABELS } from '../utils/london36
 
 interface MatchDetailProps {
   match: Match;
+  leagueLabel: string;
   onClose: () => void;
   onBetClick: (match: Match, marketId: string, selectionId: string) => void;
   selectedIds: string[];
@@ -50,7 +51,7 @@ const StatBar: React.FC<{ label: string; home: number | null; away: number | nul
   );
 };
 
-const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, selectedIds }) => {
+const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, onBetClick, selectedIds }) => {
   const isFinished = match.status === MatchStatus.FINISHED;
   const hasLiveData = match.status === MatchStatus.LIVE || isFinished;
   const [activeTab, setActiveTab] = useState<string>('All');
@@ -164,7 +165,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
         </button>
         
         <div className="mt-4 text-center">
-             <div className="text-xs text-brand-textMuted uppercase tracking-wider mb-2">{match.league}</div>
+             <div className="text-xs text-brand-textMuted uppercase tracking-wider mb-2">{leagueLabel}</div>
              {match.status === MatchStatus.LIVE && (
                <div className="mb-4">
                  <LivePitch match={match} stats={liveDetail?.statistics ?? null} />
