@@ -42,7 +42,7 @@ import { settleMatch } from './matchSettlement.js';
 // in-memory state the instant a match is confirmed finished — see the
 // MEMORY LEAK FIX comments at their definitions.
 import { forgetLiveState } from './london365GameDetails.js';
-import { unsubscribeGameDetails } from './london365Socket.js';
+import { unsubscribeGameDetails, getSubscribedGameDetailsIds } from './london365Socket.js';
 
 const ENABLED = (process.env.LONDON365_ENABLED || '1') === '1';
 const API_BASE = process.env.LONDON365_API || 'https://eccoplay365.com';
@@ -1373,6 +1373,19 @@ export async function importLondon365(opts) {
     // next to the correctly-updating real-named league.
     await purgeCountryPrefixedDuplicateLeagues();
     await purgeCountriesNotInOnlyList();
+    // BUG FIX (memory leak / OOM root cause): the purge* functions above
+    // delete matches_cache rows without regard to LIVE status and without
+    // calling unsubscribeGameDetails/forgetLiveState — unlike the two
+    // "match confirmed finished" call sites elsewhere in this file. If a
+    // row that was LIVE gets purged here (redundant league key, excluded
+    // country, etc.), its gamedetails-socket subscription is never
+    // cancelled: the provider keeps pushing updates for that EID for as
+    // long as it's live on THEIR side (up to hours), each one triggering a
+    // DB round-trip that never finds a row, at the feed's full tick rate —
+    // observed in production reaching a heap OOM crash within ~10 minutes.
+    // Reconcile after every purge pass: drop any subscription whose match
+    // id is no longer LIVE in matches_cache.
+    await reconcileGameDetailsSubscriptions();
     await setKV('l365_last_import', Date.now());
     console.log(
       '[london365] import done: ' + matchCount + ' matches, ' + coefficientCount + ' coefficients, ' +
@@ -1858,6 +1871,56 @@ export async function purgeCrossCountryMisclassifiedLeagues() {
 // Runs after every completed import, using that run's own countryMap so
 // "does the league-name half start with the country name" is checked
 // against real country names, not a guess.
+// Drops any gamedetails-socket subscription whose match is no longer LIVE
+// in matches_cache — this is the fix for the OOM root cause described at
+// the purgeCountryPrefixedDuplicateLeagues()/purgeCountriesNotInOnlyList()
+// call site above. Cheap and safe to call often: subscribedGameIds is
+// normally small (only currently-live matches), and unsubscribeGameDetails
+// is a no-op Set.delete for ids that were never subscribed.
+export async function reconcileGameDetailsSubscriptions() {
+  const subscribed = getSubscribedGameDetailsIds();
+  if (!subscribed.size) return 0;
+  const { rows } = await pool.query(
+    "SELECT id FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
+  );
+  const stillLive = new Set(rows.map((r) => r.id.replace(/^l365-/, '')));
+  let dropped = 0;
+  for (const eid of subscribed) {
+    if (!stillLive.has(eid)) {
+      unsubscribeGameDetails(eid);
+      forgetLiveState(eid);
+      dropped++;
+    }
+  }
+  if (dropped) console.log(`[london365] reconciled gamedetails subscriptions: dropped ${dropped} orphaned id(s)`);
+  return dropped;
+}
+
+// Independent safety net: several purge*() functions run standalone at
+// boot (see server.js) and are NOT followed by a reconcile call, so
+// patching only the one import-cycle call site above isn't enough — any of
+// those can orphan a LIVE subscription just as easily. Rather than track
+// down and patch every purge call site (fragile against a future one being
+// added without the same care), run reconciliation on its own short timer,
+// independent of imports/purges entirely. 2 minutes is deliberately much
+// shorter than the 30-minute pruneStaleLiveState sweep in
+// london365GameDetails.js: that one bounds long-term memory for EIDs that
+// never matched anything at all, this one specifically targets the fast
+// runaway case (a real, fast-ticking live subscription with nowhere to
+// land) that was observed reaching heap OOM in under 10 minutes.
+const RECONCILE_INTERVAL_MS = Math.max(30000, Number(process.env.LONDON365_RECONCILE_INTERVAL_MS || 120000));
+let reconcileTimer = null;
+export function startGameDetailsSubscriptionReconcileLoop() {
+  if (reconcileTimer) return reconcileTimer;
+  reconcileTimer = setInterval(() => {
+    reconcileGameDetailsSubscriptions().catch((err) =>
+      console.error('[london365] reconcileGameDetailsSubscriptions failed:', err.message)
+    );
+  }, RECONCILE_INTERVAL_MS);
+  if (reconcileTimer.unref) reconcileTimer.unref();
+  return reconcileTimer;
+}
+
 export async function purgeCountryPrefixedDuplicateLeagues() {
   try {
     const { rows } = await pool.query(

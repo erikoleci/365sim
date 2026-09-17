@@ -26,7 +26,7 @@ import scrapeRouter from './routes/scrape.js';
 import favoritesRouter from './routes/favorites.js';
 import { initDb, cleanupOldData } from './db.js';
 import { initWebSocket } from './ws.js';
-import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCrossCountryMisclassifiedLeagues, purgeCountriesNotInOnlyList, wipeLondon365Data, loadPersistedLeagueMap } from './london365.js';
+import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCrossCountryMisclassifiedLeagues, purgeCountriesNotInOnlyList, wipeLondon365Data, loadPersistedLeagueMap, startGameDetailsSubscriptionReconcileLoop } from './london365.js';
 import { startLondon365Socket, startLondon365GameDetailsSocket } from './london365Socket.js';
 
 let dbReady = false;
@@ -244,6 +244,10 @@ async function start() {
   startLondon365LiveLoop();
   startLondon365Socket();
   startLondon365GameDetailsSocket();
+  // Fix for the "purge*() orphans a LIVE gamedetails subscription -> fast
+  // runaway feed -> heap OOM within ~10 minutes" bug. See the comment on
+  // startGameDetailsSubscriptionReconcileLoop in london365.js.
+  startGameDetailsSubscriptionReconcileLoop();
   // Periodically restore full market detail for events whose initial detail
   // fetch failed (provider rate limits on hosting). Without this, most
   // LondonPro365 matches on Render only show the sparse 1-4 list-level

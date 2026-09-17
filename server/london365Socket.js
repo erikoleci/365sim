@@ -299,6 +299,14 @@ export function unsubscribeGameDetails(gameId) {
   subscribedGameIds.delete(id);
 }
 
+// Read-only view of currently-subscribed (bare, no "l365-" prefix) game
+// ids — used by reconcileGameDetailsSubscriptions() in london365.js to drop
+// subscriptions orphaned by a purge*() that deleted a still-LIVE row
+// without going through the normal "match confirmed finished" cleanup path.
+export function getSubscribedGameDetailsIds() {
+  return new Set(subscribedGameIds);
+}
+
 export function stopLondon365GameDetailsSocket() {
   if (!gameDetailsSocket) return;
   try { gameDetailsSocket.close(); } catch (err) { /* ignore */ }
