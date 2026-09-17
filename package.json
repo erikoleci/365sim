@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "server": "node server/server.js",
+    "server": "node --max-old-space-size=400 server/server.js",
     "server:dev": "node --watch server/server.js"
   },
   "dependencies": {
