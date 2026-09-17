@@ -121,6 +121,17 @@ router.post('/', async (req, res) => {
     if (currentOdds === null) {
       return res.status(400).json({ error: `Selection ${sel.selectionId} in market ${sel.marketId} not found in current odds — it may have closed or moved` });
     }
+    // A price this low is never a genuine quote — it's the provider's
+    // "market suspended" placeholder (see isSuspendedPrice in oddsUtils.js).
+    // Betting must be rejected here even if a stale client somehow still
+    // sent the selection, since the frontend disabling the button is only
+    // a UX nicety, not the actual guard.
+    if (currentOdds <= 1.01) {
+      return res.status(409).json({
+        error: `Betting on ${sel.selectionName} is temporarily suspended — please try again in a moment.`,
+        code: 'SELECTION_SUSPENDED',
+      });
+    }
     if (boostRequested) {
       if (!isBoostEligible(matchRow, sel)) {
         return res.status(400).json({ error: 'This selection is not eligible for the odds boost.' });

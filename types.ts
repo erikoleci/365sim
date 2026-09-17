@@ -32,6 +32,10 @@ export interface MarketOption {
   id: string;
   name: string;
   odds: number;
+  // True when this price is the provider's "market temporarily suspended"
+  // placeholder (see isSuspendedPrice in server/oddsUtils.js), not a real
+  // bettable quote.
+  suspended?: boolean;
 }
 
 export interface Market {
@@ -39,6 +43,8 @@ export interface Market {
   name: string;
   category: string;
   options: MarketOption[];
+  // True only when EVERY option in this market is suspended.
+  suspended?: boolean;
 }
 
 export interface MatchScore {

@@ -304,6 +304,18 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, onClose, onBetClick, s
                     {market.options.map(opt => {
                         const isSelected = selectedIds.includes(`${match.id}-${market.id}-${opt.id}`);
                         const flash = oddsFlash.get(`${market.id}-${opt.id}`);
+                        if (opt.suspended) {
+                          return (
+                            <div
+                              key={opt.id}
+                              className="flex flex-col items-center justify-center py-2 opacity-40 cursor-not-allowed select-none"
+                              title="Tregu është pezulluar përkohësisht"
+                            >
+                              <span className="text-xs text-brand-text">{opt.name}</span>
+                              <span className="font-bold text-sm">🔒</span>
+                            </div>
+                          );
+                        }
                         return (
                         <div
                             key={opt.id}

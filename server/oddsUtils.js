@@ -158,6 +158,20 @@ function normalizeStatus(startTime, dbStatus) {
   return 'LIVE';
 }
 
+// A price this low can never be a genuine 1X2/market quote — it would mean
+// zero margin AND zero payout for backing that outcome, something no
+// bookmaker offers. The provider actually uses exactly this value as its
+// "market temporarily suspended" placeholder (e.g. around a goal/VAR check
+// while it recalculates), with no separate flag anywhere in the feed to
+// say so — so a price this low is the only signal we get. Treated as
+// suspended rather than filtered out entirely so the market still shows
+// (with its real name/selections) but visibly un-bettable, instead of
+// silently vanishing.
+const SUSPENDED_PRICE_THRESHOLD = 1.01;
+function isSuspendedPrice(price) {
+  return typeof price === 'number' && Number.isFinite(price) && price <= SUSPENDED_PRICE_THRESHOLD;
+}
+
 export function mapEventToMatch(row) {
   const ev = JSON.parse(row.raw_json);
   const marketMap = new Map(); // key -> { label, category, outMap }
@@ -180,6 +194,7 @@ export function mapEventToMatch(row) {
             odds: outcome.price,
             bookmaker: bookmaker.title,
             point: outcome.point,
+            suspended: isSuspendedPrice(outcome.price),
           });
         }
       }
@@ -188,12 +203,18 @@ export function mapEventToMatch(row) {
 
   const markets = Array.from(marketMap.entries()).map(([key, entry]) => {
     const meta = getMarketMeta(key, entry.label, entry.category);
+    const options = sortOptions(key, Array.from(entry.outMap.values()));
     return {
       id: `${row.id}-${key}`,
       marketKey: key,
       name: meta.name,
       category: meta.category,
-      options: sortOptions(key, Array.from(entry.outMap.values())),
+      options,
+      // Whole market flagged suspended only when EVERY outcome is at the
+      // placeholder price — if even one outcome has a real price the
+      // market itself is live, just that one selection isn't (rare, but
+      // possible mid-recalculation).
+      suspended: options.length > 0 && options.every((o) => o.suspended),
     };
   });
 

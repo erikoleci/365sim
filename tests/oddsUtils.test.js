@@ -191,3 +191,96 @@ describe('mapEventToMatch — estimated minute fallback (only when the provider 
     expect(at46.currentMinute).toBeUndefined();
   });
 });
+
+describe('mapEventToMatch — suspended markets', () => {
+  // The provider has no explicit "market suspended" flag anywhere in the
+  // feed. In practice it marks a suspended market by sending 1.00 (or
+  // occasionally slightly below, e.g. floating point noise) as the price
+  // for every outcome — a price no real bookmaker ever actually offers,
+  // since it guarantees zero payout. See isSuspendedPrice in oddsUtils.js.
+  const suspendedRow = (overrides = {}) => ({
+    id: 'l365-999',
+    league: 'USL Championship',
+    home_team: 'AC Boise',
+    away_team: 'Charlotte Independence',
+    start_time: new Date(Date.now() - 20 * 60000).toISOString(),
+    status: 'LIVE',
+    raw_json: JSON.stringify(
+      sampleEvent({
+        bookmakers: [
+          {
+            title: 'London365',
+            markets: [
+              {
+                key: 'h2h',
+                outcomes: [
+                  { name: 'AC Boise', price: 1.0 },
+                  { name: 'Draw', price: 1.0 },
+                  { name: 'Charlotte Independence', price: 1.0 },
+                ],
+              },
+            ],
+          },
+        ],
+      })
+    ),
+    ...overrides,
+  });
+
+  it('flags every outcome as suspended when the market-wide placeholder price (1.00) is sent', () => {
+    const match = mapEventToMatch(suspendedRow());
+    const h2h = match.markets.find((m) => m.marketKey === 'h2h');
+    expect(h2h.suspended).toBe(true);
+    expect(h2h.options.every((o) => o.suspended)).toBe(true);
+  });
+
+  it('does not flag a market with genuine prices as suspended', () => {
+    const match = mapEventToMatch({
+      id: 'l365-997',
+      league: 'USL Championship',
+      home_team: 'Tirana',
+      away_team: 'Vllaznia',
+      start_time: new Date(Date.now() - 20 * 60000).toISOString(),
+      status: 'LIVE',
+      raw_json: JSON.stringify(sampleEvent()),
+    });
+    const h2h = match.markets.find((m) => m.marketKey === 'h2h');
+    expect(h2h.suspended).toBe(false);
+    expect(h2h.options.every((o) => !o.suspended)).toBe(true);
+  });
+
+  it('only flags the market itself when EVERY outcome is at the placeholder price, not when just one is', () => {
+    const row = {
+      id: 'l365-998',
+      league: 'USL Championship',
+      home_team: 'Real Monarchs SLC',
+      away_team: 'Minnesota United FC',
+      start_time: new Date(Date.now() - 20 * 60000).toISOString(),
+      status: 'LIVE',
+      raw_json: JSON.stringify(
+        sampleEvent({
+          bookmakers: [
+            {
+              title: 'London365',
+              markets: [
+                {
+                  key: 'h2h',
+                  outcomes: [
+                    { name: 'Real Monarchs SLC', price: 1.0 },
+                    { name: 'Draw', price: 3.4 },
+                    { name: 'Minnesota United FC', price: 4.2 },
+                  ],
+                },
+              ],
+            },
+          ],
+        })
+      ),
+    };
+    const match = mapEventToMatch(row);
+    const h2h = match.markets.find((m) => m.marketKey === 'h2h');
+    expect(h2h.suspended).toBe(false);
+    const homeOpt = h2h.options.find((o) => o.name.includes('Real Monarchs') || o.id === 'HOME');
+    expect(homeOpt.suspended).toBe(true);
+  });
+});
