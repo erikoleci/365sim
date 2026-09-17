@@ -115,6 +115,11 @@ export interface BetSelectionItem {
   // True when this selection came from the Special Offers boost strip —
   // the server independently re-verifies eligibility before honoring it.
   boosted?: boolean;
+  // Set locally (never sent to the server) right after a placeBet attempt
+  // comes back ODDS_CHANGED, so the slip can show "was X, now Y" on just
+  // the selection(s) that actually moved instead of a generic error toast.
+  // Cleared the moment the ticket is placed or the person edits the slip.
+  previousOdds?: number;
 }
 
 export interface Bet {

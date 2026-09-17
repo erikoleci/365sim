@@ -26,6 +26,20 @@ function setToken(token: string | null) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
+// Carries the parsed error body (code, changes, etc.) alongside the message,
+// so callers like handlePlaceBet can branch on e.g. code === 'ODDS_CHANGED'
+// instead of only having a human-readable string to show as-is.
+export class ApiError extends Error {
+  code?: string;
+  body?: any;
+  constructor(message: string, code?: string, body?: any) {
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
+    this.body = body;
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}, opts: { retry?: boolean } = {}): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
@@ -71,7 +85,7 @@ async function request<T>(path: string, options: RequestInit = {}, opts: { retry
     const body = contentType.includes('application/json') ? await resp.json() : null;
     if (!resp.ok) {
       const message = body?.error || `Request failed (${resp.status})`;
-      throw new Error(message);
+      throw new ApiError(message, body?.code, body);
     }
     return body as T;
   }

@@ -1004,6 +1004,20 @@ const App: React.FC = () => {
     } catch (e: any) {
       // Odds may have moved since the client last fetched them — the server
       // re-verifies every price at placement time and rejects stale ones.
+      // ODDS_CHANGED specifically (as opposed to e.g. SELECTION_SUSPENDED or
+      // a plain network error) means the ticket is still placeable, just at
+      // different prices — update the affected selection(s) in place with
+      // previousOdds set, so the slip shows "was X, now Y" and a "Prano
+      // ndryshimet" action, instead of leaving the person to figure out
+      // which leg changed from a generic error string and re-add it by hand.
+      if (e instanceof api.ApiError && e.code === 'ODDS_CHANGED' && Array.isArray(e.body?.changes)) {
+        const changes = e.body.changes as { matchId: string; marketId: string; selectionId: string; newOdds: number }[];
+        setSelections((prev) => prev.map((sel) => {
+          const change = changes.find((c) => c.matchId === sel.matchId && c.marketId === sel.marketId && c.selectionId === sel.selectionId);
+          return change ? { ...sel, previousOdds: sel.odds, odds: change.newOdds } : sel;
+        }));
+        return;
+      }
       setBetError(e.message || 'Could not place bet');
     }
   }, [currentUser, selections, loadMyBets]);

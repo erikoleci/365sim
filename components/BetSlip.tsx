@@ -36,6 +36,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
   const isSameGameMultiple = isAccumulator && new Set(selections.map((s) => s.matchId)).size === 1;
   const potentialReturn = (parseFloat(stake || '0') * totalOdds).toFixed(2);
   const isValidStake = parseFloat(stake || '0') > 0 && parseFloat(stake || '0') <= userBalance;
+  const changedSelections = selections.filter((s) => typeof s.previousOdds === 'number');
 
   const handlePlaceBetClick = () => {
     if (!stake || !isValidStake) return;
@@ -120,9 +121,26 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                          <button onClick={onClearAll} className="text-[11px] text-brand-textMuted hover:text-white transition-colors">Hiq të Gjitha</button>
                     </div>
 
+                    {/* Odds-changed notice — appears the moment a placeBet attempt
+                        comes back with updated prices already merged into
+                        `selections` (see previousOdds on each affected item).
+                        Mirrors the real bookmaker's "ticket offered, accept the
+                        change" step instead of a plain error the person has to
+                        decode and fix by hand. */}
+                    {changedSelections.length > 0 && (
+                        <div className="bg-amber-900/30 border border-amber-700/50 rounded-lg p-2.5 text-xs">
+                            <p className="text-amber-300 font-bold mb-0.5">
+                                {changedSelections.length === 1 ? 'Kuota ndryshoi' : `Kuotat ndryshuan (${changedSelections.length})`}
+                            </p>
+                            <p className="text-amber-200/80 leading-snug">
+                                Çmimi u përditësua më poshtë. Prano ndryshimet dhe vendos biletën sërish, ose hiqe zgjedhjen nëse s'e pranon.
+                            </p>
+                        </div>
+                    )}
+
                     {/* List of Selections — numbered, since accumulator legs are a real sequence on the ticket */}
                     {selections.map((sel, idx) => (
-                        <div key={`${sel.matchId}-${sel.marketId}-${sel.selectionId}`} className="bg-brand-bg rounded-lg relative group flex animate-slip-in">
+                        <div key={`${sel.matchId}-${sel.marketId}-${sel.selectionId}`} className={`bg-brand-bg rounded-lg relative group flex animate-slip-in ${sel.previousOdds != null ? 'ring-1 ring-amber-500/60' : ''}`}>
                              <div className="w-6 flex-shrink-0 bg-brand-yellow/90 text-brand-bg font-extrabold text-xs flex items-center justify-center rounded-l-lg">
                                 {idx + 1}
                              </div>
@@ -130,7 +148,12 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                                  <div className="font-bold text-brand-text truncate">{sel.selectionName}</div>
                                  <div className="text-xs text-brand-textMuted truncate">{sel.marketName}</div>
                                  <div className="text-xs text-brand-textMuted italic truncate">{sel.matchHome} v {sel.matchAway}</div>
-                                 <div className="text-right font-bold text-brand-yellow mt-1 tabular-nums">@{sel.odds.toFixed(2)}</div>
+                                 <div className="text-right mt-1 tabular-nums">
+                                     {sel.previousOdds != null && (
+                                         <span className="text-brand-textMuted line-through mr-1.5">@{sel.previousOdds.toFixed(2)}</span>
+                                     )}
+                                     <span className={`font-bold ${sel.previousOdds != null ? 'text-amber-400' : 'text-brand-yellow'}`}>@{sel.odds.toFixed(2)}</span>
+                                 </div>
                              </div>
                              <button
                                 onClick={() => onRemoveSelection(`${sel.matchId}-${sel.marketId}-${sel.selectionId}`)}
@@ -181,7 +204,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                                 disabled={!isValidStake}
                                 className="w-full bg-brand-yellow hover:bg-yellow-400 disabled:opacity-40 disabled:cursor-not-allowed text-brand-bg font-extrabold py-2.5 rounded-lg shadow-md shadow-brand-yellow/10 transition-all active:scale-[0.98]"
                             >
-                                Vendos Biletën
+                                {changedSelections.length > 0 ? 'Prano Ndryshimet & Vendos' : 'Vendos Biletën'}
                             </button>
                             {!isValidStake && stake && parseFloat(stake) > userBalance && (
                                 <p className="text-red-400 text-xs text-center mt-2">Fonde të pamjaftueshme</p>
