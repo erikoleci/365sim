@@ -22,9 +22,10 @@ const mocks = vi.hoisted(function () {
     }
     if (s.indexOf('INSERT INTO matches_cache') === 0) {
       store.set(params[0], {
-        id: params[0], league: params[1], home_team: params[2], away_team: params[3],
-        start_time: params[4], status: params[5], raw_json: params[6], fetched_at: params[7],
-        live_home_score: params[8], live_away_score: params[9], live_minute: params[10], live_status: params[11],
+        id: params[0], league: params[1], league_id: params[2], country_id: params[3],
+        home_team: params[4], away_team: params[5],
+        start_time: params[6], status: params[7], raw_json: params[8], fetched_at: params[9],
+        live_home_score: params[10], live_away_score: params[11], live_minute: params[12], live_status: params[13],
       });
       return Promise.resolve({ rows: [], rowCount: 1 });
     }

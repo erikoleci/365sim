@@ -12,18 +12,21 @@ const mocks = vi.hoisted(function () {
       return Promise.resolve({ rows: row ? [{ ...row }] : [] });
     }
     if (s.startsWith('INSERT INTO matches_cache')) {
-      const id = params[0], league = params[1], home_team = params[2], away_team = params[3],
-        start_time = params[4], status = params[5], raw_json = params[6], fetched_at = params[7],
-        live_home_score = params[8], live_away_score = params[9], live_minute = params[10],
-        live_status = params[11], isDifferentMatch = params[12];
+      const id = params[0], league = params[1], league_id = params[2], country_id = params[3],
+        home_team = params[4], away_team = params[5],
+        start_time = params[6], status = params[7], raw_json = params[8], fetched_at = params[9],
+        live_home_score = params[10], live_away_score = params[11], live_minute = params[12],
+        live_status = params[13], isDifferentMatch = params[14];
       const existing = store.get(id);
       if (!existing) {
-        store.set(id, { id, league, home_team, away_team, start_time, status, raw_json, fetched_at, live_home_score, live_away_score, live_minute, live_status });
+        store.set(id, { id, league, league_id, country_id, home_team, away_team, start_time, status, raw_json, fetched_at, live_home_score, live_away_score, live_minute, live_status });
         return Promise.resolve({ rows: [], rowCount: 1 });
       }
       const next = {
         ...existing,
         league: league === '' ? existing.league : league,
+        league_id: league_id ?? existing.league_id,
+        country_id: country_id ?? existing.country_id,
         home_team, away_team, start_time,
         status: isDifferentMatch ? status : (existing.status === 'FINISHED' ? existing.status : status),
         raw_json, fetched_at,

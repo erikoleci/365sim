@@ -1,7 +1,7 @@
 import express from 'express';
 import pool from '../db.js';
 import { mapEventToMatch } from '../oddsUtils.js';
-import { ensureLondon365Import, getLondon365LeagueNames } from '../london365.js';
+import { ensureLondon365Import, getLondon365LeagueNames, getLondon365LeagueMeta } from '../london365.js';
 
 const router = express.Router();
 
@@ -143,7 +143,7 @@ router.get('/', async (req, res) => {
          LIMIT 4000`
       );
   console.log(`[matches] GET / -> ${rows.length} cached row(s)${req.query.league ? ` for league=${req.query.league}` : ''}`);
-  const body = { matches: dedupeMatches(rows.map(mapEventToMatch)), leagueNames: getLondon365LeagueNames() };
+  const body = { matches: dedupeMatches(rows.map(mapEventToMatch)), leagueNames: getLondon365LeagueNames(), leagueMeta: getLondon365LeagueMeta() };
   matchesResponseCache.set(cacheKey, { body, computedAt: Date.now() });
   res.json(body);
 });

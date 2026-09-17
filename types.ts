@@ -56,6 +56,14 @@ export interface MatchScore {
 export interface Match {
   id: string;
   league: string; 
+  // Provider's own numeric league/country identifiers (LondonPro365
+  // league.id / league.country_id), alongside the existing slugged
+  // `league` display key -- absent for a match imported before this field
+  // existed (older matches_cache rows), so always optional. Prefer these
+  // over string-matching `league` wherever an exact, stable identifier is
+  // needed (filtering, admin lookups) instead of name comparison.
+  leagueId?: string;
+  countryId?: string;
   homeTeam: string;
   awayTeam: string;
   // Real crest URL, only present when the source provider supplies one.

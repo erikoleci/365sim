@@ -56,6 +56,23 @@ const row = (event) => ({
   raw_json: JSON.stringify(event),
 });
 
+describe('mapEventToMatch', () => {
+  it('passes through league_id/country_id as leagueId/countryId when the row has them', () => {
+    const match = mapEventToMatch({ ...row(sampleEvent()), league_id: '17', country_id: '64' });
+    expect(match.leagueId).toBe('17');
+    expect(match.countryId).toBe('64');
+  });
+
+  it('leaves leagueId/countryId undefined for an older row imported before this column existed', () => {
+    // Older matches_cache rows (or any repair-pass upsert that only had a
+    // raw name to go on) have league_id/country_id as NULL, not '17' -- the
+    // frontend must not render a stray "null" string for these.
+    const match = mapEventToMatch({ ...row(sampleEvent()), league_id: null, country_id: null });
+    expect(match.leagueId).toBeUndefined();
+    expect(match.countryId).toBeUndefined();
+  });
+});
+
 describe('outcomeId', () => {
   it('maps home/away/draw team names to stable HOME/AWAY/DRAW ids', () => {
     const ev = sampleEvent();

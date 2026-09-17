@@ -227,6 +227,8 @@ export function mapEventToMatch(row) {
   return {
     id: row.id,
     league: row.league,
+    leagueId: row.league_id ?? undefined,
+    countryId: row.country_id ?? undefined,
     homeTeam: row.home_team,
     awayTeam: row.away_team,
     // Real crest URL when the source provider supplies one (API-Football

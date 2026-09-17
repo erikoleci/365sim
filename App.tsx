@@ -41,6 +41,15 @@ const App: React.FC = () => {
   const [leagueNames, setLeagueNames] = useState<Record<string, string>>(() => {
     try { return JSON.parse(localStorage.getItem('cachedLeagueNames') || '{}'); } catch { return {}; }
   });
+  // Same idea as leagueNames, but carrying the provider's real numeric
+  // league/country IDs alongside the name -- kept as its own cached state
+  // (not merged into leagueNames) so existing code that reads leagueNames
+  // as Record<string,string> is untouched. Not yet driving any filtering
+  // UI itself; this is the data layer other features (admin lookups,
+  // exact-ID filtering) can build on without another round-trip.
+  const [leagueMeta, setLeagueMeta] = useState<Record<string, api.LeagueMeta>>(() => {
+    try { return JSON.parse(localStorage.getItem('cachedLeagueMeta') || '{}'); } catch { return {}; }
+  });
   const [myBets, setMyBets] = useState<Bet[]>([]);
   const [adminUsers, setAdminUsers] = useState<User[]>([]);
   const [adminAllBets, setAdminAllBets] = useState<any[]>([]);
@@ -153,13 +162,20 @@ const App: React.FC = () => {
     if (!currentUser || currentView !== 'sports') return;
     setIsLoading((prev) => (hasLoadedMatchesOnceRef.current ? prev : true));
     try {
-      const { matches: fresh, leagueNames: freshLeagueNames } = await api.fetchMatches();
+      const { matches: fresh, leagueNames: freshLeagueNames, leagueMeta: freshLeagueMeta } = await api.fetchMatches();
       setMatches(fresh);
       try { localStorage.setItem('cachedMatches', JSON.stringify(fresh)); } catch {}
       if (freshLeagueNames) {
         setLeagueNames((prev) => {
           const next = { ...prev, ...freshLeagueNames };
           try { localStorage.setItem('cachedLeagueNames', JSON.stringify(next)); } catch {}
+          return next;
+        });
+      }
+      if (freshLeagueMeta) {
+        setLeagueMeta((prev) => {
+          const next = { ...prev, ...freshLeagueMeta };
+          try { localStorage.setItem('cachedLeagueMeta', JSON.stringify(next)); } catch {}
           return next;
         });
       }

@@ -230,6 +230,22 @@ export async function initDb() {
   // persisted so the frontend can render a live clock for in-play matches.
   await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS live_minute TEXT;`);
   await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS live_status TEXT;`);
+  // League/country identity as real provider IDs, not just the slugged
+  // `league` display key. Before this, the ONLY handle on a league was a
+  // human-derived string (l365_<country>__<competition>), which is exactly
+  // why two different spellings/casings of the same league from different
+  // provider endpoints (prematch import vs live feed vs socket) kept
+  // producing duplicate sidebar entries that purgeExcludedCountries/
+  // purgeCountryPrefixedDuplicateLeagues etc. existed only to clean up
+  // after the fact. league_id/country_id are the provider's own stable
+  // numeric identifiers (league.id / league.country_id from
+  // /ajax/leagues/{countryId}) -- once populated, matching/filtering by ID
+  // is exact instead of fuzzy-by-name. TEXT (not INTEGER) because they are
+  // only ever used as opaque identifiers/lookup keys, never arithmetic.
+  await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS league_id TEXT;`);
+  await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS country_id TEXT;`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_matches_cache_league_id ON matches_cache (league_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_matches_cache_country_id ON matches_cache (country_id);`);
 
   // --- Owner -> Agent -> User hierarchy (additive) ---
   // agent_id: which AGENT this user was created/managed by. NULL for ADMIN

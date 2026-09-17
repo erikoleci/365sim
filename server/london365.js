@@ -475,6 +475,25 @@ export function getLondon365LeagueNames() {
   return names;
 }
 
+// Same idea as getLondon365LeagueNames, but with the provider's real IDs
+// alongside the display name -- the frontend/admin panel needs these for
+// exact league/country identification (filtering, admin lookups, avoiding
+// the name-based duplicate-league issues), not just a label to render.
+export function getLondon365LeagueMeta() {
+  const meta = {};
+  for (const entry of leagueById.values()) {
+    if (entry && entry.key) {
+      meta[entry.key] = {
+        id: entry.id || null,
+        name: entry.name,
+        countryId: entry.countryId || null,
+        countryName: entry.countryName || null,
+      };
+    }
+  }
+  return meta;
+}
+
 // Confirmed directly against the live provider — the FULL /ajax/countries/1
 // response, pasted verbatim by the site owner (not partial, not guessed).
 // Used as a hard override on top of whatever /ajax/countries/{sportId}
@@ -798,7 +817,7 @@ export function minuteToNumber(minute) {
   return m ? Number(m[1]) : null;
 }
 
-export async function upsertMatch(ev, league, status, liveScores, liveInfo) {
+export async function upsertMatch(ev, league, status, liveScores, liveInfo, leagueMeta) {
   return withDbLock(ev.id, async () => {
     const now = Date.now();
     const { rows } = await pool.query(
@@ -861,28 +880,37 @@ export async function upsertMatch(ev, league, status, liveScores, liveInfo) {
     }
 
     await pool.query(
-      `INSERT INTO matches_cache (id, league, home_team, away_team, start_time, status, raw_json, fetched_at, live_home_score, live_away_score, live_minute, live_status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      `INSERT INTO matches_cache (id, league, league_id, country_id, home_team, away_team, start_time, status, raw_json, fetched_at, live_home_score, live_away_score, live_minute, live_status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        ON CONFLICT (id) DO UPDATE SET
          league = CASE WHEN excluded.league = '' THEN matches_cache.league ELSE excluded.league END,
+         -- COALESCE, not overwrite: not every upsert path resolves a
+         -- league_id/country_id (e.g. the repair pass and any live update
+         -- that only had a raw name to go on) -- a call that legitimately
+         -- doesn't know these must never blank out a value an earlier,
+         -- better-informed call already established for this match.
+         league_id = COALESCE(excluded.league_id, matches_cache.league_id),
+         country_id = COALESCE(excluded.country_id, matches_cache.country_id),
          home_team = excluded.home_team,
          away_team = excluded.away_team,
          start_time = excluded.start_time,
-         status = CASE WHEN $13 THEN excluded.status
+         status = CASE WHEN $15 THEN excluded.status
                        WHEN matches_cache.status = 'FINISHED' THEN matches_cache.status
                        ELSE excluded.status END,
          raw_json = excluded.raw_json,
          fetched_at = excluded.fetched_at,
-         live_home_score = CASE WHEN $13 THEN excluded.live_home_score
+         live_home_score = CASE WHEN $15 THEN excluded.live_home_score
                                  ELSE COALESCE(excluded.live_home_score, matches_cache.live_home_score) END,
-         live_away_score = CASE WHEN $13 THEN excluded.live_away_score
+         live_away_score = CASE WHEN $15 THEN excluded.live_away_score
                                  ELSE COALESCE(excluded.live_away_score, matches_cache.live_away_score) END,
-         live_minute = CASE WHEN $13 THEN excluded.live_minute
+         live_minute = CASE WHEN $15 THEN excluded.live_minute
                              ELSE COALESCE(excluded.live_minute, matches_cache.live_minute) END,
-         live_status = CASE WHEN $13 THEN excluded.live_status
+         live_status = CASE WHEN $15 THEN excluded.live_status
                              ELSE COALESCE(excluded.live_status, matches_cache.live_status) END`,
       [
-        ev.id, league, ev.home_team, ev.away_team, ev.commence_time, status,
+        ev.id, league, (leagueMeta && leagueMeta.id != null ? String(leagueMeta.id) : null),
+        (leagueMeta && leagueMeta.countryId != null ? String(leagueMeta.countryId) : null),
+        ev.home_team, ev.away_team, ev.commence_time, status,
         rawToStore, now,
         liveScores ? liveScores.home : null,
         liveScores ? liveScores.away : null,
@@ -1262,6 +1290,11 @@ export async function importLondon365(opts) {
         leagueById.set(String(league.id), {
           key: leagueKeyResolved,
           name: league.name,
+          // Provider's own numeric league id, kept on the entry itself (not
+          // just as the leagueById Map key) so resolveLeagueByName's
+          // name-based fallback -- which returns this SAME object via
+          // leagueNameIndex, not a leagueById lookup -- also carries it.
+          id: String(league.id),
           countryId: countryId,
           countryName: effectiveCountryName || null,
         });
@@ -1333,7 +1366,7 @@ export async function importLondon365(opts) {
               commenceTime,
               rows
             );
-            await upsertMatch(ev, leagueKeyResolved, statusFromCommence(ev.commence_time), null);
+            await upsertMatch(ev, leagueKeyResolved, statusFromCommence(ev.commence_time), null, undefined, { id: String(league.id), countryId });
             matchCount++;
             summaryEntry.imported++;
             coefficientCount += rows.length;
@@ -1557,7 +1590,7 @@ export async function syncLondon365Live() {
         // used to create a second, wrongly-named duplicate of an already-known
         // league instead of landing on its real name.
         const resolvedLeague = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
-        const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : leagueKeyFromCountry(null, g.league || ''), 'LIVE', score, { minute: minute, apiStatus: apiStatus });
+        const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : leagueKeyFromCountry(null, g.league || ''), 'LIVE', score, { minute: minute, apiStatus: apiStatus }, resolvedLeague ? { id: resolvedLeague.id, countryId: resolvedLeague.countryId } : undefined);
         await recordGoalIfChanged(ev, score, minute, prev);
         gamesSynced++;
       } catch (err) {
@@ -1684,7 +1717,7 @@ export async function applySocketGame(g, status) {
     const token = countryName ? countryName.toLowerCase() : leagueCountryToken(g.league || '');
     if (!ONLY_COUNTRIES.has(token)) return false;
   }
-  const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : leagueKeyFromCountry(null, g.league || ''), resolved, score, { minute: minute, apiStatus: g.api_status });
+  const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : leagueKeyFromCountry(null, g.league || ''), resolved, score, { minute: minute, apiStatus: g.api_status }, resolvedLeague ? { id: resolvedLeague.id, countryId: resolvedLeague.countryId } : undefined);
   await recordGoalIfChanged(ev, score, minute, prev);
   return true;
 }
