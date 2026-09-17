@@ -141,6 +141,23 @@ process.on('unhandledRejection', (err) => {
   console.error('[unhandledRejection]', err);
 });
 
+// Without this, a synchronous throw ANYWHERE outside a promise chain (a bad
+// property access in a socket/timer callback, a bug in a library) has
+// nowhere to go but Node's default handler, which kills the entire process
+// immediately with no useful log beyond a bare stack trace, and Render then
+// has to fully cold-boot a replacement. Logging and staying up mirrors the
+// posture already taken for unhandledRejection and the DB pool's own
+// 'error' listener above (in db.js) — this app treats an unexpected error
+// in one code path as something to survive and report, not a reason to take
+// every live match/bet/socket connection down with it. Node's process state
+// can in theory be left inconsistent after an uncaughtException, but for
+// this app (no in-memory financial state that isn't also durably in
+// Postgres) that risk is far smaller than the cost of an avoidable full
+// restart on every transient bug.
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+});
+
 app.get('/api/health', (req, res) => res.status(dbReady ? 200 : 503).json({ ok: true, db: dbReady ? 'up' : 'down' }));
 
 // Mobile-friendly, no-login diagnostic: open this URL directly in any

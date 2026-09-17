@@ -231,10 +231,14 @@ export async function applyGameDetails(raw) {
     // import — see LONDON365_ONLY_COUNTRIES). Per instructions, this
     // module must never force an import or touch the country/league
     // whitelist, so it just skips, logging once per EID to avoid spam.
-    if (!unknownEidWarned.has(eid)) {
-      unknownEidWarned.add(eid);
-      console.log(`[live] EID=${eid} has no matching cached game (l365-${eid}) — skipping`);
-    }
+    // Silenced on purpose: this is a GLOBAL feed and most EIDs will never
+    // match anything we imported (different country/league — see
+    // LONDON365_ONLY_COUNTRIES). That's expected, permanent, per-EID noise,
+    // not a bug worth a log line every time it's first seen — it was
+    // filling the logs with nothing actionable in it. The unknownEidWarned
+    // tracking itself is untouched (still skips the DB round-trip on every
+    // later tick for the same EID); only the console.log is gone.
+    unknownEidWarned.add(eid);
     lastSeen.set(eid, { t: Number.isFinite(t) ? t : 0, yc1: 0, yc2: 0, rc1: 0, rc2: 0 });
     return;
   }

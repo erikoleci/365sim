@@ -327,6 +327,43 @@ export async function initDb() {
   }
 }
 
+// Retries a pool.query on TRANSIENT connection failures only (the "timeout
+// exceeded when trying to connect" / "Connection terminated unexpectedly"
+// class seen against Aiven under load or right after an idle-close) — never
+// on a real query error (bad SQL, constraint violation, etc.), which should
+// still fail immediately and clearly. Used by read endpoints like
+// GET /api/matches so a client sees one slightly-slower-but-successful
+// response instead of a 502/503 during a brief DB hiccup, without the
+// frontend having to implement its own retry/poll logic.
+const TRANSIENT_ERROR_CODES = new Set([
+  'ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'EAI_AGAIN',
+]);
+function isTransientDbError(err) {
+  if (!err) return false;
+  if (TRANSIENT_ERROR_CODES.has(err.code)) return true;
+  const msg = String(err.message || '');
+  return msg.includes('timeout exceeded when trying to connect')
+    || msg.includes('Connection terminated unexpectedly')
+    || msg.includes('connection is not open')
+    || msg.includes('remaining connection slots');
+}
+export async function queryWithRetry(text, params, opts = {}) {
+  const retries = opts.retries ?? 2; // total of up to 3 attempts
+  const delayMs = opts.delayMs ?? 400;
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await pool.query(text, params);
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientDbError(err) || attempt === retries) throw err;
+      console.warn(`[db] transient error on attempt ${attempt + 1}/${retries + 1}, retrying:`, err.message);
+      await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 export async function getKV(key, fallback = null) {
   const { rows } = await pool.query('SELECT value FROM kv_store WHERE key = $1', [key]);
   if (!rows[0]) return fallback;

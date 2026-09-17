@@ -1,5 +1,5 @@
 import express from 'express';
-import pool from '../db.js';
+import { queryWithRetry } from '../db.js';
 import { mapEventToMatch } from '../oddsUtils.js';
 import { ensureLondon365Import, getLondon365LeagueNames, getLondon365LeagueMeta } from '../london365.js';
 
@@ -139,9 +139,14 @@ router.get('/', async (req, res) => {
   // schedule — a 10-day window meant the entire "International" group
   // went empty for most of the gap between rounds even though the
   // fixtures existed and were correctly imported/classified.
+  // queryWithRetry (not plain pool.query): this is the endpoint the
+  // frontend hits on every load and every poll, so a brief DB hiccup here
+  // (Aiven connection reset, a pool slot momentarily full during a Render
+  // rolling deploy) is exactly the kind of thing that should self-heal
+  // with one quick retry instead of surfacing a 502/503 to the user.
   const { rows } = req.query.league
-    ? await pool.query('SELECT * FROM matches_cache WHERE league = $1 ORDER BY start_time ASC', [req.query.league])
-    : await pool.query(
+    ? await queryWithRetry('SELECT * FROM matches_cache WHERE league = $1 ORDER BY start_time ASC', [req.query.league])
+    : await queryWithRetry(
         `SELECT * FROM matches_cache
          WHERE id LIKE 'l365-%'
            AND start_time_tz(start_time) > NOW() - interval '2 days'
@@ -156,7 +161,7 @@ router.get('/', async (req, res) => {
 });
 
 router.get('/:id/odds-history', async (req, res) => {
-  const { rows } = await pool.query(
+  const { rows } = await queryWithRetry(
     'SELECT market_id, selection_id, old_odds, new_odds, changed_by, reason, created_at FROM odds_history WHERE match_id = $1 ORDER BY created_at ASC',
     [req.params.id]
   );
@@ -169,12 +174,12 @@ router.get('/:id/odds-history', async (req, res) => {
 // exposes what was already being written but never read back.
 router.get('/:id/live-detail', async (req, res) => {
   const [{ rows: statsRows }, { rows: eventRows }, { rows: cacheRows }] = await Promise.all([
-    pool.query('SELECT * FROM live_statistics WHERE match_id = $1', [req.params.id]),
-    pool.query(
+    queryWithRetry('SELECT * FROM live_statistics WHERE match_id = $1', [req.params.id]),
+    queryWithRetry(
       'SELECT minute, type, team, player, detail, created_at FROM match_events WHERE match_id = $1 ORDER BY created_at ASC',
       [req.params.id]
     ),
-    pool.query('SELECT live_minute, live_home_score, live_away_score, status FROM matches_cache WHERE id = $1', [req.params.id]),
+    queryWithRetry('SELECT live_minute, live_home_score, live_away_score, status FROM matches_cache WHERE id = $1', [req.params.id]),
   ]);
   // The provider's live feed carries the real in-play clock (e.g. "62:14")
   // even when the stats table has no minute yet — expose it so the pitch
@@ -197,7 +202,7 @@ router.get('/:id/live-detail', async (req, res) => {
 });
 
 router.get('/:id', async (req, res) => {
-  const { rows } = await pool.query('SELECT * FROM matches_cache WHERE id = $1', [req.params.id]);
+  const { rows } = await queryWithRetry('SELECT * FROM matches_cache WHERE id = $1', [req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: 'Match not found' });
   res.json({ match: mapEventToMatch(rows[0]) });
 });
