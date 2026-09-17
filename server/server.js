@@ -28,6 +28,7 @@ import { initDb, cleanupOldData } from './db.js';
 import { initWebSocket } from './ws.js';
 import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCrossCountryMisclassifiedLeagues, purgeCountriesNotInOnlyList, wipeLondon365Data, loadPersistedLeagueMap, startGameDetailsSubscriptionReconcileLoop } from './london365.js';
 import { startLondon365Socket, startLondon365GameDetailsSocket } from './london365Socket.js';
+import { startKeepAliveSelfPing } from './keepAlive.js';
 
 let dbReady = false;
 
@@ -259,6 +260,11 @@ async function start() {
   // finished matches. First run 2 min after boot, then every 6 hours.
   setTimeout(function () { cleanupOldData().catch(function () {}); }, 2 * 60 * 1000);
   setInterval(function () { cleanupOldData().catch(function () {}); }, 6 * 60 * 60 * 1000);
+  // See server/keepAlive.js — stops the free-tier "S'arritem te lidhemi me
+  // serverin" / stuck-on-"Duke ngarkuar..." symptom by keeping Render from
+  // ever spinning the service down in the first place, instead of only
+  // retrying through the wait once someone's already hit it.
+  startKeepAliveSelfPing();
 }
 
 start().catch((err) => {
