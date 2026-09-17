@@ -112,10 +112,10 @@ export function forgetLiveState(eid) {
 // any real match (including extra time/penalties) could plausibly still be
 // live, so a genuinely in-progress match is never affected.
 const STALE_AFTER_MS = 4 * 60 * 60 * 1000; // 4 hours
-export function pruneStaleLiveState(now = Date.now()) {
+export function pruneStaleLiveState(now = Date.now(), staleAfterMs = STALE_AFTER_MS) {
   let pruned = 0;
   for (const [eid, ts] of lastTouched) {
-    if (now - ts >= STALE_AFTER_MS) {
+    if (now - ts >= staleAfterMs) {
       lastSeen.delete(eid);
       unknownEidWarned.delete(eid);
       lastTouched.delete(eid);
@@ -123,14 +123,14 @@ export function pruneStaleLiveState(now = Date.now()) {
     }
   }
   for (const [matchId, entry] of lastBroadcast) {
-    if (entry && now - entry.ts >= STALE_AFTER_MS) lastBroadcast.delete(matchId);
+    if (entry && now - entry.ts >= staleAfterMs) lastBroadcast.delete(matchId);
   }
   if (pruned) console.log(`[live] pruned ${pruned} stale in-memory EID entries (heap leak guard)`);
   return pruned;
 }
 
 let staleSweepTimer = null;
-export function startStaleLiveStateSweep(intervalMs = 30 * 60 * 1000) {
+export function startStaleLiveStateSweep(intervalMs = 2 * 60 * 1000) {
   if (staleSweepTimer) return staleSweepTimer;
   staleSweepTimer = setInterval(() => pruneStaleLiveState(), intervalMs);
   if (staleSweepTimer.unref) staleSweepTimer.unref();
@@ -143,6 +143,17 @@ export async function applyGameDetails(raw) {
   if (!attrs) return;
   const eid = attrs.EID;
   lastTouched.set(eid, Date.now());
+  // Hard backstop against a burst overwhelming the scheduled sweep above:
+  // this is a GLOBAL provider feed (every live match worldwide, most
+  // never matching anything we imported — see the MEMORY LEAK FIX #2
+  // comment), so its volume can spike far faster than a fixed-interval
+  // timer can react to. If the map has grown past a sane ceiling, run an
+  // immediate aggressive prune (a much shorter threshold than the normal
+  // 4h one) right here in the hot path instead of waiting for the next
+  // scheduled sweep — this is what actually prevents the heap from
+  // filling up between timer ticks during a high-volume burst, which is
+  // what a merely-more-frequent interval alone still cannot guarantee.
+  if (lastTouched.size > 5000) pruneStaleLiveState(Date.now(), 10 * 60 * 1000);
   const t = Number(attrs.T);
   const prevSeen = lastSeen.get(eid);
   // Tracks the card-count baseline separately from `prevSeen` itself: when

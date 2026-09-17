@@ -92,4 +92,23 @@ describe('pruneStaleLiveState (heap leak guard for unmatched global-feed EIDs)',
     // A second sweep right after finds nothing left to prune.
     expect(pruneStaleLiveState(start + 5 * 60 * 60 * 1000 + 1)).toBe(0);
   });
+
+  it('an aggressive size-triggered prune fires INLINE once the map crosses 5000 entries, without waiting for the scheduled sweep', async () => {
+    const base = Date.now();
+    for (let i = 0; i < 5000; i++) {
+      await applyGameDetails(tag({ EID: 'e' + i, T: '1', SC: '0-0' }));
+    }
+    // Jump 11 minutes forward -- past the size-triggered backstop's
+    // aggressive 10-minute window, nowhere near the normal 4h one.
+    vi.setSystemTime(base + 11 * 60 * 1000);
+    // Crossing the >5000 threshold on this call must trigger an immediate
+    // inline prune of the 5000 now-stale entries -- no separate
+    // pruneStaleLiveState() call here on purpose.
+    await applyGameDetails(tag({ EID: 'trigger', T: '1', SC: '0-0' }));
+
+    const stillPending = pruneStaleLiveState(base + 11 * 60 * 1000 + 1);
+    // If the inline backstop had NOT fired, ~5000 stale entries would
+    // still be sitting there for this call to find and report.
+    expect(stillPending).toBe(0);
+  });
 });
