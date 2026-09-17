@@ -102,6 +102,16 @@ router.post('/', async (req, res) => {
   // tolerance (odds protection) instead of silently booking a worse price.
   let totalOdds = 1;
   const verifiedSelections = [];
+  // Collected across ALL selections instead of returning on the first one
+  // found (the previous behavior): for an accumulator, if 2-3 prices moved
+  // at once, a client that resubmits after fixing selection #1 would just
+  // immediately hit selection #2's change next, then #3 — a multi-round-trip
+  // loop the person feels as "it keeps rejecting my bet". Collecting every
+  // change and returning them together in one 409 lets the frontend show a
+  // single "odds changed — accept new price?" prompt with the whole updated
+  // ticket at once, matching the one-shot re-offer flow real bookmakers use,
+  // instead of a live-fire-by-fire retry loop.
+  const oddsChanges = [];
 
   // Boost is only ever honored for true single bets (one selection) — this
   // keeps liability predictable and matches what the Special Offers strip
@@ -125,7 +135,9 @@ router.post('/', async (req, res) => {
     // "market suspended" placeholder (see isSuspendedPrice in oddsUtils.js).
     // Betting must be rejected here even if a stale client somehow still
     // sent the selection, since the frontend disabling the button is only
-    // a UX nicety, not the actual guard.
+    // a UX nicety, not the actual guard. Unlike an odds change, a suspended
+    // market can't be "re-offered" at a new price — there is no price right
+    // now — so this still fails the whole ticket immediately.
     if (currentOdds <= 1.01) {
       return res.status(409).json({
         error: `Betting on ${sel.selectionName} is temporarily suspended — please try again in a moment.`,
@@ -139,14 +151,29 @@ router.post('/', async (req, res) => {
       currentOdds = Number((currentOdds * BOOST_MULTIPLIER).toFixed(2));
     }
     if (typeof sel.odds === 'number' && currentOdds < sel.odds * (1 - ODDS_WORSENING_TOLERANCE)) {
-      return res.status(409).json({
-        error: `Odds for ${sel.selectionName} changed (was ${sel.odds}, now ${currentOdds}). Please review and resubmit.`,
-        code: 'ODDS_CHANGED',
+      oddsChanges.push({
+        matchId: sel.matchId,
+        marketId: sel.marketId,
+        selectionId: sel.selectionId,
+        selectionName: sel.selectionName,
+        oldOdds: sel.odds,
         newOdds: currentOdds,
       });
     }
     totalOdds *= currentOdds;
     verifiedSelections.push({ ...sel, odds: currentOdds });
+  }
+
+  if (oddsChanges.length > 0) {
+    return res.status(409).json({
+      error: oddsChanges.length === 1
+        ? `Odds for ${oddsChanges[0].selectionName} changed (was ${oddsChanges[0].oldOdds}, now ${oddsChanges[0].newOdds}).`
+        : `Odds changed on ${oddsChanges.length} selections in your ticket.`,
+      code: 'ODDS_CHANGED',
+      changes: oddsChanges,
+      // Kept for older clients that only read a single top-level newOdds.
+      newOdds: oddsChanges[0].newOdds,
+    });
   }
 
   const betId = randomUUID();
