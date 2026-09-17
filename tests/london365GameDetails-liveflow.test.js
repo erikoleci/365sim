@@ -52,59 +52,59 @@ beforeEach(function () {
   mocks.resetSelectCount();
   vi.clearAllMocks();
   __resetLiveStateForTests();
-  mocks.store.set('l365-62628037', {
-    id: 'l365-62628037', home_team: 'Mohun Bagan SG II', away_team: 'Coal India',
+  mocks.store.set('l365-52628036', {
+    id: 'l365-52628036', home_team: 'Mohun Bagan SG II', away_team: 'Coal India',
     live_home_score: 3, live_away_score: 0, live_minute: '62',
   });
 });
 
 describe('applyGameDetails — live flow fix', function () {
   it('writes the new score straight into matches_cache the instant it changes', async function () {
-    await applyGameDetails(tag({ EID: '62628037', T: '2288', SC: '4-0', H: 'Mohun Bagan SG II', A: 'Coal India' }));
-    const row = mocks.store.get('l365-62628037');
+    await applyGameDetails(tag({ EID: '52628036', T: '2288', SC: '4-0', H: 'Mohun Bagan SG II', A: 'Coal India' }));
+    const row = mocks.store.get('l365-52628036');
     expect(row.live_home_score).toBe(4);
     expect(row.live_away_score).toBe(0);
   });
 
   it('broadcasts LIVE_TICK on the first update even with no score change (dedup baseline)', async function () {
-    await applyGameDetails(tag({ EID: '62628037', T: '2290', SC: '3-0', H: 'Mohun Bagan SG II', A: 'Coal India' }));
+    await applyGameDetails(tag({ EID: '52628036', T: '2290', SC: '3-0', H: 'Mohun Bagan SG II', A: 'Coal India' }));
     expect(pushLiveTick).toHaveBeenCalledTimes(1);
-    expect(pushLiveTick).toHaveBeenCalledWith('l365-62628037', expect.objectContaining({
+    expect(pushLiveTick).toHaveBeenCalledWith('l365-52628036', expect.objectContaining({
       minute: '62', homeScore: 3, awayScore: 0,
     }));
   });
 
   it('broadcasts the updated score on LIVE_TICK the same tick it changes', async function () {
-    await applyGameDetails(tag({ EID: '62628037', T: '2291', SC: '4-0', H: 'Mohun Bagan SG II', A: 'Coal India' }));
-    expect(pushLiveTick).toHaveBeenCalledWith('l365-62628037', expect.objectContaining({
+    await applyGameDetails(tag({ EID: '52628036', T: '2291', SC: '4-0', H: 'Mohun Bagan SG II', A: 'Coal India' }));
+    expect(pushLiveTick).toHaveBeenCalledWith('l365-52628036', expect.objectContaining({
       homeScore: 4, awayScore: 0,
     }));
   });
 
   it('still dedupes on a non-increasing T (no DB write, no broadcast)', async function () {
-    await applyGameDetails(tag({ EID: '62628037', T: '2292', SC: '4-0', H: 'Mohun Bagan SG II', A: 'Coal India' }));
+    await applyGameDetails(tag({ EID: '52628036', T: '2292', SC: '4-0', H: 'Mohun Bagan SG II', A: 'Coal India' }));
     vi.clearAllMocks();
-    await applyGameDetails(tag({ EID: '62628037', T: '2292', SC: '4-0', H: 'Mohun Bagan SG II', A: 'Coal India' }));
+    await applyGameDetails(tag({ EID: '52628036', T: '2292', SC: '4-0', H: 'Mohun Bagan SG II', A: 'Coal India' }));
     expect(pushLiveTick).not.toHaveBeenCalled();
   });
 
   it('never writes to matches_cache when the score is unchanged', async function () {
-    await applyGameDetails(tag({ EID: '62628037', T: '2293', SC: '3-0', H: 'Mohun Bagan SG II', A: 'Coal India' }));
+    await applyGameDetails(tag({ EID: '52628036', T: '2293', SC: '3-0', H: 'Mohun Bagan SG II', A: 'Coal India' }));
     // Still 3-0 in the store (no spurious UPDATE), but LIVE_TICK still fired
     // (first tick for this match in this test — see dedup test below for
     // the repeat-tick case).
-    const row = mocks.store.get('l365-62628037');
+    const row = mocks.store.get('l365-52628036');
     expect(row.live_home_score).toBe(3);
     expect(pushLiveTick).toHaveBeenCalledTimes(1);
   });
 
   it('skips the WS broadcast on a second tick with no change (bandwidth throttle)', async function () {
-    await applyGameDetails(tag({ EID: '62628037', T: '2300', SC: '3-0', H: 'Mohun Bagan SG II', A: 'Coal India' }));
+    await applyGameDetails(tag({ EID: '52628036', T: '2300', SC: '3-0', H: 'Mohun Bagan SG II', A: 'Coal India' }));
     expect(pushLiveTick).toHaveBeenCalledTimes(1);
     vi.clearAllMocks();
     // Same score/minute, T still increases (real new provider tick) — must
     // NOT re-broadcast immediately; that's the whole point of the throttle.
-    await applyGameDetails(tag({ EID: '62628037', T: '2301', SC: '3-0', H: 'Mohun Bagan SG II', A: 'Coal India' }));
+    await applyGameDetails(tag({ EID: '52628036', T: '2301', SC: '3-0', H: 'Mohun Bagan SG II', A: 'Coal India' }));
     expect(pushLiveTick).not.toHaveBeenCalled();
   });
 });
