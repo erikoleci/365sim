@@ -348,15 +348,36 @@ function isTransientDbError(err) {
     || msg.includes('remaining connection slots');
 }
 export async function queryWithRetry(text, params, opts = {}) {
-  const retries = opts.retries ?? 2; // total of up to 3 attempts
-  const delayMs = opts.delayMs ?? 400;
+  const retries = opts.retries ?? 1; // total of up to 2 attempts
+  const delayMs = opts.delayMs ?? 250;
+  // FIX (2026-09-17): the original version had NO per-attempt cap, so a
+  // slow/stuck DB let each attempt run all the way out to the pool's own
+  // 15s connectionTimeoutMillis/statement_timeout before even considering a
+  // retry -- with retries=2 that was a worst case of ~45s+ before this
+  // function gave up and returned an error, by which point Render's proxy
+  // (and the browser) had ALREADY killed the request as a 502, so the
+  // caller never even got to see the eventual clean error response. A
+  // request-facing read endpoint like GET /api/matches must fail fast and
+  // clearly, not hang silently past the point anything upstream is still
+  // listening. attemptTimeoutMs bounds EACH attempt independently of the
+  // pool's own (deliberately more generous, for background jobs) timeouts,
+  // so total worst case here is attemptTimeoutMs * 2 + one short backoff --
+  // seconds, not the better part of a minute.
+  const attemptTimeoutMs = opts.attemptTimeoutMs ?? 6000;
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      return await pool.query(text, params);
+      return await Promise.race([
+        pool.query(text, params),
+        new Promise((_, reject) => setTimeout(
+          () => reject(Object.assign(new Error(`queryWithRetry: no response within ${attemptTimeoutMs}ms`), { code: 'QUERY_ATTEMPT_TIMEOUT' })),
+          attemptTimeoutMs
+        )),
+      ]);
     } catch (err) {
       lastErr = err;
-      if (!isTransientDbError(err) || attempt === retries) throw err;
+      const transient = err.code === 'QUERY_ATTEMPT_TIMEOUT' || isTransientDbError(err);
+      if (!transient || attempt === retries) throw err;
       console.warn(`[db] transient error on attempt ${attempt + 1}/${retries + 1}, retrying:`, err.message);
       await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
     }
