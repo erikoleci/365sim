@@ -2,6 +2,7 @@ import express from 'express';
 import { queryWithRetry } from '../db.js';
 import { mapEventToMatch } from '../oddsUtils.js';
 import { ensureLondon365Import, getLondon365LeagueNames, getLondon365LeagueMeta } from '../london365.js';
+import { wrap } from '../asyncHandler.js';
 
 const router = express.Router();
 
@@ -114,7 +115,7 @@ function dedupeMatches(list) {
 const MATCHES_CACHE_TTL_MS = 8000;
 const matchesResponseCache = new Map(); // key -> { body, computedAt }
 
-router.get('/', async (req, res) => {
+router.get('/', wrap(async (req, res) => {
   ensureLondon365Import();
 
   const cacheKey = req.query.league || '__all__';
@@ -158,21 +159,21 @@ router.get('/', async (req, res) => {
   const body = { matches: dedupeMatches(rows.map(mapEventToMatch)), leagueNames: getLondon365LeagueNames(), leagueMeta: getLondon365LeagueMeta() };
   matchesResponseCache.set(cacheKey, { body, computedAt: Date.now() });
   res.json(body);
-});
+}));
 
-router.get('/:id/odds-history', async (req, res) => {
+router.get('/:id/odds-history', wrap(async (req, res) => {
   const { rows } = await queryWithRetry(
     'SELECT market_id, selection_id, old_odds, new_odds, changed_by, reason, created_at FROM odds_history WHERE match_id = $1 ORDER BY created_at ASC',
     [req.params.id]
   );
   res.json({ history: rows });
-});
+}));
 
 // Live stats + match events for the Match Details "Statistika"/"Ngjarjet"
 // tabs. Both tables are already populated by the live sync above when the
 // source feed provides them (see persistEvent/syncSource) — this just
 // exposes what was already being written but never read back.
-router.get('/:id/live-detail', async (req, res) => {
+router.get('/:id/live-detail', wrap(async (req, res) => {
   const [{ rows: statsRows }, { rows: eventRows }, { rows: cacheRows }] = await Promise.all([
     queryWithRetry('SELECT * FROM live_statistics WHERE match_id = $1', [req.params.id]),
     queryWithRetry(
@@ -199,12 +200,12 @@ router.get('/:id/live-detail', async (req, res) => {
     }
   }
   res.json({ statistics, events: eventRows });
-});
+}));
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', wrap(async (req, res) => {
   const { rows } = await queryWithRetry('SELECT * FROM matches_cache WHERE id = $1', [req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: 'Match not found' });
   res.json({ match: mapEventToMatch(rows[0]) });
-});
+}));
 
 export default router;

@@ -4,6 +4,7 @@ import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { resolveCurrentOdds, mapEventToMatch } from '../oddsUtils.js';
 import { findConflictingSelection, validateStakeAmount } from '../betValidation.js';
+import { wrap } from '../asyncHandler.js';
 
 const router = express.Router();
 
@@ -45,7 +46,7 @@ function isBoostEligible(matchRow, sel) {
   return favorite.id === sel.selectionId;
 }
 
-router.get('/', async (req, res) => {
+router.get('/', wrap(async (req, res) => {
   const { rows: bets } = await pool.query('SELECT * FROM bets WHERE user_id = $1 ORDER BY created_at DESC', [req.user.id]);
   // Fetch all selections for every bet in a single round trip instead of one
   // query per bet (N+1), then group them in memory.
@@ -60,9 +61,9 @@ router.get('/', async (req, res) => {
   }
   const withSelections = bets.map((b) => ({ ...b, selections: selectionsByBet.get(b.id) || [] }));
   res.json({ bets: withSelections });
-});
+}));
 
-router.post('/', async (req, res) => {
+router.post('/', wrap(async (req, res) => {
   const { type, stake, selections } = req.body || {};
 
   if (!Array.isArray(selections) || selections.length === 0) {
@@ -237,14 +238,14 @@ router.post('/', async (req, res) => {
     bet: { id: betId, totalOdds, potentialReturn, stake },
     balance: updatedRows[0].balance,
   });
-});
+}));
 
 const CANCEL_WINDOW_MS = 10 * 60 * 1000; // must match the window shown in BetSlip.tsx
 
 // A user can cancel their OWN bet while it's still PENDING and within the
 // cancellation window — enforced server-side (not just hidden in the UI
 // after 10 minutes), since the client's clock/timer can't be trusted.
-router.post('/:id/cancel', async (req, res) => {
+router.post('/:id/cancel', wrap(async (req, res) => {
   const { rows: betRows } = await pool.query('SELECT * FROM bets WHERE id = $1', [req.params.id]);
   const bet = betRows[0];
   if (!bet) return res.status(404).json({ error: 'Bet not found' });
@@ -270,6 +271,6 @@ router.post('/:id/cancel', async (req, res) => {
 
   const { rows: userRows } = await pool.query('SELECT balance FROM users WHERE id = $1', [req.user.id]);
   res.json({ ok: true, balance: userRows[0].balance });
-});
+}));
 
 export default router;

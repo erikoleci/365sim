@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
 import pool from '../db.js';
+import { wrap } from '../asyncHandler.js';
 
 const router = express.Router();
 
@@ -68,7 +69,7 @@ export async function requireAuth(req, res, next) {
   }
 }
 
-router.post('/register', async (req, res) => {
+router.post('/register', wrap(async (req, res) => {
   const { name, username, password } = req.body || {};
   if (!name || !username || !password) {
     return res.status(400).json({ error: 'name, username, and password are required' });
@@ -91,9 +92,9 @@ router.post('/register', async (req, res) => {
   const user = rows[0];
   const token = signToken(user);
   res.status(201).json({ token, user: toPublicUser(user) });
-});
+}));
 
-router.post('/login', async (req, res) => {
+router.post('/login', wrap(async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) {
     return res.status(400).json({ error: 'username and password are required' });
@@ -108,13 +109,13 @@ router.post('/login', async (req, res) => {
   }
   const token = signToken(user);
   res.json({ token, user: toPublicUser(user) });
-});
+}));
 
-router.get('/me', requireAuth, async (req, res) => {
+router.get('/me', requireAuth, wrap(async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
   const user = rows[0];
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json({ user: toPublicUser(user) });
-});
+}));
 
 export default router;
