@@ -219,6 +219,51 @@ export async function startLondon365GameDetailsSocket() {
   // watching one live match; leave unset otherwise (this is not meant to
   // run permanently — it logs every single update, no sampling).
   const CAPTURE_EID = process.env.LONDON365_GAMEDETAILS_CAPTURE_EID || null;
+  // MEMORY LEAK FIX #3 (the fast one): applyGameDetails does a DB
+  // round-trip (a SELECT against matches_cache, sometimes an UPDATE/INSERT
+  // too) per message. The line below used to fire it completely
+  // unawaited -- `applyGameDetails(raw).catch(...)` -- for every single
+  // incoming socket message with zero backpressure. Under normal load
+  // that's harmless (the DB round-trip is much faster than messages
+  // arrive), but this is a GLOBAL feed and at least one EID observed in
+  // production sends updates many times a SECOND (looks like a
+  // virtual/simulated fixture, not a real match) -- when the arrival rate
+  // outpaces the DB round-trip rate even briefly, every unawaited call
+  // stays alive (with its own pending pg query, parsed attrs, and
+  // closures) until that query resolves, so the number of CONCURRENT
+  // in-flight calls grows without bound for as long as the burst lasts.
+  // This is what actually caused the heap-limit OOM crashes recorded
+  // within ~100s of boot -- much too fast to be the (already-fixed,
+  // bounded) EID-tracking-map leak, which only grows over hours.
+  //
+  // Fix: coalesce by EID into a single pending map (a burst of updates for
+  // the SAME EID just overwrites the previous pending one -- only the
+  // latest live state ever matters for a tick feed like this) and drain it
+  // with exactly one applyGameDetails call in flight at a time. Memory is
+  // now bounded by the number of DISTINCT eids simultaneously live
+  // (realistically dozens, never thousands), not by total message volume,
+  // no matter how fast any single EID's feed bursts.
+  const pendingByEid = new Map(); // eid -> raw string (latest only)
+  let draining = false;
+
+  async function drainPending() {
+    if (draining) return;
+    draining = true;
+    try {
+      while (pendingByEid.size) {
+        const [eid, raw] = pendingByEid.entries().next().value;
+        pendingByEid.delete(eid);
+        try {
+          await applyGameDetails(raw);
+        } catch (err) {
+          console.error('[london365-gamedetails] apply failed:', err.message);
+        }
+      }
+    } finally {
+      draining = false;
+    }
+  }
+
   gameDetailsSocket.on('gamedetails', function (raw) {
     gameDetailsCount++;
     if (gameDetailsCount <= 3 || gameDetailsCount % 200 === 0) {
@@ -227,9 +272,10 @@ export async function startLondon365GameDetailsSocket() {
     if (CAPTURE_EID && String(raw).includes('EID="' + CAPTURE_EID + '"')) {
       console.log('[london365-gamedetails][capture ' + new Date().toISOString() + ']', String(raw));
     }
-    applyGameDetails(raw).catch(function (err) {
-      console.error('[london365-gamedetails] apply failed:', err.message);
-    });
+    const eidMatch = /EID="([^"]*)"/.exec(String(raw));
+    const key = eidMatch ? eidMatch[1] : String(raw); // fallback: never coalesce if EID missing
+    pendingByEid.set(key, raw);
+    drainPending();
   });
 
   // Diagnostic-only: socket.io v2 has no onAny(), so this reaches into the

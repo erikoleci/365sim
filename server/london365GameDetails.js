@@ -184,10 +184,33 @@ export async function applyGameDetails(raw) {
   // no-op there either way.
   if (prevSeen && Number.isFinite(t)) {
     if (t === prevSeen.t) return;
-    if (t < prevSeen.t) { lastSeen.delete(eid); cardBaseline = null; }
+    if (t < prevSeen.t) {
+      lastSeen.delete(eid);
+      cardBaseline = null;
+      // This EID has (most plausibly) moved on to a new match session --
+      // if it was previously marked "unknown" (see MEMORY LEAK FIX #2 /
+      // the DB-skip optimization above), that verdict belongs to the OLD
+      // session and must not be reused for whatever match this EID
+      // represents now, or a genuine match we do track could go silently
+      // unmatched for up to 4 hours (until pruneStaleLiveState clears it).
+      unknownEidWarned.delete(eid);
+    }
   }
 
   const matchId = 'l365-' + eid;
+  // Skip the DB round-trip entirely for an EID we've already confirmed
+  // isn't one of ours this run (see the "no matching cached game" log
+  // below) -- with the coalescing fix in london365Socket.js this no
+  // longer risks unbounded concurrency, but a chatty non-match feed (a
+  // virtual/simulated fixture has been observed sending updates several
+  // times a SECOND) was still burning a full round-trip to Aiven Postgres
+  // per tick for a lookup whose answer cannot change mid-match. Cleared by
+  // pruneStaleLiveState like everything else, so a genuine EID reuse still
+  // gets a fresh lookup eventually.
+  if (unknownEidWarned.has(eid)) {
+    lastSeen.set(eid, { t: Number.isFinite(t) ? t : 0, yc1: 0, yc2: 0, rc1: 0, rc2: 0 });
+    return;
+  }
   const { rows } = await pool.query(
     'SELECT id, home_team, away_team, live_home_score, live_away_score, live_minute FROM matches_cache WHERE id = $1',
     [matchId]

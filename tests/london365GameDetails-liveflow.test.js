@@ -8,9 +8,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // feed's real ~1/sec cadence instead of only on a goal.
 const mocks = vi.hoisted(function () {
   const store = new Map();
+  let selectCount = 0;
   function query(sql, params) {
     const s = String(sql);
     if (s.indexOf('SELECT id, home_team') === 0) {
+      selectCount++;
       const row = store.get(params[0]);
       return Promise.resolve({ rows: row ? [row] : [] });
     }
@@ -22,7 +24,7 @@ const mocks = vi.hoisted(function () {
     if (s.indexOf('INSERT INTO match_events') === 0) return Promise.resolve({ rows: [], rowCount: 1 });
     return Promise.resolve({ rows: [], rowCount: 0 });
   }
-  return { store, query };
+  return { store, query, getSelectCount: function () { return selectCount; }, resetSelectCount: function () { selectCount = 0; } };
 });
 
 vi.mock('../server/db.js', function () {
@@ -47,6 +49,7 @@ function tag(attrs) {
 
 beforeEach(function () {
   mocks.store.clear();
+  mocks.resetSelectCount();
   vi.clearAllMocks();
   __resetLiveStateForTests();
   mocks.store.set('l365-52628036', {
@@ -103,5 +106,30 @@ describe('applyGameDetails — live flow fix', function () {
     // NOT re-broadcast immediately; that's the whole point of the throttle.
     await applyGameDetails(tag({ EID: '52628036', T: '2301', SC: '3-0', H: 'Mohun Bagan SG II', A: 'Coal India' }));
     expect(pushLiveTick).not.toHaveBeenCalled();
+  });
+});
+
+describe('applyGameDetails — DB-skip for already-confirmed-unmatched EIDs (fast-OOM fix)', function () {
+  // A GLOBAL provider feed pushes updates for every live match worldwide;
+  // most never match anything we imported. A virtual/simulated fixture
+  // observed in production sent updates several times a SECOND for an EID
+  // that was never going to match matches_cache — every one of those still
+  // cost a full DB round-trip before this fix. Once we've confirmed an EID
+  // is unmatched, further updates for it must not touch the DB at all.
+  it('only queries the DB once for an EID never in matches_cache, no matter how many updates arrive', async function () {
+    for (let t = 1; t <= 5; t++) {
+      await applyGameDetails(tag({ EID: '999999', T: String(t), SC: '0-0' }));
+    }
+    expect(mocks.getSelectCount()).toBe(1);
+  });
+
+  it('resumes real DB lookups for an EID once its T counter decreases (provider reused the id for a new session)', async function () {
+    await applyGameDetails(tag({ EID: '888888', T: '100', SC: '0-0' }));
+    expect(mocks.getSelectCount()).toBe(1);
+    // Same EID, T went backwards -- most plausibly reused for a new match
+    // we might actually track. Must not still be treated as "confirmed
+    // unmatched" from the old session.
+    await applyGameDetails(tag({ EID: '888888', T: '5', SC: '0-0' }));
+    expect(mocks.getSelectCount()).toBe(2);
   });
 });
