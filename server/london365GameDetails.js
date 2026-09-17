@@ -138,10 +138,20 @@ export function startStaleLiveStateSweep(intervalMs = 2 * 60 * 1000) {
 }
 
 
+// EIDs to drop unconditionally, before any tracking/DB work at all --
+// confirmed junk on this feed (e.g. a virtual/simulated fixture that isn't
+// a real match and was sending updates several times a second, see the
+// heap-OOM fix above). Not the same mechanism as unknownEidWarned (which
+// still does one DB lookup and keeps a per-EID memory entry) -- this list
+// is checked FIRST and the EID never touches lastSeen/lastTouched/the DB
+// at all, so it costs nothing no matter how fast it bursts.
+const BLOCKED_EIDS = new Set(['58729560']);
+
 export async function applyGameDetails(raw) {
   const attrs = parseGameDetails(raw);
   if (!attrs) return;
   const eid = attrs.EID;
+  if (BLOCKED_EIDS.has(eid)) return;
   lastTouched.set(eid, Date.now());
   // Hard backstop against a burst overwhelming the scheduled sweep above:
   // this is a GLOBAL provider feed (every live match worldwide, most

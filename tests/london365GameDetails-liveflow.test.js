@@ -132,4 +132,9 @@ describe('applyGameDetails — DB-skip for already-confirmed-unmatched EIDs (fas
     await applyGameDetails(tag({ EID: '888888', T: '5', SC: '0-0' }));
     expect(mocks.getSelectCount()).toBe(2);
   });
+
+  it('drops a hard-blocked EID before any tracking or DB work at all', async function () {
+    await applyGameDetails(tag({ EID: '58729560', T: '1', SC: '0-0' }));
+    expect(mocks.getSelectCount()).toBe(0);
+  });
 });
