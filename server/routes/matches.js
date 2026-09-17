@@ -115,6 +115,72 @@ function dedupeMatches(list) {
 const MATCHES_CACHE_TTL_MS = 8000;
 const matchesResponseCache = new Map(); // key -> { body, computedAt }
 
+// Only the columns mapEventToMatch()/dedupeMatches() actually read (see
+// server/oddsUtils.js). `SELECT *` was also pulling settled_at and
+// sportmonks_fixture_id across every row for nothing — small on its own,
+// but free to drop.
+const MATCH_COLUMNS = `id, league, league_id, country_id, home_team, away_team,
+  start_time, status, raw_json, live_home_score, live_away_score,
+  live_minute, live_status, result_home, result_away`;
+
+// ROOT CAUSE (measured 2026-09-17): the unfiltered branch below is the one
+// the frontend ALWAYS hits — App.tsx's loadMatches() calls fetchMatches()
+// with no `league` argument on every load/reconnect and does all
+// league/live/search filtering client-side over the full list (see
+// App.tsx comment above loadMatches). So this single query was trying to
+// pull ~900 rows in one round trip, each carrying a full raw_json odds
+// blob (the dominant cost per row) — confirmed by measurement to take
+// >6s total once past a couple hundred rows, which is exactly
+// queryWithRetry's per-attempt timeout (NOT Postgres's own 15s
+// statement_timeout — the app was giving up on a query Postgres would
+// have finished, well before LIMIT 4000 rows are ever reached).
+// `LIMIT 100` "fixed" the timeout by silently dropping ~800 rows (whole
+// leagues disappearing) — not acceptable.
+//
+// Fix: fetch the exact same bounded window (2 days back / 21 days
+// forward, every league) but in several smaller LIMIT/OFFSET pages
+// instead of one giant query, running a few pages concurrently. Every
+// row in range is still returned — nothing is truncated — but no single
+// DB round trip ever carries more than PAGE_SIZE rows of raw_json, so no
+// single query gets anywhere near the timeout even though the total
+// result set doesn't fit in one 6s window. Concurrency is capped well
+// under the pool's `max: 6` (server/db.js) since this endpoint's queries
+// share that pool with every other route, the live WebSocket sync loop,
+// and the background London365 import.
+const MATCHES_PAGE_SIZE = 200;
+const MAX_CONCURRENT_MATCH_PAGES = 3;
+const MATCHES_PAGE_HARD_CAP = 30; // 30 * 200 = 6000-row safety ceiling against a runaway loop
+
+async function fetchUpcomingMatchRowsPaged() {
+  const allRows = [];
+  for (let page = 0; page < MATCHES_PAGE_HARD_CAP; page += MAX_CONCURRENT_MATCH_PAGES) {
+    const pageIndexes = Array.from({ length: MAX_CONCURRENT_MATCH_PAGES }, (_, i) => page + i);
+    const results = await Promise.all(pageIndexes.map((p) => queryWithRetry(
+      `SELECT ${MATCH_COLUMNS}
+       FROM matches_cache
+       WHERE id LIKE 'l365-%'
+         AND start_time_tz(start_time) > NOW() - interval '2 days'
+         AND start_time_tz(start_time) < NOW() + interval '21 days'
+       ORDER BY start_time ASC, id ASC
+       LIMIT $1 OFFSET $2`,
+      [MATCHES_PAGE_SIZE, p * MATCHES_PAGE_SIZE],
+      // A bit more headroom than the 6000ms default: each page is a much
+      // smaller, bounded slice (measured well under this), so this is
+      // real margin for a slow page, not a blanket "make timeouts bigger"
+      // — and it's still comfortably under Postgres's own 15s
+      // statement_timeout in server/db.js.
+      { attemptTimeoutMs: 8000 }
+    )));
+    let anyShortPage = false;
+    for (const { rows } of results) {
+      allRows.push(...rows);
+      if (rows.length < MATCHES_PAGE_SIZE) anyShortPage = true;
+    }
+    if (anyShortPage) break; // reached the end of the window
+  }
+  return allRows;
+}
+
 router.get('/', wrap(async (req, res) => {
   ensureLondon365Import();
 
@@ -145,16 +211,12 @@ router.get('/', wrap(async (req, res) => {
   // (Aiven connection reset, a pool slot momentarily full during a Render
   // rolling deploy) is exactly the kind of thing that should self-heal
   // with one quick retry instead of surfacing a 502/503 to the user.
-  const { rows } = req.query.league
-    ? await queryWithRetry('SELECT * FROM matches_cache WHERE league = $1 ORDER BY start_time ASC', [req.query.league])
-    : await queryWithRetry(
-        `SELECT * FROM matches_cache
-         WHERE id LIKE 'l365-%'
-           AND start_time_tz(start_time) > NOW() - interval '2 days'
-           AND start_time_tz(start_time) < NOW() + interval '21 days'
-         ORDER BY start_time ASC
-         LIMIT 4000`
-      );
+  const rows = req.query.league
+    ? (await queryWithRetry(
+        `SELECT ${MATCH_COLUMNS} FROM matches_cache WHERE league = $1 ORDER BY start_time ASC`,
+        [req.query.league]
+      )).rows
+    : await fetchUpcomingMatchRowsPaged();
   console.log(`[matches] GET / -> ${rows.length} cached row(s)${req.query.league ? ` for league=${req.query.league}` : ''}`);
   const body = { matches: dedupeMatches(rows.map(mapEventToMatch)), leagueNames: getLondon365LeagueNames(), leagueMeta: getLondon365LeagueMeta() };
   matchesResponseCache.set(cacheKey, { body, computedAt: Date.now() });
