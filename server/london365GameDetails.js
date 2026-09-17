@@ -145,7 +145,7 @@ export function startStaleLiveStateSweep(intervalMs = 2 * 60 * 1000) {
 // still does one DB lookup and keeps a per-EID memory entry) -- this list
 // is checked FIRST and the EID never touches lastSeen/lastTouched/the DB
 // at all, so it costs nothing no matter how fast it bursts.
-const BLOCKED_EIDS = new Set(['58729560']);
+const BLOCKED_EIDS = new Set(['58729560', '52628036']);
 
 export async function applyGameDetails(raw) {
   const attrs = parseGameDetails(raw);
