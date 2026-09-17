@@ -123,7 +123,7 @@ router.get('/', async (req, res) => {
     return res.json(cached.body);
   }
 
-  // Bounded by time: the UI only ever shows "today" through ~7 days ahead,
+  // Bounded by time: the UI only ever shows "today" through ~3 weeks ahead,
   // plus recently-finished/live matches from the last couple of days — so
   // there's no reason to keep pulling EVERY match_cache row ever imported
   // (which only grows over time and was making first-load, especially for
@@ -132,13 +132,20 @@ router.get('/', async (req, res) => {
   // market blobs). start_time is TEXT, so the timestamptz cast is required
   // for a valid comparison (see server/oddsUtils.js normalizeStatus for
   // the same pattern).
+  //
+  // 21 days forward (not the original 10) because continental competitions
+  // (UEFA Champions/Europa/Conference League, Nations League...) play in
+  // rounds spaced 3-4 weeks apart, unlike domestic leagues' weekly
+  // schedule — a 10-day window meant the entire "International" group
+  // went empty for most of the gap between rounds even though the
+  // fixtures existed and were correctly imported/classified.
   const { rows } = req.query.league
     ? await pool.query('SELECT * FROM matches_cache WHERE league = $1 ORDER BY start_time ASC', [req.query.league])
     : await pool.query(
         `SELECT * FROM matches_cache
          WHERE id LIKE 'l365-%'
            AND start_time_tz(start_time) > NOW() - interval '2 days'
-           AND start_time_tz(start_time) < NOW() + interval '10 days'
+           AND start_time_tz(start_time) < NOW() + interval '21 days'
          ORDER BY start_time ASC
          LIMIT 4000`
       );
