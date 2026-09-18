@@ -105,14 +105,10 @@ export async function login(username: string, password: string): Promise<User> {
   return data.user;
 }
 
-export async function register(name: string, username: string, password: string): Promise<User> {
-  const data = await request<{ token: string; user: User }>('/auth/register', {
-    method: 'POST',
-    body: JSON.stringify({ name, username, password }),
-  }, { retry: true });
-  setToken(data.token);
-  return data.user;
-}
+// Self-service registration is intentionally not offered -- accounts are
+// created by an Admin or Agent (see AgentUsersPanel), never by the person
+// signing themselves up. See server/routes/auth.js for the same note on
+// the backend side.
 
 export async function fetchCurrentUser(): Promise<User | null> {
   if (!getToken()) return null;

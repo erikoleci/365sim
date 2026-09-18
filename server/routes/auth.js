@@ -1,7 +1,6 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { wrap } from '../asyncHandler.js';
 
@@ -69,30 +68,11 @@ export async function requireAuth(req, res, next) {
   }
 }
 
-router.post('/register', wrap(async (req, res) => {
-  const { name, username, password } = req.body || {};
-  if (!name || !username || !password) {
-    return res.status(400).json({ error: 'name, username, and password are required' });
-  }
-  if (password.length < 6) {
-    return res.status(400).json({ error: 'Password must be at least 6 characters' });
-  }
-  const { rows: existingRows } = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
-  if (existingRows[0]) return res.status(409).json({ error: 'Username already taken' });
-
-  const id = randomUUID();
-  const hash = await bcrypt.hash(password, 10);
-  await pool.query(
-    `INSERT INTO users (id, name, username, password_hash, balance, role, avatar, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-    [id, name, username, hash, 1000, 'USER', '', Date.now()]
-  );
-
-  const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
-  const user = rows[0];
-  const token = signToken(user);
-  res.status(201).json({ token, user: toPublicUser(user) });
-}));
+// Self-service registration is intentionally not exposed: accounts are
+// created by an Admin (/admin/agents) or an Agent (/admin/users) only, so
+// every account has a known owner/creator from the start. If you're
+// looking for the old public POST /register route, it was removed on
+// purpose, not missing by accident.
 
 router.post('/login', wrap(async (req, res) => {
   const { username, password } = req.body || {};
