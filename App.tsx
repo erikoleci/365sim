@@ -9,7 +9,8 @@ import Login from './components/Login';
 import CasinoHub from './components/CasinoHub';
 import { User, Match, Bet, UserRole, BetSelectionItem, MatchStatus } from './types';
 import * as api from './services/api';
-import { albaniaDateKey, albaniaTodayKey } from './utils/albaniaTime';
+import { albaniaDateKey, albaniaTodayKey, isSameAlbaniaDay } from './utils/albaniaTime';
+import FeaturedMatchCard from './components/FeaturedMatchCard';
 
 const App: React.FC = () => {
   // --- Auth State ---
@@ -887,6 +888,31 @@ const App: React.FC = () => {
       .catch((e) => console.error('Failed to load match detail', e));
     return () => { cancelled = true; };
   }, [detailMatchId]);
+  // "Ndeshjet Kryesore" -- a quick-glance horizontal strip above the full
+  // grouped list, live matches first then the soonest upcoming ones across
+  // ALL leagues/countries (not scoped to whatever league/country is
+  // currently selected -- this is meant as a homepage highlight reel, same
+  // idea as the reference site's featured row).
+  const featuredMatches = useMemo(() => {
+    const live = matches.filter((m) => m.status === MatchStatus.LIVE);
+    const upcoming = matches
+      .filter((m) => m.status === MatchStatus.UPCOMING)
+      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+    return [...live, ...upcoming].slice(0, 12);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matches]);
+
+  const [isTodaySectionOpen, setIsTodaySectionOpen] = useState(true);
+  const todayMatches = useMemo(
+    () => matches
+      .filter((m) => (m.status === MatchStatus.UPCOMING || m.status === MatchStatus.LIVE) && isSameAlbaniaDay(m.startTime, albaniaTodayKey()))
+      .sort((a, b) => {
+        if (a.status !== b.status) return a.status === MatchStatus.LIVE ? -1 : 1;
+        return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+      }),
+    [matches],
+  );
+
   const matchesByCountry = useMemo(() => {
     const byCountry: Record<string, Record<string, Match[]>> = {};
     const selectedCountry = isCountryFilter(currentLeague) ? countryFromFilter(currentLeague) : null;
@@ -1571,6 +1597,59 @@ const App: React.FC = () => {
                       <button onClick={() => setSelectedDate('ALL')} className="shrink-0 underline hover:text-white uppercase text-[10px] tracking-wide">
                         Të gjitha datat
                       </button>
+                    </div>
+                  )}
+
+                  {/* "Ndeshjet Kryesore" + "Ndeshjet Sot" -- only on the
+                      root/home view (not once a specific country/league is
+                      selected, and not on the dedicated Live tab), same
+                      placement as the reference site's homepage. */}
+                  {!showLiveOnly && currentLeague === 'All Top Football' && featuredMatches.length > 0 && (
+                    <div className="bg-brand-panel rounded overflow-hidden shadow-sm">
+                      <div className="bg-[#2f2f2f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] uppercase tracking-wider">
+                        Ndeshjet Kryesore
+                      </div>
+                      <div className="flex gap-2 overflow-x-auto p-2.5 custom-scrollbar">
+                        {featuredMatches.map((match) => (
+                          <FeaturedMatchCard
+                            key={match.id}
+                            match={match}
+                            onBetClick={handleToggleSelection}
+                            onOpenDetail={(m) => setDetailMatchId(m.id)}
+                            selectedIds={selectedIds}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {!showLiveOnly && currentLeague === 'All Top Football' && todayMatches.length > 0 && (
+                    <div className="bg-brand-panel rounded overflow-hidden shadow-sm">
+                      <button
+                        onClick={() => setIsTodaySectionOpen((o) => !o)}
+                        className="w-full bg-[#2f2f2f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] uppercase tracking-wider flex items-center justify-between"
+                      >
+                        <span>Ndeshjet Sot ({todayMatches.length})</span>
+                        <span className={`transition-transform ${isTodaySectionOpen ? '' : '-rotate-90'}`}>▾</span>
+                      </button>
+                      {isTodaySectionOpen && (
+                        <div className="divide-y divide-brand-divider">
+                          {todayMatches.slice(0, 20).map((match) => (
+                            <MatchRow
+                              key={match.id}
+                              match={match}
+                              onBetClick={handleToggleSelection}
+                              onOpenDetail={(m) => setDetailMatchId(m.id)}
+                              isAdmin={currentUser.role === UserRole.ADMIN}
+                              onSettleMatch={handleSettleMatch}
+                              isSimulating={simulatingMatchId === match.id}
+                              selectedIds={selectedIds}
+                              favoriteTeams={favoriteTeams}
+                              onToggleFavoriteTeam={(team) => toggleFavorite('TEAM', team)}
+                            />
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 

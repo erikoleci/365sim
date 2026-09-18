@@ -120,15 +120,20 @@ const TeamBadge: React.FC<{ name: string; logo?: string }> = ({ name, logo }) =>
   );
 };
 
+// Shared by MatchRow and the featured-matches carousel: the card/row shows
+// ONLY the 1X2 market (1 / X / 2) — never the extra outcomes some providers
+// pack into the same bucket (correct score, HTFT).
+export function getMatchWinnerMarket(match: Match) {
+  const h2hMarket = match.markets.find(m => m.id.endsWith('-h2h'));
+  return h2hMarket
+    ? { ...h2hMarket, options: h2hMarket.options.filter(o => o.id === 'HOME' || o.id === 'DRAW' || o.id === 'AWAY') }
+    : undefined;
+}
+
 const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, isAdmin, onSettleMatch, isSimulating, selectedIds, favoriteTeams, onToggleFavoriteTeam }) => {
   const isFinished = match.status === MatchStatus.FINISHED;
   const isLive = match.status === MatchStatus.LIVE;
-  // The card shows ONLY the 1X2 market (1 / X / 2) — never the extra
-  // outcomes some providers pack into the same bucket (correct score, HTFT).
-  const h2hMarket = match.markets.find(m => m.id.endsWith('-h2h'));
-  const matchWinnerMarket = h2hMarket
-    ? { ...h2hMarket, options: h2hMarket.options.filter(o => o.id === 'HOME' || o.id === 'DRAW' || o.id === 'AWAY') }
-    : undefined;
+  const matchWinnerMarket = getMatchWinnerMarket(match);
   const liveClock = useTickingClock(match.currentMinute);
 
   // Odds-movement arrows in the list view, same approach as MatchDetail:
