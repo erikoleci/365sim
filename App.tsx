@@ -893,6 +893,25 @@ const App: React.FC = () => {
   // ALL leagues/countries (not scoped to whatever league/country is
   // currently selected -- this is meant as a homepage highlight reel, same
   // idea as the reference site's featured row).
+  // Quick "<Country> <League>" row (reference: "England Premier League")
+  // above the general featured strip — whichever league we find that's
+  // Premier League/England; simply omitted if that league isn't currently
+  // populated (season gap, provider hiccup) rather than showing an empty
+  // card row.
+  const topLeagueMatches = useMemo(() => {
+    const key = matches.map((m) => m.league).find((k) => leagueCountry(k) === 'Anglia' && /premier league/i.test(leagueLabel(k)));
+    if (!key) return { key: null as string | null, label: '', list: [] as Match[] };
+    const list = matches
+      .filter((m) => m.league === key && (m.status === MatchStatus.UPCOMING || m.status === MatchStatus.LIVE))
+      .sort((a, b) => {
+        if (a.status !== b.status) return a.status === MatchStatus.LIVE ? -1 : 1;
+        return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+      })
+      .slice(0, 10);
+    return { key, label: `${leagueCountry(key)} ${leagueLabel(key)}`, list };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matches]);
+
   const featuredMatches = useMemo(() => {
     const live = matches.filter((m) => m.status === MatchStatus.LIVE);
     const upcoming = matches
@@ -1430,6 +1449,56 @@ const App: React.FC = () => {
             />
           ) : (
             <div className="space-y-3 md:space-y-4">
+              {/* Sport icon strip — top-of-page quick switcher on the home
+                  view only (matches the reference: it's on the homepage,
+                  not repeated on every drilled-down page where the sidebar
+                  already covers the same job). Soccer active; the rest
+                  honestly disabled ("Së shpejti") since only soccer has
+                  real data right now. */}
+              {!showLiveOnly && currentLeague === 'All Top Football' && (
+                <div className="flex gap-1 overflow-x-auto pb-1 no-scrollbar">
+                  <button className="shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded bg-[#333] border-b-2 border-brand-yellow text-white">
+                    <span className="text-lg leading-none" aria-hidden="true">⚽</span>
+                    <span className="text-[9px] uppercase tracking-wide">Futboll</span>
+                  </button>
+                  {[
+                    ['🏀', 'Basketboll'], ['⚾', 'Bejsboll'], ['🏒', 'Hokej'], ['🎾', 'Tenis'],
+                    ['🤾', 'Hendboll'], ['🏈', 'Am. Futboll'], ['🎱', 'Snooker'], ['🏓', 'T. Tavoline'],
+                    ['🏏', 'Kriket'], ['🎯', 'Darts'], ['🏐', 'Volejboll'],
+                  ].map(([icon, name]) => (
+                    <div key={name} className="shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded text-brand-textMuted/40 cursor-not-allowed" title="Së shpejti">
+                      <span className="text-lg leading-none opacity-50" aria-hidden="true">{icon}</span>
+                      <span className="text-[9px] uppercase tracking-wide">{name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Breadcrumb — "Soccer / <Country> - <League>" style header
+                  shown once the person has drilled into something specific,
+                  same idea as the reference site's context bar. Home/
+                  Favorites/root views stay breadcrumb-less on purpose. */}
+              {(showLiveOnly || (currentLeague !== 'All Top Football' && currentLeague !== 'FAVORITES')) && (
+                <div className="bg-[#2a2a2a] border border-brand-divider rounded px-3 py-2 text-xs text-brand-textMuted flex items-center justify-between gap-2">
+                  <span className="truncate">
+                    <span className="text-brand-text font-semibold">Futboll</span>
+                    {showLiveOnly ? (
+                      <span> / <span className="text-brand-accent font-semibold">Live InPlay</span></span>
+                    ) : isCountryFilter(currentLeague) ? (
+                      <span> / <span className="text-brand-text font-semibold">{countryFromFilter(currentLeague)}</span></span>
+                    ) : (
+                      <span> / <span className="text-brand-text font-semibold">{leagueCountry(currentLeague)} - {leagueLabel(currentLeague)}</span></span>
+                    )}
+                  </span>
+                  <button
+                    onClick={() => { setShowLiveOnly(false); setCurrentLeague('All Top Football'); setDetailMatchId(null); }}
+                    className="shrink-0 text-[10px] uppercase tracking-wide text-brand-textMuted hover:text-white"
+                  >
+                    ← Kryefaqja
+                  </button>
+                </div>
+              )}
+
               <div className="lg:hidden flex gap-2 overflow-x-auto pb-2 no-scrollbar">
                 <button onClick={() => { setShowLiveOnly(true); requestAnimationFrame(() => document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' })); }} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 ${showLiveOnly ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>
                   <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse"></span>
@@ -1597,6 +1666,28 @@ const App: React.FC = () => {
                       <button onClick={() => setSelectedDate('ALL')} className="shrink-0 underline hover:text-white uppercase text-[10px] tracking-wide">
                         Të gjitha datat
                       </button>
+                    </div>
+                  )}
+
+                  {!showLiveOnly && currentLeague === 'All Top Football' && topLeagueMatches.list.length > 0 && (
+                    <div className="bg-brand-panel rounded overflow-hidden shadow-sm">
+                      <button
+                        onClick={() => { setShowLiveOnly(false); setCurrentLeague(topLeagueMatches.key!); setDetailMatchId(null); }}
+                        className="w-full bg-[#2f2f2f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] uppercase tracking-wider text-left hover:text-brand-yellow"
+                      >
+                        {topLeagueMatches.label}
+                      </button>
+                      <div className="flex gap-2 overflow-x-auto p-2.5 custom-scrollbar snap-x snap-mandatory">
+                        {topLeagueMatches.list.map((match) => (
+                          <FeaturedMatchCard
+                            key={match.id}
+                            match={match}
+                            onBetClick={handleToggleSelection}
+                            onOpenDetail={(m) => setDetailMatchId(m.id)}
+                            selectedIds={selectedIds}
+                          />
+                        ))}
+                      </div>
                     </div>
                   )}
 
