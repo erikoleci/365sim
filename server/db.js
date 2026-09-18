@@ -34,7 +34,19 @@ export const pool = new Pool({
   // attribute" showed up in the logs. Capping lower here, plus shorter
   // idle release, leaves headroom for that overlap instead of two
   // instances racing to exhaust the server's entire connection budget.
-  max: 6,
+  //
+  // Bumped 6 -> 8 (2026-09-18): with real live traffic (~50 concurrently
+  // subscribed live matches, each queued through its own per-match write
+  // lock — see dbWriteLocks in london365.js), 6 was queueing requests long
+  // enough to blow past queryWithRetry's 8s per-attempt budget under
+  // normal load, not just during a brief provider hiccup. 8 * 2 (the
+  // double-instance overlap case above) = 16, still 4 short of Aiven's
+  // 20-connection ceiling, so the crash this comment describes should stay
+  // avoided. If timeouts persist even at 8, the real fix is reducing write
+  // volume (batching/throttling per-match updates) rather than pushing the
+  // pool size closer to that ceiling — a free-tier single shared vCPU has a
+  // real throughput limit no pool size works around.
+  max: 8,
 });
 
 // REQUIRED by node-postgres: an idle client in the pool can be dropped by
