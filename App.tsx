@@ -95,6 +95,13 @@ const App: React.FC = () => {
   // happened to return.
   const hasLoadedMatchesOnceRef = useRef(matches.length > 0);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Auto-retry with backoff after a failed loadMatches -- without this, a
+  // failure just sits there until the next scheduled poll (every 5 min,
+  // see below) or the person notices and taps "Provo Përsëri" themselves.
+  // A transient backend blip (a crash-restart cycle, a DB timeout cascade)
+  // should heal itself in seconds, not minutes, with nobody watching.
+  const retryAttemptRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [currentView, setCurrentView] = useState<'sports' | 'casino'>('sports');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -190,13 +197,36 @@ const App: React.FC = () => {
       }
       setLoadError(null);
       hasLoadedMatchesOnceRef.current = true;
+      retryAttemptRef.current = 0;
+      if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
     } catch (e) {
       console.error('Failed to load matches', e);
       setLoadError('S\'arritëm të lidhemi me serverin. Kontrollo internetin dhe provo përsëri.');
+      // Backoff: 10s, 20s, 40s, capped at 60s -- fast enough to ride out a
+      // crash-restart cycle or a DB timeout cascade unattended, capped so
+      // a genuinely long outage doesn't hammer the server every few
+      // seconds forever.
+      const attempt = retryAttemptRef.current;
+      const delayMs = Math.min(10000 * 2 ** attempt, 60000);
+      retryAttemptRef.current = attempt + 1;
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = setTimeout(() => { loadMatchesRef.current(); }, delayMs);
     } finally {
       setIsLoading(false);
     }
   }, [currentUser, currentView]);
+
+  // The retry timeout above schedules a call to the NEXT loadMatches it
+  // gets (via this ref) rather than closing over the one from this render,
+  // since useCallback's identity can change between when the timer is set
+  // and when it fires.
+  const loadMatchesRef = useRef(loadMatches);
+  useEffect(() => { loadMatchesRef.current = loadMatches; }, [loadMatches]);
+
+  useEffect(() => {
+    return () => { if (retryTimerRef.current) clearTimeout(retryTimerRef.current); };
+  }, []);
+
 
   useEffect(() => {
     loadMatches();
