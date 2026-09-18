@@ -143,6 +143,16 @@ export async function fetchMatches(league?: string): Promise<{ matches: Match[];
   return request(`/matches${qs}`);
 }
 
+// The list endpoint above only returns the 1X2/"h2h" market per match (see
+// server/routes/matches.js LIST_RAW_JSON_H2H_ONLY) to keep the list payload
+// small/fast. This fetches the ONE match being opened with every market —
+// GET /matches/:id was already doing a full unfiltered SELECT * server-side
+// and is unchanged; this is just the first frontend caller of it.
+export async function fetchMatchById(id: string): Promise<Match> {
+  const { match } = await request<{ match: Match }>(`/matches/${encodeURIComponent(id)}`);
+  return match;
+}
+
 export interface LiveStatistics {
   minute: number | null;
   possession_home: number | null;

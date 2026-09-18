@@ -63,6 +63,14 @@ const App: React.FC = () => {
   // mixed into the home feed by default.
   const [showLiveOnly, setShowLiveOnly] = useState(false);
   const [detailMatchId, setDetailMatchId] = useState<string | null>(null);
+  // GET /api/matches (the list) now only returns the 1X2/"h2h" market per
+  // match to keep that payload small/fast (see server/routes/matches.js).
+  // Opening a match's detail view needs ALL of its markets, so this holds
+  // the one full match object fetched on demand via GET /api/matches/:id
+  // (which is unchanged and still returns everything) when detailMatchId
+  // is set. Kept separate from `matches` so the list's live score/status
+  // WebSocket patches (below) keep working exactly as before.
+  const [detailMatchFull, setDetailMatchFull] = useState<Match | null>(null);
   // Persisted like `matches`/`leagueNames` above: without this, every page
   // refresh reset the view to 'All Top Football' even though the cached
   // matches were already there, so the league someone actually wanted only
@@ -203,6 +211,30 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, currentView]);
 
+  // Applies an ODDS_CHANGED payload's per-selection price updates to one
+  // match's markets array, returning the SAME array reference if nothing
+  // in it was actually touched (so callers can skip re-rendering that
+  // match). Shared by the list (`matches`, h2h-only) and, below, whichever
+  // match's full markets are currently loaded for the open detail view —
+  // both need the identical patch, just against different state.
+  const patchMarketsOdds = useCallback((markets: Match['markets'], changes: { marketId: string; selectionId: string; newOdds?: number }[]) => {
+    let touched = false;
+    const next = markets.map((mk) => {
+      const relevant = changes.filter((c) => c.marketId === mk.id);
+      if (!relevant.length) return mk;
+      let mkTouched = false;
+      const options = mk.options.map((opt) => {
+        const c = relevant.find((c) => c.selectionId === opt.id);
+        if (!c || typeof c.newOdds !== 'number') return opt;
+        mkTouched = true;
+        return { ...opt, odds: c.newOdds };
+      });
+      if (mkTouched) touched = true;
+      return mkTouched ? { ...mk, options } : mk;
+    });
+    return touched ? next : markets;
+  }, []);
+
   // --- Real-time source events (WebSocket) ---
   // Auto-reconnects with exponential backoff on drop instead of going
   // permanently silent — the 30s poll above is only a slow fallback, not
@@ -310,20 +342,22 @@ const App: React.FC = () => {
             if (changes.length) {
               setMatches((current) => current.map((m) => {
                 if (m.id !== msg.matchId) return m;
-                let touched = false;
-                const markets = m.markets.map((mk) => {
-                  const relevant = changes.filter((c) => c.marketId === mk.id);
-                  if (!relevant.length) return mk;
-                  const options = mk.options.map((opt) => {
-                    const c = relevant.find((c) => c.selectionId === opt.id);
-                    if (!c || typeof c.newOdds !== 'number') return opt;
-                    touched = true;
-                    return { ...opt, odds: c.newOdds };
-                  });
-                  return touched ? { ...mk, options } : mk;
-                });
-                return touched ? { ...m, markets } : m;
+                const markets = patchMarketsOdds(m.markets, changes);
+                return markets === m.markets ? m : { ...m, markets };
               }));
+              // The list above only ever carries the h2h market, so this
+              // patch will only actually change something there when the
+              // move was in h2h. Mirror the same patch onto the full
+              // markets fetched for whichever match's detail view is
+              // currently open (see detailMatchFull above) so odds moving
+              // in OTHER markets (correct score, handicaps, etc.) still
+              // update live while someone's looking at that match, exactly
+              // like before this match's full markets lived in `matches`.
+              setDetailMatchFull((current) => {
+                if (!current || current.id !== msg.matchId) return current;
+                const markets = patchMarketsOdds(current.markets, changes);
+                return markets === current.markets ? current : { ...current, markets };
+              });
             }
           }
         } catch { /* ignore malformed socket messages */ }
@@ -829,7 +863,30 @@ const App: React.FC = () => {
   const dateFallbackActive = selectedDate !== 'ALL' && dateScopedUpcoming.length === 0 && scopedUpcoming.length > 0;
   const upcomingMatches = dateFallbackActive ? scopedUpcoming : dateScopedUpcoming;
 
-  const detailMatch = matches.find((m) => m.id === detailMatchId);
+  const detailMatchListEntry = matches.find((m) => m.id === detailMatchId);
+  // Base fields (score/status/minute) always come from `matches` so the
+  // usual WebSocket live-update patches above keep applying while the
+  // detail view is open; `markets` is swapped in from the full fetch below
+  // once it lands (until then this still shows the h2h market the list
+  // already had, so the view isn't empty while loading).
+  const detailMatch = detailMatchListEntry
+    ? (detailMatchFull && detailMatchFull.id === detailMatchId
+        ? { ...detailMatchListEntry, markets: detailMatchFull.markets }
+        : detailMatchListEntry)
+    : undefined;
+
+  // Fetch full markets for whichever match is opened. The list only ever
+  // carries the h2h market (see server/routes/matches.js), so opening a
+  // match's detail (all ~100 markets) needs its own request.
+  useEffect(() => {
+    if (!detailMatchId) { setDetailMatchFull(null); return; }
+    let cancelled = false;
+    setDetailMatchFull(null); // don't show the PREVIOUS match's full markets while this one loads
+    api.fetchMatchById(detailMatchId)
+      .then((full) => { if (!cancelled) setDetailMatchFull(full); })
+      .catch((e) => console.error('Failed to load match detail', e));
+    return () => { cancelled = true; };
+  }, [detailMatchId]);
   const matchesByCountry = useMemo(() => {
     const byCountry: Record<string, Record<string, Match[]>> = {};
     const selectedCountry = isCountryFilter(currentLeague) ? countryFromFilter(currentLeague) : null;

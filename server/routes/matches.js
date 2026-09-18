@@ -115,12 +115,56 @@ function dedupeMatches(list) {
 const MATCHES_CACHE_TTL_MS = 8000;
 const matchesResponseCache = new Map(); // key -> { body, computedAt }
 
-// Only the columns mapEventToMatch()/dedupeMatches() actually read (see
-// server/oddsUtils.js). `SELECT *` was also pulling settled_at and
-// sportmonks_fixture_id across every row for nothing — small on its own,
-// but free to drop.
-const MATCH_COLUMNS = `id, league, league_id, country_id, home_team, away_team,
-  start_time, status, raw_json, live_home_score, live_away_score,
+// The LIST view (this file's `/` route) only ever shows the 1X2/"h2h"
+// market per match — see components/MatchCard.tsx's h2hMarket lookup.
+// Every OTHER one of the ~100 markets per match (correct score, handicaps,
+// both-teams-to-score, per-half breakdowns, etc.) exists in raw_json purely
+// for the full match-detail view (GET /:id below, unchanged, still
+// SELECT *'s the complete raw_json for the one match being opened).
+//
+// raw_json itself is the dominant cost per row (avg ~9-30KB, measured) —
+// pulling ALL of it for ALL ~900 in-window matches just to show a single
+// 1X2 line per card in the list is most of what made the unfiltered query
+// slow (11.5s measured even after paging fixed the earlier 503/timeout).
+//
+// Rather than transfer the full blob to Node and then throw most of it
+// away (which is what mapEventToMatch already effectively does today,
+// just client-side-in-Node instead of server-side-in-Postgres), this has
+// Postgres itself strip every bookmaker's `markets` array down to only the
+// entries with key = 'h2h' BEFORE the row leaves the database — using
+// Postgres's own jsonb functions, not a rewrite of any odds/business logic
+// in SQL. The resulting JSON string has the exact same shape mapEventToMatch
+// already expects (top-level fields untouched, bookmakers[].markets[] just
+// shorter), so mapEventToMatch/dedupeMatches/sorting/translation/suspended-
+// price handling all run completely unchanged on it. A match with no h2h
+// market simply ends up with an empty markets array for THIS list query
+// (COALESCE to '[]', never NULL) -- exactly like a match with genuinely no
+// h2h odds does today, and MatchCard already handles that (h2hMarket is
+// `undefined`, no matchWinnerMarket rendered for that card).
+const LIST_RAW_JSON_H2H_ONLY = `
+  (
+    jsonb_set(
+      raw_json::jsonb,
+      '{bookmakers}',
+      COALESCE((
+        SELECT jsonb_agg(
+          jsonb_set(
+            bm,
+            '{markets}',
+            COALESCE((
+              SELECT jsonb_agg(mk)
+              FROM jsonb_array_elements(bm->'markets') AS mk
+              WHERE mk->>'key' = 'h2h'
+            ), '[]'::jsonb)
+          )
+        )
+        FROM jsonb_array_elements(raw_json::jsonb->'bookmakers') AS bm
+      ), '[]'::jsonb)
+    )
+  )::text AS raw_json`;
+
+const MATCH_COLUMNS_LIST = `id, league, league_id, country_id, home_team, away_team,
+  start_time, status, ${LIST_RAW_JSON_H2H_ONLY}, live_home_score, live_away_score,
   live_minute, live_status, result_home, result_away`;
 
 // ROOT CAUSE (measured 2026-09-17): the unfiltered branch below is the one
@@ -156,7 +200,7 @@ async function fetchUpcomingMatchRowsPaged() {
   for (let page = 0; page < MATCHES_PAGE_HARD_CAP; page += MAX_CONCURRENT_MATCH_PAGES) {
     const pageIndexes = Array.from({ length: MAX_CONCURRENT_MATCH_PAGES }, (_, i) => page + i);
     const results = await Promise.all(pageIndexes.map((p) => queryWithRetry(
-      `SELECT ${MATCH_COLUMNS}
+      `SELECT ${MATCH_COLUMNS_LIST}
        FROM matches_cache
        WHERE id LIKE 'l365-%'
          AND start_time_tz(start_time) > NOW() - interval '2 days'
@@ -213,7 +257,7 @@ router.get('/', wrap(async (req, res) => {
   // with one quick retry instead of surfacing a 502/503 to the user.
   const rows = req.query.league
     ? (await queryWithRetry(
-        `SELECT ${MATCH_COLUMNS} FROM matches_cache WHERE league = $1 ORDER BY start_time ASC`,
+        `SELECT ${MATCH_COLUMNS_LIST} FROM matches_cache WHERE league = $1 ORDER BY start_time ASC`,
         [req.query.league]
       )).rows
     : await fetchUpcomingMatchRowsPaged();
