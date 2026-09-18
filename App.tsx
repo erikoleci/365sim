@@ -902,7 +902,7 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matches]);
 
-  const [isTodaySectionOpen, setIsTodaySectionOpen] = useState(true);
+  const [isTodaySectionOpen, setIsTodaySectionOpen] = useState(false);
   const todayMatches = useMemo(
     () => matches
       .filter((m) => (m.status === MatchStatus.UPCOMING || m.status === MatchStatus.LIVE) && isSameAlbaniaDay(m.startTime, albaniaTodayKey()))
@@ -1429,7 +1429,7 @@ const App: React.FC = () => {
               selectedIds={selectedIds}
             />
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3 md:space-y-4">
               <div className="lg:hidden flex gap-2 overflow-x-auto pb-2 no-scrollbar">
                 <button onClick={() => { setShowLiveOnly(true); requestAnimationFrame(() => document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' })); }} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 ${showLiveOnly ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>
                   <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse"></span>
@@ -1609,7 +1609,7 @@ const App: React.FC = () => {
                       <div className="bg-[#2f2f2f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] uppercase tracking-wider">
                         Ndeshjet Kryesore
                       </div>
-                      <div className="flex gap-2 overflow-x-auto p-2.5 custom-scrollbar">
+                      <div className="flex gap-2 overflow-x-auto p-2.5 custom-scrollbar snap-x snap-mandatory">
                         {featuredMatches.map((match) => (
                           <FeaturedMatchCard
                             key={match.id}
