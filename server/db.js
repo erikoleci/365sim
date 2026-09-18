@@ -460,6 +460,28 @@ export async function cleanupOldData() {
       [now - RETENTION_MS.finishedMatchesDays * day]
     )).rowCount;
 
+    // CATCH-ALL, closing a real gap in the rule above: it only ever
+    // touched matches that both reached FINISHED *and* got settled.
+    // Anything that never got settled (nobody bet on it, or a settlement
+    // bug) stayed FINISHED with settled_at NULL forever; anything the
+    // source feed abandoned mid-way (postponed/cancelled fixture that
+    // never came back with a final score) stayed UPCOMING/LIVE forever.
+    // Neither case was ever deleted by anything — exactly the kind of
+    // unbounded growth this function exists to prevent, and each row
+    // carries a full raw_json odds blob (9-30KB+), so this was the likely
+    // real driver of the DB filling up. GET /api/matches (server/routes/
+    // matches.js) only ever shows a -2 day/+21 day window anyway, so
+    // nothing in the app needs a row this old regardless of its status —
+    // a single time-based rule on start_time, independent of status/
+    // settled_at, is both simpler and safer than trying to special-case
+    // every way a match can go stale. 30 days is generous headroom well
+    // beyond that display window.
+    results.matches_cache_stale = (await pool.query(
+      `DELETE FROM matches_cache
+       WHERE id LIKE 'l365-%'
+         AND start_time_tz(start_time) < NOW() - interval '30 days'`
+    )).rowCount;
+
     // live_statistics is keyed by match_id (PRIMARY KEY, one row per match,
     // overwritten in place) — clean up rows whose match no longer exists in
     // matches_cache so it doesn't grow unbounded either.
