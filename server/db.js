@@ -414,26 +414,66 @@ export async function setKV(key, value) {
 //
 // Retention windows are deliberately generous — this is about preventing
 // unbounded growth, not about minimizing storage aggressively.
+// Retention windows. odds_history/match_events were previously 30 days,
+// which is why this table filled Aiven's free 1GB tier and got locked
+// read-only: this feed writes an odds_history row on every price move,
+// across every imported league, continuously — at that volume 30 days of
+// history is easily hundreds of MB. Cut to a week; that's still plenty for
+// any "how did this price move" question a person would realistically ask,
+// and it keeps ongoing storage growth an order of magnitude smaller.
 const RETENTION_MS = {
-  oddsHistoryDays: 30,
-  matchEventsDays: 30,
+  oddsHistoryDays: 7,
+  matchEventsDays: 7,
   auditLogDays: 90, // kept longer: security/audit trail
   finishedMatchesDays: 7,
 };
+
+// Hard safety valve, independent of the day-based windows above: if the
+// database is actually getting close to a storage cap (Aiven's free tier,
+// or whatever plan is active), age-based retention alone isn't enough --
+// a sudden spike in match volume could fill the remaining headroom before
+// the normal 7-day window ever gets a chance to catch it. When usage
+// crosses DISK_PRESSURE_BYTES, cleanupOldData falls back to a much shorter
+// 1-day window for the two fastest-growing tables (odds_history,
+// match_events) on that pass, clawing back space quickly instead of
+// waiting for tomorrow's normal-window cleanup. Purely a stopgap: it does
+// NOT replace watching actual usage on the Aiven/provider dashboard, and
+// it can't do anything at all once a database is already read-only (this
+// function's own DELETEs need write access, same as any other query) --
+// that state has to be cleared from the provider's side first.
+const DISK_PRESSURE_BYTES = 850 * 1024 * 1024; // ~850MB: headroom before a 1GB cap
+const EMERGENCY_RETENTION_DAYS = 1;
 
 export async function cleanupOldData() {
   const now = Date.now();
   const day = 24 * 60 * 60 * 1000;
   const results = {};
   try {
+    let underPressure = false;
+    try {
+      const { rows } = await pool.query('SELECT pg_database_size(current_database()) AS bytes');
+      const bytes = Number(rows[0]?.bytes || 0);
+      underPressure = bytes > DISK_PRESSURE_BYTES;
+      if (underPressure) {
+        console.warn(`[cleanupOldData] disk pressure: database is ${(bytes / 1024 / 1024).toFixed(0)}MB, above the ${(DISK_PRESSURE_BYTES / 1024 / 1024).toFixed(0)}MB threshold — using a ${EMERGENCY_RETENTION_DAYS}-day emergency window for odds_history/match_events this pass`);
+      }
+    } catch (sizeErr) {
+      // pg_database_size can itself fail under the exact read-only/
+      // out-of-space conditions this is meant to catch -- don't let that
+      // stop the normal day-based cleanup below from at least trying.
+      console.warn('[cleanupOldData] could not check database size, continuing with normal retention:', sizeErr.message);
+    }
+    const oddsHistoryWindow = underPressure ? EMERGENCY_RETENTION_DAYS : RETENTION_MS.oddsHistoryDays;
+    const matchEventsWindow = underPressure ? EMERGENCY_RETENTION_DAYS : RETENTION_MS.matchEventsDays;
+
     results.odds_history = (await pool.query(
       'DELETE FROM odds_history WHERE created_at < $1',
-      [now - RETENTION_MS.oddsHistoryDays * day]
+      [now - oddsHistoryWindow * day]
     )).rowCount;
 
     results.match_events = (await pool.query(
       'DELETE FROM match_events WHERE created_at < $1',
-      [now - RETENTION_MS.matchEventsDays * day]
+      [now - matchEventsWindow * day]
     )).rowCount;
 
     results.audit_log = (await pool.query(
