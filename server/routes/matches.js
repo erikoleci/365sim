@@ -115,6 +115,10 @@ function dedupeMatches(list) {
 const MATCHES_CACHE_TTL_MS = 8000;
 const matchesResponseCache = new Map(); // key -> { body, computedAt }
 
+export function getMatchesResponseCacheSize() {
+  return matchesResponseCache.size;
+}
+
 // The LIST view (this file's `/` route) only ever shows the 1X2/"h2h"
 // market per match — see components/MatchCard.tsx's h2hMarket lookup.
 // Every OTHER one of the ~100 markets per match (correct score, handicaps,
@@ -279,6 +283,17 @@ router.get('/:id/odds-history', wrap(async (req, res) => {
 // tabs. Both tables are already populated by the live sync above when the
 // source feed provides them (see persistEvent/syncSource) — this just
 // exposes what was already being written but never read back.
+//
+// Staleness rule: if the live feed has stopped updating this match's stats
+// for longer than STATS_STALE_MS while it's still marked LIVE, `statistics`
+// is returned as null instead of the frozen last-known numbers — a dead
+// feed silently freezing on "63% possession" forever is a worse experience
+// than showing nothing, and the frontend can't tell the difference between
+// "genuinely still 63%" and "stopped updating 10 minutes ago" without this.
+// `last_updated` is always included (even when statistics is null) so the
+// frontend/future debugging can verify freshness independent of this rule.
+const STATS_STALE_MS = 60000;
+
 router.get('/:id/live-detail', wrap(async (req, res) => {
   const [{ rows: statsRows }, { rows: eventRows }, { rows: cacheRows }] = await Promise.all([
     queryWithRetry('SELECT * FROM live_statistics WHERE match_id = $1', [req.params.id]),
@@ -293,6 +308,7 @@ router.get('/:id/live-detail', wrap(async (req, res) => {
   // shows a genuine running minute for LondonPro365 games.
   let statistics = statsRows[0] || null;
   const cache = cacheRows[0];
+  const lastUpdated = statistics ? Number(statistics.updated_at) : null;
   if (cache) {
     const m = String(cache.live_minute || '').match(/^(\d+)/);
     if (!statistics) {
@@ -305,7 +321,8 @@ router.get('/:id/live-detail', wrap(async (req, res) => {
       statistics = { ...statistics, minute: Number(m[1]) };
     }
   }
-  res.json({ statistics, events: eventRows });
+  const isStale = cache && cache.status === 'LIVE' && lastUpdated != null && Date.now() - lastUpdated > STATS_STALE_MS;
+  res.json({ statistics: isStale ? null : statistics, events: eventRows, last_updated: lastUpdated });
 }));
 
 router.get('/:id', wrap(async (req, res) => {

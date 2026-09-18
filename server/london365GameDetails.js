@@ -330,3 +330,12 @@ export async function applyGameDetails(raw) {
 
   lastSeen.set(eid, { t: Number.isFinite(t) ? t : (prevSeen ? prevSeen.t : 0), yc1, yc2, rc1, rc2 });
 }
+
+export function getGameDetailsMemoryDiagnostics() {
+  return {
+    lastSeen: lastSeen.size,
+    lastTouched: lastTouched.size,
+    unknownEidWarned: unknownEidWarned.size,
+    lastBroadcast: lastBroadcast.size,
+  };
+}

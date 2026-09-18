@@ -2107,6 +2107,17 @@ export function startLondon365LiveLoop() {
   console.log('[london365] live loop started, every ' + LIVE_INTERVAL_MS + 'ms (sports: ' + (SPORTS_RAW === 'all' ? 'all discovered' : SPORTS_RAW) + ')');
 }
 
+export function getLondon365MemoryDiagnostics() {
+  return {
+    countryMapCache: countryMapCache.size,
+    leagueById: leagueById.size,
+    leagueNameIndex: leagueNameIndex.size,
+    marketNameById: marketNameById.size,
+    dbWriteLocks: dbWriteLocks.size,
+    missedLiveCycles: missedLiveCycles.size,
+  };
+}
+
 export async function getLondon365Status() {
   const { rows } = await pool.query(
     `SELECT COUNT(*)::int AS matches,

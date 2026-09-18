@@ -358,3 +358,6 @@ export function stopLondon365GameDetailsSocket() {
   try { gameDetailsSocket.close(); } catch (err) { /* ignore */ }
   gameDetailsSocket = null;
 }
+export function getSocketMemoryDiagnostics() {
+  return { subscribedGameIds: subscribedGameIds.size };
+}

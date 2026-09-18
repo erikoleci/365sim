@@ -26,8 +26,10 @@ import scrapeRouter from './routes/scrape.js';
 import favoritesRouter from './routes/favorites.js';
 import { initDb, cleanupOldData } from './db.js';
 import { initWebSocket } from './ws.js';
-import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCrossCountryMisclassifiedLeagues, purgeCountriesNotInOnlyList, wipeLondon365Data, loadPersistedLeagueMap, startGameDetailsSubscriptionReconcileLoop } from './london365.js';
-import { startLondon365Socket, startLondon365GameDetailsSocket } from './london365Socket.js';
+import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCrossCountryMisclassifiedLeagues, purgeCountriesNotInOnlyList, wipeLondon365Data, loadPersistedLeagueMap, startGameDetailsSubscriptionReconcileLoop, getLondon365MemoryDiagnostics } from './london365.js';
+import { startLondon365Socket, startLondon365GameDetailsSocket, getSocketMemoryDiagnostics } from './london365Socket.js';
+import { getGameDetailsMemoryDiagnostics } from './london365GameDetails.js';
+import { getMatchesResponseCacheSize } from './routes/matches.js';
 import { startKeepAliveSelfPing } from './keepAlive.js';
 
 let dbReady = false;
@@ -272,6 +274,21 @@ async function start() {
   // markets instead of the full catalog.
   setTimeout(function () { repairSparseEvents({ limit: 40 }).catch(function () {}); }, 45 * 1000);
   setInterval(function () { repairSparseEvents({ limit: 40 }).catch(function () {}); }, 3 * 60 * 1000);
+
+  // Diagnostic visibility requested after the OOM crash investigation:
+  // logs process memory alongside every known unbounded-risk in-memory
+  // cache's current size, so a future leak shows up in Render logs as a
+  // steadily growing number long before it crashes the process, instead
+  // of only being discoverable after the fact from a heap dump.
+  setInterval(function () {
+    const mem = process.memoryUsage();
+    const toMB = (n) => Math.round(n / 1024 / 1024);
+    console.log('[memory] rss=' + toMB(mem.rss) + 'MB heapUsed=' + toMB(mem.heapUsed) + 'MB heapTotal=' + toMB(mem.heapTotal) + 'MB' +
+      ' | london365=' + JSON.stringify(getLondon365MemoryDiagnostics()) +
+      ' | gamedetails=' + JSON.stringify(getGameDetailsMemoryDiagnostics()) +
+      ' | socket=' + JSON.stringify(getSocketMemoryDiagnostics()) +
+      ' | matchesResponseCache=' + getMatchesResponseCacheSize());
+  }, 60 * 1000);
   // Prevent the free-tier PG storage cap from filling up with unbounded
   // append-only history (odds_history, match_events, audit_log) and stale
   // finished matches. First run 2 min after boot, then every 6 hours.
