@@ -776,6 +776,24 @@ export function buildEvent(gameId, homeTeam, awayTeam, commenceTime, rows) {
   return ev;
 }
 
+// Converts a naive "YYYY-MM-DDTHH:mm:ss" wall-clock time that's ALREADY in
+// the given IANA zone into the correct UTC Date, accounting for DST on that
+// exact date. Standard library-free technique: format a first UTC guess
+// back through the target zone, then correct by however far off that
+// round-trip landed.
+function zonedWallTimeToUtc(y, mo, d, h, mi, s, timeZone) {
+  const utcGuess = Date.UTC(y, mo - 1, d, h, mi, s);
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone, hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+  const parts = {};
+  for (const p of dtf.formatToParts(new Date(utcGuess))) parts[p.type] = p.value;
+  const asIfUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
+  return new Date(utcGuess + (utcGuess - asIfUtc));
+}
+
 // Returns null (never a fabricated "now") when the provider's date fields
 // are missing or unparseable, so a caller can SKIP the game instead of
 // silently mislabeling it. Defaulting to "now" here used to make
@@ -785,13 +803,24 @@ export function buildEvent(gameId, homeTeam, awayTeam, commenceTime, rows) {
 export function isoFromWholeDate(wholeDate, gameDate, gameTime) {
   const src = wholeDate || ((gameDate || '') + ' ' + (gameTime || ''));
   let iso = String(src).trim().replace(' ', 'T');
-  // Treat naive provider timestamps as UTC so kickoff times are deterministic
-  // regardless of the server's local timezone.
-  if (iso && !/[zZ]$/.test(iso) && !/[+-]\d{2}:\d{2}$/.test(iso)) {
-    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(iso)) iso += ':00';
-    iso += 'Z';
+  const hasExplicitZone = /[zZ]$/.test(iso) || /[+-]\d{2}:\d{2}$/.test(iso);
+  if (!hasExplicitZone && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(iso)) iso += ':00';
+  const m = !hasExplicitZone && iso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/);
+  let d;
+  if (m) {
+    // FIX (2026-09-18): naive provider timestamps were previously treated
+    // as already being UTC (just appending "Z"), which was wrong — this
+    // feed's kickoff times are the provider's own Central European
+    // wall-clock time (matching Europe/Tirane's CET/CEST, same EU DST
+    // rules), not UTC. Blindly appending "Z" put every kickoff exactly
+    // one DST-offset (1-2 hours depending on season) too LATE once
+    // displayed back in Albania local time (e.g. a real 21:00 kickoff
+    // showing as 23:00). Convert from that wall-clock zone properly,
+    // DST-aware, instead of assuming UTC.
+    d = zonedWallTimeToUtc(+m[1], +m[2], +m[3], +m[4], +m[5], +m[6], 'Europe/Tirane');
+  } else {
+    d = new Date(iso);
   }
-  const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString();
 }

@@ -132,13 +132,22 @@ describe('london365 buildEvent', function () {
 });
 
 describe('london365 date and score helpers', function () {
-  it('builds an ISO timestamp from whole_date', function () {
-    expect(isoFromWholeDate('2026-09-05 18:00', null, null)).toBe('2026-09-05T18:00:00.000Z');
+  it('builds an ISO timestamp from whole_date, converting from the provider\'s Europe/Tirane wall-clock time to true UTC', function () {
+    // 2026-09-05 is CEST (UTC+2) in Europe/Tirane, so a raw 18:00 provider
+    // kickoff is 16:00 UTC — NOT 18:00 UTC as the old (buggy) "just append
+    // Z" behavior asserted. See the FIX comment on isoFromWholeDate.
+    expect(isoFromWholeDate('2026-09-05 18:00', null, null)).toBe('2026-09-05T16:00:00.000Z');
   });
 
-  it('falls back to game_date plus game_time', function () {
+  it('falls back to game_date plus game_time, with the same Europe/Tirane -> UTC conversion', function () {
     const iso = isoFromWholeDate(null, '2026-09-05', '18:00');
-    expect(iso).toBe('2026-09-05T18:00:00.000Z');
+    expect(iso).toBe('2026-09-05T16:00:00.000Z');
+  });
+
+  it('converts correctly across the winter CET (UTC+1) offset too, not just summer CEST', function () {
+    // 2026-01-15 is CET (UTC+1) in Europe/Tirane — only a 1-hour shift.
+    const iso = isoFromWholeDate('2026-01-15 18:00', null, null);
+    expect(iso).toBe('2026-01-15T17:00:00.000Z');
   });
 
   it('parses a scoreline', function () {
