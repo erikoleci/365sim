@@ -115,7 +115,7 @@ function keyByUserOrIp(req) {
 // loop) from one identity.
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 120,
+  max: 600,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: keyByUserOrIp,
