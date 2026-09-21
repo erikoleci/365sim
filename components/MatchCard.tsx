@@ -46,7 +46,10 @@ export function shouldAcceptNewClockBase(
   return incomingTotalSeconds >= currentProjected;
 }
 
-function useTickingClock(rawMinute?: string): { minute: number; second: number; half: string } | null {
+// Exported so MatchDetail/LivePitch can show the exact same per-second
+// ticking clock as the match list, instead of freezing between their own
+// (slower) 15s polling refreshes.
+export function useTickingClock(rawMinute?: string): { minute: number; second: number; half: string } | null {
   const base = parseLiveClock(rawMinute);
   const [, forceTick] = React.useState(0);
   const baseRef = React.useRef<{ totalSeconds: number; receivedAt: number } | null>(null);

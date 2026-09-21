@@ -2,6 +2,7 @@ import React from 'react';
 import { Match, MatchStatus } from '../types';
 import type { LiveStatistics } from '../services/api';
 import { formatLiveStatus, isHalftime } from '../utils/liveStatus';
+import { useTickingClock } from './MatchCard';
 
 interface LivePitchProps {
   match: Match;
@@ -21,9 +22,12 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats }) => {
   // Map possession % to a left-position between 25% (away dominant) and 75% (home dominant)
   const dotLeftPct = 25 + (possHome / 100) * 50;
   const attackingSide = possHome >= possAway ? match.homeTeam : match.awayTeam;
-  // Real in-play minute + game half from the provider clock ("62:14").
-  const minNum = parseInt(String(stats?.minute ?? match.currentMinute ?? '').match(/^\d+/)?.[0] ?? '', 10);
-  const half = Number.isNaN(minNum) ? null : minNum < 45 ? 'Pjesa I' : minNum < 46 ? 'Pushim' : minNum < 90 ? 'Pjesa II' : minNum < 105 ? 'Shtesë' : 'Penallti';
+  // Same per-second ticking clock the match list uses (MatchCard.tsx), so the
+  // minute counts up live here too instead of only jumping every ~15s when
+  // MatchDetail's own poll/socket refresh lands.
+  const clock = useTickingClock(stats?.minute != null ? String(stats.minute) : match.currentMinute);
+  const minNum = clock?.minute ?? NaN;
+  const half = clock?.half ?? null;
 
   return (
     <div className="relative w-full h-44 md:h-52 rounded overflow-hidden border border-brand-divider bg-gradient-to-b from-[#1f6b4a] to-[#155038]">

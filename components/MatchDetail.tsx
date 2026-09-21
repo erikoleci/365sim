@@ -3,6 +3,8 @@ import { Match, MatchStatus } from '../types';
 import * as api from '../services/api';
 import type { LiveStatistics, MatchEvent } from '../services/api';
 import LivePitch from './LivePitch';
+import { useTickingClock, formatLiveClock } from './MatchCard';
+import { isHalftime } from '../utils/liveStatus';
 import { LONDON365_EVENT_LABELS, LONDON365_STAT_LABELS } from '../utils/london365Labels';
 
 interface MatchDetailProps {
@@ -53,10 +55,17 @@ const StatBar: React.FC<{ label: string; home: number | null; away: number | nul
 
 const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, onBetClick, selectedIds }) => {
   const isFinished = match.status === MatchStatus.FINISHED;
-  const hasLiveData = match.status === MatchStatus.LIVE || isFinished;
+  const isLive = match.status === MatchStatus.LIVE;
+  const hasLiveData = isLive || isFinished;
+  // Same per-second ticking clock as the match list/pitch view — shown right
+  // in the header (next to the score) so it's visible the moment the page
+  // opens, instead of only inside the pitch box further down, and so it
+  // never looks frozen on whatever minute it happened to load at (e.g. "93'"
+  // sitting still) between the 15s poll/socket refreshes.
   const [activeTab, setActiveTab] = useState<string>('All');
   const [liveDetail, setLiveDetail] = useState<{ statistics: LiveStatistics | null; events: MatchEvent[] } | null>(null);
   const [liveDetailLoading, setLiveDetailLoading] = useState(false);
+  const headerClock = useTickingClock(liveDetail?.statistics?.minute != null ? String(liveDetail.statistics.minute) : match.currentMinute);
 
   // Odds-movement arrows: remember the last-seen price per option id, and
   // flag a direction ('up' | 'down') for a couple seconds after any change
@@ -137,9 +146,16 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
 
   // Extract unique categories in provider order (Kryesore first, then the
   // rest exactly as the source lists them) — never alphabetically sorted,
-  // so the tab strip mirrors the real bookmaker layout.
+  // so the tab strip mirrors the real bookmaker layout. A category only
+  // gets a tab if it actually has at least one non-suspended option right
+  // now; a tab that opens to nothing but locked/greyed markets is dead
+  // weight, not a real choice.
   const categories = useMemo(() => {
-    const cats = new Set(match.markets.map(m => m.category || 'other'));
+    const cats = new Set(
+      match.markets
+        .filter(m => m.options.some(o => !o.suspended))
+        .map(m => m.category || 'other')
+    );
     return ['All', ...Array.from(cats)];
   }, [match]);
 
@@ -166,7 +182,12 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
         
         <div className="mt-4 text-center">
              <div className="text-xs text-brand-textMuted uppercase tracking-wider mb-2">{leagueLabel}</div>
-             {match.status === MatchStatus.LIVE && (
+             {isLive && (
+               <div className={`inline-block mb-2 text-xs font-bold px-3 py-1 rounded-full ${isHalftime(match) ? 'bg-brand-yellow text-black' : 'bg-brand-accent/90 text-black'}`}>
+                 {isHalftime(match) ? 'Pushim' : headerClock ? `${formatLiveClock(headerClock)} · ${headerClock.half}` : (match.currentMinute ? `${match.currentMinute}'` : 'LIVE')}
+               </div>
+             )}
+             {isLive && (
                <div className="mb-4">
                  <LivePitch match={match} stats={liveDetail?.statistics ?? null} />
                </div>
@@ -183,7 +204,11 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
                    <div className="text-2xl font-bold text-white">{match.homeTeam}</div>
                  </div>
                  <div className="text-3xl text-brand-yellow font-mono">
-                    {isFinished ? `${match.score?.home} - ${match.score?.away}` : 'v'}
+                    {isFinished
+                      ? `${match.score?.home} - ${match.score?.away}`
+                      : isLive
+                        ? `${match.liveHomeScore ?? 0} - ${match.liveAwayScore ?? 0}`
+                        : 'v'}
                  </div>
                  <div className="flex flex-col items-center gap-1">
                    {match.awayTeamLogo ? (
