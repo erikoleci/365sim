@@ -189,8 +189,18 @@ if (fs.existsSync(distPath)) {
     }
     res.sendFile(indexHtmlPath);
   });
+} else if (process.env.PUBLIC_FRONTEND_URL) {
+  // Expected/intentional in an API-only deploy (Build Command skips
+  // "vite build" on purpose so this service never serves the JS/CSS
+  // bundle itself -- see the bandwidth note above PUBLIC_FRONTEND_URL in
+  // .env.example). Anyone still landing on this bare API URL for a page
+  // (not an /api or /ws request) gets sent to wherever the frontend
+  // actually lives (e.g. the Netlify deploy) instead of a raw 404/500.
+  const frontendUrl = process.env.PUBLIC_FRONTEND_URL.replace(/\/$/, '');
+  console.log(`[static] No local dist/ -- redirecting non-API requests to ${frontendUrl}`);
+  app.get(/^(?!\/api\/|\/ws).*/, (req, res) => res.redirect(302, frontendUrl));
 } else {
-  console.error(`[static] dist/ not found at ${distPath} — run "npm run build" before starting the server, or check your Build Command.`);
+  console.error(`[static] dist/ not found at ${distPath} — run "npm run build" before starting the server, or check your Build Command, or set PUBLIC_FRONTEND_URL to redirect instead.`);
 }
 
 async function start() {
