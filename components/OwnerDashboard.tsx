@@ -8,7 +8,7 @@ interface OwnerDashboardProps {
   onLogout: () => void;
   users: User[];
   allBets: Bet[];
-  onCreateUser: (u: { name: string; username: string; password: string; balance: number }) => void;
+  onCreateUser: (u: { name: string; username: string; password: string; balance: number; role: 'USER' | 'AGENT' }) => void;
   onDeleteUser: (userId: string) => void;
   onAddCredit: (userId: string, amount: number) => void;
   onResetPassword: (userId: string, newPass: string) => void;
