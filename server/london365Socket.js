@@ -225,6 +225,12 @@ export async function startLondon365GameDetailsSocket() {
   // watching one live match; leave unset otherwise (this is not meant to
   // run permanently — it logs every single update, no sampling).
   const CAPTURE_EID = process.env.LONDON365_GAMEDETAILS_CAPTURE_EID || null;
+  // Hard cap so a forgotten LONDON365_GAMEDETAILS_CAPTURE_EID can never flood the
+  // terminal/log stream forever (one multiplexed EID sends several untruncated
+  // lines per second; left on it swamped the console and slowed the whole
+  // process). Logs the first N lines, then says so once and stops until restart.
+  const CAPTURE_MAX_LINES = Math.max(1, Number(process.env.LONDON365_GAMEDETAILS_CAPTURE_MAX || 200));
+  let captureLines = 0;
   // MEMORY LEAK FIX #3 (the fast one): applyGameDetails does a DB
   // round-trip (a SELECT against matches_cache, sometimes an UPDATE/INSERT
   // too) per message. The line below used to fire it completely
@@ -275,8 +281,12 @@ export async function startLondon365GameDetailsSocket() {
     if (gameDetailsCount <= 3 || gameDetailsCount % 200 === 0) {
       console.log('[london365-gamedetails] received #' + gameDetailsCount + ':', String(raw).slice(0, 200));
     }
-    if (CAPTURE_EID && String(raw).includes('EID="' + CAPTURE_EID + '"')) {
+    if (CAPTURE_EID && captureLines < CAPTURE_MAX_LINES && String(raw).includes('EID="' + CAPTURE_EID + '"')) {
+      captureLines++;
       console.log('[london365-gamedetails][capture ' + new Date().toISOString() + ']', String(raw));
+      if (captureLines === CAPTURE_MAX_LINES) {
+        console.log('[london365-gamedetails][capture] reached ' + CAPTURE_MAX_LINES + ' lines -- capture stopped. Remove LONDON365_GAMEDETAILS_CAPTURE_EID (or raise LONDON365_GAMEDETAILS_CAPTURE_MAX) and restart.');
+      }
     }
     const eidMatch = /EID="([^"]*)"/.exec(String(raw));
     const key = eidMatch ? eidMatch[1] : String(raw); // fallback: never coalesce if EID missing

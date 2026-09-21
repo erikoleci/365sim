@@ -8,6 +8,7 @@ import { logAudit } from '../auditLog.js';
 import { transferBalance } from '../ledger.js';
 import { importLondon365, getLondon365Status, getLondon365CountryDebug } from '../london365.js';
 import { monthRange } from './agent.js';
+import { deleteUserIfUnused, deleteBlockedMessage } from '../userDeletion.js';
 
 const router = express.Router();
 
@@ -304,7 +305,10 @@ router.delete('/users/:id', async (req, res) => {
   const user = rows[0];
   if (!user) return res.status(404).json({ error: 'User not found' });
   if (user.role === 'ADMIN') return res.status(400).json({ error: 'Cannot delete an admin user' });
-  await pool.query('DELETE FROM users WHERE id = $1', [req.params.id]);
+  const result = await deleteUserIfUnused(req.params.id);
+  if (!result.ok) {
+    return res.status(409).json({ error: deleteBlockedMessage(result.blockers), code: 'USER_HAS_HISTORY', blockers: result.blockers });
+  }
   await logAudit(req.user, 'USER_DELETE', req.params.id, { username: user.username });
   res.json({ ok: true });
 });

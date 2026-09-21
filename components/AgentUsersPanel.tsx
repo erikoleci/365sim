@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { User } from '../types';
 import * as api from '../services/api';
 
@@ -36,6 +36,15 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
   const [monthly, setMonthly] = useState<api.AgentMonthlyReport | null>(null);
   const [monthInput, setMonthInput] = useState('');
 
+  // Keep the latest callback in a ref so load() has a STABLE identity. It used
+  // to depend on `onBalanceChanged`, an inline arrow that App recreates on every
+  // render; load changed -> the effect below re-ran -> load() ran again ->
+  // onBalanceChanged -> App re-rendered -> new callback ... an infinite request
+  // loop (agent/me + agent/performance, plus every App effect keyed on
+  // currentUser) that hit the rate limit and made every call answer 429.
+  const onBalanceChangedRef = useRef(onBalanceChanged);
+  useEffect(() => { onBalanceChangedRef.current = onBalanceChanged; }, [onBalanceChanged]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -43,13 +52,13 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
       const [meRes, perf] = await Promise.all([api.agentFetchMe(), api.agentFetchPerformance()]);
       setMe(meRes.agent);
       setUsers(perf);
-      if (onBalanceChanged) onBalanceChanged(meRes.agent.balance);
+      if (onBalanceChangedRef.current) onBalanceChangedRef.current(meRes.agent.balance);
     } catch (e: any) {
       setError(e.message || 'Ngarkimi deshtoi');
     } finally {
       setLoading(false);
     }
-  }, [onBalanceChanged]);
+  }, []);
 
   useEffect(() => { if (tab === 'users') load(); }, [tab, load]);
 

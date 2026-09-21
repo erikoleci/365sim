@@ -5,6 +5,7 @@ import MatchDetail from './components/MatchDetail';
 import BetSlip from './components/BetSlip';
 import OwnerDashboard from './components/OwnerDashboard';
 import AgentUsersPanel from './components/AgentUsersPanel';
+import { withBalance } from './utils/withBalance';
 import Login from './components/Login';
 import CasinoHub from './components/CasinoHub';
 import { User, Match, Bet, UserRole, BetSelectionItem, MatchStatus } from './types';
@@ -1465,7 +1466,7 @@ const App: React.FC = () => {
           {showAdmin && currentUser.role === UserRole.AGENT ? (
             <AgentUsersPanel
               currentUser={currentUser}
-              onBalanceChanged={(balance) => setCurrentUser((p) => (p ? { ...p, balance } : p))}
+              onBalanceChanged={(balance) => setCurrentUser((p) => withBalance(p, balance))}
             />
           ) : currentView === 'casino' ? (
             <CasinoHub userBalance={currentUser.balance} onSetBalance={(balance) => setCurrentUser((p) => p ? { ...p, balance } : p)} />

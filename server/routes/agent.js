@@ -5,6 +5,7 @@ import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { logAudit } from '../auditLog.js';
 import { transferBalance } from '../ledger.js';
+import { deleteUserIfUnused, deleteBlockedMessage } from '../userDeletion.js';
 
 const router = express.Router();
 
@@ -121,7 +122,10 @@ router.delete('/users/:id', async (req, res) => {
   if (betRows[0]) {
     return res.status(400).json({ error: 'Ky user ka histori kuponash, nuk mund te fshihet' });
   }
-  await pool.query('DELETE FROM users WHERE id = $1', [req.params.id]);
+  const result = await deleteUserIfUnused(req.params.id);
+  if (!result.ok) {
+    return res.status(409).json({ error: deleteBlockedMessage(result.blockers), code: 'USER_HAS_HISTORY', blockers: result.blockers });
+  }
   await logAudit(req.user, 'AGENT_USER_DELETE', req.params.id, { username: user.username });
   res.json({ ok: true });
 });
