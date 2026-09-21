@@ -145,7 +145,22 @@ export function startStaleLiveStateSweep(intervalMs = 2 * 60 * 1000) {
 // still does one DB lookup and keeps a per-EID memory entry) -- this list
 // is checked FIRST and the EID never touches lastSeen/lastTouched/the DB
 // at all, so it costs nothing no matter how fast it bursts.
-const BLOCKED_EIDS = new Set(['58729560']);
+// 58729560: confirmed junk (a virtual/simulated fixture, several updates a
+//   second) -- see the fast-heap-OOM fix this originally shipped with.
+// 52628036: this one went back and forth (blocked, then unblocked on the
+//   theory its T counter climbed steadily like one real match). Turns out
+//   that was wrong -- capturing this EID's raw feed for longer shows AT
+//   LEAST 5 distinct, unrelated real matches (different team pairs, e.g.
+//   "FC Agniputhra v South United" alongside several women's internationals
+//   like "China PR (W) v Philippines (W)") all tagged with this exact same
+//   EID, cycling within the same few seconds. The provider is multiplexing
+//   several real matches onto one EID -- our data model can only ever
+//   attach updates to a single matches_cache row per id, so this EID can
+//   never be correctly attributed to any one of them regardless of how
+//   it's handled, and it's high enough traffic to be worth dropping
+//   outright rather than silently mis-serving whichever match happens to
+//   win the race.
+const BLOCKED_EIDS = new Set(['58729560', '52628036']);
 
 export async function applyGameDetails(raw) {
   const attrs = parseGameDetails(raw);

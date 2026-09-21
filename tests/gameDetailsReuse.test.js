@@ -59,11 +59,11 @@ beforeEach(() => {
 
 describe('applyGameDetails - T going backwards (EID reuse) must not permanently freeze the new match', () => {
   it('processes a normal update with an increasing T (baseline case)', async () => {
-    mocks.matches.set('l365-52628036', {
-      id: 'l365-52628036', home_team: 'Team A', away_team: 'Team B',
+    mocks.matches.set('l365-62628037', {
+      id: 'l365-62628037', home_team: 'Team A', away_team: 'Team B',
       live_home_score: 0, live_away_score: 0, live_minute: '10',
     });
-    await applyGameDetails(tag({ EID: '52628036', T: '100', SC: '0-0', H: 'Team A', A: 'Team B' }));
+    await applyGameDetails(tag({ EID: '62628037', T: '100', SC: '0-0', H: 'Team A', A: 'Team B' }));
     expect(wsModule.pushLiveTick).toHaveBeenCalledTimes(1);
   });
 
