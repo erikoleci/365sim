@@ -90,6 +90,7 @@ import {
   getLondon365LeagueNames,
 } from '../server/london365.js';
 import { pushGoal, pushOddsChanged } from '../server/ws.js';
+import { noteBetOnMatches, hydrateBetMatchIds, __resetOddsHistoryPolicyForTests } from '../server/oddsHistoryPolicy.js';
 
 const PREMATCH_ODD = '1|1.9|1|55|Rezultati Final,2|3.5|X|55|Rezultati Final,3|4.1|2|55|Rezultati Final';
 
@@ -194,7 +195,10 @@ describe('london365 Socket.IO handlers', function () {
     expect(mocks.store.get('l365-200').status).toBe('LIVE');
   });
 
-  it('applySocketCoefs patches prices, logs history, and notifies once', async function () {
+  it('applySocketCoefs patches prices, logs history (match has a bet), and notifies once', async function () {
+    // odds_history is only recorded for matches somebody has bet on (see
+    // oddsHistoryPolicy.js); a bet exists on this match.
+    noteBetOnMatches(['l365-200']);
     await syncLondon365Live();
     const n = await applySocketCoefs(200, [{ coef_id: '10', coef: 1.6 }, { coef_id: '11', coef: 3.4 }]);
     expect(n).toBe(1);
@@ -209,6 +213,18 @@ describe('london365 Socket.IO handlers', function () {
     const ev = JSON.parse(mocks.store.get('l365-200').raw_json);
     const outcome = ev.bookmakers[0].markets[0].outcomes.find(function (o) { return o.id === '10'; });
     expect(outcome.price).toBe(1.6);
+  });
+
+  it('applySocketCoefs still patches prices and notifies, but writes NO odds_history, for a match nobody bet on', async function () {
+    __resetOddsHistoryPolicyForTests();
+    await hydrateBetMatchIds(); // mocked DB has no PENDING bet selections => empty set, "hydrated"
+    await syncLondon365Live();
+    const n = await applySocketCoefs(200, [{ coef_id: '10', coef: 1.6 }]);
+    expect(n).toBe(1);
+    expect(mocks.oddsHistory.filter(function (h) { return h.reason === 'socket'; })).toHaveLength(0);
+    expect(pushOddsChanged).toHaveBeenCalledTimes(1);
+    const ev = JSON.parse(mocks.store.get('l365-200').raw_json);
+    expect(ev.bookmakers[0].markets[0].outcomes.find(function (o) { return o.id === '10'; }).price).toBe(1.6);
   });
 
   it('markLondon365GameEnded finishes a live match from delete-live-game', async function () {

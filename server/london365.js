@@ -43,6 +43,12 @@ import { settleMatch } from './matchSettlement.js';
 // MEMORY LEAK FIX comments at their definitions.
 import { forgetLiveState } from './london365GameDetails.js';
 import { unsubscribeGameDetails, getSubscribedGameDetailsIds } from './london365Socket.js';
+import { bump, snapshot as feedStatsSnapshot } from './feedStats.js';
+import {
+  trackGame, isTrackedGame, noteMatchStatus, hasKnownLiveMatches, applyTrackerSnapshot,
+  retainLiveKnown, setLiveRow, forgetLiveRow, resetLiveTracker, getLiveTrackerDiagnostics,
+} from './liveTracker.js';
+import { shouldRecordOddsHistory, hydrateBetMatchIds, oddsHistoryMode } from './oddsHistoryPolicy.js';
 
 const ENABLED = (process.env.LONDON365_ENABLED || '1') === '1';
 const API_BASE = process.env.LONDON365_API || 'https://eccoplay365.com';
@@ -141,6 +147,24 @@ const BARE_EUROPEAN_CUP_RE = /(?<!\b(?:afc|caf|concacaf|ofc)\s)\b(champions leag
 export function isEuropeanInternationalCompetition(leagueName) {
   const name = String(leagueName || '');
   return EUROPEAN_INTERNATIONAL_COMPETITION_RE.test(name) || BARE_EUROPEAN_CUP_RE.test(name);
+}
+// FIFA / World Cup competitions live in the same "International" bucket as
+// the UEFA ones but carry neither "UEFA" nor a bare Champions/Europa/
+// Conference/Nations League name, so the European-only regex above dropped
+// them. Overridable with LONDON365_INTERNATIONAL_EXTRA (a regex source,
+// case-insensitive; REPLACES this default). Youth/women's/friendly variants
+// are still removed afterwards by isMinorLeague() when MAJOR_ONLY=1.
+let INTERNATIONAL_EXTRA_RE = /\b(fifa|world cup)\b/i;
+if (process.env.LONDON365_INTERNATIONAL_EXTRA) {
+  try { INTERNATIONAL_EXTRA_RE = new RegExp(process.env.LONDON365_INTERNATIONAL_EXTRA, 'i'); }
+  catch (err) { console.error('[london365] invalid LONDON365_INTERNATIONAL_EXTRA, using default:', err.message); }
+}
+// The single predicate for "is this International-bucket competition one we
+// want?" -- used by the prematch import, the live REST loop, the socket
+// handlers and the purge, so they can no longer disagree with each other.
+export function isAllowedInternationalCompetition(leagueName) {
+  const name = String(leagueName || '');
+  return isEuropeanInternationalCompetition(name) || INTERNATIONAL_EXTRA_RE.test(name);
 }
 // TEST MODE: restrict ingestion to a fixed whitelist of leagues (5 top
 // domestic leagues + UCL/UEL), processed with bounded parallelism across
@@ -444,6 +468,39 @@ function registerLeagueName(entry) {
 function resolveLeagueByName(rawName) {
   return leagueNameIndex.get(normalizeLeagueText(rawName)) || null;
 }
+// ONE gate for every live entry point (REST live loop + socket new-game /
+// new-live-game). Same rule the prematch import applies, evaluated from the
+// payload alone -- no DB, no event building -- so a game outside the allowed
+// countries/competitions is dropped before any parsing or persistence.
+//   - country allowlist (LONDON365_ONLY_COUNTRIES; "international" is always
+//     added to it)
+//   - inside the International bucket only allowed competitions pass (UEFA /
+//     Nations League / FIFA-World Cup...), judged by the provider's own league
+//     name when the league is known (identical to what the import used), else
+//     by the payload's league text
+//   - a league we cannot resolve at all is still judged on its NAME: a UEFA /
+//     FIFA competition is kept (it used to fall through to the token 'uefa',
+//     which is not in the allowlist, and be silently dropped)
+export function isAllowedByCountryFilter(g, resolvedLeague) {
+  if (!ONLY_COUNTRIES.size) return true;
+  const countryName = (resolvedLeague && resolvedLeague.countryName) || null;
+  if (countryName) {
+    const token = countryName.toLowerCase();
+    if (!ONLY_COUNTRIES.has(token)) return false;
+    if (token === 'international') {
+      const name = resolvedLeague.name || g.league || '';
+      return isAllowedInternationalCompetition(name) && !isMinorLeague(name, countryName);
+    }
+    return true;
+  }
+  const rawName = (g && g.league) || '';
+  const token = leagueCountryToken(rawName);
+  if (ONLY_COUNTRIES.has(token)) return true;
+  return ONLY_COUNTRIES.has('international')
+    && isAllowedInternationalCompetition(rawName)
+    && !isMinorLeague(rawName, 'International');
+}
+
 let leagueByIdLoaded = false;
 // Loads the persisted leagueById map (saved at the end of every completed
 // import — see importLondon365) so it's populated immediately on boot,
@@ -846,11 +903,27 @@ export function minuteToNumber(minute) {
   return m ? Number(m[1]) : null;
 }
 
+// Write-avoidance (LONDON365_SKIP_UNCHANGED_WRITES, default on): the UPSERT below
+// always changed `fetched_at`, so EVERY call -- every 30s per live match from
+// the REST loop, every match on every prematch import -- rewrote the whole
+// row including its 9-30KB raw_json even when nothing had moved. When the row
+// we just read is already identical to what would be written we skip the
+// statement, but still write a heartbeat (fetched_at) at most every
+// WRITE_HEARTBEAT_MS so the "not updated for 8+ minutes => stale" rule in
+// syncLondon365Live and the repair pass's fetched_at ordering keep working.
+// Heartbeat is clamped to <= 5 min, safely under that 8 minute threshold.
+const SKIP_UNCHANGED_WRITES = (process.env.LONDON365_SKIP_UNCHANGED_WRITES || '1') === '1';
+const WRITE_HEARTBEAT_MS = Math.min(5 * 60 * 1000, Math.max(30 * 1000, Number(process.env.LONDON365_WRITE_HEARTBEAT_MS || 4 * 60 * 1000)));
+const sameVal = (a, b) => (a ?? null) === (b ?? null);
+// The repair pass only needs to hit the DB when some non-finished event is
+// (or might be) sparse. Starts true so the first pass after boot always looks.
+let repairNeeded = true;
+
 export async function upsertMatch(ev, league, status, liveScores, liveInfo, leagueMeta) {
   return withDbLock(ev.id, async () => {
     const now = Date.now();
     const { rows } = await pool.query(
-      'SELECT raw_json, status, live_home_score, live_away_score, live_minute, home_team, away_team FROM matches_cache WHERE id = $1',
+      'SELECT raw_json, status, live_home_score, live_away_score, live_minute, home_team, away_team, league, league_id, country_id, start_time, live_status, fetched_at FROM matches_cache WHERE id = $1',
       [ev.id]
     );
     let existing = rows[0];
@@ -895,59 +968,120 @@ export async function upsertMatch(ev, league, status, liveScores, liveInfo, leag
         if (oldCount && Math.sign(newCount - oldCount) === -1) effective = mergeEvents(oldEv, ev);
         rawToStore = JSON.stringify(effective);
         const changes = diffOddsChanges(ev.id, oldEv, effective);
-        for (const c of changes) {
-          await pool.query(
-            `INSERT INTO odds_history (match_id, market_id, selection_id, old_odds, new_odds, changed_by, reason, created_at)
-             VALUES ($1,$2,$3,$4,$5,'SYSTEM','london365_refresh',$6)`,
-            [c.matchId, c.marketId, c.selectionId, c.oldOdds, c.newOdds, now]
-          );
+        if (changes.length) {
+          // odds_history is only worth its writes for matches somebody has
+          // bet on (see oddsHistoryPolicy.js). The WS push below is
+          // independent of it and always fires.
+          if (shouldRecordOddsHistory(ev.id)) {
+            for (const c of changes) {
+              await pool.query(
+                `INSERT INTO odds_history (match_id, market_id, selection_id, old_odds, new_odds, changed_by, reason, created_at)
+                 VALUES ($1,$2,$3,$4,$5,'SYSTEM','london365_refresh',$6)`,
+                [c.matchId, c.marketId, c.selectionId, c.oldOdds, c.newOdds, now]
+              );
+            }
+            bump('oddsHistory.rows_written', changes.length);
+          } else {
+            bump('oddsHistory.rows_skipped', changes.length);
+          }
+          pushOddsChanged(ev.id, { changes: changes });
         }
-        if (changes.length) pushOddsChanged(ev.id, { changes: changes });
       } catch (err) {
         console.error('[london365] odds diff failed for ' + ev.id + ':', err.message);
       }
     }
 
-    await pool.query(
-      `INSERT INTO matches_cache (id, league, league_id, country_id, home_team, away_team, start_time, status, raw_json, fetched_at, live_home_score, live_away_score, live_minute, live_status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-       ON CONFLICT (id) DO UPDATE SET
-         league = CASE WHEN excluded.league = '' THEN matches_cache.league ELSE excluded.league END,
-         -- COALESCE, not overwrite: not every upsert path resolves a
-         -- league_id/country_id (e.g. the repair pass and any live update
-         -- that only had a raw name to go on) -- a call that legitimately
-         -- doesn't know these must never blank out a value an earlier,
-         -- better-informed call already established for this match.
-         league_id = COALESCE(excluded.league_id, matches_cache.league_id),
-         country_id = COALESCE(excluded.country_id, matches_cache.country_id),
-         home_team = excluded.home_team,
-         away_team = excluded.away_team,
-         start_time = excluded.start_time,
-         status = CASE WHEN $15 THEN excluded.status
-                       WHEN matches_cache.status = 'FINISHED' THEN matches_cache.status
-                       ELSE excluded.status END,
-         raw_json = excluded.raw_json,
-         fetched_at = excluded.fetched_at,
-         live_home_score = CASE WHEN $15 THEN excluded.live_home_score
-                                 ELSE COALESCE(excluded.live_home_score, matches_cache.live_home_score) END,
-         live_away_score = CASE WHEN $15 THEN excluded.live_away_score
-                                 ELSE COALESCE(excluded.live_away_score, matches_cache.live_away_score) END,
-         live_minute = CASE WHEN $15 THEN excluded.live_minute
-                             ELSE COALESCE(excluded.live_minute, matches_cache.live_minute) END,
-         live_status = CASE WHEN $15 THEN excluded.live_status
-                             ELSE COALESCE(excluded.live_status, matches_cache.live_status) END`,
-      [
-        ev.id, league, (leagueMeta && leagueMeta.id != null ? String(leagueMeta.id) : null),
-        (leagueMeta && leagueMeta.countryId != null ? String(leagueMeta.countryId) : null),
-        ev.home_team, ev.away_team, ev.commence_time, status,
-        rawToStore, now,
-        liveScores ? liveScores.home : null,
-        liveScores ? liveScores.away : null,
-        liveInfo && liveInfo.minute ? liveInfo.minute : null,
-        liveInfo && liveInfo.apiStatus != null ? String(liveInfo.apiStatus) : null,
-        Boolean(isDifferentMatch),
-      ]
-    );
+    const incomingLeagueId = leagueMeta && leagueMeta.id != null ? String(leagueMeta.id) : null;
+    const incomingCountryId = leagueMeta && leagueMeta.countryId != null ? String(leagueMeta.countryId) : null;
+    const inHome = liveScores ? liveScores.home : null;
+    const inAway = liveScores ? liveScores.away : null;
+    const inMinute = liveInfo && liveInfo.minute ? liveInfo.minute : null;
+    const inLiveStatus = liveInfo && liveInfo.apiStatus != null ? String(liveInfo.apiStatus) : null;
+
+    // Effective post-write values, mirroring the UPSERT's CASE/COALESCE rules
+    // exactly (a different-match/reused id has `existing` cleared above, so
+    // it always takes the plain "incoming" branch).
+    const eff = existing
+      ? {
+          status: existing.status === 'FINISHED' ? existing.status : status,
+          league: league === '' ? existing.league : league,
+          league_id: incomingLeagueId ?? existing.league_id,
+          country_id: incomingCountryId ?? existing.country_id,
+          live_home_score: inHome ?? existing.live_home_score,
+          live_away_score: inAway ?? existing.live_away_score,
+          live_minute: inMinute ?? existing.live_minute,
+          live_status: inLiveStatus ?? existing.live_status,
+        }
+      : {
+          status, league, league_id: incomingLeagueId, country_id: incomingCountryId,
+          live_home_score: inHome, live_away_score: inAway, live_minute: inMinute, live_status: inLiveStatus,
+        };
+
+    const unchanged = SKIP_UNCHANGED_WRITES && existing
+      && existing.raw_json === rawToStore
+      && existing.home_team === ev.home_team
+      && existing.away_team === ev.away_team
+      && existing.start_time === ev.commence_time
+      && existing.status === eff.status
+      && sameVal(existing.league, eff.league)
+      && sameVal(existing.league_id, eff.league_id)
+      && sameVal(existing.country_id, eff.country_id)
+      && sameVal(existing.live_home_score, eff.live_home_score)
+      && sameVal(existing.live_away_score, eff.live_away_score)
+      && sameVal(existing.live_minute, eff.live_minute)
+      && sameVal(existing.live_status, eff.live_status)
+      && now - Number(existing.fetched_at) < WRITE_HEARTBEAT_MS; // NaN (no fetched_at) => false => write
+
+    if (unchanged) {
+      bump('upsert.skipped_unchanged');
+    } else {
+      bump(existing ? 'upsert.written' : 'upsert.inserted');
+      await pool.query(
+        `INSERT INTO matches_cache (id, league, league_id, country_id, home_team, away_team, start_time, status, raw_json, fetched_at, live_home_score, live_away_score, live_minute, live_status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+         ON CONFLICT (id) DO UPDATE SET
+           league = CASE WHEN excluded.league = '' THEN matches_cache.league ELSE excluded.league END,
+           -- COALESCE, not overwrite: not every upsert path resolves a
+           -- league_id/country_id (e.g. the repair pass and any live update
+           -- that only had a raw name to go on) -- a call that legitimately
+           -- doesn't know these must never blank out a value an earlier,
+           -- better-informed call already established for this match.
+           league_id = COALESCE(excluded.league_id, matches_cache.league_id),
+           country_id = COALESCE(excluded.country_id, matches_cache.country_id),
+           home_team = excluded.home_team,
+           away_team = excluded.away_team,
+           start_time = excluded.start_time,
+           status = CASE WHEN $15 THEN excluded.status
+                         WHEN matches_cache.status = 'FINISHED' THEN matches_cache.status
+                         ELSE excluded.status END,
+           raw_json = excluded.raw_json,
+           fetched_at = excluded.fetched_at,
+           live_home_score = CASE WHEN $15 THEN excluded.live_home_score
+                                   ELSE COALESCE(excluded.live_home_score, matches_cache.live_home_score) END,
+           live_away_score = CASE WHEN $15 THEN excluded.live_away_score
+                                   ELSE COALESCE(excluded.live_away_score, matches_cache.live_away_score) END,
+           live_minute = CASE WHEN $15 THEN excluded.live_minute
+                               ELSE COALESCE(excluded.live_minute, matches_cache.live_minute) END,
+           live_status = CASE WHEN $15 THEN excluded.live_status
+                               ELSE COALESCE(excluded.live_status, matches_cache.live_status) END`,
+        [
+          ev.id, league, incomingLeagueId, incomingCountryId,
+          ev.home_team, ev.away_team, ev.commence_time, status,
+          rawToStore, now,
+          inHome, inAway, inMinute, inLiveStatus,
+          Boolean(isDifferentMatch),
+        ]
+      );
+    }
+
+    // Keep the in-memory view in step with what the row now holds.
+    trackGame(ev.id);
+    noteMatchStatus(ev.id, eff.status);
+    setLiveRow(ev.id, {
+      home_team: ev.home_team, away_team: ev.away_team,
+      live_home_score: eff.live_home_score, live_away_score: eff.live_away_score, live_minute: eff.live_minute,
+    });
+    if (eff.status !== 'FINISHED' && isSparseEvent(ev)) repairNeeded = true;
     return existing;
   });
 }
@@ -1118,6 +1252,44 @@ export async function recordGoalIfChanged(ev, score, minute, prev) {
 let importRunning = false;
 let socketConnected = false;
 
+// `l365_last_import` used to be read from Postgres on EVERY GET /api/matches
+// (ensureLondon365Import runs before the response cache is even consulted).
+// The value only changes when an import starts/finishes in THIS process, so
+// keep it in memory after the first read; kv_store is still written so a
+// restart (or a second instance during a rolling deploy) sees it.
+let lastImportMemo = null; // ms epoch, null = not loaded yet
+async function getLastImportAt() {
+  if (lastImportMemo == null) lastImportMemo = Number(await getKV('l365_last_import', 0)) || 0;
+  return lastImportMemo;
+}
+async function setLastImportAt(ts) {
+  lastImportMemo = ts;
+  await setKV('l365_last_import', ts);
+}
+
+// Resume cursors are a crash-recovery aid, not data. Writing one per country
+// and per league (dozens-hundreds of kv_store UPSERTs per import) bought
+// nothing over writing at most one per CURSOR_MIN_INTERVAL_MS: after an
+// interruption the import resumes at most that many seconds of work behind.
+// The cursors are still cleared unconditionally when a pass completes.
+const CURSOR_MIN_INTERVAL_MS = Math.max(0, Number(process.env.LONDON365_CURSOR_WRITE_MS || 30000));
+const cursorLastWrite = new Map();
+async function setCursorThrottled(key, value) {
+  const now = Date.now();
+  if (now - (cursorLastWrite.get(key) || 0) < CURSOR_MIN_INTERVAL_MS) { bump('kv.cursor_skipped'); return; }
+  cursorLastWrite.set(key, now);
+  await setKV(key, value);
+}
+
+// (Re)load which l365 matches exist / are LIVE from the DB. Called at boot and
+// after every completed import (after the purges, so deleted rows drop out).
+export async function refreshLiveTracker() {
+  const startedAt = Date.now();
+  const { rows } = await pool.query("SELECT id, status FROM matches_cache WHERE id LIKE 'l365-%'");
+  applyTrackerSnapshot(rows, startedAt);
+  return rows.length;
+}
+
 export function setLondon365SocketConnected(value) {
   socketConnected = !!value;
 }
@@ -1224,7 +1396,7 @@ export async function importLondon365(opts) {
           continue;
         }
         if (Array.isArray(countryLeagues)) leagues.push(...countryLeagues);
-        await setKV('l365_country_cursor', countryName);
+        await setCursorThrottled('l365_country_cursor', countryName);
       }
       // Full pass completed with nothing left to interrupt it — reset the
       // cursor so the next run starts from the top (International/England)
@@ -1259,7 +1431,7 @@ export async function importLondon365(opts) {
 
       const processLeague = async (league) => {
         const t0 = TEST_MODE ? Date.now() : 0;
-        if (!TEST_MODE) await setKV('l365_league_cursor', league.id);
+        if (!TEST_MODE) await setCursorThrottled('l365_league_cursor', league.id);
         // Resolve country BEFORE the games fetch — otherwise a league with
         // zero current games (very normal, most leagues are between
         // matchdays most of the time) or a failed games fetch skipped
@@ -1279,7 +1451,7 @@ export async function importLondon365(opts) {
         // has actually scoped ONLY_COUNTRIES down; with no restriction
         // configured, every international competition is imported as before.
         if (ONLY_COUNTRIES.size && countryName && countryName.toLowerCase() === 'international'
-            && !isEuropeanInternationalCompetition(league.name)) return;
+            && !isAllowedInternationalCompetition(league.name)) return;
         if (isMinorLeague(league.name, countryName)) return;
 
         let games;
@@ -1448,7 +1620,9 @@ export async function importLondon365(opts) {
     // Reconcile after every purge pass: drop any subscription whose match
     // id is no longer LIVE in matches_cache.
     await reconcileGameDetailsSubscriptions();
-    await setKV('l365_last_import', Date.now());
+    await refreshLiveTracker().catch((err) => console.error('[london365] refreshLiveTracker failed:', err.message));
+    await hydrateBetMatchIds().catch((err) => console.error('[london365] hydrateBetMatchIds failed:', err.message));
+    await setLastImportAt(Date.now());
     console.log(
       '[london365] import done: ' + matchCount + ' matches, ' + coefficientCount + ' coefficients, ' +
       leaguesSeen.size + ' leagues (full-detail fetch: ' + detailOkCount + ' ok / ' + detailFailCount + ' failed' +
@@ -1488,11 +1662,17 @@ export async function importLondon365(opts) {
 // Kick a throttled import in the background (never blocks an API request).
 export function ensureLondon365Import() {
   if (!ENABLED) return;
+  // Fast path: value already in memory and still inside the throttle window
+  // => no DB round trip at all (this runs on every /api/matches request).
+  if (lastImportMemo != null && Math.sign(IMPORT_THROTTLE_MS - (Date.now() - lastImportMemo)) === 1) {
+    bump('import.throttle_memo_hit');
+    return;
+  }
   (async function () {
-    const last = await getKV('l365_last_import', 0);
+    const last = await getLastImportAt();
     const elapsed = Date.now() - last;
     if (Math.sign(IMPORT_THROTTLE_MS - elapsed) === 1) return;
-    await setKV('l365_last_import', Date.now());
+    await setLastImportAt(Date.now());
     try {
       await importLondon365();
     } catch (err) {
@@ -1515,6 +1695,8 @@ export function ensureLondon365Import() {
 // free-tier sleep), `fetched_at` on an already-finished match can still
 // look recent even though the match ended while the process was down.
 const missedLiveCycles = new Map();
+const SKIP_END_DETECTION = Symbol('skip-end-detection');
+let lastLiveSyncAt = 0;
 
 // Pure decision logic, exported for direct testing: should a match that's
 // marked LIVE in the DB but missing from the provider's current live list
@@ -1562,11 +1744,7 @@ export async function syncLondon365Live() {
       // even with ONLY_COUNTRIES set. Now falls back to the same
       // name-based guess (leagueCountryToken) applySocketGame uses, so an
       // unresolved league is judged by its own name instead of let through.
-      if (ONLY_COUNTRIES.size) {
-        const countryName = (resolvedLeagueEarly && resolvedLeagueEarly.countryName) || null;
-        const token = countryName ? countryName.toLowerCase() : leagueCountryToken(g.league || '');
-        if (!ONLY_COUNTRIES.has(token)) continue;
-      }
+      if (!isAllowedByCountryFilter(g, resolvedLeagueEarly)) continue;
       liveIds.add('l365-' + g.id);
       // Each game processed independently: one malformed/failing game must
       // never abort the whole sync cycle. Before this, an uncaught error
@@ -1646,9 +1824,20 @@ export async function syncLondon365Live() {
   //     was somehow never freshly fetched at all (fetched_at stuck at
   //     import time), so it doesn't wait on triggers 1/2 forever.
   try {
+    // Nothing is (or could be) LIVE => nothing to end. Skipping the SELECT is
+    // what lets the database stay idle overnight / between matchdays so Neon
+    // can auto-suspend compute. hasKnownLiveMatches() is fail-open (true)
+    // until the tracker has been loaded from the DB once.
+    if (!hasKnownLiveMatches()) {
+      bump('endDetection.skipped_idle');
+      throw SKIP_END_DETECTION;
+    }
+    bump('endDetection.ran');
+    const endQueryStartedAt = Date.now();
     const { rows } = await pool.query(
       "SELECT id, live_home_score, live_away_score, start_time, fetched_at FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
     );
+    retainLiveKnown(rows.map((r) => r.id), endQueryStartedAt);
     for (const row of rows) {
       if (liveIds.has(row.id)) {
         missedLiveCycles.delete(row.id);
@@ -1669,16 +1858,20 @@ export async function syncLondon365Live() {
       unsubscribeGameDetails(row.id);
       try {
         await settleMatch(row.id, home, away);
+        noteMatchStatus(row.id, 'FINISHED');
+        forgetLiveRow(row.id);
         console.log('[london365] auto-settled ' + row.id + ' ' + home + '-' + away);
       } catch (err) {
         console.error('[london365] auto-settle ' + row.id + ' failed:', err.message);
       }
     }
   } catch (err) {
-    console.error('[london365] end detection failed:', err.message);
+    if (err !== SKIP_END_DETECTION) console.error('[london365] end detection failed:', err.message);
   }
 
-  await setKV('l365_last_live_sync', Date.now());
+  // Kept in memory (was a kv_store write every 30s, 24/7, purely for the
+  // admin status page). getLondon365Status() reads this first.
+  lastLiveSyncAt = Date.now();
   return { games: gamesSynced };
 }
 
@@ -1689,6 +1882,12 @@ export async function syncLondon365Live() {
 
 export async function applySocketCoefs(gameId, coefs) {
   const id = 'l365-' + gameId;
+  bump('coefs.received');
+  // GLOBAL provider feed: most games are outside the allowed countries and
+  // were never imported. Answer "no such row" from memory instead of paying a
+  // Postgres round trip (which used to SELECT the whole raw_json blob) per
+  // message. Fail-open until the tracker has been loaded (see liveTracker.js).
+  if (!isTrackedGame(id)) { bump('coefs.dropped_untracked'); return 0; }
   return withDbLock(id, async () => {
     const { rows } = await pool.query('SELECT raw_json FROM matches_cache WHERE id = $1', [id]);
     if (!rows.length || !rows[0].raw_json) return 0;
@@ -1711,13 +1910,19 @@ export async function applySocketCoefs(gameId, coefs) {
       entry.o.price = price;
     }
     if (!changes.length) return 0;
+    bump('coefs.changed');
     const now = Date.now();
-    for (const c of changes) {
-      await pool.query(
-        `INSERT INTO odds_history (match_id, market_id, selection_id, old_odds, new_odds, changed_by, reason, created_at)
-         VALUES ($1,$2,$3,$4,$5,'SYSTEM','london365_socket',$6)`,
-        [c.matchId, c.marketId, c.selectionId, c.oldOdds, c.newOdds, now]
-      );
+    if (shouldRecordOddsHistory(id)) {
+      for (const c of changes) {
+        await pool.query(
+          `INSERT INTO odds_history (match_id, market_id, selection_id, old_odds, new_odds, changed_by, reason, created_at)
+           VALUES ($1,$2,$3,$4,$5,'SYSTEM','london365_socket',$6)`,
+          [c.matchId, c.marketId, c.selectionId, c.oldOdds, c.newOdds, now]
+        );
+      }
+      bump('oddsHistory.rows_written', changes.length);
+    } else {
+      bump('oddsHistory.rows_skipped', changes.length);
     }
     await pool.query('UPDATE matches_cache SET raw_json = $2, fetched_at = $3 WHERE id = $1', [id, JSON.stringify(ev), now]);
     pushOddsChanged(id, { changes: changes });
@@ -1727,6 +1932,11 @@ export async function applySocketCoefs(gameId, coefs) {
 
 export async function applySocketGame(g, status) {
   if (!g || !g.id) return false;
+  // Filter FIRST (pure in-memory check on the payload) so a game outside the
+  // allowed countries/competitions costs no parsing, no event building and
+  // no DB work. The same gate used to run only after buildEvent().
+  const resolvedLeague = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
+  if (!isAllowedByCountryFilter(g, resolvedLeague)) { bump('socketGame.dropped_filtered'); return false; }
   await ensureMarketNamesLoaded();
   const odds = hydrateRowNames(parseOddString(g.odd).filter(function (o) { return o ? !Number.isNaN(o.coef) : false; }));
   if (!odds.length) return false;
@@ -1735,17 +1945,6 @@ export async function applySocketGame(g, status) {
   const score = parseScore(g.result);
   const minute = g.current_minute || null;
   const resolved = status || (minute ? 'LIVE' : statusFromCommence(commence));
-  const resolvedLeague = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
-  // Same ONLY_COUNTRIES gate the REST import applies (see the import loop
-  // above) — without this, the live odds socket's 'new-game'/'new-live-game'
-  // events bypass the country allowlist entirely and insert matches from
-  // excluded countries (e.g. India/Malaysia showing up even with
-  // ONLY_COUNTRIES="england,france,spain,italy,germany,portugal").
-  if (ONLY_COUNTRIES.size) {
-    const countryName = (resolvedLeague && resolvedLeague.countryName) || null;
-    const token = countryName ? countryName.toLowerCase() : leagueCountryToken(g.league || '');
-    if (!ONLY_COUNTRIES.has(token)) return false;
-  }
   const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : leagueKeyFromCountry(null, g.league || ''), resolved, score, { minute: minute, apiStatus: g.api_status }, resolvedLeague ? { id: resolvedLeague.id, countryId: resolvedLeague.countryId } : undefined);
   await recordGoalIfChanged(ev, score, minute, prev);
   return true;
@@ -1753,6 +1952,7 @@ export async function applySocketGame(g, status) {
 
 export async function markLondon365GameEnded(gameId) {
   const id = 'l365-' + gameId;
+  if (!isTrackedGame(id)) return 0; // never imported: nothing to end (was a SELECT + UPDATE per message)
   return withDbLock(id, async () => {
     const { rows } = await pool.query(
       'SELECT live_home_score, live_away_score FROM matches_cache WHERE id = $1', [id]
@@ -1766,6 +1966,8 @@ export async function markLondon365GameEnded(gameId) {
       pushMatchEnded(id, { homeScore: row.live_home_score ?? 0, awayScore: row.live_away_score ?? 0 });
       forgetLiveState(id);
       unsubscribeGameDetails(id);
+      noteMatchStatus(id, 'FINISHED');
+      forgetLiveRow(id);
     }
     return res ? res.rowCount : 0;
   });
@@ -1774,6 +1976,7 @@ export async function markLondon365GameEnded(gameId) {
 export async function removeSocketCoef(gameId, coefId) {
   const id = 'l365-' + gameId;
   if (!coefId) return 0;
+  if (!isTrackedGame(id)) return 0; // same early drop as applySocketCoefs
   return withDbLock(id, async () => {
     const { rows } = await pool.query('SELECT raw_json FROM matches_cache WHERE id = $1', [id]);
     if (!rows.length || !rows[0].raw_json) return 0;
@@ -1803,6 +2006,10 @@ let repairRunning = false;
 export async function repairSparseEvents(opts) {
   opts = opts || {};
   if (!ENABLED || repairRunning) return { attempted: 0, repaired: 0 };
+  // Nothing sparse seen since the last full look => skip the query (it reads up
+  // to 120 raw_json blobs and would otherwise wake the DB every 3 minutes).
+  if (!opts.force && !repairNeeded) { bump('repair.skipped_idle'); return { attempted: 0, repaired: 0, skipped: true }; }
+  bump('repair.ran');
   repairRunning = true;
   const limit = Number(opts.limit) || 25;
   try {
@@ -1835,6 +2042,9 @@ export async function repairSparseEvents(opts) {
         console.error('[london365] repair ' + row.id + ' failed:', err.message);
       }
     }
+    // Only conclude "nothing to repair" if we actually examined every
+    // non-finished row (the query is capped at limit*3).
+    if (attempted === 0 && rows.length < limit * 3) repairNeeded = false;
     if (attempted) await setKV('l365_market_names', Object.fromEntries(marketNameById));
     if (repaired) console.log('[london365] repair pass: ' + repaired + '/' + attempted + ' sparse events restored to full detail');
     return { attempted: attempted, repaired: repaired };
@@ -1856,6 +2066,12 @@ let liveTimer = null;
 // "l365_italy__...", so purgeExcludedCountries() (which matches on the
 // CURRENT country prefix) never touches it. This sweeps by keyword
 // instead, regardless of whatever country prefix a stale row currently has.
+// Every purge*() below deletes matches_cache rows by league. None of them used
+// to check whether anybody had a bet on the row: deleting a match that has a
+// PENDING selection makes settleMatch() return null forever (match not found)
+// and strands the bet. Appended to each purge DELETE so rows with open bets
+// are always left alone (they are cleaned by normal settlement/retention).
+const NO_PENDING_BETS = `AND NOT EXISTS (SELECT 1 FROM bet_selections bs WHERE bs.match_id = matches_cache.id AND bs.status = 'PENDING')`;
 const STALE_LEAGUE_KEYWORDS = [
   'brasileiro', 'brasileirao', 'amazonense', 'gaucho', 'carioca', 'paulista',
   'catarinense', 'mineiro', 'baiano', 'cearense', 'potiguar', 'goiano',
@@ -1865,16 +2081,18 @@ const STALE_LEAGUE_KEYWORDS = [
   'amateur', 'academy', 'friendly', 'esoccer', 'virtual', 'simulated',
 ];
 export async function purgeStaleLeagues() {
-  for (const kw of STALE_LEAGUE_KEYWORDS) {
-    try {
-      const { rowCount } = await pool.query(
-        `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league ILIKE $1`,
-        [`%${kw}%`]
-      );
-      if (rowCount) console.log(`[london365] purged ${rowCount} stale rows matching "${kw}" (excluded/minor league, imported under an older classification)`);
-    } catch (err) {
-      console.error(`[london365] failed purging stale keyword "${kw}":`, err.message);
-    }
+  // ONE statement (a single scan) instead of one ILIKE '%kw%' DELETE per
+  // keyword (~40 sequential full scans on every boot -- and this deploy
+  // restarts often). Keywords contain only [a-z0-9_], so the alternation is
+  // safe to build without escaping.
+  try {
+    const { rowCount } = await pool.query(
+      `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league ~* $1 ${NO_PENDING_BETS}`,
+      [STALE_LEAGUE_KEYWORDS.join('|')]
+    );
+    if (rowCount) console.log(`[london365] purged ${rowCount} stale rows (excluded/minor league keywords, imported under an older classification)`);
+  } catch (err) {
+    console.error('[london365] failed purging stale league keywords:', err.message);
   }
 }
 
@@ -1902,7 +2120,7 @@ export async function purgeCrossCountryMisclassifiedLeagues() {
         if (!otherToken || otherToken === countryToken) continue;
         if (!slugText.includes(countryName)) continue;
         const { rowCount } = await pool.query(
-          `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league = $1`,
+          `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league = $1 ${NO_PENDING_BETS}`,
           [key]
         );
         purged += rowCount;
@@ -2000,7 +2218,7 @@ export async function purgeCountryPrefixedDuplicateLeagues() {
       const cleanKey = 'l365_' + countryToken + '__' + strippedSlug;
       if (cleanKey === key) continue; // nothing left after stripping — not actually a duplicate
       const { rowCount } = await pool.query(
-        `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league = $1`,
+        `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league = $1 ${NO_PENDING_BETS}`,
         [key]
       );
       purged += rowCount;
@@ -2023,7 +2241,7 @@ export async function purgeExcludedCountries() {
     const token = leagueCountryToken(country) === 'other' ? slugDash(country) : leagueCountryToken(country);
     try {
       const { rowCount } = await pool.query(
-        `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league LIKE $1`,
+        `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league LIKE $1 ${NO_PENDING_BETS}`,
         [`l365_${token}__%`]
       );
       if (rowCount) console.log(`[london365] purged ${rowCount} existing ${country} matches (excluded country)`);
@@ -2062,10 +2280,16 @@ export async function purgeCountriesNotInOnlyList() {
         // — this is what actually purges a Copa Libertadores row that was
         // already sitting in matches_cache from before that narrowing
         // existed, or from before ONLY_COUNTRIES was configured at all.
-        if (token !== 'international' || isEuropeanInternationalCompetition(competitionSlug.replace(/-/g, ' '))) continue;
+        // BUG FIX: the key's competition part is slug()ed with UNDERSCORES
+        // ("champions_league") but the regexes need spaces; only dashes were
+        // converted, so a bare-named "Champions League" / "Europa League" /
+        // "Nations League" failed the check and was DELETED after every import
+        // and at every boot -- the very competitions this allowlist exists to
+        // keep -- and then re-inserted by the next import (pure DB churn).
+        if (token !== 'international' || isAllowedInternationalCompetition(competitionSlug.replace(/[-_]+/g, ' '))) continue;
       }
       const { rowCount } = await pool.query(
-        `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league = $1`,
+        `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league = $1 ${NO_PENDING_BETS}`,
         [key]
       );
       purged += rowCount;
@@ -2090,9 +2314,11 @@ export async function wipeLondon365Data() {
   const { rowCount } = await pool.query(`DELETE FROM matches_cache WHERE id LIKE 'l365-%'`);
   await setKV('l365_leagues', []);
   await setKV('l365_league_map', {});
-  await setKV('l365_last_import', 0);
+  await setLastImportAt(0);
   await setKV('l365_country_cursor', null);
   await setKV('l365_league_cursor', null);
+  resetLiveTracker();
+  repairNeeded = true;
   leagueById.clear();
   leagueNameIndex.clear();
   countryMapCache.clear();
@@ -2112,7 +2338,7 @@ export async function wipeLondon365Data() {
 export async function purgeLegacyLeagueKeyFormat() {
   try {
     const { rowCount } = await pool.query(
-      `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league LIKE 'l365\\_%' ESCAPE '\\' AND strpos(league, '__') = 0`
+      `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league LIKE 'l365\\_%' ESCAPE '\\' AND strpos(league, '__') = 0 ${NO_PENDING_BETS}`
     );
     if (rowCount) console.log(`[london365] purged ${rowCount} rows under the old pre-migration league-key format (dead duplicate leagues)`);
   } catch (err) {
@@ -2169,8 +2395,14 @@ export async function getLondon365Status() {
     liveMatches: rows[0].live,
     upcomingMatches: rows[0].upcoming,
     finishedMatches: rows[0].finished,
-    lastImport: await getKV('l365_last_import', 0),
-    lastLiveSync: await getKV('l365_last_live_sync', 0),
+    lastImport: lastImportMemo != null ? lastImportMemo : await getKV('l365_last_import', 0),
+    lastLiveSync: lastLiveSyncAt || null,
+    oddsHistoryMode: oddsHistoryMode(),
+    liveTracker: getLiveTrackerDiagnostics(),
+    // Rolling counters since the last [feed-stats] log line (default 10 min):
+    // how many upserts were written vs skipped as unchanged, socket messages
+    // dropped without touching the DB, odds_history rows written/skipped, etc.
+    feedStats: feedStatsSnapshot(),
     leagues: (await getKV('l365_leagues', [])).length,
     // Raw league names exactly as the provider sends them — paste this list
     // back for an accurate country-name mapping instead of guessing at the

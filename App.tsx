@@ -329,12 +329,12 @@ const App: React.FC = () => {
               currentMinute: msg.minute ?? m.currentMinute,
             } : m));
           } else if (msg.type === 'CARD') {
-            // Was previously ignored entirely (no branch matched 'CARD'),
-            // so a yellow/red card from the live feed never reached the UI
-            // until the next 60s reload. A card doesn't change the score,
-            // so just nudge a reload of that data rather than guessing at
-            // a card-count field shape here.
-            loadMatches();
+            // A card changes nothing the LIST carries (score, minute, h2h
+            // odds), so re-downloading and re-computing the whole /api/matches
+            // list -- for every connected client, on every card in every
+            // live match -- only defeated the server's 8s response cache and
+            // hit the database. The open match detail view still refreshes
+            // its own events on CARD (see MatchDetail.tsx).
           } else if (msg.type === 'LIVE_EVENT') {
             loadMatches();
           } else if (msg.type === 'MATCH_STARTED') {

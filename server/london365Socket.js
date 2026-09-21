@@ -22,6 +22,7 @@ import {
   removeSocketCoef,
 } from './london365.js';
 import { applyGameDetails, startStaleLiveStateSweep } from './london365GameDetails.js';
+import { hasKnownLiveMatches } from './liveTracker.js';
 
 const SOCKET_URL = process.env.LONDON365_SOCKET || 'https://ecco.socketi355.com:1440';
 const SOCKET_ENABLED = (process.env.LONDON365_SOCKET_ENABLED || '1') === '1';
@@ -108,12 +109,17 @@ export async function startLondon365Socket() {
   // A game just kicked off / became live.
   socket.on('new-live-game', function (d) {
     if (!d || !d.id) return;
-    applySocketGame(d, 'LIVE').catch(function (err) {
-      console.error('[london365-socket] new-live-game failed:', err.message);
-    });
     // Also start streaming this game's live detail (score/cards/etc) the
     // moment it goes live — no need to wait for the next backfill sweep.
-    subscribeGameDetails(d.id);
+    // Only AFTER applySocketGame accepted the game (country/competition
+    // filter passed and it was stored): subscribing first meant every live
+    // game worldwide was subscribed, then unsubscribed again by the 2-minute
+    // reconcile because it never had a row.
+    applySocketGame(d, 'LIVE').then(function (accepted) {
+      if (accepted) subscribeGameDetails(d.id);
+    }).catch(function (err) {
+      console.error('[london365-socket] new-live-game failed:', err.message);
+    });
   });
 
   // A game left the live feed (finished or postponed): stop showing it as LIVE.
@@ -305,6 +311,9 @@ export async function startLondon365GameDetailsSocket() {
   // the odds socket's 'new-live-game' event above — this sweep catches
   // those too, deduped by subscribedGameIds so it's a no-op most of the time.
   setInterval(function () {
+    // Nothing LIVE in memory => nothing to subscribe; skip the query so the
+    // DB can idle (fail-open until the tracker has been loaded).
+    if (!hasKnownLiveMatches()) return;
     pool.query("SELECT id FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'")
       .then(function (res) {
         for (const row of res.rows) subscribeGameDetails(row.id);

@@ -453,7 +453,11 @@ const RETENTION_MS = {
 // it can't do anything at all once a database is already read-only (this
 // function's own DELETEs need write access, same as any other query) --
 // that state has to be cleared from the provider's side first.
-const DISK_PRESSURE_BYTES = 850 * 1024 * 1024; // ~850MB: headroom before a 1GB cap
+// Was hard-coded to 850MB for Aiven's 1GB free tier. Neon's free plan has a much
+// lower storage cap, so at 850MB the safety valve would never have fired before
+// the database hit its limit. Default is now sized for a ~0.5GB cap (~400MB
+// threshold); set DB_DISK_PRESSURE_MB to match your actual plan/limit.
+const DISK_PRESSURE_BYTES = Math.max(50, Number(process.env.DB_DISK_PRESSURE_MB || 400)) * 1024 * 1024;
 const EMERGENCY_RETENTION_DAYS = 1;
 
 export async function cleanupOldData() {

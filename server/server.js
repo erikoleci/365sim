@@ -26,11 +26,13 @@ import scrapeRouter from './routes/scrape.js';
 import favoritesRouter from './routes/favorites.js';
 import { initDb, cleanupOldData } from './db.js';
 import { initWebSocket } from './ws.js';
-import { startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCrossCountryMisclassifiedLeagues, purgeCountriesNotInOnlyList, wipeLondon365Data, loadPersistedLeagueMap, startGameDetailsSubscriptionReconcileLoop, getLondon365MemoryDiagnostics } from './london365.js';
+import { refreshLiveTracker, startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCrossCountryMisclassifiedLeagues, purgeCountriesNotInOnlyList, wipeLondon365Data, loadPersistedLeagueMap, startGameDetailsSubscriptionReconcileLoop, getLondon365MemoryDiagnostics } from './london365.js';
 import { startLondon365Socket, startLondon365GameDetailsSocket, getSocketMemoryDiagnostics } from './london365Socket.js';
 import { getGameDetailsMemoryDiagnostics } from './london365GameDetails.js';
 import { getMatchesResponseCacheSize } from './routes/matches.js';
 import { startKeepAliveSelfPing } from './keepAlive.js';
+import { startFeedStatsLog } from './feedStats.js';
+import { hydrateBetMatchIds } from './oddsHistoryPolicy.js';
 
 let dbReady = false;
 
@@ -258,6 +260,12 @@ async function start() {
         console.error('[server] wipeLondon365Data failed:', err.message);
       }
     }
+    // Load "which matches do we hold / which are live / which have bets" into
+    // memory BEFORE the sockets start filtering on it. Until each finishes the
+    // corresponding check is fail-open (old behaviour), so a slow/failed load
+    // can never cause updates to be dropped.
+    await refreshLiveTracker().catch((err) => console.error('[server] refreshLiveTracker failed:', err.message));
+    await hydrateBetMatchIds().catch((err) => console.error('[server] hydrateBetMatchIds failed:', err.message));
     ensureLondon365Import();
     loadPersistedLeagueMap().catch((err) => console.error('[server] loadPersistedLeagueMap failed:', err.message));
     purgeExcludedCountries().catch((err) => console.error('[server] purgeExcludedCountries failed:', err.message));
@@ -271,6 +279,7 @@ async function start() {
   purgeCountryPrefixedDuplicateLeagues().catch((err) => console.error('[server] purgeCountryPrefixedDuplicateLeagues failed:', err.message));
   purgeCrossCountryMisclassifiedLeagues().catch((err) => console.error('[server] purgeCrossCountryMisclassifiedLeagues failed:', err.message));
   purgeCountriesNotInOnlyList().catch((err) => console.error('[server] purgeCountriesNotInOnlyList failed:', err.message));
+  startFeedStatsLog();
   startLondon365LiveLoop();
   startLondon365Socket();
   startLondon365GameDetailsSocket();

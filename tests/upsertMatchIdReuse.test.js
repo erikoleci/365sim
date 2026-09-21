@@ -7,7 +7,7 @@ const mocks = vi.hoisted(function () {
 
   function query(sql, params = []) {
     const s = String(sql);
-    if (s.startsWith('SELECT raw_json, status, live_home_score, live_away_score, live_minute, home_team, away_team FROM matches_cache')) {
+    if (s.startsWith('SELECT raw_json, status, live_home_score, live_away_score, live_minute, home_team, away_team')) {
       const row = store.get(params[0]);
       return Promise.resolve({ rows: row ? [{ ...row }] : [] });
     }

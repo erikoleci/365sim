@@ -5,6 +5,7 @@ import { requireAuth } from './auth.js';
 import { resolveCurrentOdds, mapEventToMatch } from '../oddsUtils.js';
 import { findConflictingSelection, validateStakeAmount } from '../betValidation.js';
 import { wrap } from '../asyncHandler.js';
+import { noteBetOnMatches } from '../oddsHistoryPolicy.js';
 
 const router = express.Router();
 
@@ -226,6 +227,9 @@ router.post('/', wrap(async (req, res) => {
       );
     }
     await client.query('COMMIT');
+    // From now on price moves on these matches are worth recording in
+    // odds_history (see oddsHistoryPolicy.js).
+    noteBetOnMatches(verifiedSelections.map((s) => s.matchId));
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

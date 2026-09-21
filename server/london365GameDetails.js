@@ -40,6 +40,8 @@ import pool from './db.js';
 import { pushCardEvent, pushLiveTick } from './ws.js';
 import { recordGoalIfChanged, minuteToNumber } from './london365.js';
 import { parseGameDetails } from './gameDetailsParser.js';
+import { isTrackedGame, getLiveRow, setLiveRow, forgetLiveRow, __resetLiveTrackerForTests } from './liveTracker.js';
+import { bump } from './feedStats.js';
 export { parseGameDetails };
 
 function parseScore(sc) {
@@ -75,6 +77,7 @@ const LIVE_TICK_RESYNC_MS = 15000;
 // independent (lastSeen/lastBroadcast are intentionally module-level, not
 // per-call, in production — see comments above).
 export function __resetLiveStateForTests() {
+  __resetLiveTrackerForTests(); // also clears the live row cache
   lastSeen.clear();
   lastBroadcast.clear();
   unknownEidWarned.clear();
@@ -93,6 +96,7 @@ export function forgetLiveState(eid) {
   lastBroadcast.delete(id);
   unknownEidWarned.delete(id);
   lastTouched.delete(id);
+  forgetLiveRow(id);
 }
 
 // MEMORY LEAK FIX #2: forgetLiveState above only ever runs for matches we
@@ -161,12 +165,22 @@ export function startStaleLiveStateSweep(intervalMs = 2 * 60 * 1000) {
 //   outright rather than silently mis-serving whichever match happens to
 //   win the race.
 const BLOCKED_EIDS = new Set(['58729560', '52628036']);
+const TICK_LOG = process.env.LONDON365_GAMEDETAILS_TICK_LOG === '1';
 
 export async function applyGameDetails(raw) {
+  bump('gamedetails.received');
   const attrs = parseGameDetails(raw);
   if (!attrs) return;
   const eid = attrs.EID;
   if (BLOCKED_EIDS.has(eid)) return;
+  // Not a match we hold (different country/league, never imported): drop it
+  // here, before it touches the per-EID maps or the database. This is a
+  // membership check on an in-memory Set, evaluated on EVERY message, so a
+  // game that gets imported later starts being processed immediately (the old
+  // per-EID "unknown" verdict below could block it for up to 4 hours).
+  // Fail-open until the tracker is loaded, so behaviour is unchanged if the
+  // DB was unreachable at boot.
+  if (!isTrackedGame(eid)) { bump('gamedetails.dropped_untracked'); return; }
   lastTouched.set(eid, Date.now());
   // Hard backstop against a burst overwhelming the scheduled sweep above:
   // this is a GLOBAL provider feed (every live match worldwide, most
@@ -236,11 +250,23 @@ export async function applyGameDetails(raw) {
     lastSeen.set(eid, { t: Number.isFinite(t) ? t : 0, yc1: 0, yc2: 0, rc1: 0, rc2: 0 });
     return;
   }
-  const { rows } = await pool.query(
-    'SELECT id, home_team, away_team, live_home_score, live_away_score, live_minute FROM matches_cache WHERE id = $1',
-    [matchId]
-  );
-  const row = rows[0];
+  // Teams / score / minute for this match, from the short-lived in-memory copy
+  // that every writer of those columns keeps current (upsertMatch here and in
+  // london365.js, and the score UPDATE below), instead of one SELECT per
+  // provider tick (~1/sec per live match). The TTL (see liveTracker.js) bounds
+  // how stale it can ever be if some writer were ever missed.
+  let row = getLiveRow(matchId);
+  if (row) {
+    bump('gamedetails.row_cache_hit');
+  } else {
+    bump('gamedetails.row_select');
+    const { rows } = await pool.query(
+      'SELECT id, home_team, away_team, live_home_score, live_away_score, live_minute FROM matches_cache WHERE id = $1',
+      [matchId]
+    );
+    row = rows[0];
+    if (row) setLiveRow(matchId, row);
+  }
   if (!row) {
     // Game not in our catalog (different country/league than what we
     // import — see LONDON365_ONLY_COUNTRIES). Per instructions, this
@@ -260,7 +286,9 @@ export async function applyGameDetails(raw) {
 
   const score = parseScore(attrs.SC);
   const minuteDisplay = row.live_minute || null; // verified source, see header comment
-  console.log(`[live] EID=${eid} score=${attrs.SC || '?'} minute=${minuteDisplay || '?'}`);
+  // Per-tick log line (~1/sec per live match) is opt-in: it was flooding the
+  // log stream and costs CPU for no diagnostic value once the feed is confirmed.
+  if (TICK_LOG) console.log(`[live] EID=${eid} score=${attrs.SC || '?'} minute=${minuteDisplay || '?'}`);
 
   // BUG FIX: this fast (~1/sec) socket used to only ever write the score
   // into `live_statistics` (via recordGoalIfChanged below) and never into
@@ -283,6 +311,10 @@ export async function applyGameDetails(raw) {
     );
     homeScoreForBroadcast = score.home;
     awayScoreForBroadcast = score.away;
+    // Keep the in-memory copy in step with the row we just wrote. `row` itself
+    // is left untouched: everything below (goal diff, `before`) needs the
+    // PRE-update values.
+    setLiveRow(matchId, { ...row, live_home_score: score.home, live_away_score: score.away });
   }
 
   if (score) {
