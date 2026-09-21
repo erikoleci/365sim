@@ -20,6 +20,7 @@ import {
   applySocketGame,
   markLondon365GameEnded,
   removeSocketCoef,
+  isLiveGameWanted,
 } from './london365.js';
 import { applyGameDetails, startStaleLiveStateSweep } from './london365GameDetails.js';
 import { hasKnownLiveMatches } from './liveTracker.js';
@@ -109,15 +110,14 @@ export async function startLondon365Socket() {
   // A game just kicked off / became live.
   socket.on('new-live-game', function (d) {
     if (!d || !d.id) return;
-    // Also start streaming this game's live detail (score/cards/etc) the
-    // moment it goes live — no need to wait for the next backfill sweep.
-    // Only AFTER applySocketGame accepted the game (country/competition
-    // filter passed and it was stored): subscribing first meant every live
-    // game worldwide was subscribed, then unsubscribed again by the 2-minute
-    // reconcile because it never had a row.
-    applySocketGame(d, 'LIVE').then(function (accepted) {
-      if (accepted) subscribeGameDetails(d.id);
-    }).catch(function (err) {
+    // Start streaming this game's live detail (score/cards/etc) the moment it
+    // goes live -- immediately, NOT after the DB write below, so the first
+    // goal can never be waiting on Postgres or on odds parsing. Only games that
+    // pass the country/competition filter are subscribed (a synchronous,
+    // in-memory check); previously every live game worldwide was subscribed and
+    // then dropped again by the 2-minute reconcile.
+    if (isLiveGameWanted(d)) subscribeGameDetails(d.id);
+    applySocketGame(d, 'LIVE').catch(function (err) {
       console.error('[london365-socket] new-live-game failed:', err.message);
     });
   });

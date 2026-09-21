@@ -11,9 +11,30 @@
 //   LONDON365_ENABLED            1 (default) or 0
 //   LONDON365_API                default https://eccoplay365.com
 //   LONDON365_ORIGIN             default https://londonpro365.com
-//   LONDON365_SPORTS             csv sport ids, or 'all' (default) to
-//                                discover every sport the provider exposes
-//   LONDON365_LEAGUES            league cap per sport, 0 = all
+//   LONDON365_SPORTS             csv sport ids. DEFAULT '1' (Soccer only).
+//                                'all' discovers every sport the provider
+//                                exposes (opt-in).
+//   LONDON365_ONLY_COUNTRIES     THE catalogue whitelist (csv of the provider's
+//                                own country names, case-insensitive).
+//                                DEFAULT England,France,Spain,Italy,Germany.
+//                                The "International" bucket is always added
+//                                and then narrowed by competition NAME (UEFA
+//                                Champions/Europa/Conference League, Nations
+//                                League, other UEFA/Euro competitions -- never
+//                                youth/women's/friendlies, never other
+//                                confederations). '*' or 'all' turns the
+//                                whitelist OFF (worldwide import, opt-in).
+//   LONDON365_MAJOR_ONLY         1 (default) = additionally drop youth /
+//                                reserve / women's / amateur / friendly /
+//                                virtual leagues and clearly regional or
+//                                amateur lower tiers inside the allowed
+//                                countries.
+//   LONDON365_EXCLUDE_LEAGUE_PATTERN  extra regex of league names to drop
+//   LONDON365_INTERNATIONAL_EXTRA     extra regex of International competition
+//                                names to KEEP (default none; e.g. 'fifa|world cup')
+//   LONDON365_LEAGUES            league cap per sport, 0 = all. Applied AFTER the
+//                                filters above, so it can only ever cut wanted
+//                                leagues, never let unwanted ones use up slots.
 //   LONDON365_PRIORITY_COUNTRIES csv of real country names (as returned by
 //                                /ajax/countries, e.g. "England,France,Spain,
 //                                Italy,Germany") — when set, ONLY these
@@ -27,7 +48,11 @@
 //                                no league cap" on limited server memory.
 //                                Empty/unset (default) = full detail for
 //                                everyone, same as before this option existed.
-//   LONDON365_FULL                1 = fetch every market via detail endpoint
+//   LONDON365_FULL                1 (default) = fetch every market via the detail
+//                                endpoint for leagues that ALREADY passed the
+//                                filters. It only controls how much detail is
+//                                fetched per accepted match; it never widens
+//                                (or narrows) WHICH matches are accepted.
 //   LONDON365_LIVE_INTERVAL_MS   default 30000 (min 10000)
 //   LONDON365_IMPORT_THROTTLE_MS default 600000
 
@@ -44,6 +69,7 @@ import { settleMatch } from './matchSettlement.js';
 import { forgetLiveState } from './london365GameDetails.js';
 import { unsubscribeGameDetails, getSubscribedGameDetailsIds } from './london365Socket.js';
 import { bump, snapshot as feedStatsSnapshot } from './feedStats.js';
+import { announceGoalIfChanged, clearGoalAnnounced } from './goalAnnouncer.js';
 import {
   trackGame, isTrackedGame, noteMatchStatus, hasKnownLiveMatches, applyTrackerSnapshot,
   retainLiveKnown, setLiveRow, forgetLiveRow, resetLiveTracker, getLiveTrackerDiagnostics,
@@ -55,7 +81,7 @@ const API_BASE = process.env.LONDON365_API || 'https://eccoplay365.com';
 const SITE_ORIGIN = process.env.LONDON365_ORIGIN || 'https://londonpro365.com';
 // 'all' (default) discovers every sport the provider exposes so no match is
 // hidden; a csv like "1,2,5" restricts the import to those sport ids.
-const SPORTS_RAW = (process.env.LONDON365_SPORTS || 'all').trim();
+const SPORTS_RAW = (process.env.LONDON365_SPORTS || '1').trim();
 let resolvedSports = null;
 
 export async function resolveSports() {
@@ -113,12 +139,18 @@ const EXCLUDED_COUNTRIES = new Set(
 // on a constrained host. Empty = no restriction (import every country, old
 // behavior). A league whose country can't be resolved at all is skipped
 // when this allowlist is active, since there's no way to know if it belongs.
-const ONLY_COUNTRIES = new Set(
-  (process.env.LONDON365_ONLY_COUNTRIES || '')
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean)
-);
+// The whitelist is ON BY DEFAULT: with the variable unset (or empty) only these
+// five countries + the narrowed "International" bucket are imported, so a
+// missing/blank env var can never silently turn into a worldwide import.
+// LONDON365_ONLY_COUNTRIES='*' (or 'all') is the explicit opt-out.
+const DEFAULT_ONLY_COUNTRIES = ['england', 'france', 'spain', 'italy', 'germany'];
+function parseOnlyCountries(raw) {
+  const v = String(raw == null ? '' : raw).trim();
+  if (!v) return new Set(DEFAULT_ONLY_COUNTRIES);
+  if (/^(\*|all|any)$/i.test(v)) return new Set();
+  return new Set(v.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean));
+}
+const ONLY_COUNTRIES = parseOnlyCountries(process.env.LONDON365_ONLY_COUNTRIES);
 // International/continental competitions (Champions League, Europa League,
 // Nations League, World Cup qualifiers...) are never excludable via
 // LONDON365_ONLY_COUNTRIES — someone listing "england,spain,italy,..." to
@@ -138,33 +170,39 @@ if (ONLY_COUNTRIES.size) ONLY_COUNTRIES.add('international');
 // — not a bug in the country filter itself, just too broad a carve-out.
 // Narrow it to league NAMES that are actually UEFA/European competitions.
 const EUROPEAN_INTERNATIONAL_COMPETITION_RE =
-  /\b(uefa|nations league|euro(?:pean)?\s*(?:championship|qualif))/i;
+  /\b(uefa|euro(?:pean)?\s*(?:championship|qualif))/i;
 // "Champions/Europa/Conference League" alone (no "UEFA" prefix) is also
 // common in feeds for the European competitions specifically, but AFC/CAF/
 // CONCACAF/OFC run their own "Champions League" too — so only match the
 // bare name when it is NOT prefixed by another confederation's acronym.
-const BARE_EUROPEAN_CUP_RE = /(?<!\b(?:afc|caf|concacaf|ofc)\s)\b(champions league|europa league|conference league)\b/i;
+// "Nations League" moved in here (it used to be unguarded in the regex above)
+// so CONCACAF / AFC / CAF Nations Leagues are no longer accepted as European.
+const BARE_EUROPEAN_CUP_RE = /(?<!\b(?:afc|caf|concacaf|ofc|conmebol)\s)\b(champions league|europa league|conference league|nations league)\b/i;
 export function isEuropeanInternationalCompetition(leagueName) {
   const name = String(leagueName || '');
   return EUROPEAN_INTERNATIONAL_COMPETITION_RE.test(name) || BARE_EUROPEAN_CUP_RE.test(name);
 }
-// FIFA / World Cup competitions live in the same "International" bucket as
-// the UEFA ones but carry neither "UEFA" nor a bare Champions/Europa/
-// Conference/Nations League name, so the European-only regex above dropped
-// them. Overridable with LONDON365_INTERNATIONAL_EXTRA (a regex source,
-// case-insensitive; REPLACES this default). Youth/women's/friendly variants
-// are still removed afterwards by isMinorLeague() when MAJOR_ONLY=1.
-let INTERNATIONAL_EXTRA_RE = /\b(fifa|world cup)\b/i;
+// OPT-IN extras for the International bucket (default: none). The three
+// competitions this project is scoped to -- UEFA Champions League, UEFA Europa
+// League, UEFA Nations League -- plus the other UEFA/Euro competitions the
+// existing regexes above already treat as major are always kept; anything else
+// (e.g. 'fifa|world cup') must be requested explicitly through
+// LONDON365_INTERNATIONAL_EXTRA (a case-insensitive regex source).
+let INTERNATIONAL_EXTRA_RE = null;
 if (process.env.LONDON365_INTERNATIONAL_EXTRA) {
   try { INTERNATIONAL_EXTRA_RE = new RegExp(process.env.LONDON365_INTERNATIONAL_EXTRA, 'i'); }
-  catch (err) { console.error('[london365] invalid LONDON365_INTERNATIONAL_EXTRA, using default:', err.message); }
+  catch (err) { console.error('[london365] invalid LONDON365_INTERNATIONAL_EXTRA, ignoring it:', err.message); }
 }
 // The single predicate for "is this International-bucket competition one we
 // want?" -- used by the prematch import, the live REST loop, the socket
 // handlers and the purge, so they can no longer disagree with each other.
+// Youth / reserve / women's / amateur / friendly / virtual variants are
+// rejected HERE, unconditionally (not only when MAJOR_ONLY=1), so "UEFA Youth
+// League" or "UEFA Women's Champions League" can never ride in on the word UEFA.
 export function isAllowedInternationalCompetition(leagueName) {
   const name = String(leagueName || '');
-  return isEuropeanInternationalCompetition(name) || INTERNATIONAL_EXTRA_RE.test(name);
+  if (MINOR_LEAGUE_PATTERN.test(name)) return false;
+  return isEuropeanInternationalCompetition(name) || (INTERNATIONAL_EXTRA_RE ? INTERNATIONAL_EXTRA_RE.test(name) : false);
 }
 // TEST MODE: restrict ingestion to a fixed whitelist of leagues (5 top
 // domestic leagues + UCL/UEL), processed with bounded parallelism across
@@ -198,10 +236,24 @@ const MINOR_LEAGUE_PATTERN = /\bu-?1[0-9]\b|\bu-?2[0-3]\b|\byouth\b|\bjunior\b|\
 // Paraense, Matogrossense, Pernambucano, Brasilia — is a minor regional
 // league). Copa do Brasil (the national cup) is always kept.
 const BRAZIL_STATE_LEAGUE_PATTERN = /gaucho|carioca|paulista|mineiro|baiano|amazonense|catarinense|cearense|potiguar|goiano|alagoano|capixaba|sergipano|paraense|matogrossense|pernambucano|brasilia(?!ns)/i;
+// Clearly regional / amateur / semi-pro tiers inside the five whitelisted
+// countries (Germany Regionalliga+, Spain Tercera / RFEF tiers, Italy Serie D
+// and below, France National 2/3, England National League and below). The
+// professional tiers (Championship, League One/Two, 2. Bundesliga, 3. Liga,
+// Serie B/C, La Liga 2, Ligue 2) are NOT matched and stay. Extend with
+// LONDON365_EXCLUDE_LEAGUE_PATTERN (regex source, case-insensitive).
+const LOWER_DIVISION_PATTERN = /\bregionalliga\b|\boberliga\b|\bverbandsliga\b|\blandesliga\b|\bkreisliga\b|\bbezirksliga\b|\bgruppenliga\b|\btercera\b|\bsegunda b\b|\brfef\b|\bpreferente\b|\bserie d\b|\beccellenza\b|\bpromozione\b|\bnational [23]\b|\bnational league\b|\bnorthern premier\b|\bsouthern (?:premier|league)\b|\bisthmian\b|\bnon[- ]league\b/i;
+let EXTRA_EXCLUDE_RE = null;
+if (process.env.LONDON365_EXCLUDE_LEAGUE_PATTERN) {
+  try { EXTRA_EXCLUDE_RE = new RegExp(process.env.LONDON365_EXCLUDE_LEAGUE_PATTERN, 'i'); }
+  catch (err) { console.error('[london365] invalid LONDON365_EXCLUDE_LEAGUE_PATTERN, ignoring it:', err.message); }
+}
 function isMinorLeague(name, countryName) {
   if (!MAJOR_LEAGUES_ONLY) return false;
   const n = String(name || '');
   if (MINOR_LEAGUE_PATTERN.test(n)) return true;
+  if (LOWER_DIVISION_PATTERN.test(n)) return true;
+  if (EXTRA_EXCLUDE_RE && EXTRA_EXCLUDE_RE.test(n)) return true;
   // The country bucket itself can be amateur/youth-only (e.g. "Austria
   // Amateur", "Germany Amateur", "England Amateur", "International Youth"
   // from CONFIRMED_COUNTRY_IDS) even when a league's own name inside it
@@ -468,6 +520,51 @@ function registerLeagueName(entry) {
 function resolveLeagueByName(rawName) {
   return leagueNameIndex.get(normalizeLeagueText(rawName)) || null;
 }
+// THE catalogue rule, in one place. Returns null when a league is wanted, or a
+// short reason string when it is not. Every entry point uses it -- the prematch
+// import (twice: when the league list is built, so an LEAGUE cap can never be
+// spent on unwanted leagues, and again per league as a guard), the live REST
+// loop and the socket handlers -- so they cannot disagree.
+//   excluded-country      LONDON365_EXCLUDE_COUNTRIES
+//   country-not-allowed   not in LONDON365_ONLY_COUNTRIES (or country unknown)
+//   international-not-major  inside "International" but not a whitelisted
+//                         competition (UCL / UEL / Conference / Nations League /
+//                         other UEFA-Euro ones; youth/women's/friendlies never)
+//   minor-league          youth / reserve / women's / amateur / friendly /
+//                         virtual / regional lower tier (needs MAJOR_ONLY=1)
+// LONDON365_FULL is deliberately NOT an input: it only decides how much detail
+// is fetched for a league that already passed.
+export function leagueRejectionReason(leagueName, countryName) {
+  const c = countryName ? String(countryName).toLowerCase() : null;
+  if (c && EXCLUDED_COUNTRIES.has(c)) return 'excluded-country';
+  if (ONLY_COUNTRIES.size) {
+    if (!(c && ONLY_COUNTRIES.has(c))) return 'country-not-allowed';
+    if (c === 'international' && !isAllowedInternationalCompetition(leagueName)) return 'international-not-major';
+  }
+  if (isMinorLeague(leagueName, countryName)) return 'minor-league';
+  return null;
+}
+
+export function getLondon365FilterConfig() {
+  return {
+    sports: SPORTS_RAW,
+    onlyCountries: Array.from(ONLY_COUNTRIES),
+    whitelistActive: ONLY_COUNTRIES.size > 0,
+    majorOnly: MAJOR_LEAGUES_ONLY,
+    excludeCountries: Array.from(EXCLUDED_COUNTRIES),
+    internationalExtra: INTERNATIONAL_EXTRA_RE ? INTERNATIONAL_EXTRA_RE.source : null,
+    excludeLeaguePattern: EXTRA_EXCLUDE_RE ? EXTRA_EXCLUDE_RE.source : null,
+    leagueLimit: LEAGUE_LIMIT,
+    fullDetail: FULL_DETAIL,
+    priorityCountries: Array.from(PRIORITY_COUNTRIES),
+  };
+}
+export function logLondon365FilterConfig() {
+  const c = getLondon365FilterConfig();
+  console.log('[london365] catalogue filter: ' + JSON.stringify(c));
+  if (!c.whitelistActive) console.warn('[london365] WARNING: LONDON365_ONLY_COUNTRIES is disabled (\'*\') -> importing EVERY country worldwide');
+}
+
 // ONE gate for every live entry point (REST live loop + socket new-game /
 // new-live-game). Same rule the prematch import applies, evaluated from the
 // payload alone -- no DB, no event building -- so a game outside the allowed
@@ -481,24 +578,28 @@ function resolveLeagueByName(rawName) {
 //   - a league we cannot resolve at all is still judged on its NAME: a UEFA /
 //     FIFA competition is kept (it used to fall through to the token 'uefa',
 //     which is not in the allowlist, and be silently dropped)
+// Synchronous, DB-free: should we start streaming live detail (score/cards)
+// for this game the instant the provider announces it?
+export function isLiveGameWanted(g) {
+  if (!g || !g.id) return false;
+  const resolved = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
+  return isAllowedByCountryFilter(g, resolved);
+}
+
 export function isAllowedByCountryFilter(g, resolvedLeague) {
-  if (!ONLY_COUNTRIES.size) return true;
-  const countryName = (resolvedLeague && resolvedLeague.countryName) || null;
-  if (countryName) {
-    const token = countryName.toLowerCase();
-    if (!ONLY_COUNTRIES.has(token)) return false;
-    if (token === 'international') {
-      const name = resolvedLeague.name || g.league || '';
-      return isAllowedInternationalCompetition(name) && !isMinorLeague(name, countryName);
-    }
-    return true;
+  if (!ONLY_COUNTRIES.size) return true; // whitelist explicitly disabled ('*')
+  // League known (from the import's own country/league data): the exact same
+  // rule the import applied.
+  if (resolvedLeague && resolvedLeague.countryName) {
+    return leagueRejectionReason(resolvedLeague.name || (g && g.league) || '', resolvedLeague.countryName) === null;
   }
+  // League not (yet) known: judge on the payload's league text. A youth /
+  // reserve / women's / lower-tier name is rejected even when its country token
+  // is whitelisted ("England U23", "Spain Reserves", "Germany Regionalliga").
   const rawName = (g && g.league) || '';
   const token = leagueCountryToken(rawName);
-  if (ONLY_COUNTRIES.has(token)) return true;
-  return ONLY_COUNTRIES.has('international')
-    && isAllowedInternationalCompetition(rawName)
-    && !isMinorLeague(rawName, 'International');
+  if (ONLY_COUNTRIES.has(token)) return !isMinorLeague(rawName, token);
+  return ONLY_COUNTRIES.has('international') && isAllowedInternationalCompetition(rawName);
 }
 
 let leagueByIdLoaded = false;
@@ -952,6 +1053,7 @@ export async function upsertMatch(ev, league, status, liveScores, liveInfo, leag
         `not a continuation of the old one`
       );
       existing = undefined;
+      clearGoalAnnounced(ev.id);
     }
 
     let rawToStore = JSON.stringify(ev);
@@ -1210,6 +1312,10 @@ export async function recordGoalIfChanged(ev, score, minute, prev) {
   if (homeDelta === 0 && awayDelta === 0) return;
   const now = Date.now();
 
+  // Tell the clients FIRST (memory only), persist afterwards. No-op if the
+  // gamedetails socket already announced this exact score change.
+  announceGoalIfChanged(ev, score, minute, prev);
+
   async function logGoal(team) {
     await pool.query(
       `INSERT INTO match_events (match_id, minute, type, team, detail, created_at)
@@ -1236,17 +1342,6 @@ export async function recordGoalIfChanged(ev, score, minute, prev) {
      ON CONFLICT (match_id) DO UPDATE SET home_score = excluded.home_score, away_score = excluded.away_score, updated_at = excluded.updated_at`,
     [ev.id, score.home, score.away, now]
   );
-
-  if (homeDelta > 0) {
-    pushGoal(ev.id, { homeScore: score.home, awayScore: score.away, scoringTeam: ev.home_team, minute: minute || undefined });
-  } else if (awayDelta > 0) {
-    pushGoal(ev.id, { homeScore: score.home, awayScore: score.away, scoringTeam: ev.away_team, minute: minute || undefined });
-  }
-  if (homeDelta < 0) {
-    pushGoalDisallowed(ev.id, { homeScore: score.home, awayScore: score.away, team: ev.home_team, minute: minute || undefined });
-  } else if (awayDelta < 0) {
-    pushGoalDisallowed(ev.id, { homeScore: score.home, awayScore: score.away, team: ev.away_team, minute: minute || undefined });
-  }
 }
 
 let importRunning = false;
@@ -1401,6 +1496,26 @@ export async function importLondon365(opts) {
       // Full pass completed with nothing left to interrupt it — reset the
       // cursor so the next run starts from the top (International/England)
       // again instead of resuming mid-list forever.
+      // FILTER FIRST, cap second. Applying the catalogue rule here (in addition
+      // to the per-league guard in processLeague) means (a) rejected leagues
+      // never reach the per-league loop, and (b) LONDON365_LEAGUES can only ever
+      // trim WANTED leagues -- before this, International's unwanted leagues
+      // (Copa Libertadores, AFC...) sorted first and consumed the cap.
+      {
+        const rejected = {};
+        const kept = [];
+        for (const l of leagues) {
+          const cName = l.country_id != null ? countryMap.get(String(l.country_id)) : null;
+          const reason = leagueRejectionReason(l.name, cName);
+          if (reason) { rejected[reason] = (rejected[reason] || 0) + 1; bump('import.league_rejected'); continue; }
+          kept.push(l);
+        }
+        console.log(
+          '[london365] catalogue filter (sport ' + sid + '): kept ' + kept.length + '/' + leagues.length +
+          ' leagues' + (Object.keys(rejected).length ? ' — rejected ' + JSON.stringify(rejected) : '')
+        );
+        leagues = kept;
+      }
       if (leagueCap) leagues = leagues.slice(0, leagueCap);
 
       if (TEST_MODE) {
@@ -1444,15 +1559,9 @@ export async function importLondon365(opts) {
           console.warn('[london365] WARNING: unknown country_id=' + countryId + ' for league=' + league.name + ' (id=' + league.id + ')');
         }
         const isPriority = countryName && PRIORITY_COUNTRIES.has(countryName.toLowerCase());
-        if (countryName && EXCLUDED_COUNTRIES.has(countryName.toLowerCase())) return;
-        if (ONLY_COUNTRIES.size && !(countryName && ONLY_COUNTRIES.has(countryName.toLowerCase()))) return;
-        // Extra narrowing specifically for the "International" bucket (see
-        // isEuropeanInternationalCompetition comment) — only when the user
-        // has actually scoped ONLY_COUNTRIES down; with no restriction
-        // configured, every international competition is imported as before.
-        if (ONLY_COUNTRIES.size && countryName && countryName.toLowerCase() === 'international'
-            && !isAllowedInternationalCompetition(league.name)) return;
-        if (isMinorLeague(league.name, countryName)) return;
+        // Same single rule as the list-building filter above (guard: also
+        // covers TEST_MODE, which re-selects leagues by name after it).
+        if (leagueRejectionReason(league.name, countryName)) return;
 
         let games;
         try {
@@ -1968,6 +2077,7 @@ export async function markLondon365GameEnded(gameId) {
       unsubscribeGameDetails(id);
       noteMatchStatus(id, 'FINISHED');
       forgetLiveRow(id);
+      clearGoalAnnounced(id);
     }
     return res ? res.rowCount : 0;
   });
@@ -2286,7 +2396,13 @@ export async function purgeCountriesNotInOnlyList() {
         // "Nations League" failed the check and was DELETED after every import
         // and at every boot -- the very competitions this allowlist exists to
         // keep -- and then re-inserted by the next import (pure DB churn).
-        if (token !== 'international' || isAllowedInternationalCompetition(competitionSlug.replace(/[-_]+/g, ' '))) continue;
+        // Legacy rows of an allowed country that the current rules would now
+        // reject (youth / reserve / regional lower tier) go too.
+        const competitionName = competitionSlug.replace(/[-_]+/g, ' ');
+        const keep = token === 'international'
+          ? isAllowedInternationalCompetition(competitionName)
+          : !isMinorLeague(competitionName, token);
+        if (keep) continue;
       }
       const { rowCount } = await pool.query(
         `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league = $1 ${NO_PENDING_BETS}`,
@@ -2390,6 +2506,7 @@ export async function getLondon365Status() {
     leagueLimit: LEAGUE_LIMIT,
     priorityCountries: Array.from(PRIORITY_COUNTRIES),
     onlyCountries: Array.from(ONLY_COUNTRIES),
+    filter: getLondon365FilterConfig(),
     liveIntervalMs: LIVE_INTERVAL_MS,
     matches: rows[0].matches,
     liveMatches: rows[0].live,

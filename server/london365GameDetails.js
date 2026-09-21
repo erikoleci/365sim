@@ -42,6 +42,7 @@ import { recordGoalIfChanged, minuteToNumber } from './london365.js';
 import { parseGameDetails } from './gameDetailsParser.js';
 import { isTrackedGame, getLiveRow, setLiveRow, forgetLiveRow, __resetLiveTrackerForTests } from './liveTracker.js';
 import { bump } from './feedStats.js';
+import { announceGoalIfChanged, clearGoalAnnounced } from './goalAnnouncer.js';
 export { parseGameDetails };
 
 function parseScore(sc) {
@@ -97,6 +98,7 @@ export function forgetLiveState(eid) {
   unknownEidWarned.delete(id);
   lastTouched.delete(id);
   forgetLiveRow(id);
+  clearGoalAnnounced(id);
 }
 
 // MEMORY LEAK FIX #2: forgetLiveState above only ever runs for matches we
@@ -304,29 +306,6 @@ export async function applyGameDetails(raw) {
   // matches_cache is never behind what this socket already knows.
   let homeScoreForBroadcast = row.live_home_score;
   let awayScoreForBroadcast = row.live_away_score;
-  if (score && (score.home !== row.live_home_score || score.away !== row.live_away_score)) {
-    await pool.query(
-      'UPDATE matches_cache SET live_home_score = $1, live_away_score = $2 WHERE id = $3',
-      [score.home, score.away, matchId]
-    );
-    homeScoreForBroadcast = score.home;
-    awayScoreForBroadcast = score.away;
-    // Keep the in-memory copy in step with the row we just wrote. `row` itself
-    // is left untouched: everything below (goal diff, `before`) needs the
-    // PRE-update values.
-    setLiveRow(matchId, { ...row, live_home_score: score.home, live_away_score: score.away });
-  }
-
-  if (score) {
-    const ev = { id: matchId, home_team: attrs.H || row.home_team, away_team: attrs.A || row.away_team };
-    const prevScoreRow = { live_home_score: row.live_home_score, live_away_score: row.live_away_score };
-    const before = `${row.live_home_score}-${row.live_away_score}`;
-    await recordGoalIfChanged(ev, score, minuteDisplay, prevScoreRow);
-    if (`${score.home}-${score.away}` !== before) {
-      const team = Math.sign(score.home - (row.live_home_score || 0)) === 1 ? 'home' : 'away';
-      console.log(`[live-event] GOAL EID=${eid} team=${team} score=${score.home}-${score.away} minute=${minuteDisplay || '?'}`);
-    }
-  }
 
   // Broadcast on EVERY processed update (not only when the score changes),
   // so a connected client's minute/score get resynced at this feed's real
@@ -339,22 +318,62 @@ export async function applyGameDetails(raw) {
   // safety net — not on every ~1/sec provider tick regardless of content.
   // Values are still only ever the already-verified matches_cache ones
   // (see header comment) — this only changes WHEN we send, never WHAT.
-  const nowTs = Date.now();
-  const prevBroadcast = lastBroadcast.get(matchId);
-  const tickPayload = {
-    minute: minuteDisplay || undefined,
-    homeScore: homeScoreForBroadcast ?? undefined,
-    awayScore: awayScoreForBroadcast ?? undefined,
-  };
-  const changed = !prevBroadcast
-    || prevBroadcast.minute !== tickPayload.minute
-    || prevBroadcast.homeScore !== tickPayload.homeScore
-    || prevBroadcast.awayScore !== tickPayload.awayScore;
-  const dueForResync = !prevBroadcast || (nowTs - prevBroadcast.ts) >= LIVE_TICK_RESYNC_MS;
-  if (changed || dueForResync) {
-    pushLiveTick(matchId, tickPayload);
-    lastBroadcast.set(matchId, { ...tickPayload, ts: nowTs });
+  function broadcastTick() {
+    const nowTs = Date.now();
+    const prevBroadcast = lastBroadcast.get(matchId);
+    const tickPayload = {
+      minute: minuteDisplay || undefined,
+      homeScore: homeScoreForBroadcast ?? undefined,
+      awayScore: awayScoreForBroadcast ?? undefined,
+    };
+    const changed = !prevBroadcast
+      || prevBroadcast.minute !== tickPayload.minute
+      || prevBroadcast.homeScore !== tickPayload.homeScore
+      || prevBroadcast.awayScore !== tickPayload.awayScore;
+    const dueForResync = !prevBroadcast || (nowTs - prevBroadcast.ts) >= LIVE_TICK_RESYNC_MS;
+    if (changed || dueForResync) {
+      pushLiveTick(matchId, tickPayload);
+      lastBroadcast.set(matchId, { ...tickPayload, ts: nowTs });
+    }
   }
+
+  const scoreChanged = Boolean(score)
+    && (score.home !== row.live_home_score || score.away !== row.live_away_score);
+  const prevScoreRow = { live_home_score: row.live_home_score, live_away_score: row.live_away_score };
+  const goalEv = { id: matchId, home_team: attrs.H || row.home_team, away_team: attrs.A || row.away_team };
+
+  if (scoreChanged) {
+    // INSTANT PATH: the goal and the new score go to every connected client
+    // straight from memory, before any Postgres round trip. Persistence (the
+    // UPDATE below, match_events, live_statistics) follows and used to sit in
+    // FRONT of the push -- 3 sequential DB round trips (plus a possible Neon
+    // cold start) between the provider's tick and the client's screen.
+    homeScoreForBroadcast = score.home;
+    awayScoreForBroadcast = score.away;
+    announceGoalIfChanged(goalEv, score, minuteDisplay, prevScoreRow);
+    broadcastTick();
+    await pool.query(
+      'UPDATE matches_cache SET live_home_score = $1, live_away_score = $2 WHERE id = $3',
+      [score.home, score.away, matchId]
+    );
+    // Keep the in-memory copy in step with the row we just wrote. `row` itself
+    // is left untouched: everything below (goal diff, `before`) needs the
+    // PRE-update values.
+    setLiveRow(matchId, { ...row, live_home_score: score.home, live_away_score: score.away });
+  }
+
+  if (score) {
+    const ev = goalEv;
+    const before = `${row.live_home_score}-${row.live_away_score}`;
+    await recordGoalIfChanged(ev, score, minuteDisplay, prevScoreRow);
+    if (`${score.home}-${score.away}` !== before) {
+      const team = Math.sign(score.home - (row.live_home_score || 0)) === 1 ? 'home' : 'away';
+      console.log(`[live-event] GOAL EID=${eid} team=${team} score=${score.home}-${score.away} minute=${minuteDisplay || '?'}`);
+    }
+  }
+
+  // Steady ~1/sec resync path (a score change was already broadcast above).
+  broadcastTick();
 
   const yc1 = Number(attrs.YC1) || 0, yc2 = Number(attrs.YC2) || 0;
   const rc1 = Number(attrs.RC1) || 0, rc2 = Number(attrs.RC2) || 0;
@@ -363,11 +382,12 @@ export async function applyGameDetails(raw) {
   const minuteNum = minuteToNumber(minuteDisplay);
 
   async function recordCard(type, team, count) {
+    // Clients first (memory), history row after -- same reasoning as goals.
+    pushCardEvent(matchId, { cardType: type, team, count, minute: minuteDisplay || undefined });
     await pool.query(
       `INSERT INTO match_events (match_id, minute, type, team, detail, created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
       [matchId, minuteNum, type, team, String(count), now]
     );
-    pushCardEvent(matchId, { cardType: type, team, count, minute: minuteDisplay || undefined });
     console.log(`[live-event] ${type} EID=${eid} team=${team} minute=${minuteDisplay || '?'}`);
   }
   if (yc1 > prevCards.yc1) await recordCard('YELLOW_CARD', 'home', yc1);

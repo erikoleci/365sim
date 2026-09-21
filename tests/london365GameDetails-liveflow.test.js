@@ -31,7 +31,7 @@ vi.mock('../server/db.js', function () {
   return { default: { query: mocks.query } };
 });
 vi.mock('../server/ws.js', function () {
-  return { pushCardEvent: vi.fn(), pushLiveTick: vi.fn() };
+  return { pushCardEvent: vi.fn(), pushLiveTick: vi.fn(), pushGoal: vi.fn(), pushGoalDisallowed: vi.fn() };
 });
 vi.mock('../server/london365.js', function () {
   return {

@@ -39,14 +39,15 @@ beforeEach(() => { mocks.queries.length = 0; mocks.query.mockClear(); tracker.__
 const known = (countryName, name) => ({ countryName, name, key: 'k', id: '1', countryId: '1' });
 
 describe('isAllowedInternationalCompetition', () => {
-  it('keeps UEFA competitions (prefixed or bare) and FIFA / World Cup', () => {
-    for (const n of ['UEFA Champions League', 'Champions League', 'Europa League', 'Conference League',
-      'Nations League', 'UEFA Nations League', 'FIFA World Cup', 'World Cup Qualification Europe', 'FIFA Club World Cup']) {
+  it('keeps UEFA competitions (prefixed or bare)', () => {
+    for (const n of ['UEFA Champions League', 'Champions League', 'UEFA Europa League', 'Europa League', 'Conference League',
+      'Nations League', 'UEFA Nations League']) {
       expect(l365.isAllowedInternationalCompetition(n), n).toBe(true);
     }
   });
-  it('still rejects other confederations\' club competitions', () => {
-    for (const n of ['Copa Libertadores', 'Copa Sudamericana', 'AFC Champions League', 'CAF Champions League']) {
+  it('rejects other confederations\' competitions and (by default) FIFA / World Cup, which is opt-in', () => {
+    for (const n of ['Copa Libertadores', 'Copa Sudamericana', 'AFC Champions League', 'CAF Champions League',
+      'CONCACAF Nations League', 'FIFA World Cup', 'World Cup Qualification Europe']) {
       expect(l365.isAllowedInternationalCompetition(n), n).toBe(false);
     }
   });
@@ -59,9 +60,10 @@ describe('isAllowedByCountryFilter (shared by the live REST loop and the socket 
     expect(l365.isAllowedByCountryFilter({ league: 'x' }, known('India', 'Indian Super League'))).toBe(false);
     expect(l365.isAllowedByCountryFilter({ league: 'x' }, known('Portugal', 'Primeira Liga'))).toBe(false);
   });
-  it('inside International, keeps UEFA / FIFA competitions and drops the rest', () => {
+  it('inside International, keeps the UEFA competitions and drops the rest', () => {
     expect(l365.isAllowedByCountryFilter({ league: 'x' }, known('International', 'Champions League'))).toBe(true);
-    expect(l365.isAllowedByCountryFilter({ league: 'x' }, known('International', 'FIFA World Cup'))).toBe(true);
+    expect(l365.isAllowedByCountryFilter({ league: 'x' }, known('International', 'UEFA Nations League'))).toBe(true);
+    expect(l365.isAllowedByCountryFilter({ league: 'x' }, known('International', 'FIFA World Cup'))).toBe(false);
     expect(l365.isAllowedByCountryFilter({ league: 'x' }, known('International', 'Copa Libertadores'))).toBe(false);
   });
   it('drops youth / women variants of an allowed competition', () => {
@@ -106,6 +108,7 @@ describe('purgeCountriesNotInOnlyList', () => {
           { league: 'l365_international__champions_league' },
           { league: 'l365_international__nations_league' },
           { league: 'l365_international__fifa_world_cup' },
+          { league: 'l365_england__u23_premier_league_2' },
           { league: 'l365_international__copa_libertadores' },
           { league: 'l365_india__indian_super_league' },
           { league: 'l365_england__premier_league' },
@@ -115,7 +118,14 @@ describe('purgeCountriesNotInOnlyList', () => {
     });
     await l365.purgeCountriesNotInOnlyList();
     const deleted = mocks.queries.filter((q) => q.sql.startsWith('DELETE')).map((q) => q.params[0]);
-    expect(deleted.sort()).toEqual(['l365_india__indian_super_league', 'l365_international__copa_libertadores']);
+    // FIFA/World Cup is opt-in (not default) and a legacy England U23 row is now
+    // rejected by the same rule the import uses; UCL / Nations League stay.
+    expect(deleted.sort()).toEqual([
+      'l365_england__u23_premier_league_2',
+      'l365_india__indian_super_league',
+      'l365_international__copa_libertadores',
+      'l365_international__fifa_world_cup',
+    ]);
   });
   it('never deletes a match that has a PENDING bet selection', async () => {
     respondWith(function (s) {

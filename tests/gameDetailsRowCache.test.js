@@ -18,7 +18,7 @@ const mocks = vi.hoisted(function () {
   return { store, query, selects: () => selects, reset: () => { selects = 0; } };
 });
 vi.mock('../server/db.js', () => ({ default: { query: mocks.query } }));
-vi.mock('../server/ws.js', () => ({ pushCardEvent: vi.fn(), pushLiveTick: vi.fn() }));
+vi.mock('../server/ws.js', () => ({ pushCardEvent: vi.fn(), pushLiveTick: vi.fn(), pushGoal: vi.fn(), pushGoalDisallowed: vi.fn() }));
 const recordGoalIfChanged = vi.fn().mockResolvedValue(undefined);
 vi.mock('../server/london365.js', () => ({ recordGoalIfChanged, minuteToNumber: () => null }));
 

@@ -26,7 +26,7 @@ import scrapeRouter from './routes/scrape.js';
 import favoritesRouter from './routes/favorites.js';
 import { initDb, cleanupOldData } from './db.js';
 import { initWebSocket } from './ws.js';
-import { refreshLiveTracker, startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCrossCountryMisclassifiedLeagues, purgeCountriesNotInOnlyList, wipeLondon365Data, loadPersistedLeagueMap, startGameDetailsSubscriptionReconcileLoop, getLondon365MemoryDiagnostics } from './london365.js';
+import { refreshLiveTracker, logLondon365FilterConfig, startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCrossCountryMisclassifiedLeagues, purgeCountriesNotInOnlyList, wipeLondon365Data, loadPersistedLeagueMap, startGameDetailsSubscriptionReconcileLoop, getLondon365MemoryDiagnostics } from './london365.js';
 import { startLondon365Socket, startLondon365GameDetailsSocket, getSocketMemoryDiagnostics } from './london365Socket.js';
 import { getGameDetailsMemoryDiagnostics } from './london365GameDetails.js';
 import { getMatchesResponseCacheSize } from './routes/matches.js';
@@ -252,6 +252,10 @@ async function start() {
   // layering on top of however much has accumulated across every past fix.
   // Remove the env var again after one successful deploy with it set — it's
   // not meant to run on every boot.
+  // Print the EFFECTIVE catalogue filter once at boot (whitelist, MAJOR_ONLY,
+  // FULL, cap...) so what is actually being imported is never a guess.
+  logLondon365FilterConfig();
+  const bootPurges = [];
   (async () => {
     if (process.env.LONDON365_FORCE_RESET === '1') {
       try {
@@ -268,17 +272,27 @@ async function start() {
     await hydrateBetMatchIds().catch((err) => console.error('[server] hydrateBetMatchIds failed:', err.message));
     ensureLondon365Import();
     loadPersistedLeagueMap().catch((err) => console.error('[server] loadPersistedLeagueMap failed:', err.message));
-    purgeExcludedCountries().catch((err) => console.error('[server] purgeExcludedCountries failed:', err.message));
-    purgeStaleLeagues().catch((err) => console.error('[server] purgeStaleLeagues failed:', err.message));
-    purgeLegacyLeagueKeyFormat().catch((err) => console.error('[server] purgeLegacyLeagueKeyFormat failed:', err.message));
+    bootPurges.push(
+      purgeExcludedCountries().catch((err) => console.error('[server] purgeExcludedCountries failed:', err.message)),
+      purgeStaleLeagues().catch((err) => console.error('[server] purgeStaleLeagues failed:', err.message)),
+      purgeLegacyLeagueKeyFormat().catch((err) => console.error('[server] purgeLegacyLeagueKeyFormat failed:', err.message))
+    );
+    // Legacy rows from before the catalogue filter (Zambia, India, youth...) were
+    // loaded into the in-memory tracker above; once the boot purges have removed
+    // them, reload it so the global GameDetails / odds feeds stop treating them as
+    // "ours" (they would otherwise still cost a lookup until the next import).
+    await Promise.allSettled(bootPurges);
+    await refreshLiveTracker().catch((err) => console.error('[server] refreshLiveTracker (post-purge) failed:', err.message));
   })();
   // Runs against whatever leagueById the persisted map just restored — a
   // second, fuller pass happens automatically at the end of every completed
   // import (once leagueNameIndex has this run's real data), this is just
   // for immediate cleanup right after boot using last run's saved map.
-  purgeCountryPrefixedDuplicateLeagues().catch((err) => console.error('[server] purgeCountryPrefixedDuplicateLeagues failed:', err.message));
-  purgeCrossCountryMisclassifiedLeagues().catch((err) => console.error('[server] purgeCrossCountryMisclassifiedLeagues failed:', err.message));
-  purgeCountriesNotInOnlyList().catch((err) => console.error('[server] purgeCountriesNotInOnlyList failed:', err.message));
+  bootPurges.push(
+    purgeCountryPrefixedDuplicateLeagues().catch((err) => console.error('[server] purgeCountryPrefixedDuplicateLeagues failed:', err.message)),
+    purgeCrossCountryMisclassifiedLeagues().catch((err) => console.error('[server] purgeCrossCountryMisclassifiedLeagues failed:', err.message)),
+    purgeCountriesNotInOnlyList().catch((err) => console.error('[server] purgeCountriesNotInOnlyList failed:', err.message))
+  );
   startFeedStatsLog();
   startLondon365LiveLoop();
   startLondon365Socket();
