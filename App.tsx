@@ -1055,20 +1055,44 @@ const App: React.FC = () => {
   };
 
   // --- Admin: user management (all calls hit the real backend now) ---
-  const handleCreateUser = async (newUser: { name: string; username: string; password: string; balance: number }) => {
+  // Admin picks the role at creation time (USER vs AGENT) -- routed to the
+  // matching backend endpoint, since they're separate tables/permissions
+  // server-side, not just a field on one shared insert.
+  const handleCreateUser = async (newUser: { name: string; username: string; password: string; balance: number; role: 'USER' | 'AGENT' }) => {
     try {
-      await api.adminCreateUser(newUser);
+      const { role, ...rest } = newUser;
+      if (role === 'AGENT') await api.adminCreateAgent(rest);
+      else await api.adminCreateUser(rest);
       await loadAdminData();
     } catch (e: any) {
       alert(e.message || 'Failed to create user');
     }
   };
 
+  // Safe delete first (refuses with USER_HAS_HISTORY if the user has bets/
+  // transactions/casino rounds/sub-users). On that specific refusal, offer
+  // the admin a force-delete that wipes everything -- confirmed explicitly
+  // since it's irreversible and destroys financial history.
   const handleDeleteUser = async (userId: string) => {
     try {
       await api.adminDeleteUser(userId);
       await loadAdminData();
     } catch (e: any) {
+      if (e?.code === 'USER_HAS_HISTORY') {
+        const confirmed = window.confirm(
+          (e.message || 'Ky user ka histori.') +
+          '\n\nA doni ta fshini PLOTËSISHT këtë user, duke përfshirë të gjitha kuponat, transaksionet dhe historikun financiar? Ky veprim s\'kthehet mbrapa.'
+        );
+        if (confirmed) {
+          try {
+            await api.adminForceDeleteUser(userId);
+            await loadAdminData();
+          } catch (e2: any) {
+            alert(e2.message || 'Failed to force-delete user');
+          }
+        }
+        return;
+      }
       alert(e.message || 'Failed to delete user');
     }
   };

@@ -253,6 +253,13 @@ export async function adminDeleteUser(userId: string) {
   return request<{ ok: true }>(`/admin/users/${userId}`, { method: 'DELETE' });
 }
 
+// Wipes the user AND their bets/transactions/casino history/sub-users
+// instead of refusing. Irreversible -- only call after the user confirms,
+// typically as the follow-up to adminDeleteUser failing with USER_HAS_HISTORY.
+export async function adminForceDeleteUser(userId: string) {
+  return request<{ ok: true }>(`/admin/users/${userId}/force`, { method: 'DELETE' });
+}
+
 export async function adminAddCredit(userId: string, amount: number) {
   return request<{ user: User }>(`/admin/users/${userId}/credit`, {
     method: 'POST',

@@ -53,3 +53,44 @@ export async function deleteUserIfUnused(userId) {
   }
   return { ok: true };
 }
+
+// Admin-only "delete everything" path: unlike deleteUserIfUnused above, this
+// never refuses on history -- it wipes the user's bets, transactions, casino
+// rounds and favorites, and recurses into any sub-users it agents for
+// (an AGENT with USERs under it), deleting the whole branch. This
+// permanently destroys financial history, which is why it's gated to ADMIN
+// callers only (enforced in the route) and requires the caller to have
+// explicitly asked for a force delete, not the default action.
+export async function forceDeleteUser(userId) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await forceDeleteUserTx(client, userId);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+  return { ok: true };
+}
+
+async function forceDeleteUserTx(client, userId) {
+  // Recurse into sub-users first (e.g. an AGENT's USERs) so the whole branch
+  // is gone before we touch this row.
+  const { rows: subUsers } = await client.query('SELECT id FROM users WHERE agent_id = $1', [userId]);
+  for (const sub of subUsers) {
+    await forceDeleteUserTx(client, sub.id);
+  }
+
+  const { rows: betRows } = await client.query('SELECT id FROM bets WHERE user_id = $1', [userId]);
+  for (const bet of betRows) {
+    await client.query('DELETE FROM bet_selections WHERE bet_id = $1', [bet.id]);
+  }
+  await client.query('DELETE FROM bets WHERE user_id = $1', [userId]);
+  await client.query('DELETE FROM casino_rounds WHERE user_id = $1', [userId]);
+  await client.query('DELETE FROM favorites WHERE user_id = $1', [userId]);
+  await client.query('DELETE FROM transactions WHERE actor_id = $1 OR source_id = $1 OR target_id = $1', [userId]);
+  await client.query('DELETE FROM users WHERE id = $1', [userId]);
+}
