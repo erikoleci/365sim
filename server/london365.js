@@ -248,6 +248,30 @@ if (process.env.LONDON365_EXCLUDE_LEAGUE_PATTERN) {
   try { EXTRA_EXCLUDE_RE = new RegExp(process.env.LONDON365_EXCLUDE_LEAGUE_PATTERN, 'i'); }
   catch (err) { console.error('[london365] invalid LONDON365_EXCLUDE_LEAGUE_PATTERN, ignoring it:', err.message); }
 }
+// STRICT domestic allowlist (on by default: LONDON365_DOMESTIC_STRICT, default
+// '1'). For the five whitelisted countries, only the top flight + the
+// professional second tier pass -- cups (FA Cup, Coppa Italia, DFB-Pokal...),
+// super cups, play-offs-only competitions and anything else with that
+// country's name are rejected, even though they are not "minor" by the
+// youth/reserve/lower-tier rule above. International is NOT affected by this
+// (it keeps its own UEFA/Nations League allowlist, unchanged).
+// Set LONDON365_DOMESTIC_STRICT=0 to go back to "anything not minor" for the
+// five countries (cups, etc. included).
+const DOMESTIC_STRICT = (process.env.LONDON365_DOMESTIC_STRICT || '1') === '1';
+const DOMESTIC_TOP_LEAGUE_PATTERNS = {
+  england: /\b(premier league|championship)\b/i,
+  france: /\b(ligue\s*1|ligue\s*2)\b/i,
+  spain: /\b(la\s*liga|laliga)\s*(2|smartbank)?\b|\bsegunda\s*divisi[oó]n\b|\bprimera\s*divisi[oó]n\b/i,
+  italy: /\bserie\s*[ab]\b/i,
+  germany: /\bbundesliga\b/i,
+};
+function isNonTopDomesticLeague(name, countryToken) {
+  if (!DOMESTIC_STRICT || !countryToken) return false;
+  const pattern = DOMESTIC_TOP_LEAGUE_PATTERNS[countryToken];
+  if (!pattern) return false; // no built-in allowlist for this country (custom ONLY_COUNTRIES) -> unaffected
+  return !pattern.test(String(name || ''));
+}
+
 function isMinorLeague(name, countryName) {
   if (!MAJOR_LEAGUES_ONLY) return false;
   const n = String(name || '');
@@ -539,9 +563,15 @@ export function leagueRejectionReason(leagueName, countryName) {
   if (c && EXCLUDED_COUNTRIES.has(c)) return 'excluded-country';
   if (ONLY_COUNTRIES.size) {
     if (!(c && ONLY_COUNTRIES.has(c))) return 'country-not-allowed';
-    if (c === 'international' && !isAllowedInternationalCompetition(leagueName)) return 'international-not-major';
+    if (c === 'international') {
+      if (!isAllowedInternationalCompetition(leagueName)) return 'international-not-major';
+    }
   }
   if (isMinorLeague(leagueName, countryName)) return 'minor-league';
+  // Domestic strict allowlist runs LAST and only for a non-International,
+  // whitelisted country: cups/super cups/etc. of an allowed country are
+  // rejected here, never the international competitions above.
+  if (c && c !== 'international' && isNonTopDomesticLeague(leagueName, c)) return 'not-top-flight';
   return null;
 }
 
@@ -553,6 +583,7 @@ export function getLondon365FilterConfig() {
     majorOnly: MAJOR_LEAGUES_ONLY,
     excludeCountries: Array.from(EXCLUDED_COUNTRIES),
     internationalExtra: INTERNATIONAL_EXTRA_RE ? INTERNATIONAL_EXTRA_RE.source : null,
+    domesticStrict: DOMESTIC_STRICT,
     excludeLeaguePattern: EXTRA_EXCLUDE_RE ? EXTRA_EXCLUDE_RE.source : null,
     leagueLimit: LEAGUE_LIMIT,
     fullDetail: FULL_DETAIL,
@@ -594,11 +625,13 @@ export function isAllowedByCountryFilter(g, resolvedLeague) {
     return leagueRejectionReason(resolvedLeague.name || (g && g.league) || '', resolvedLeague.countryName) === null;
   }
   // League not (yet) known: judge on the payload's league text. A youth /
-  // reserve / women's / lower-tier name is rejected even when its country token
-  // is whitelisted ("England U23", "Spain Reserves", "Germany Regionalliga").
+  // reserve / women's / lower-tier name, or (for a whitelisted country) a cup
+  // / non-top-flight competition, is rejected even when the country token is
+  // whitelisted ("England U23", "Spain Reserves", "Germany Regionalliga",
+  // "Italy Coppa Italia").
   const rawName = (g && g.league) || '';
   const token = leagueCountryToken(rawName);
-  if (ONLY_COUNTRIES.has(token)) return !isMinorLeague(rawName, token);
+  if (ONLY_COUNTRIES.has(token)) return !isMinorLeague(rawName, token) && !isNonTopDomesticLeague(rawName, token);
   return ONLY_COUNTRIES.has('international') && isAllowedInternationalCompetition(rawName);
 }
 
@@ -2401,7 +2434,7 @@ export async function purgeCountriesNotInOnlyList() {
         const competitionName = competitionSlug.replace(/[-_]+/g, ' ');
         const keep = token === 'international'
           ? isAllowedInternationalCompetition(competitionName)
-          : !isMinorLeague(competitionName, token);
+          : !isMinorLeague(competitionName, token) && !isNonTopDomesticLeague(competitionName, token);
         if (keep) continue;
       }
       const { rowCount } = await pool.query(
