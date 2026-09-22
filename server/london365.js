@@ -248,31 +248,15 @@ if (process.env.LONDON365_EXCLUDE_LEAGUE_PATTERN) {
   try { EXTRA_EXCLUDE_RE = new RegExp(process.env.LONDON365_EXCLUDE_LEAGUE_PATTERN, 'i'); }
   catch (err) { console.error('[london365] invalid LONDON365_EXCLUDE_LEAGUE_PATTERN, ignoring it:', err.message); }
 }
-// STRICT domestic allowlist (on by default: LONDON365_DOMESTIC_STRICT, default
-// '1'). For the five whitelisted countries, only the top flight + the
-// professional second tier pass -- cups (FA Cup, Coppa Italia, DFB-Pokal...),
-// super cups, play-offs-only competitions and anything else with that
-// country's name are rejected, even though they are not "minor" by the
-// youth/reserve/lower-tier rule above. International is NOT affected by this
-// (it keeps its own UEFA/Nations League allowlist, unchanged).
-// Set LONDON365_DOMESTIC_STRICT=0 to go back to "anything not minor" for the
-// five countries (cups, etc. included).
-const DOMESTIC_STRICT = (process.env.LONDON365_DOMESTIC_STRICT || '1') === '1';
-// Default '1': keep ONLY the top flight (Serie A, Premier League, Bundesliga,
-// Ligue 1, La Liga) -- the professional second tier (Serie B, Championship,
-// 2. Bundesliga, Ligue 2, Segunda Division) is dropped too, same as any cup.
-// Set to '0' to keep top flight + second tier instead (the previous default).
-const DOMESTIC_TOP_FLIGHT_ONLY = (process.env.LONDON365_DOMESTIC_TOP_FLIGHT_ONLY || '1') === '1';
-const DOMESTIC_TOP_FLIGHT_PATTERNS = {
-  england: /\bpremier league\b/i,
-  france: /\bligue\s*1\b/i,
-  spain: /\b(la\s*liga|laliga|primera\s*divisi[oó]n)\b/i,
-  italy: /\bserie\s*a\b/i,
-  germany: /\bbundesliga\b/i,
-};
-// Matched FIRST against the second-tier name so the top-flight patterns above
-// (which would otherwise also match "2. Bundesliga", "LaLiga 2"...) never have
-// to be written to exclude it themselves.
+// Domestic second-tier exclusion (on by default: LONDON365_EXCLUDE_SECOND_TIER,
+// default '1'). For the five whitelisted countries, the professional second
+// tier (Serie B, Championship, 2. Bundesliga, Ligue 2, Segunda Division) is
+// rejected by NAME. Everything else that is not already minor (youth /
+// reserve / women's / regional lower tier, see isMinorLeague below) is kept --
+// domestic cups and super cups (FA Cup, Coppa Italia, DFB-Pokal, Coupe de
+// France, Copa del Rey...) are watched and KEPT. International is unaffected
+// (it keeps its own UEFA/Nations League allowlist).
+const EXCLUDE_SECOND_TIER = (process.env.LONDON365_EXCLUDE_SECOND_TIER || '1') === '1';
 const DOMESTIC_SECOND_TIER_PATTERNS = {
   england: /\bchampionship\b/i,
   france: /\bligue\s*2\b/i,
@@ -280,16 +264,11 @@ const DOMESTIC_SECOND_TIER_PATTERNS = {
   italy: /\bserie\s*b\b/i,
   germany: /\b2\.?\s*bundesliga\b/i,
 };
-function isNonTopDomesticLeague(name, countryToken) {
-  if (!DOMESTIC_STRICT || !countryToken) return false;
-  const topPattern = DOMESTIC_TOP_FLIGHT_PATTERNS[countryToken];
-  if (!topPattern) return false; // no built-in allowlist for this country (custom ONLY_COUNTRIES) -> unaffected
-  const n = String(name || '');
-  const secondPattern = DOMESTIC_SECOND_TIER_PATTERNS[countryToken];
-  const isSecondTier = Boolean(secondPattern && secondPattern.test(n));
-  const isTopFlight = topPattern.test(n) && !isSecondTier;
-  if (DOMESTIC_TOP_FLIGHT_ONLY) return !isTopFlight;
-  return !(isTopFlight || isSecondTier);
+function isSecondTierDomesticLeague(name, countryToken) {
+  if (!EXCLUDE_SECOND_TIER || !countryToken) return false;
+  const pattern = DOMESTIC_SECOND_TIER_PATTERNS[countryToken];
+  if (!pattern) return false; // no built-in second-tier pattern for this country -> unaffected
+  return pattern.test(String(name || ''));
 }
 
 function isMinorLeague(name, countryName) {
@@ -588,10 +567,11 @@ export function leagueRejectionReason(leagueName, countryName) {
     }
   }
   if (isMinorLeague(leagueName, countryName)) return 'minor-league';
-  // Domestic strict allowlist runs LAST and only for a non-International,
-  // whitelisted country: cups/super cups/etc. of an allowed country are
-  // rejected here, never the international competitions above.
-  if (c && c !== 'international' && isNonTopDomesticLeague(leagueName, c)) return 'not-top-flight';
+  // Second-tier exclusion runs LAST and only for a non-International,
+  // whitelisted country: cups/super cups/top-flight of an allowed country
+  // pass through untouched, only that country's known second-tier name is
+  // rejected here.
+  if (c && c !== 'international' && isSecondTierDomesticLeague(leagueName, c)) return 'second-tier-excluded';
   return null;
 }
 
@@ -603,8 +583,7 @@ export function getLondon365FilterConfig() {
     majorOnly: MAJOR_LEAGUES_ONLY,
     excludeCountries: Array.from(EXCLUDED_COUNTRIES),
     internationalExtra: INTERNATIONAL_EXTRA_RE ? INTERNATIONAL_EXTRA_RE.source : null,
-    domesticStrict: DOMESTIC_STRICT,
-    domesticTopFlightOnly: DOMESTIC_TOP_FLIGHT_ONLY,
+    excludeSecondTier: EXCLUDE_SECOND_TIER,
     excludeLeaguePattern: EXTRA_EXCLUDE_RE ? EXTRA_EXCLUDE_RE.source : null,
     leagueLimit: LEAGUE_LIMIT,
     fullDetail: FULL_DETAIL,
@@ -652,7 +631,7 @@ export function isAllowedByCountryFilter(g, resolvedLeague) {
   // "Italy Coppa Italia").
   const rawName = (g && g.league) || '';
   const token = leagueCountryToken(rawName);
-  if (ONLY_COUNTRIES.has(token)) return !isMinorLeague(rawName, token) && !isNonTopDomesticLeague(rawName, token);
+  if (ONLY_COUNTRIES.has(token)) return !isMinorLeague(rawName, token) && !isSecondTierDomesticLeague(rawName, token);
   return ONLY_COUNTRIES.has('international') && isAllowedInternationalCompetition(rawName);
 }
 
@@ -2455,7 +2434,7 @@ export async function purgeCountriesNotInOnlyList() {
         const competitionName = competitionSlug.replace(/[-_]+/g, ' ');
         const keep = token === 'international'
           ? isAllowedInternationalCompetition(competitionName)
-          : !isMinorLeague(competitionName, token) && !isNonTopDomesticLeague(competitionName, token);
+          : !isMinorLeague(competitionName, token) && !isSecondTierDomesticLeague(competitionName, token);
         if (keep) continue;
       }
       const { rowCount } = await pool.query(
