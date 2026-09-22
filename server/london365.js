@@ -258,18 +258,38 @@ if (process.env.LONDON365_EXCLUDE_LEAGUE_PATTERN) {
 // Set LONDON365_DOMESTIC_STRICT=0 to go back to "anything not minor" for the
 // five countries (cups, etc. included).
 const DOMESTIC_STRICT = (process.env.LONDON365_DOMESTIC_STRICT || '1') === '1';
-const DOMESTIC_TOP_LEAGUE_PATTERNS = {
-  england: /\b(premier league|championship)\b/i,
-  france: /\b(ligue\s*1|ligue\s*2)\b/i,
-  spain: /\b(la\s*liga|laliga)\s*(2|smartbank)?\b|\bsegunda\s*divisi[oó]n\b|\bprimera\s*divisi[oó]n\b/i,
-  italy: /\bserie\s*[ab]\b/i,
+// Default '1': keep ONLY the top flight (Serie A, Premier League, Bundesliga,
+// Ligue 1, La Liga) -- the professional second tier (Serie B, Championship,
+// 2. Bundesliga, Ligue 2, Segunda Division) is dropped too, same as any cup.
+// Set to '0' to keep top flight + second tier instead (the previous default).
+const DOMESTIC_TOP_FLIGHT_ONLY = (process.env.LONDON365_DOMESTIC_TOP_FLIGHT_ONLY || '1') === '1';
+const DOMESTIC_TOP_FLIGHT_PATTERNS = {
+  england: /\bpremier league\b/i,
+  france: /\bligue\s*1\b/i,
+  spain: /\b(la\s*liga|laliga|primera\s*divisi[oó]n)\b/i,
+  italy: /\bserie\s*a\b/i,
   germany: /\bbundesliga\b/i,
+};
+// Matched FIRST against the second-tier name so the top-flight patterns above
+// (which would otherwise also match "2. Bundesliga", "LaLiga 2"...) never have
+// to be written to exclude it themselves.
+const DOMESTIC_SECOND_TIER_PATTERNS = {
+  england: /\bchampionship\b/i,
+  france: /\bligue\s*2\b/i,
+  spain: /\b(la\s*liga|laliga)\s*(2|smartbank)\b|\bsegunda\s*divisi[oó]n\b/i,
+  italy: /\bserie\s*b\b/i,
+  germany: /\b2\.?\s*bundesliga\b/i,
 };
 function isNonTopDomesticLeague(name, countryToken) {
   if (!DOMESTIC_STRICT || !countryToken) return false;
-  const pattern = DOMESTIC_TOP_LEAGUE_PATTERNS[countryToken];
-  if (!pattern) return false; // no built-in allowlist for this country (custom ONLY_COUNTRIES) -> unaffected
-  return !pattern.test(String(name || ''));
+  const topPattern = DOMESTIC_TOP_FLIGHT_PATTERNS[countryToken];
+  if (!topPattern) return false; // no built-in allowlist for this country (custom ONLY_COUNTRIES) -> unaffected
+  const n = String(name || '');
+  const secondPattern = DOMESTIC_SECOND_TIER_PATTERNS[countryToken];
+  const isSecondTier = Boolean(secondPattern && secondPattern.test(n));
+  const isTopFlight = topPattern.test(n) && !isSecondTier;
+  if (DOMESTIC_TOP_FLIGHT_ONLY) return !isTopFlight;
+  return !(isTopFlight || isSecondTier);
 }
 
 function isMinorLeague(name, countryName) {
@@ -584,6 +604,7 @@ export function getLondon365FilterConfig() {
     excludeCountries: Array.from(EXCLUDED_COUNTRIES),
     internationalExtra: INTERNATIONAL_EXTRA_RE ? INTERNATIONAL_EXTRA_RE.source : null,
     domesticStrict: DOMESTIC_STRICT,
+    domesticTopFlightOnly: DOMESTIC_TOP_FLIGHT_ONLY,
     excludeLeaguePattern: EXTRA_EXCLUDE_RE ? EXTRA_EXCLUDE_RE.source : null,
     leagueLimit: LEAGUE_LIMIT,
     fullDetail: FULL_DETAIL,

@@ -14,15 +14,22 @@ describe('domestic strict allowlist (default: on)', () => {
     expect(l365.getLondon365FilterConfig().domesticStrict).toBe(true);
   });
 
-  it('keeps top flight + second tier for each of the five countries', () => {
+  it('keeps ONLY the top flight for each of the five countries (default: top-flight-only)', () => {
     const kept = [
-      ['Premier League', 'England'], ['Championship', 'England'],
-      ['Ligue 1', 'France'], ['Ligue 2', 'France'],
-      ['La Liga', 'Spain'], ['LaLiga2', 'Spain'], ['Segunda Division', 'Spain'],
-      ['Serie A', 'Italy'], ['Serie B', 'Italy'],
-      ['Bundesliga', 'Germany'], ['2. Bundesliga', 'Germany'],
+      ['Premier League', 'England'], ['Ligue 1', 'France'],
+      ['La Liga', 'Spain'], ['Primera Division', 'Spain'],
+      ['Serie A', 'Italy'], ['Bundesliga', 'Germany'],
     ];
     for (const [name, country] of kept) expect(l365.leagueRejectionReason(name, country), name).toBeNull();
+  });
+
+  it('drops the professional second tier by default (nobody watches it, per the brief)', () => {
+    const dropped = [
+      ['Championship', 'England'], ['Ligue 2', 'France'],
+      ['LaLiga2', 'Spain'], ['Segunda Division', 'Spain'],
+      ['Serie B', 'Italy'], ['2. Bundesliga', 'Germany'],
+    ];
+    for (const [name, country] of dropped) expect(l365.leagueRejectionReason(name, country), name).toBe('not-top-flight');
   });
 
   it('drops cups, super cups and other domestic competitions of the five countries', () => {
@@ -50,7 +57,7 @@ describe('domestic strict allowlist (default: on)', () => {
 
   it('isAllowedByCountryFilter (live entry points) applies the same rule for an unresolved league', () => {
     expect(l365.isAllowedByCountryFilter({ league: 'Italy Serie A' }, null)).toBe(true);
-    expect(l365.isAllowedByCountryFilter({ league: 'Italy Serie B' }, null)).toBe(true);
+    expect(l365.isAllowedByCountryFilter({ league: 'Italy Serie B' }, null)).toBe(false);
     expect(l365.isAllowedByCountryFilter({ league: 'Italy Coppa Italia' }, null)).toBe(false);
     expect(l365.isAllowedByCountryFilter({ league: 'England FA Cup' }, null)).toBe(false);
   });

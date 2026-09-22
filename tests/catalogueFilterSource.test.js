@@ -57,8 +57,8 @@ const LEAGUES = {
   906: [L(906, 'China U20 League', 906)], 36: [L(360, 'Paraguay Primera', 36)],
   121: [L(1210, 'Serbian SuperLiga', 121)], 93: [L(930, 'Primeira Liga', 93)],
 };
-const WANTED = [1, 2, 10, 12, 20, 30, 40, 42, 50, 51, 52];
-const UNWANTED = [3, 4, 5, 6, 11, 21, 31, 32, 41, 53, 54, 55, 56, 57, 900, 901, 902, 903, 904, 905, 906, 360, 1210, 930];
+const WANTED = [1, 10, 20, 30, 40, 50, 51, 52]; // top flight only (default); 2/12/42 = Championship/Ligue 2/2. Bundesliga
+const UNWANTED = [2, 3, 4, 5, 6, 11, 12, 21, 31, 32, 41, 42, 53, 54, 55, 56, 57, 900, 901, 902, 903, 904, 905, 906, 360, 1210, 930];
 
 function json(data) { return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(data), text: () => Promise.resolve(JSON.stringify(data)) }); }
 let requested;
@@ -147,11 +147,11 @@ describe('prematch import rejects unwanted matches BEFORE any request or DB writ
     }
   });
 
-  it('keeps top flights AND professional second tiers of the five countries, drops regional/lower/youth/women\'s', async () => {
+  it('keeps ONLY the top flight of the five countries by default, drops second tier/regional/lower/youth/women\'s', async () => {
     await l365.importLondon365({ sports: [1], full: false });
     const leagueIds = Array.from(mocks.inserted.keys()).map((id) => Number(id.replace('l365-', '')) / 10);
-    for (const kept of [1, 2, 10, 12, 20, 30, 40, 42]) expect(leagueIds).toContain(kept); // PL, Championship, L1, L2, La Liga, Serie A, BL, BL2
-    for (const dropped of [3, 4, 5, 6, 11, 21, 31, 32, 41]) expect(leagueIds).not.toContain(dropped);
+    for (const kept of [1, 10, 20, 30, 40]) expect(leagueIds).toContain(kept); // PL, L1, La Liga, Serie A, Bundesliga
+    for (const dropped of [2, 3, 4, 5, 6, 11, 12, 21, 31, 32, 41, 42]) expect(leagueIds).not.toContain(dropped); // incl. Championship/L2/BL2
   });
 });
 
