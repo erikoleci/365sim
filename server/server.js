@@ -78,13 +78,23 @@ app.use('/api', cors(
 app.use(express.json());
 
 // Brute-force protection on auth endpoints: 20 attempts / 15 min per IP.
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Shumë përpjekje. Provo përsëri pas disa minutash.' },
-});
+// Skipped entirely in local development (NODE_ENV !== 'production'): dev
+// hot-reload (vite restarting on every .env/file change), React StrictMode
+// double-invoking effects, and this app's own retry-on-failure client logic
+// can easily rack up requests fast enough to trip a limiter meant for real
+// abuse — that's dev workflow noise, not abuse, and production (where abuse
+// is an actual concern) still enforces both limiters below normally.
+const isProduction = process.env.NODE_ENV === 'production';
+
+const authLimiter = isProduction
+  ? rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 20,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: 'Shumë përpjekje. Provo përsëri pas disa minutash.' },
+    })
+  : (req, res, next) => next();
 
 // Key by the AUTHENTICATED USER when the request carries a valid JWT,
 // falling back to IP only for logged-out requests. Keying by IP alone (the
@@ -113,14 +123,16 @@ function keyByUserOrIp(req) {
 // General API protection: generous enough for normal browsing/polling, but
 // stops scripted abuse (e.g. spam bet placement, scraping matches on a tight
 // loop) from one identity.
-const apiLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 600,
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: keyByUserOrIp,
-  message: { error: 'Shumë kërkesa. Provo përsëri pas pak.' },
-});
+const apiLimiter = isProduction
+  ? rateLimit({
+      windowMs: 60 * 1000,
+      max: 600,
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: keyByUserOrIp,
+      message: { error: 'Shumë kërkesa. Provo përsëri pas pak.' },
+    })
+  : (req, res, next) => next();
 
 app.use('/api', apiLimiter);
 app.use('/api/auth', authLimiter, authRouter);
