@@ -68,9 +68,17 @@ router.get('/london365/countries-debug', async (req, res) => {
 router.get('/users', async (req, res) => {
   // Capped like /audit-log — prevents an unbounded SELECT * as the user
   // base grows; 1000 is comfortably above anything this demo needs today.
+  // `offset` is additive/optional: existing callers that only pass `limit`
+  // (or nothing) keep getting page 1 exactly as before. `total` lets a
+  // caller that DOES want real pagination render "page X of Y" instead of
+  // guessing whether more rows exist past the 1000-row cap.
   const limit = Math.min(Number(req.query.limit) || 1000, 1000);
-  const { rows: users } = await pool.query('SELECT * FROM users ORDER BY created_at DESC LIMIT $1', [limit]);
-  res.json({ users: users.map(toPublicUser) });
+  const offset = Math.max(Number(req.query.offset) || 0, 0);
+  const [{ rows: users }, { rows: countRows }] = await Promise.all([
+    pool.query('SELECT * FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2', [limit, offset]),
+    pool.query('SELECT COUNT(*)::int AS count FROM users'),
+  ]);
+  res.json({ users: users.map(toPublicUser), total: countRows[0].count, limit, offset });
 });
 
 router.post('/users', async (req, res) => {
@@ -360,7 +368,11 @@ router.get('/bets', async (req, res) => {
   // admin scanning bet history always sees the newest tickets, not an
   // arbitrary slice.
   const limit = Math.min(Number(req.query.limit) || 500, 500);
-  const { rows: bets } = await pool.query('SELECT * FROM bets ORDER BY created_at DESC LIMIT $1', [limit]);
+  const offset = Math.max(Number(req.query.offset) || 0, 0);
+  const [{ rows: bets }, { rows: countRows }] = await Promise.all([
+    pool.query('SELECT * FROM bets ORDER BY created_at DESC LIMIT $1 OFFSET $2', [limit, offset]),
+    pool.query('SELECT COUNT(*)::int AS count FROM bets'),
+  ]);
 
   // Batch both lookups instead of running 2 queries per bet (N+1).
   const betIds = [...new Set(bets.map((b) => b.id))];
@@ -387,7 +399,7 @@ router.get('/bets', async (req, res) => {
     selections: selectionsByBet.get(b.id) || [],
     user: userById.get(b.user_id) || null,
   }));
-  res.json({ bets: withDetails });
+  res.json({ bets: withDetails, total: countRows[0].count, limit, offset });
 });
 
 router.post('/bets/:id/cancel', async (req, res) => {

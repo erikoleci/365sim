@@ -3,6 +3,21 @@ import bcrypt from 'bcryptjs';
 
 const { Pool } = pg;
 
+// Postgres NUMERIC comes back from node-postgres as a STRING by default
+// (to avoid silently losing precision on values too big for a JS float).
+// This app's money columns are being migrated from DOUBLE PRECISION to
+// NUMERIC precisely to remove floating-point drift at the DATABASE/SQL
+// level (e.g. `balance = balance + $1` repeated thousands of times no
+// longer accumulates binary-float rounding error server-side). The
+// application layer here still works with JS numbers throughout (bets.js,
+// ledger.js, matchSettlement.js, the API responses), so we parse NUMERIC
+// back to a float on read -- this keeps every existing call site working
+// unchanged while the underlying storage/arithmetic in Postgres itself is
+// now exact. OID 1700 = numeric.
+// Guarded: some tests mock the 'pg' module with a minimal { Pool } shape
+// (no `types`), since they never touch a real connection/type parser.
+pg.types?.setTypeParser(1700, (value) => (value === null ? null : parseFloat(value)));
+
 if (!process.env.DATABASE_URL) {
   console.error(
     'FATAL: DATABASE_URL is not set. This app now uses PostgreSQL (e.g. a free ' +
@@ -68,7 +83,7 @@ export async function initDb() {
       name TEXT NOT NULL,
       username TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
-      balance DOUBLE PRECISION NOT NULL DEFAULT 0,
+      balance NUMERIC(14,2) NOT NULL DEFAULT 0,
       role TEXT NOT NULL DEFAULT 'USER',
       avatar TEXT,
       created_at BIGINT NOT NULL
@@ -95,9 +110,9 @@ export async function initDb() {
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id),
       type TEXT NOT NULL,
-      stake DOUBLE PRECISION NOT NULL,
-      total_odds DOUBLE PRECISION NOT NULL,
-      potential_return DOUBLE PRECISION NOT NULL,
+      stake NUMERIC(14,2) NOT NULL,
+      total_odds NUMERIC(10,4) NOT NULL,
+      potential_return NUMERIC(14,2) NOT NULL,
       status TEXT NOT NULL DEFAULT 'PENDING',
       created_at BIGINT NOT NULL
     );
@@ -112,7 +127,7 @@ export async function initDb() {
       market_name TEXT NOT NULL,
       selection_id TEXT NOT NULL,
       selection_name TEXT NOT NULL,
-      odds DOUBLE PRECISION NOT NULL,
+      odds NUMERIC(10,4) NOT NULL,
       status TEXT NOT NULL DEFAULT 'PENDING'
     );
 
@@ -141,11 +156,11 @@ export async function initDb() {
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id),
       game TEXT NOT NULL,
-      stake DOUBLE PRECISION NOT NULL,
+      stake NUMERIC(14,2) NOT NULL,
       status TEXT NOT NULL DEFAULT 'PENDING',
       state TEXT,
       result TEXT,
-      payout DOUBLE PRECISION NOT NULL DEFAULT 0,
+      payout NUMERIC(14,2) NOT NULL DEFAULT 0,
       created_at BIGINT NOT NULL,
       resolved_at BIGINT
     );
@@ -159,8 +174,8 @@ export async function initDb() {
       match_id TEXT NOT NULL,
       market_id TEXT NOT NULL,
       selection_id TEXT NOT NULL,
-      old_odds DOUBLE PRECISION,
-      new_odds DOUBLE PRECISION NOT NULL,
+      old_odds NUMERIC(10,4),
+      new_odds NUMERIC(10,4) NOT NULL,
       changed_by TEXT NOT NULL DEFAULT 'SYSTEM',
       reason TEXT,
       created_at BIGINT NOT NULL
@@ -283,18 +298,43 @@ export async function initDb() {
       actor_id TEXT NOT NULL REFERENCES users(id),
       source_id TEXT REFERENCES users(id),
       target_id TEXT NOT NULL REFERENCES users(id),
-      amount DOUBLE PRECISION NOT NULL,
+      amount NUMERIC(14,2) NOT NULL,
       type TEXT NOT NULL,
       reference TEXT,
-      source_balance_before DOUBLE PRECISION,
-      source_balance_after DOUBLE PRECISION,
-      target_balance_before DOUBLE PRECISION NOT NULL,
-      target_balance_after DOUBLE PRECISION NOT NULL,
+      source_balance_before NUMERIC(14,2),
+      source_balance_after NUMERIC(14,2),
+      target_balance_before NUMERIC(14,2) NOT NULL,
+      target_balance_after NUMERIC(14,2) NOT NULL,
       created_at BIGINT NOT NULL
     );
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_transactions_target_id ON transactions (target_id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_transactions_source_id ON transactions (source_id);`);
+
+  // Migration: money columns were originally DOUBLE PRECISION (binary
+  // float), which can accumulate rounding drift in Postgres itself across
+  // thousands of `balance = balance + $1` updates -- not just in JS. The
+  // CREATE TABLE statements above already define these as NUMERIC for new
+  // databases; for an existing deployed database (where CREATE TABLE IF NOT
+  // EXISTS is a no-op) we convert the columns in place. `USING col::numeric`
+  // is a safe, value-preserving cast (a float's decimal string form is
+  // reparsed as an exact decimal) and runs once -- ALTER COLUMN TYPE is a
+  // no-op cost-wise if the column is already NUMERIC, so this is safe to
+  // run on every boot.
+  await pool.query(`ALTER TABLE users ALTER COLUMN balance TYPE NUMERIC(14,2) USING balance::numeric(14,2);`);
+  await pool.query(`ALTER TABLE bets ALTER COLUMN stake TYPE NUMERIC(14,2) USING stake::numeric(14,2);`);
+  await pool.query(`ALTER TABLE bets ALTER COLUMN total_odds TYPE NUMERIC(10,4) USING total_odds::numeric(10,4);`);
+  await pool.query(`ALTER TABLE bets ALTER COLUMN potential_return TYPE NUMERIC(14,2) USING potential_return::numeric(14,2);`);
+  await pool.query(`ALTER TABLE bet_selections ALTER COLUMN odds TYPE NUMERIC(10,4) USING odds::numeric(10,4);`);
+  await pool.query(`ALTER TABLE transactions ALTER COLUMN amount TYPE NUMERIC(14,2) USING amount::numeric(14,2);`);
+  await pool.query(`ALTER TABLE transactions ALTER COLUMN source_balance_before TYPE NUMERIC(14,2) USING source_balance_before::numeric(14,2);`);
+  await pool.query(`ALTER TABLE transactions ALTER COLUMN source_balance_after TYPE NUMERIC(14,2) USING source_balance_after::numeric(14,2);`);
+  await pool.query(`ALTER TABLE transactions ALTER COLUMN target_balance_before TYPE NUMERIC(14,2) USING target_balance_before::numeric(14,2);`);
+  await pool.query(`ALTER TABLE transactions ALTER COLUMN target_balance_after TYPE NUMERIC(14,2) USING target_balance_after::numeric(14,2);`);
+  await pool.query(`ALTER TABLE casino_rounds ALTER COLUMN stake TYPE NUMERIC(14,2) USING stake::numeric(14,2);`);
+  await pool.query(`ALTER TABLE casino_rounds ALTER COLUMN payout TYPE NUMERIC(14,2) USING payout::numeric(14,2);`);
+  await pool.query(`ALTER TABLE odds_history ALTER COLUMN old_odds TYPE NUMERIC(10,4) USING old_odds::numeric(10,4);`);
+  await pool.query(`ALTER TABLE odds_history ALTER COLUMN new_odds TYPE NUMERIC(10,4) USING new_odds::numeric(10,4);`);
 
   // Expression index for start_time::timestamptz comparisons (used by the
   // bounded /api/matches query in server/routes/matches.js). Postgres

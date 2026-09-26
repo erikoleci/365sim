@@ -49,11 +49,20 @@ router.get('/me', async (req, res) => {
 // by guessing an id in the URL (IDOR).
 
 router.get('/users', async (req, res) => {
-  const { rows } = await pool.query(
-    'SELECT * FROM users WHERE agent_id = $1 ORDER BY created_at DESC',
-    [req.user.id]
-  );
-  res.json({ users: rows.map(toPublicUser) });
+  // Optional offset/limit for real pagination as an agent's user base
+  // grows; omitting them keeps the previous "return everything" behavior
+  // for existing callers, just now also capped so one agent with a very
+  // large roster can't trigger an unbounded SELECT.
+  const limit = Math.min(Number(req.query.limit) || 5000, 5000);
+  const offset = Math.max(Number(req.query.offset) || 0, 0);
+  const [{ rows }, { rows: countRows }] = await Promise.all([
+    pool.query(
+      'SELECT * FROM users WHERE agent_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
+      [req.user.id, limit, offset]
+    ),
+    pool.query('SELECT COUNT(*)::int AS count FROM users WHERE agent_id = $1', [req.user.id]),
+  ]);
+  res.json({ users: rows.map(toPublicUser), total: countRows[0].count, limit, offset });
 });
 
 router.post('/users', async (req, res) => {
