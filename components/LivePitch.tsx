@@ -2,6 +2,7 @@ import React from 'react';
 import { Match, MatchStatus } from '../types';
 import type { LiveStatistics } from '../services/api';
 import { formatLiveStatus, isHalftime } from '../utils/liveStatus';
+import { useTickingClock, formatLiveClock } from './MatchCard';
 
 interface LivePitchProps {
   match: Match;
@@ -14,6 +15,12 @@ interface LivePitchProps {
 // doesn't, rather than defaulting to a fake 50/50 split.
 const LivePitch: React.FC<LivePitchProps> = ({ match, stats }) => {
   const isLive = match.status === MatchStatus.LIVE;
+  // Real in-play minute:second + game half, ticking live client-side just
+  // like the match list cards — same source (stats.minute, falling back to
+  // match.currentMinute) and same hook, so the pitch header never shows a
+  // less precise/stale clock than the card the user just tapped. Hook must
+  // run unconditionally (before the early return below) per rules-of-hooks.
+  const liveClock = useTickingClock(isLive ? String(stats?.minute ?? match.currentMinute ?? '') : undefined);
   if (!isLive) return null;
 
   const possHome = stats?.possession_home ?? 50;
@@ -21,14 +28,13 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats }) => {
   // Map possession % to a left-position between 25% (away dominant) and 75% (home dominant)
   const dotLeftPct = 25 + (possHome / 100) * 50;
   const attackingSide = possHome >= possAway ? match.homeTeam : match.awayTeam;
-  // Real in-play minute + game half from the provider clock ("62:14").
-  const minNum = parseInt(String(stats?.minute ?? match.currentMinute ?? '').match(/^\d+/)?.[0] ?? '', 10);
-  const half = Number.isNaN(minNum) ? null : minNum < 45 ? 'Pjesa I' : minNum < 46 ? 'Pushim' : minNum < 90 ? 'Pjesa II' : minNum < 105 ? 'Shtesë' : 'Penallti';
+  const clockLabel = formatLiveClock(liveClock);
+  const half = liveClock?.half ?? null;
 
   return (
     <div className="relative w-full h-44 md:h-52 rounded overflow-hidden border border-brand-divider bg-gradient-to-b from-[#1f6b4a] to-[#155038]">
       <div className={`absolute top-2 left-1/2 -translate-x-1/2 text-[11px] font-bold px-2 py-0.5 rounded z-10 ${isHalftime(match) ? 'bg-brand-yellow text-black' : 'bg-black/50 text-white'}`}>
-        {isHalftime(match) ? 'Pushim' : (!Number.isNaN(minNum) ? `${minNum}'` : formatLiveStatus(match))}
+        {isHalftime(match) ? 'Pushim' : (clockLabel ?? formatLiveStatus(match))}
         {half && !isHalftime(match) && <span className="text-brand-yellow font-semibold"> · {half}</span>}
       </div>
 
