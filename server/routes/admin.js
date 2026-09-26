@@ -8,7 +8,7 @@ import { logAudit } from '../auditLog.js';
 import { transferBalance } from '../ledger.js';
 import { importLondon365, getLondon365Status, getLondon365CountryDebug } from '../london365.js';
 import { monthRange } from './agent.js';
-import { deleteUserIfUnused, deleteBlockedMessage } from '../userDeletion.js';
+import { deleteUserIfUnused, deleteBlockedMessage, forceDeleteUser } from '../userDeletion.js';
 
 const router = express.Router();
 
@@ -310,6 +310,20 @@ router.delete('/users/:id', async (req, res) => {
     return res.status(409).json({ error: deleteBlockedMessage(result.blockers), code: 'USER_HAS_HISTORY', blockers: result.blockers });
   }
   await logAudit(req.user, 'USER_DELETE', req.params.id, { username: user.username });
+  res.json({ ok: true });
+});
+
+// Admin-only full wipe: deletes the user AND their bets/transactions/casino
+// history/sub-users instead of refusing when history exists. Destructive and
+// irreversible -- the frontend only offers this as an explicit follow-up
+// after the safe delete above comes back 409 USER_HAS_HISTORY.
+router.delete('/users/:id/force', async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
+  const user = rows[0];
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (user.role === 'ADMIN') return res.status(400).json({ error: 'Cannot delete an admin user' });
+  await forceDeleteUser(req.params.id);
+  await logAudit(req.user, 'USER_FORCE_DELETE', req.params.id, { username: user.username, role: user.role });
   res.json({ ok: true });
 });
 

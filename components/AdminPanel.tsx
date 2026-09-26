@@ -5,7 +5,7 @@ import * as api from '../services/api';
 interface AdminPanelProps {
   users: User[];
   allBets: Bet[];
-  onCreateUser: (u: Omit<User, 'id' | 'role' | 'avatar'>) => void;
+  onCreateUser: (u: Omit<User, 'id' | 'role' | 'avatar'> & { role: 'USER' | 'AGENT' }) => void;
   onDeleteUser: (userId: string) => void;
   onAddCredit: (userId: string, amount: number) => void;
   onResetPassword: (userId: string, newPass: string) => void;
@@ -37,8 +37,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
     }
   }, [activeTab]);
   
-  // Create User State
-  const [newUser, setNewUser] = useState({ name: '', username: '', password: '', balance: 0 });
+  // Create User State -- role defaults to USER; admin can switch to AGENT
+  // (routed server-side to POST /admin/agents instead of /admin/users).
+  const [newUser, setNewUser] = useState<{ name: string; username: string; password: string; balance: number; role: 'USER' | 'AGENT' }>({ name: '', username: '', password: '', balance: 0, role: 'USER' });
   
   // Credit State
   const [creditAmounts, setCreditAmounts] = useState<Record<string, string>>({});
@@ -51,8 +52,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
     e.preventDefault();
     if (newUser.name && newUser.username && newUser.password) {
       onCreateUser(newUser);
-      setNewUser({ name: '', username: '', password: '', balance: 0 });
-      alert('User created successfully');
+      setNewUser({ name: '', username: '', password: '', balance: 0, role: 'USER' });
+      alert(newUser.role === 'AGENT' ? 'Agjenti u krijua me sukses' : 'User u krijua me sukses');
     }
   };
 
@@ -238,7 +239,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
             {/* Create User Section */}
             <div className="bg-brand-bg p-4 rounded border border-brand-divider">
               <h3 className="text-brand-yellow font-bold mb-4 uppercase text-xs tracking-wider">Create New User</h3>
-              <form onSubmit={handleCreateSubmit} className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+              <form onSubmit={handleCreateSubmit} className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
                 <div>
                   <label className="text-xs text-brand-textMuted block mb-1">Full Name</label>
                   <input required className="w-full bg-brand-panel border border-brand-divider rounded p-2 text-white text-sm" 
@@ -259,8 +260,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                   <input type="number" className="w-full bg-brand-panel border border-brand-divider rounded p-2 text-white text-sm" 
                     value={newUser.balance} onChange={e => setNewUser({...newUser, balance: parseFloat(e.target.value) || 0})} />
                 </div>
+                <div>
+                  <label className="text-xs text-brand-textMuted block mb-1">Lloji</label>
+                  <select className="w-full bg-brand-panel border border-brand-divider rounded p-2 text-white text-sm"
+                    value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as 'USER' | 'AGENT'})}>
+                    <option value="USER">User</option>
+                    <option value="AGENT">Agjent</option>
+                  </select>
+                </div>
                 <button type="submit" className="bg-brand-header hover:bg-brand-headerDark text-white font-bold py-2 px-4 rounded text-sm transition-colors">
-                  Create User
+                  {newUser.role === 'AGENT' ? 'Create Agent' : 'Create User'}
                 </button>
               </form>
             </div>
