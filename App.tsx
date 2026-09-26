@@ -1389,6 +1389,13 @@ const App: React.FC = () => {
             <CasinoHub userBalance={currentUser.balance} onSetBalance={(balance) => setCurrentUser((p) => p ? { ...p, balance } : p)} />
           ) : detailMatch ? (
             <MatchDetail
+              // Force a full remount when the viewed match changes (e.g.
+              // jumping straight from one match's detail to another via
+              // search, without closing first). Without this, React reuses
+              // the same MatchDetail/LivePitch instance and their ticking
+              // clocks keep counting up from the PREVIOUS match's minute
+              // instead of resetting to the new match's real one.
+              key={detailMatch.id}
               match={detailMatch}
               leagueLabel={leagueLabel(detailMatch.league)}
               onClose={() => setDetailMatchId(null)}
