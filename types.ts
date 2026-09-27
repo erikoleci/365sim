@@ -14,6 +14,9 @@ export interface User {
   avatar: string;
   isActive?: boolean;
   agentId?: string | null;
+  // % of an AGENT's users' net gaming result (GGR) owed to them; 0/absent
+  // for USER and ADMIN rows. See server/routes/admin.js commission endpoint.
+  commissionRate?: number;
 }
 
 export enum MatchStatus {

@@ -292,6 +292,7 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
                 <StatBox label="Fitime" value={money(monthly.totals.wins)} tone="pos" />
                 <StatBox label="Humbje" value={money(monthly.totals.losses)} tone="neg" />
                 <StatBox label="Neto" value={money(monthly.totals.netResult)} tone={monthly.totals.netResult >= 0 ? 'pos' : 'neg'} />
+                <StatBox label={`Komisioni im (${monthly.commissionRate}%)`} value={money(monthly.commissionOwed)} tone="pos" />
               </div>
 
               <table className="w-full text-xs">

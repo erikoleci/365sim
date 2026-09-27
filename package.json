@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "migrate": "node server/runMigrationsCli.js",
     "test:watch": "vitest",
     "server": "node --max-old-space-size=400 server/server.js",
     "server:dev": "node --watch server/server.js"

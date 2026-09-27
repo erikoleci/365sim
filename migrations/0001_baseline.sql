@@ -1,0 +1,20 @@
+-- Baseline marker.
+--
+-- Everything in the schema up to and including this point (all tables,
+-- indexes, the DOUBLE PRECISION -> NUMERIC money-column migration, and the
+-- commission_rate column) was created/evolved by the idempotent
+-- CREATE TABLE IF NOT EXISTS / ALTER TABLE ... IF NOT EXISTS statements in
+-- server/db.js's initDb(), which still runs on every boot and remains the
+-- source of truth for that history.
+--
+-- This file is intentionally a no-op. It exists purely so this baseline has
+-- a row in schema_migrations (see server/migrate.js), giving every
+-- migration ADDED FROM NOW ON a real, numbered, reviewable history --
+-- without rewriting or replaying the schema changes that already happened
+-- safely in initDb().
+--
+-- From here on: new schema changes should be added as a new
+-- NNNN_description.sql file in this directory (numbered after the highest
+-- existing one), NOT as another inline ALTER TABLE in db.js. See
+-- server/migrate.js for how these are applied and tracked.
+SELECT 1;

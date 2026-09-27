@@ -24,6 +24,7 @@ function toPublicUser(row) {
     id: row.id, name: row.name, username: row.username,
     balance: row.balance, role: row.role, avatar: row.avatar,
     isActive: row.is_active, agentId: row.agent_id,
+    commissionRate: row.commission_rate != null ? Number(row.commission_rate) : 0,
   };
 }
 
@@ -298,13 +299,22 @@ router.get('/reports/monthly', async (req, res) => {
   );
 
   const t = totalsRows[0];
+  const netResult = Number(t.losses) - Number(t.wins);
+  const self = await loadSelf(req);
+  const commissionRate = Number(self?.commission_rate) || 0;
   res.json({
     month: label,
     totals: {
       totalUsers: t.total_users, totalTickets: t.total_tickets, turnover: t.turnover,
       wins: t.wins, losses: t.losses, pending: t.pending,
-      netResult: Number(t.losses) - Number(t.wins),
+      netResult,
     },
+    // Same commission model as the Owner's per-agent report
+    // (admin.js /reports/monthly): a percentage of this agent's users' net
+    // gaming result for the month, informational only (accrues only when
+    // the house won overall this month).
+    commissionRate,
+    commissionOwed: netResult > 0 ? Number((netResult * commissionRate / 100).toFixed(2)) : 0,
     users: perUser,
   });
 });

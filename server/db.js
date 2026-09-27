@@ -281,6 +281,26 @@ export async function initDb() {
   // ADMIN, same as today), nothing retroactively changes for them.
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS agent_id TEXT REFERENCES users(id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_agent_id ON users (agent_id);`);
+
+  // commission_rate: percentage (0-100) of an AGENT's users' net gaming
+  // result (house win = losses - wins, i.e. GGR) that the platform owes
+  // that agent, e.g. as a real operator's revenue-share arrangement.
+  // Meaningless for USER/ADMIN rows (stays 0). Computed on the fly in
+  // reports (agent.js /reports/monthly, admin.js /reports/monthly) rather
+  // than written to a ledger/transactions row automatically -- this is a
+  // simulator, so we surface the number for visibility without moving real
+  // balance around unattended; an Owner still uses the existing manual
+  // agents/:id/credit endpoint to actually pay it out.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS commission_rate NUMERIC(5,2) NOT NULL DEFAULT 0;`);
+  // Postgres has no `ADD CONSTRAINT IF NOT EXISTS` -- the DO block + catching
+  // duplicate_object is the standard idempotent equivalent, safe to run on
+  // every boot.
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE users ADD CONSTRAINT commission_rate_range CHECK (commission_rate >= 0 AND commission_rate <= 100);
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
+  `);
   // Enable/disable an AGENT or USER account without deleting it. Defaults to
   // true so every existing row (and every row created by existing code
   // paths that don't know about this column) is unaffected/still active.

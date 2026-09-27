@@ -24,6 +24,10 @@ function toPublicUser(row) {
     id: row.id, name: row.name, username: row.username,
     balance: row.balance, role: row.role, avatar: row.avatar,
     isActive: row.is_active, agentId: row.agent_id,
+    // Only meaningful for AGENT rows; present (as 0) for USER/ADMIN too so
+    // the shape is consistent, since the frontend types this as a single
+    // PublicUser regardless of role.
+    commissionRate: row.commission_rate != null ? Number(row.commission_rate) : 0,
   };
 }
 
@@ -168,7 +172,7 @@ router.get('/reports/monthly', async (req, res) => {
   );
 
   const { rows: perAgent } = await pool.query(
-    `SELECT a.id, a.name, a.username,
+    `SELECT a.id, a.name, a.username, a.commission_rate,
             COUNT(DISTINCT u.id)::int AS total_users,
             COALESCE(COUNT(b.id), 0)::int AS tickets,
             COALESCE(SUM(b.stake), 0) AS turnover,
@@ -192,7 +196,21 @@ router.get('/reports/monthly', async (req, res) => {
       turnover: t.turnover, wins: t.wins, losses: t.losses, pending: t.pending,
       netResult: Number(t.losses) - Number(t.wins),
     },
-    agents: perAgent,
+    // commissionOwed: this agent's share of the house's net result (GGR)
+    // for the month, at their configured commission_rate. Only accrues on
+    // a positive net result (house won overall) -- a losing month owes no
+    // negative commission back from the agent. Informational only; an
+    // Owner still pays it out via the existing agents/:id/credit endpoint.
+    agents: perAgent.map((a) => {
+      const netResult = Number(a.losses) - Number(a.wins);
+      const commissionRate = Number(a.commission_rate);
+      return {
+        ...a,
+        netResult,
+        commissionRate,
+        commissionOwed: netResult > 0 ? Number((netResult * commissionRate / 100).toFixed(2)) : 0,
+      };
+    }),
   });
 });
 
@@ -236,6 +254,22 @@ router.post('/agents', async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
   await logAudit(req.user, 'AGENT_CREATE', id, { username, balance: startBalance });
   res.status(201).json({ agent: toPublicUser(rows[0]) });
+});
+
+// Set/update an agent's commission rate (% of their users' net gaming
+// result the platform owes them). Owner-only, like every other /agents
+// route in this file (see requireAdmin at the top of the router).
+router.patch('/agents/:id/commission', async (req, res) => {
+  const rate = Number(req.body?.commissionRate);
+  if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+    return res.status(400).json({ error: 'commissionRate must be a number between 0 and 100' });
+  }
+  const { rows } = await pool.query(`SELECT id FROM users WHERE id = $1 AND role = 'AGENT'`, [req.params.id]);
+  if (!rows[0]) return res.status(404).json({ error: 'Agent not found' });
+
+  await pool.query('UPDATE users SET commission_rate = $1 WHERE id = $2', [rate, req.params.id]);
+  await logAudit(req.user, 'AGENT_COMMISSION_SET', req.params.id, { commissionRate: rate });
+  res.json({ ok: true, commissionRate: rate });
 });
 
 // Top up an EXISTING agent's balance out of the Owner's own balance. There

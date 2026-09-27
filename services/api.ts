@@ -349,6 +349,12 @@ export async function adminDebitAgent(agentId: string, amount: number) {
   });
 }
 
+export async function adminSetAgentCommission(agentId: string, commissionRate: number) {
+  return request<{ ok: true; commissionRate: number }>(`/admin/agents/${agentId}/commission`, {
+    method: 'PATCH', body: JSON.stringify({ commissionRate }),
+  });
+}
+
 export interface AgentUserPerformance {
   id: string; name: string; username: string; balance: number; is_active: boolean;
   tickets: number; turnover: number; wins: number; losses: number; pending: number;
@@ -406,6 +412,8 @@ export async function agentFetchPerformance() {
 export interface AgentMonthlyReport {
   month: string;
   totals: { totalUsers: number; totalTickets: number; turnover: number; wins: number; losses: number; pending: number; netResult: number };
+  commissionRate: number;
+  commissionOwed: number;
   users: { id: string; name: string; username: string; tickets: number; turnover: number; wins: number; losses: number; pending: number }[];
 }
 export async function agentFetchMonthlyReport(month?: string) {
@@ -420,7 +428,7 @@ export async function agentDeleteUser(userId: string) {
 export interface AdminMonthlyReport {
   month: string;
   totals: { totalAgents: number; totalUsers: number; totalTickets: number; turnover: number; wins: number; losses: number; pending: number; netResult: number };
-  agents: { id: string; name: string; username: string; total_users: number; tickets: number; turnover: number; wins: number; losses: number; pending: number }[];
+  agents: { id: string; name: string; username: string; total_users: number; tickets: number; turnover: number; wins: number; losses: number; pending: number; commission_rate: number; netResult: number; commissionRate: number; commissionOwed: number }[];
 }
 export async function adminFetchMonthlyReport(month?: string) {
   const q = month ? `?month=${encodeURIComponent(month)}` : '';

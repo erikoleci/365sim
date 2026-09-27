@@ -39,6 +39,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   const [newAgent, setNewAgent] = useState({ name: '', username: '', password: '', balance: 0 });
   const [agentAmount, setAgentAmount] = useState<Record<string, string>>({});
   const [agentActionBusy, setAgentActionBusy] = useState<string | null>(null);
+  const [agentCommissionInput, setAgentCommissionInput] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -97,6 +98,24 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
       await load();
     } catch (err: any) {
       alert(err.message || 'Veprimi deshtoi');
+    } finally {
+      setAgentActionBusy(null);
+    }
+  };
+
+  const saveAgentCommission = async (agentId: string) => {
+    const raw = agentCommissionInput[agentId];
+    const rate = Number(raw);
+    if (raw === undefined || raw === '' || Number.isNaN(rate) || rate < 0 || rate > 100) {
+      alert('Komisioni duhet te jete nje numer 0-100');
+      return;
+    }
+    setAgentActionBusy(agentId);
+    try {
+      await api.adminSetAgentCommission(agentId, rate);
+      await load();
+    } catch (err: any) {
+      alert(err.message || 'Ndryshimi i komisionit deshtoi');
     } finally {
       setAgentActionBusy(null);
     }
@@ -199,6 +218,23 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                         </div>
                         {expandedAgent === a.id && (
                           <div className="bg-[#2a2a2a] px-4 py-3">
+                            <div className="flex items-center gap-2 text-xs mb-3 pb-3 border-b border-[#444]">
+                              <span className="text-brand-textMuted">Komisioni (% e rezultatit neto te agjentit):</span>
+                              <input
+                                type="number" min={0} max={100} step="0.1"
+                                placeholder={String(a.commissionRate ?? 0)}
+                                value={agentCommissionInput[a.id] ?? ''}
+                                onChange={(e) => setAgentCommissionInput((p) => ({ ...p, [a.id]: e.target.value }))}
+                                className="input !w-20"
+                              />
+                              <span>%</span>
+                              <button
+                                disabled={agentActionBusy === a.id}
+                                onClick={() => saveAgentCommission(a.id)}
+                                className="px-2 py-1 rounded bg-brand-yellow text-black font-bold disabled:opacity-50"
+                              >Ruaj</button>
+                              <span className="text-brand-textMuted ml-2">Aktual: {a.commissionRate ?? 0}%</span>
+                            </div>
                             {!agentDetail[a.id] ? (
                               <div className="text-xs text-brand-textMuted">Duke ngarkuar userat...</div>
                             ) : agentDetail[a.id].length === 0 ? (
@@ -274,6 +310,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                       <th className="py-1.5 pr-2">Fitime</th>
                       <th className="py-1.5 pr-2">Humbje</th>
                       <th className="py-1.5 pr-2">Pending</th>
+                      <th className="py-1.5 pr-2">Komision</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -286,10 +323,13 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                         <td className="py-1.5 pr-2 text-green-400">{money(a.wins)}</td>
                         <td className="py-1.5 pr-2 text-red-400">{money(a.losses)}</td>
                         <td className="py-1.5 pr-2">{money(a.pending)}</td>
+                        <td className="py-1.5 pr-2 text-brand-yellow" title={a.commissionRate + '% e rezultatit neto'}>
+                          {money(a.commissionOwed)}
+                        </td>
                       </tr>
                     ))}
                     {monthly.agents.length === 0 && (
-                      <tr><td colSpan={7} className="py-4 text-center text-brand-textMuted">S'ka te dhena per kete muaj.</td></tr>
+                      <tr><td colSpan={8} className="py-4 text-center text-brand-textMuted">S'ka te dhena per kete muaj.</td></tr>
                     )}
                   </tbody>
                 </table>

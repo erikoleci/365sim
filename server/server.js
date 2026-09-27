@@ -25,6 +25,8 @@ import casinoRouter from './routes/casino.js';
 import scrapeRouter from './routes/scrape.js';
 import favoritesRouter from './routes/favorites.js';
 import { initDb, cleanupOldData } from './db.js';
+import { runMigrations } from './migrate.js';
+import { pool } from './db.js';
 import { mapDbError } from './dbErrors.js';
 import { initWebSocket } from './ws.js';
 import { refreshLiveTracker, logLondon365FilterConfig, startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCrossCountryMisclassifiedLeagues, purgeCountriesNotInOnlyList, wipeLondon365Data, loadPersistedLeagueMap, startGameDetailsSubscriptionReconcileLoop, getLondon365MemoryDiagnostics } from './london365.js';
@@ -238,6 +240,12 @@ async function start() {
 
   try {
     await initDb();
+    // Any NEW schema changes from now on live as numbered files in
+    // migrations/ (see server/migrate.js) instead of another inline ALTER
+    // TABLE in initDb() -- this gives a real, reviewable schema history
+    // going forward without touching/replaying the history initDb() above
+    // already handles safely.
+    await runMigrations(pool);
     dbReady = true;
     console.log('[db] connected and initialized');
   } catch (err) {
