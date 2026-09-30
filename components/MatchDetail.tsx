@@ -65,7 +65,11 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
   const [activeTab, setActiveTab] = useState<string>('All');
   const [liveDetail, setLiveDetail] = useState<{ statistics: LiveStatistics | null; events: MatchEvent[] } | null>(null);
   const [liveDetailLoading, setLiveDetailLoading] = useState(false);
-  const headerClock = useTickingClock(liveDetail?.statistics?.minute != null ? String(liveDetail.statistics.minute) : match.currentMinute);
+  const headerClock = useTickingClock(
+    liveDetail?.statistics?.minute != null ? String(liveDetail.statistics.minute) : match.currentMinute,
+    liveDetail?.statistics?.minuteUpdatedAt ?? match.currentMinuteUpdatedAt,
+    match.status === MatchStatus.LIVE && !isHalftime(match)
+  );
 
   // Odds-movement arrows: remember the last-seen price per option id, and
   // flag a direction ('up' | 'down') for a couple seconds after any change

@@ -1172,8 +1172,8 @@ export async function upsertMatch(ev, league, status, liveScores, liveInfo, leag
     } else {
       bump(existing ? 'upsert.written' : 'upsert.inserted');
       await pool.query(
-        `INSERT INTO matches_cache (id, league, league_id, country_id, home_team, away_team, start_time, status, raw_json, fetched_at, live_home_score, live_away_score, live_minute, live_status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        `INSERT INTO matches_cache (id, league, league_id, country_id, home_team, away_team, start_time, status, raw_json, fetched_at, live_home_score, live_away_score, live_minute, live_status, live_minute_updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$16)
          ON CONFLICT (id) DO UPDATE SET
            league = CASE WHEN excluded.league = '' THEN matches_cache.league ELSE excluded.league END,
            -- COALESCE, not overwrite: not every upsert path resolves a
@@ -1198,13 +1198,26 @@ export async function upsertMatch(ev, league, status, liveScores, liveInfo, leag
            live_minute = CASE WHEN $15 THEN excluded.live_minute
                                ELSE COALESCE(excluded.live_minute, matches_cache.live_minute) END,
            live_status = CASE WHEN $15 THEN excluded.live_status
-                               ELSE COALESCE(excluded.live_status, matches_cache.live_status) END`,
+                               ELSE COALESCE(excluded.live_status, matches_cache.live_status) END,
+           -- Only bump the reference timestamp when the EFFECTIVE
+           -- live_minute value is actually changing (IS DISTINCT FROM
+           -- handles NULLs correctly, unlike =). If this poll didn't move
+           -- the minute forward (or a different-match reset just cleared
+           -- it), the previous reading is still the true "as of" time —
+           -- overwriting it here would make the client-side clock jump
+           -- forward for no reason.
+           live_minute_updated_at = CASE
+             WHEN $15 AND excluded.live_minute IS DISTINCT FROM matches_cache.live_minute THEN excluded.fetched_at
+             WHEN NOT $15 AND COALESCE(excluded.live_minute, matches_cache.live_minute) IS DISTINCT FROM matches_cache.live_minute
+               THEN excluded.fetched_at
+             ELSE matches_cache.live_minute_updated_at
+           END`,
         [
           ev.id, league, incomingLeagueId, incomingCountryId,
           ev.home_team, ev.away_team, ev.commence_time, status,
           rawToStore, now,
           inHome, inAway, inMinute, inLiveStatus,
-          Boolean(isDifferentMatch),
+          Boolean(isDifferentMatch), now,
         ]
       );
     }

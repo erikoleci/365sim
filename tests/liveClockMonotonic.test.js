@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shouldAcceptNewClockBase } from '../components/MatchCard.tsx';
+import { shouldAcceptNewClockBase, projectClock } from '../components/MatchCard.tsx';
 
 describe('shouldAcceptNewClockBase - the live clock must never visibly rewind', () => {
   it('always accepts the first value (no current base yet)', () => {
@@ -28,5 +28,42 @@ describe('shouldAcceptNewClockBase - the live clock must never visibly rewind', 
     const current = { totalSeconds: 45 * 60, receivedAt: 0 };
     const now = 0;
     expect(shouldAcceptNewClockBase(current, 46 * 60, now)).toBe(true);
+  });
+});
+
+describe('projectClock - server-side reference timestamp resync (source_time + received_at)', () => {
+  it('reconstructs the correct elapsed time from a server-side reference: source 41:23 at T, asked at T+7s -> 41:30', () => {
+    const receivedAt = 1_000_000;
+    const totalSecondsAtReceivedAt = 41 * 60 + 23;
+    const result = projectClock(totalSecondsAtReceivedAt, receivedAt, receivedAt + 7000);
+    expect(result.minute).toBe(41);
+    expect(result.second).toBe(30);
+  });
+
+  it('a poll interval gap (e.g. 25s since the source last confirmed the minute) is correctly caught up, not shown stale', () => {
+    // This is exactly the "Match Detail opens with a stale value and then
+    // catches up" bug: if the reference is the REAL server timestamp (not
+    // the moment this client happened to fetch), the very first read is
+    // already correct.
+    const receivedAt = 2_000_000;
+    const totalSecondsAtReceivedAt = 10 * 60; // source said "10:00" at receivedAt
+    const askedAt = receivedAt + 25_000; // client asks 25s later
+    const result = projectClock(totalSecondsAtReceivedAt, receivedAt, askedAt);
+    expect(result.minute).toBe(10);
+    expect(result.second).toBe(25);
+  });
+
+  it('rolls over minutes correctly (59s -> next minute, 0s)', () => {
+    const receivedAt = 0;
+    const result = projectClock(22 * 60 + 59, receivedAt, receivedAt + 1000);
+    expect(result.minute).toBe(23);
+    expect(result.second).toBe(0);
+  });
+
+  it('never goes backward for a zero/negative gap (clock skew safety)', () => {
+    const receivedAt = 5000;
+    const result = projectClock(30 * 60, receivedAt, receivedAt - 500); // "now" before receivedAt
+    expect(result.minute).toBe(30);
+    expect(result.second).toBe(0); // elapsed clamped to 0, not negative
   });
 });

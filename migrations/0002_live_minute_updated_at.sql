@@ -1,0 +1,17 @@
+-- Server-side reference timestamp for the live clock.
+--
+-- Problem: the frontend's ticking clock previously used the CLIENT's own
+-- Date.now() as the "received at" reference the moment it happened to see a
+-- given live_minute value -- not when the server actually got that reading
+-- from London365. Since the live sync poll only runs periodically (not
+-- every second), that reference could already be stale by up to a poll
+-- interval the instant a client first saw it, and every client reconstructs
+-- its own (slightly different) reference independently.
+--
+-- Fix: record ON THE SERVER, in the database, the real moment live_minute
+-- last actually CHANGED value (see server/london365.js upsertMatch). Every
+-- client then computes elapsed = now - live_minute_updated_at from the SAME
+-- authoritative timestamp, so: (a) Match Detail opens with the correct
+-- clock immediately, no "catch up" period, (b) it survives a server
+-- restart (persisted in Postgres, not in-memory), (c) all clients agree.
+ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS live_minute_updated_at BIGINT;

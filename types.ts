@@ -88,6 +88,11 @@ export interface Match {
   // Live Data
   isLive?: boolean;
   currentMinute?: string;
+  // Server-side epoch-ms timestamp of when currentMinute was last actually
+  // observed to change (see migrations/0002_live_minute_updated_at.sql).
+  // Lets the ticking clock resync from a real reference instead of the
+  // client's own receive time -- see useTickingClock in MatchCard.tsx.
+  currentMinuteUpdatedAt?: number;
   liveStatus?: string;
   liveHomeScore?: number;
   liveAwayScore?: number;

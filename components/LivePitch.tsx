@@ -20,7 +20,14 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats }) => {
   // match.currentMinute) and same hook, so the pitch header never shows a
   // less precise/stale clock than the card the user just tapped. Hook must
   // run unconditionally (before the early return below) per rules-of-hooks.
-  const liveClock = useTickingClock(isLive ? String(stats?.minute ?? match.currentMinute ?? '') : undefined);
+  const liveClock = useTickingClock(
+    isLive ? String(stats?.minute ?? match.currentMinute ?? '') : undefined,
+    // stats.minuteUpdatedAt (from GET /matches/:id/live-detail) is the more
+    // authoritative reference when we're actually rendering stats.minute;
+    // fall back to the match-list-shaped currentMinuteUpdatedAt otherwise.
+    stats?.minuteUpdatedAt ?? match.currentMinuteUpdatedAt,
+    isLive && !isHalftime(match)
+  );
   if (!isLive) return null;
 
   const possHome = stats?.possession_home ?? 50;

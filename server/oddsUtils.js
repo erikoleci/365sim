@@ -265,6 +265,13 @@ export function mapEventToMatch(row) {
     liveHomeScore: row.live_home_score ?? undefined,
     liveAwayScore: row.live_away_score ?? undefined,
     currentMinute: row.live_minute ?? estimatedMinute,
+    // Server-side reference timestamp (ms epoch) for when currentMinute was
+    // last actually observed to change — see
+    // migrations/0002_live_minute_updated_at.sql. Only meaningful alongside
+    // a real (non-estimated) live_minute; the estimated fallback above has
+    // no matching "received at" moment to anchor to.
+    currentMinuteUpdatedAt: row.live_minute && row.live_minute_updated_at != null
+      ? Number(row.live_minute_updated_at) : undefined,
     liveStatus: row.live_status ?? undefined,
     score: status === 'FINISHED' && row.result_home !== null && row.result_away !== null
       ? { home: row.result_home, away: row.result_away, htHome: 0, htAway: 0, homeYellowCards: 0, awayYellowCards: 0, homeCorners: 0, awayCorners: 0, scorers: [] }

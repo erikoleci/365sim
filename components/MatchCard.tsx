@@ -46,7 +46,38 @@ export function shouldAcceptNewClockBase(
   return incomingTotalSeconds >= currentProjected;
 }
 
-export function useTickingClock(rawMinute?: string): { minute: number; second: number; half: string } | null {
+// Pure projection, extracted for direct testing: given a known
+// {minute,second} as of `receivedAt`, what should the clock read `now`?
+// This is the exact "source_time + received_at -> current elapsed" resync
+// arithmetic — e.g. source 41:23 received at T, asked at T+7s -> 41:30.
+export function projectClock(totalSecondsAtReceivedAt: number, receivedAt: number, now: number): { minute: number; second: number; half: string } {
+  const elapsed = Math.max(0, Math.floor((now - receivedAt) / 1000));
+  const total = totalSecondsAtReceivedAt + elapsed;
+  const minute = Math.floor(total / 60);
+  const second = total % 60;
+  const half = minute < 45 ? 'Pjesa I' : minute < 46 ? 'Pushim' : minute < 90 ? 'Pjesa II' : minute < 105 ? 'Shtesë' : 'Penallti';
+  return { minute, second, half };
+}
+
+export function useTickingClock(
+  rawMinute?: string,
+  // Real server-side "as of" timestamp for rawMinute (epoch ms) — see
+  // migrations/0002_live_minute_updated_at.sql. When present, the FIRST
+  // render already shows the correct elapsed minute:second (no waiting for
+  // a few ticks to "catch up"), and the value is consistent across every
+  // client/tab/device instead of each one anchoring to its own fetch time.
+  // Falls back to the client's own receive time when absent (older API
+  // response shape, or a synthetic/estimated minute with no real reading
+  // to anchor to).
+  serverUpdatedAt?: number,
+  // Whether the clock should actually be advancing right now. False during
+  // HALFTIME (and any other non-running live state) — the provider's
+  // minute is frozen then, and ticking forward from it would show a clock
+  // running through a break that hasn't actually resumed. See isHalftime()
+  // in utils/liveStatus.ts for the source of truth this is normally paired
+  // with at the call site.
+  ticking: boolean = true
+): { minute: number; second: number; half: string } | null {
   const base = parseLiveClock(rawMinute);
   const [, forceTick] = React.useState(0);
   const baseRef = React.useRef<{ totalSeconds: number; receivedAt: number } | null>(null);
@@ -57,6 +88,7 @@ export function useTickingClock(rawMinute?: string): { minute: number; second: n
       return;
     }
     const incomingTotalSeconds = base.minute * 60 + base.second;
+    const receivedAt = serverUpdatedAt ?? Date.now();
     // Never let the displayed clock jump BACKWARD within the same match.
     // A real match clock only ever moves forward; a lower incoming value
     // means this update is stale/out of order relative to what we already
@@ -68,25 +100,24 @@ export function useTickingClock(rawMinute?: string): { minute: number; second: n
     // ticking forward from there and ignore an incoming value that would
     // rewind it. (A genuinely different match reusing the same id is a
     // separate, much rarer case already guarded against on the server —
-    // see upsertMatch's team-mismatch reset in server/london365.js.)
-    if (!shouldAcceptNewClockBase(baseRef.current, incomingTotalSeconds)) return;
-    baseRef.current = { totalSeconds: incomingTotalSeconds, receivedAt: Date.now() };
+    // see upsertMatch's team-mismatch reset in server/london365.js.) The
+    // "current projected" value is itself computed from receivedAt, so this
+    // check is correct whether receivedAt is the client's or the server's.
+    if (!shouldAcceptNewClockBase(baseRef.current, incomingTotalSeconds, Date.now())) return;
+    baseRef.current = { totalSeconds: incomingTotalSeconds, receivedAt };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawMinute]);
+  }, [rawMinute, serverUpdatedAt]);
 
   React.useEffect(() => {
-    if (!base) return;
+    if (!base || !ticking) return;
     const id = setInterval(() => forceTick((n) => n + 1), 1000);
     return () => clearInterval(id);
-  }, [!!base]);
+  }, [!!base, ticking]);
 
   if (!base || !baseRef.current) return base;
-  const elapsed = Math.floor((Date.now() - baseRef.current.receivedAt) / 1000);
-  const totalSeconds = baseRef.current.totalSeconds + Math.max(0, elapsed);
-  const minute = Math.floor(totalSeconds / 60);
-  const second = totalSeconds % 60;
-  const half = minute < 45 ? 'Pjesa I' : minute < 46 ? 'Pushim' : minute < 90 ? 'Pjesa II' : minute < 105 ? 'Shtesë' : 'Penallti';
-  return { minute, second, half };
+  return ticking
+    ? projectClock(baseRef.current.totalSeconds, baseRef.current.receivedAt, Date.now())
+    : projectClock(baseRef.current.totalSeconds, baseRef.current.receivedAt, baseRef.current.receivedAt); // frozen: elapsed=0
 }
 
 // "61:01" gjatë lojës normale; kur provideri s'jep fare minutë (vetëm "LIVE"
@@ -134,7 +165,7 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
   const isFinished = match.status === MatchStatus.FINISHED;
   const isLive = match.status === MatchStatus.LIVE;
   const matchWinnerMarket = getMatchWinnerMarket(match);
-  const liveClock = useTickingClock(match.currentMinute);
+  const liveClock = useTickingClock(match.currentMinute, match.currentMinuteUpdatedAt, isLive && !isHalftime(match));
 
   // Odds-movement arrows in the list view, same approach as MatchDetail:
   // remember last-seen price per selection, flash up/down briefly on change.

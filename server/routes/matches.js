@@ -87,6 +87,7 @@ function dedupeMatches(list) {
       best.liveHomeScore = c.liveHomeScore ?? best.liveHomeScore;
       best.liveAwayScore = c.liveAwayScore ?? best.liveAwayScore;
       best.currentMinute = c.currentMinute ?? best.currentMinute;
+      best.currentMinuteUpdatedAt = c.currentMinuteUpdatedAt ?? best.currentMinuteUpdatedAt;
     }
     return best;
   });
@@ -169,7 +170,7 @@ const LIST_RAW_JSON_H2H_ONLY = `
 
 const MATCH_COLUMNS_LIST = `id, league, league_id, country_id, home_team, away_team,
   start_time, status, ${LIST_RAW_JSON_H2H_ONLY}, live_home_score, live_away_score,
-  live_minute, live_status, result_home, result_away`;
+  live_minute, live_status, live_minute_updated_at, result_home, result_away`;
 
 // ROOT CAUSE (measured 2026-09-17): the unfiltered branch below is the one
 // the frontend ALWAYS hits — App.tsx's loadMatches() calls fetchMatches()
@@ -301,7 +302,7 @@ router.get('/:id/live-detail', wrap(async (req, res) => {
       'SELECT minute, type, team, player, detail, created_at FROM match_events WHERE match_id = $1 ORDER BY created_at ASC',
       [req.params.id]
     ),
-    queryWithRetry('SELECT live_minute, live_home_score, live_away_score, status FROM matches_cache WHERE id = $1', [req.params.id]),
+    queryWithRetry('SELECT live_minute, live_home_score, live_away_score, status, live_minute_updated_at FROM matches_cache WHERE id = $1', [req.params.id]),
   ]);
   // The provider's live feed carries the real in-play clock (e.g. "62:14")
   // even when the stats table has no minute yet — expose it so the pitch
@@ -322,6 +323,13 @@ router.get('/:id/live-detail', wrap(async (req, res) => {
     }
   }
   const isStale = cache && cache.status === 'LIVE' && lastUpdated != null && Date.now() - lastUpdated > STATS_STALE_MS;
+  // Server-side reference timestamp for the live clock (see
+  // migrations/0002_live_minute_updated_at.sql) -- when the pitch/header
+  // clock resync from this endpoint, this is what lets it show the correct
+  // elapsed time immediately instead of the raw minute alone.
+  if (statistics && cache?.live_minute_updated_at != null) {
+    statistics = { ...statistics, minuteUpdatedAt: Number(cache.live_minute_updated_at) };
+  }
   res.json({ statistics: isStale ? null : statistics, events: eventRows, last_updated: lastUpdated });
 }));
 

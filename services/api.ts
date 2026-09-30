@@ -151,6 +151,11 @@ export async function fetchMatchById(id: string): Promise<Match> {
 
 export interface LiveStatistics {
   minute: number | null;
+  // Server-side reference timestamp (epoch ms) for `minute` — see
+  // migrations/0002_live_minute_updated_at.sql. Optional: only present
+  // when GET /matches/:id/live-detail had a matches_cache row to pull it
+  // from.
+  minuteUpdatedAt?: number;
   possession_home: number | null;
   possession_away: number | null;
   shots_home: number | null;
