@@ -1,7 +1,8 @@
 import React from 'react';
 import { Match, MatchStatus } from '../types';
 import { formatMatchTime, formatMatchDayMonth, isSameAlbaniaDay, albaniaTodayKey } from '../utils/albaniaTime';
-import { getMatchWinnerMarket } from './MatchCard';
+import { getMatchWinnerMarket, useTickingClock, formatLiveClock } from './MatchCard';
+import { isHalftime } from '../utils/liveStatus';
 
 interface FeaturedMatchCardProps {
   match: Match;
@@ -20,6 +21,7 @@ const FeaturedMatchCard: React.FC<FeaturedMatchCardProps> = ({ match, onBetClick
   const matchWinnerMarket = getMatchWinnerMarket(match);
   const isToday = isSameAlbaniaDay(match.startTime, albaniaTodayKey());
   const shortId = match.id.replace(/^l365-/, '');
+  const liveClock = useTickingClock(match.currentMinute, match.currentMinuteUpdatedAt, isLive && !isHalftime(match));
 
   const getButtonClass = (marketId: string, selectionId: string) => {
     const uniqueId = `${match.id}-${marketId}-${selectionId}`;
@@ -35,7 +37,9 @@ const FeaturedMatchCard: React.FC<FeaturedMatchCardProps> = ({ match, onBetClick
       <button onClick={() => onOpenDetail(match)} className="w-full text-left px-2.5 pt-2 pb-2">
         <div className="flex items-center justify-between text-[10px] text-brand-textMuted mb-1.5">
           <span className={isLive ? 'text-brand-accent font-bold animate-pulse' : ''}>
-            {isLive ? (match.currentMinute ? `${match.currentMinute}'` : 'LIVE') : isToday ? formatMatchTime(match.startTime) : formatMatchDayMonth(match.startTime)}
+            {isLive
+              ? (isHalftime(match) ? 'Pushim' : liveClock ? formatLiveClock(liveClock) : (match.currentMinute ? `${match.currentMinute}'` : 'LIVE'))
+              : isToday ? formatMatchTime(match.startTime) : formatMatchDayMonth(match.startTime)}
           </span>
           <span className="opacity-60 hidden sm:inline">{shortId}</span>
         </div>
@@ -44,8 +48,14 @@ const FeaturedMatchCard: React.FC<FeaturedMatchCardProps> = ({ match, onBetClick
       </button>
       {matchWinnerMarket && (
         <div className="flex gap-1 px-2 pb-2">
-          {matchWinnerMarket.options.map((opt) =>
-            opt.suspended ? (
+          {matchWinnerMarket.options.map((opt) => {
+            // A 0/missing odds value is not a real price -- rendering
+            // "0.00" as a tappable button is a broken/empty-looking cell,
+            // not a genuine betting option. Same rule MatchCard.tsx already
+            // applies to the main list's quick 1/X/2 buttons: skip it
+            // entirely rather than leave a dead cell in the row.
+            if (!opt.suspended && (!opt.odds || opt.odds <= 0)) return null;
+            return opt.suspended ? (
               <div key={opt.id} className="flex-1 flex items-center justify-center min-h-[36px] rounded text-[11px] opacity-40" title="Tregu është pezulluar përkohësisht">🔒</div>
             ) : (
               <button
@@ -55,8 +65,8 @@ const FeaturedMatchCard: React.FC<FeaturedMatchCardProps> = ({ match, onBetClick
               >
                 {opt.odds.toFixed(2)}
               </button>
-            )
-          )}
+            );
+          })}
         </div>
       )}
     </div>

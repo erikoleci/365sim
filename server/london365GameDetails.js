@@ -323,6 +323,10 @@ export async function applyGameDetails(raw) {
     const prevBroadcast = lastBroadcast.get(matchId);
     const tickPayload = {
       minute: minuteDisplay || undefined,
+      // Real server-side "as of now" reference for this push, same reason
+      // as goalAnnouncer.js -- without it the frontend clock briefly
+      // anchors a fresh minute to a stale timestamp already in state.
+      minuteUpdatedAt: minuteDisplay ? nowTs : undefined,
       homeScore: homeScoreForBroadcast ?? undefined,
       awayScore: awayScoreForBroadcast ?? undefined,
     };
@@ -383,7 +387,7 @@ export async function applyGameDetails(raw) {
 
   async function recordCard(type, team, count) {
     // Clients first (memory), history row after -- same reasoning as goals.
-    pushCardEvent(matchId, { cardType: type, team, count, minute: minuteDisplay || undefined });
+    pushCardEvent(matchId, { cardType: type, team, count, minute: minuteDisplay || undefined, minuteUpdatedAt: minuteDisplay ? now : undefined });
     await pool.query(
       `INSERT INTO match_events (match_id, minute, type, team, detail, created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
       [matchId, minuteNum, type, team, String(count), now]
@@ -394,6 +398,23 @@ export async function applyGameDetails(raw) {
   if (yc2 > prevCards.yc2) await recordCard('YELLOW_CARD', 'away', yc2);
   if (rc1 > prevCards.rc1) await recordCard('RED_CARD', 'home', rc1);
   if (rc2 > prevCards.rc2) await recordCard('RED_CARD', 'away', rc2);
+
+  // Keep the aggregate totals the stats panel actually reads
+  // (live_statistics.cards_home/away) in step with the discrete
+  // match_events rows above -- these were previously only ever recorded as
+  // individual events, never summed into the columns the UI queries, so
+  // the "Cards" stat box stayed empty even though card data WAS arriving.
+  // Only written when it actually changed, same reasoning as
+  // live_minute_updated_at: an unconditional write on every ~1/sec tick
+  // would be a lot of unnecessary churn for a number that rarely moves.
+  if (yc1 !== prevCards.yc1 || yc2 !== prevCards.yc2 || rc1 !== prevCards.rc1 || rc2 !== prevCards.rc2) {
+    await pool.query(
+      `INSERT INTO live_statistics (match_id, cards_home, cards_away, updated_at)
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (match_id) DO UPDATE SET cards_home = excluded.cards_home, cards_away = excluded.cards_away, updated_at = excluded.updated_at`,
+      [matchId, yc1 + rc1, yc2 + rc2, now]
+    );
+  }
 
   lastSeen.set(eid, { t: Number.isFinite(t) ? t : (prevSeen ? prevSeen.t : 0), yc1, yc2, rc1, rc2 });
 }

@@ -24,6 +24,9 @@ const mocks = vi.hoisted(function () {
     if (s.startsWith('INSERT INTO match_events')) {
       return Promise.resolve({ rows: [] });
     }
+    if (s.startsWith('INSERT INTO live_statistics')) {
+      return Promise.resolve({ rows: [] });
+    }
     throw new Error('unmocked query: ' + s);
   }
   const pool = { query };

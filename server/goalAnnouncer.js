@@ -33,15 +33,23 @@ export function announceGoalIfChanged(ev, score, minute, prev) {
   lastAnnounced.set(ev.id, key);
 
   const m = minute || undefined;
+  // minuteUpdatedAt: "right now" IS the true server-side reference moment
+  // for this push -- it's happening live, not read back from a poll. The
+  // frontend's ticking clock (useTickingClock) needs this alongside `minute`
+  // or it keeps anchoring to the OLD reference timestamp already in state
+  // while displaying the NEW minute, which briefly shows a wrong elapsed
+  // time right at the moment of the goal (see App.tsx's GOAL/GOAL_DISALLOWED
+  // handlers, which merge this into match.currentMinuteUpdatedAt).
+  const mAt = Date.now();
   if (homeDelta > 0) {
-    pushGoal(ev.id, { homeScore: score.home, awayScore: score.away, scoringTeam: ev.home_team, minute: m });
+    pushGoal(ev.id, { homeScore: score.home, awayScore: score.away, scoringTeam: ev.home_team, minute: m, minuteUpdatedAt: mAt });
   } else if (awayDelta > 0) {
-    pushGoal(ev.id, { homeScore: score.home, awayScore: score.away, scoringTeam: ev.away_team, minute: m });
+    pushGoal(ev.id, { homeScore: score.home, awayScore: score.away, scoringTeam: ev.away_team, minute: m, minuteUpdatedAt: mAt });
   }
   if (homeDelta < 0) {
-    pushGoalDisallowed(ev.id, { homeScore: score.home, awayScore: score.away, team: ev.home_team, minute: m });
+    pushGoalDisallowed(ev.id, { homeScore: score.home, awayScore: score.away, team: ev.home_team, minute: m, minuteUpdatedAt: mAt });
   } else if (awayDelta < 0) {
-    pushGoalDisallowed(ev.id, { homeScore: score.home, awayScore: score.away, team: ev.away_team, minute: m });
+    pushGoalDisallowed(ev.id, { homeScore: score.home, awayScore: score.away, team: ev.away_team, minute: m, minuteUpdatedAt: mAt });
   }
   return true;
 }

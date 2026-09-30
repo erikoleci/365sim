@@ -301,6 +301,7 @@ const App: React.FC = () => {
               liveHomeScore: msg.homeScore ?? m.liveHomeScore,
               liveAwayScore: msg.awayScore ?? m.liveAwayScore,
               currentMinute: msg.minute ?? m.currentMinute,
+              currentMinuteUpdatedAt: msg.minute != null ? (msg.minuteUpdatedAt ?? Date.now()) : m.currentMinuteUpdatedAt,
             } : m));
           } else if (msg.type === 'GOAL_DISALLOWED') {
             // A goal that was already shown got retracted (VAR overturn /
@@ -315,6 +316,7 @@ const App: React.FC = () => {
               liveHomeScore: msg.homeScore ?? m.liveHomeScore,
               liveAwayScore: msg.awayScore ?? m.liveAwayScore,
               currentMinute: msg.minute ?? m.currentMinute,
+              currentMinuteUpdatedAt: msg.minute != null ? (msg.minuteUpdatedAt ?? Date.now()) : m.currentMinuteUpdatedAt,
             } : m));
           } else if (msg.type === 'LIVE_TICK') {
             // Fast (~1/sec) resync from the gamedetails feed: keeps the
@@ -328,6 +330,7 @@ const App: React.FC = () => {
               liveHomeScore: msg.homeScore ?? m.liveHomeScore,
               liveAwayScore: msg.awayScore ?? m.liveAwayScore,
               currentMinute: msg.minute ?? m.currentMinute,
+              currentMinuteUpdatedAt: msg.minute != null ? (msg.minuteUpdatedAt ?? Date.now()) : m.currentMinuteUpdatedAt,
             } : m));
           } else if (msg.type === 'CARD') {
             // A card changes nothing the LIST carries (score, minute, h2h

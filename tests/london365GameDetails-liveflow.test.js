@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // feed's real ~1/sec cadence instead of only on a goal.
 const mocks = vi.hoisted(function () {
   const store = new Map();
+  const stats = new Map(); // match_id -> { cards_home, cards_away }
   let selectCount = 0;
   function query(sql, params) {
     const s = String(sql);
@@ -22,9 +23,14 @@ const mocks = vi.hoisted(function () {
       return Promise.resolve({ rows: [], rowCount: row ? 1 : 0 });
     }
     if (s.indexOf('INSERT INTO match_events') === 0) return Promise.resolve({ rows: [], rowCount: 1 });
+    if (s.indexOf('INSERT INTO live_statistics') === 0) {
+      const [matchId, cardsHome, cardsAway] = params;
+      stats.set(matchId, { cards_home: cardsHome, cards_away: cardsAway });
+      return Promise.resolve({ rows: [], rowCount: 1 });
+    }
     return Promise.resolve({ rows: [], rowCount: 0 });
   }
-  return { store, query, getSelectCount: function () { return selectCount; }, resetSelectCount: function () { selectCount = 0; } };
+  return { store, stats, query, getSelectCount: function () { return selectCount; }, resetSelectCount: function () { selectCount = 0; } };
 });
 
 vi.mock('../server/db.js', function () {
@@ -49,6 +55,7 @@ function tag(attrs) {
 
 beforeEach(function () {
   mocks.store.clear();
+  mocks.stats.clear();
   mocks.resetSelectCount();
   vi.clearAllMocks();
   __resetLiveStateForTests();
@@ -149,5 +156,38 @@ describe('applyGameDetails — DB-skip for already-confirmed-unmatched EIDs (fas
     await applyGameDetails(tag({ EID: '52628036', T: '500', SC: '0-0', H: 'China PR (W)', A: 'Philippines (W)' }));
     await applyGameDetails(tag({ EID: '52628036', T: '4700', SC: '3-7', H: 'FC Agniputhra', A: 'South United' }));
     expect(mocks.getSelectCount()).toBe(0);
+  });
+});
+
+describe('applyGameDetails — card totals reach live_statistics (the "kartona nuk vijne" fix)', function () {
+  beforeEach(function () {
+    mocks.store.set('l365-71000001', {
+      id: 'l365-71000001', home_team: 'Home FC', away_team: 'Away FC',
+      live_home_score: 0, live_away_score: 0, live_minute: '10',
+    });
+  });
+
+  it('writes the aggregate cards_home/cards_away the first time a card is seen', async function () {
+    await applyGameDetails(tag({ EID: '71000001', T: '100', SC: '0-0', YC1: '1', YC2: '0', RC1: '0', RC2: '0' }));
+    expect(mocks.stats.get('l365-71000001')).toEqual({ cards_home: 1, cards_away: 0 });
+  });
+
+  it('keeps totals in step as more cards arrive, combining yellow + red per side', async function () {
+    await applyGameDetails(tag({ EID: '71000001', T: '100', SC: '0-0', YC1: '1', YC2: '0', RC1: '0', RC2: '0' }));
+    await applyGameDetails(tag({ EID: '71000001', T: '200', SC: '0-0', YC1: '2', YC2: '1', RC1: '1', RC2: '0' }));
+    // home: 2 yellow + 1 red = 3, away: 1 yellow + 0 red = 1
+    expect(mocks.stats.get('l365-71000001')).toEqual({ cards_home: 3, cards_away: 1 });
+  });
+
+  it('does not write live_statistics again when the card counts have not changed', async function () {
+    await applyGameDetails(tag({ EID: '71000001', T: '100', SC: '0-0', YC1: '1', YC2: '0', RC1: '0', RC2: '0' }));
+    mocks.stats.clear(); // if the second call writes again, the assertion below would still pass with the same numbers,
+    // so instead spy on the write count directly.
+    let writes = 0;
+    const origSet = mocks.stats.set.bind(mocks.stats);
+    mocks.stats.set = function (...args) { writes++; return origSet(...args); };
+    await applyGameDetails(tag({ EID: '71000001', T: '200', SC: '0-0', YC1: '1', YC2: '0', RC1: '0', RC2: '0' })); // same counts
+    expect(writes).toBe(0);
+    mocks.stats.set = origSet;
   });
 });
