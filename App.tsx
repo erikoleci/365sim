@@ -713,14 +713,16 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matches]);
 
-  const featuredMatches = useMemo(() => {
-    const live = matches.filter((m) => m.status === MatchStatus.LIVE);
-    const upcoming = matches
-      .filter((m) => m.status === MatchStatus.UPCOMING)
-      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
-    return [...live, ...upcoming].slice(0, 12);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [matches]);
+  // Upcoming only — LIVE matches used to be mixed in here too, as the very
+  // first row on the homepage, but that row had no clear country/league
+  // grouping (just a mixed horizontal carousel) and duplicated the
+  // dedicated, properly-labeled "Live Tani" section/tab below. LIVE matches
+  // now live ONLY there.
+  const featuredMatches = useMemo(() => matches
+    .filter((m) => m.status === MatchStatus.UPCOMING)
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+    .slice(0, 12),
+    [matches]);
 
   const [isTodaySectionOpen, setIsTodaySectionOpen] = useState(false);
   const todayMatches = useMemo(
@@ -762,6 +764,42 @@ const App: React.FC = () => {
     ] as [string, [string, Match[]][]]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [upcomingMatches, currentLeague]);
+
+  // Same country -> league grouping as matchesByCountry above, but for the
+  // dedicated "Live Tani" section specifically. Previously that section was
+  // a flat list of MatchRow cards with no visible country/competition
+  // grouping at all -- a person watching several live matches had no way to
+  // tell which league a given row belonged to without opening it. Always
+  // shows every live match (no country/league filter), since the point of
+  // "Live Tani" is to see everything live at once.
+  const liveMatchesByCountry = useMemo(() => {
+    const byCountry: Record<string, Record<string, Match[]>> = {};
+    for (const match of liveMatches) {
+      const country = leagueCountry(match.league);
+      if (!byCountry[country]) byCountry[country] = {};
+      if (!byCountry[country][match.league]) byCountry[country][match.league] = [];
+      byCountry[country][match.league].push(match);
+    }
+    const PRIORITY_COUNTRIES = ['Anglia', 'Spanja', 'Italia', 'Gjermania', 'Franca', 'Portugali', 'Holandë', 'Belgjikë'];
+    const countryNames = Object.keys(byCountry).sort((a, b) => {
+      if (a === 'Të tjera') return 1;
+      if (b === 'Të tjera') return -1;
+      if (a === 'Ndërkombëtare') return 1;
+      if (b === 'Ndërkombëtare') return -1;
+      const pa = PRIORITY_COUNTRIES.indexOf(a);
+      const pb = PRIORITY_COUNTRIES.indexOf(b);
+      if (pa !== -1 || pb !== -1) return (pa === -1 ? 999 : pa) - (pb === -1 ? 999 : pb);
+      return a.localeCompare(b);
+    });
+    return countryNames.map((country) => [
+      country,
+      Object.keys(byCountry[country])
+        .sort(byLeagueImportance)
+        .map((league) => [league, byCountry[country][league]] as [string, Match[]]),
+    ] as [string, [string, Match[]][]]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveMatches]);
+
   const dynamicLeagues = useMemo(() => {
     const fetchedLeagues = Array.from(new Set(matches.map((m) => m.league)));
     return Array.from(new Set(['All Top Football', ...fetchedLeagues])).sort();
@@ -1363,22 +1401,41 @@ const App: React.FC = () => {
                           Nuk ka asnjë ndeshje live aktualisht.
                         </div>
                       ) : (
-                        <div className="divide-y divide-brand-divider">
-                          {liveMatches.map((match) => (
-                            <MatchRow
-                              key={match.id}
-                              match={match}
-                              onBetClick={handleToggleSelection}
-                              onOpenDetail={(m) => setDetailMatchId(m.id)}
-                              isAdmin={currentUser.role === UserRole.ADMIN}
-                              onSettleMatch={handleSettleMatch}
-                              isSimulating={simulatingMatchId === match.id}
-                              selectedIds={selectedIds}
-                              favoriteTeams={favoriteTeams}
-                              onToggleFavoriteTeam={(team) => toggleFavorite('TEAM', team)}
-                            />
-                          ))}
-                        </div>
+                        // Grouped shtet -> ligë -> ndeshje (jo listë e sheshtë),
+                        // njësoj si lista kryesore e ndeshjeve të ardhshme, që
+                        // të dallohet qartë cilit kampionat/shtet i përket çdo
+                        // ndeshje live.
+                        liveMatchesByCountry.map(([country, leagues]) => (
+                          <div key={country}>
+                            <div className="bg-[#232323] px-3 py-1.5 text-[11px] font-bold text-white flex items-center gap-1.5 border-b border-[#333]">
+                              <span>{countryFlag(country)}</span>
+                              <span>{country}</span>
+                            </div>
+                            {leagues.map(([league, leagueMatches]) => (
+                              <div key={league}>
+                                <div className="bg-[#2a2a2a] px-3 py-1 text-[10px] font-semibold text-brand-textMuted uppercase tracking-wide border-b border-[#333]">
+                                  {leagueLabel(league)}
+                                </div>
+                                <div className="divide-y divide-brand-divider">
+                                  {leagueMatches.map((match) => (
+                                    <MatchRow
+                                      key={match.id}
+                                      match={match}
+                                      onBetClick={handleToggleSelection}
+                                      onOpenDetail={(m) => setDetailMatchId(m.id)}
+                                      isAdmin={currentUser.role === UserRole.ADMIN}
+                                      onSettleMatch={handleSettleMatch}
+                                      isSimulating={simulatingMatchId === match.id}
+                                      selectedIds={selectedIds}
+                                      favoriteTeams={favoriteTeams}
+                                      onToggleFavoriteTeam={(team) => toggleFavorite('TEAM', team)}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ))
                       )}
                     </div>
                   )}
