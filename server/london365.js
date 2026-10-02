@@ -1363,6 +1363,15 @@ export async function recordGoalIfChanged(ev, score, minute, prev) {
   announceGoalIfChanged(ev, score, minute, prev);
 
   async function logGoal(team) {
+    // Never log more goal rows for a team than its score says: a repeated
+    // "new" goal (score briefly unknown/reset between writers) must not
+    // add a second row for the same goal.
+    const teamScore = team === ev.home_team ? score.home : score.away;
+    const { rows: have } = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM match_events WHERE match_id = $1 AND type = 'GOAL' AND team = $2`,
+      [ev.id, team]
+    );
+    if (have[0] && Number(have[0].n) >= teamScore) return;
     await pool.query(
       `INSERT INTO match_events (match_id, minute, type, team, detail, created_at)
        VALUES ($1,$2,'GOAL',$3,$4,$5)`,

@@ -1,3 +1,4 @@
+import { reconcileEvents } from '../eventReconcile.js';
 import express from 'express';
 import { queryWithRetry } from '../db.js';
 import { mapEventToMatch } from '../oddsUtils.js';
@@ -302,7 +303,7 @@ router.get('/:id/live-detail', wrap(async (req, res) => {
       'SELECT minute, type, team, player, detail, created_at FROM match_events WHERE match_id = $1 ORDER BY created_at ASC',
       [req.params.id]
     ),
-    queryWithRetry('SELECT live_minute, live_home_score, live_away_score, status, live_minute_updated_at FROM matches_cache WHERE id = $1', [req.params.id]),
+    queryWithRetry('SELECT home_team, away_team, live_minute, live_home_score, live_away_score, status, live_minute_updated_at FROM matches_cache WHERE id = $1', [req.params.id]),
   ]);
   // The provider's live feed carries the real in-play clock (e.g. "62:14")
   // even when the stats table has no minute yet — expose it so the pitch
@@ -330,7 +331,14 @@ router.get('/:id/live-detail', wrap(async (req, res) => {
   if (statistics && cache?.live_minute_updated_at != null) {
     statistics = { ...statistics, minuteUpdatedAt: Number(cache.live_minute_updated_at) };
   }
-  res.json({ statistics: isStale ? null : statistics, events: eventRows, last_updated: lastUpdated });
+  const shownEvents = cache
+    ? reconcileEvents(eventRows, {
+        homeTeam: cache.home_team, awayTeam: cache.away_team,
+        homeScore: cache.live_home_score, awayScore: cache.live_away_score,
+        cardsHome: statsRows[0]?.cards_home, cardsAway: statsRows[0]?.cards_away,
+      })
+    : eventRows;
+  res.json({ statistics: isStale ? null : statistics, events: shownEvents, last_updated: lastUpdated });
 }));
 
 router.get('/:id', wrap(async (req, res) => {

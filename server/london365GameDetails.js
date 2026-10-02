@@ -442,6 +442,10 @@ export async function applyGameDetails(raw) {
   const now = Date.now();
   const minuteNum = minuteToNumber(minuteDisplay);
 
+  // Totals on a first-ever message are history we cannot date, EXCEPT very
+  // early in a match (a fresh session / reused EID), where the true starting
+  // counts are zero and a first card or corner really is new.
+  const baselineKnown = Boolean(cardBaseline) || (Number.isFinite(t) && t <= 300);
   async function recordCard(type, team, count) {
     // Clients first (memory), history row after -- same reasoning as goals.
     pushCardEvent(matchId, { cardType: type, team, count, minute: minuteDisplay || undefined, minuteUpdatedAt: minuteDisplay ? now : undefined });
@@ -451,17 +455,24 @@ export async function applyGameDetails(raw) {
     );
     console.log(`[live-event] ${type} EID=${eid} team=${team} minute=${minuteDisplay || '?'}`);
   }
-  if (yc1 > prevCards.yc1) await recordCard('YELLOW_CARD', 'home', yc1);
-  if (yc2 > prevCards.yc2) await recordCard('YELLOW_CARD', 'away', yc2);
-  if (rc1 > prevCards.rc1) await recordCard('RED_CARD', 'home', rc1);
-  if (rc2 > prevCards.rc2) await recordCard('RED_CARD', 'away', rc2);
+  // Only against a known baseline: on the first message we ever see for a
+  // match (or after the baseline was dropped) the totals are history we cannot
+  // date, and turning them into events stamped with the CURRENT minute is what
+  // produced cards at the wrong minute. The totals themselves are still saved
+  // to live_statistics below.
+  if (baselineKnown) {
+    if (yc1 > prevCards.yc1) await recordCard('YELLOW_CARD', 'home', yc1);
+    if (yc2 > prevCards.yc2) await recordCard('YELLOW_CARD', 'away', yc2);
+    if (rc1 > prevCards.rc1) await recordCard('RED_CARD', 'home', rc1);
+    if (rc2 > prevCards.rc2) await recordCard('RED_CARD', 'away', rc2);
+  }
 
   // Corners as discrete events (the "Ngjarjet" list), one per increment of
   // C1/C2. Only once a baseline exists: on the first message we ever see for a
   // match the totals are history we cannot date, so they must not be turned
   // into events at the current minute. Capped per tick so a data glitch can't
   // flood the table.
-  if (cardBaseline) {
+  if (baselineKnown) {
     const addCorners = async (team, from, to) => {
       for (let n = from + 1; n <= Math.min(to, from + 3); n++) {
         await pool.query(
