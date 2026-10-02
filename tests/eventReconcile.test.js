@@ -21,3 +21,16 @@ describe('reconcileEvents', () => {
     expect(reconcileEvents(evs, { ...base, homeScore: 0, awayScore: 2 })).toHaveLength(3);
   });
 });
+
+describe('reconcileEvents duplicates', () => {
+  it('shows an identical goal / corner / card row once', () => {
+    const evs = [
+      { minute: 10, type: 'CORNER', team: 'home', detail: '1' },
+      { minute: 10, type: 'CORNER', team: 'home', detail: '1' },
+      { minute: 12, type: 'CORNER', team: 'home', detail: '2' },
+      { minute: 15, type: 'YELLOW_CARD', team: 'away', detail: '1' },
+      { minute: 15, type: 'YELLOW_CARD', team: 'away', detail: '1' },
+    ];
+    expect(reconcileEvents(evs, {}).map((e) => e.type + e.detail)).toEqual(['CORNER1', 'CORNER2', 'YELLOW_CARD1']);
+  });
+});

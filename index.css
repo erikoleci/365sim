@@ -24,12 +24,26 @@ body {
 }
 
 /* Live pitch animations */
-@keyframes pitch-bob {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  50% { transform: translateY(-4px) rotate(25deg); }
+@keyframes pitch-ping {
+  0% { transform: scale(0.5); opacity: 0.9; }
+  100% { transform: scale(1.6); opacity: 0; }
 }
-@keyframes pitch-pop {
-  0% { transform: translate(-50%, -50%) scale(0.4); opacity: 0; }
-  60% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
-  100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+@keyframes pitch-text-in {
+  0% { opacity: 0; transform: translateY(5px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes pitch-fade-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes pitch-card-in {
+  0% { opacity: 0; transform: translate(-50%, -14px) scale(0.85); }
+  100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+@keyframes pitch-caret {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [style*="pitch-"] { animation: none !important; }
 }

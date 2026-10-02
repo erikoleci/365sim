@@ -26,6 +26,10 @@ const mocks = vi.hoisted(function () {
       if (row) { row.live_home_score = params[0]; row.live_away_score = params[1]; }
       return Promise.resolve({ rows: [], rowCount: row ? 1 : 0 });
     }
+    if (s.indexOf('SELECT 1 FROM match_events') === 0) {
+      const dup = events.some(function (e) { return e[0] === params[0] && e[2] === params[1] && e[3] === params[2] && e[4] === params[3]; });
+      return Promise.resolve({ rows: dup ? [{}] : [] });
+    }
     if (s.indexOf('INSERT INTO match_events') === 0) { events.push(params); return Promise.resolve({ rows: [], rowCount: 1 }); }
     if (s.indexOf('INSERT INTO live_statistics (match_id, cards_home') === 0) {
       const [matchId, cardsHome, cardsAway] = params;
@@ -190,6 +194,38 @@ describe('applyGameDetails — corner events', function () {
     expect(corners[0][3]).toBe('home');
     // T=606s (10:06 on the clock) is the 11th minute, as the provider labels it
     expect(corners[0][1]).toBe(11);
+  });
+});
+
+describe('applyGameDetails — overlapping ticks and counter-derived actions', function () {
+  beforeEach(function () {
+    __resetLiveStateForTests(); mocks.store.clear(); mocks.stats.clear(); mocks.events.length = 0; vi.clearAllMocks();
+    mocks.store.set('l365-5177329', { id: 'l365-5177329', home_team: 'A', away_team: 'B', live_home_score: 0, live_away_score: 0, live_minute: '10' });
+  });
+
+  it('two overlapping ticks carrying the same new corner create ONE event', async function () {
+    await applyGameDetails(tag({ EID: '5177329', T: '600', SC: '0-0', C1: '3', C2: '1' }));
+    await Promise.all([
+      applyGameDetails(tag({ EID: '5177329', T: '606', SC: '0-0', C1: '4', C2: '1' })),
+      applyGameDetails(tag({ EID: '5177329', T: '607', SC: '0-0', C1: '4', C2: '1' })),
+    ]);
+    expect(mocks.events.filter(function (e) { return e[2] === 'CORNER'; })).toHaveLength(1);
+  });
+
+  it('a rising H4 with no decodable VC becomes a home dangerous attack, held for a few seconds', async function () {
+    await applyGameDetails(tag({ EID: '5177329', T: '600', SC: '0-0', H4: '10', A4: '5' }));
+    pushLiveTick.mockClear();
+    await applyGameDetails(tag({ EID: '5177329', T: '601', SC: '0-0', H4: '11', A4: '5', VC: '99999' }));
+    expect(pushLiveTick.mock.calls[0][1].action).toMatchObject({ side: 'home', kind: 'dangerous_attack' });
+    pushLiveTick.mockClear();
+    await applyGameDetails(tag({ EID: '5177329', T: '602', SC: '0-0', H4: '11', A4: '5', VC: '99999' }));
+    const last = pushLiveTick.mock.calls.map(function (c) { return c[1].action; }).filter(Boolean);
+    expect(last.length === 0 || last[0].kind === 'dangerous_attack').toBe(true);
+  });
+
+  it('the very first message of a match never produces an action from counters', async function () {
+    await applyGameDetails(tag({ EID: '5177329', T: '600', SC: '0-0', H4: '10', C1: '3', VC: '99999' }));
+    expect(pushLiveTick.mock.calls[0][1].action).toBeNull();
   });
 });
 

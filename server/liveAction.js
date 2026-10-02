@@ -31,8 +31,17 @@ const ACTIONS = {
   '1234': { kind: 'offside', label: 'Pozicion jashtë loje' },
 };
 
+const LABELS = Object.fromEntries(Object.values(ACTIONS).map((a) => [a.kind, a.label]));
+// Build an action from a side and a kind (used by the counter-derived path).
+export function makeAction(side, kind) {
+  return LABELS[kind] ? { side, kind, label: LABELS[kind] } : null;
+}
+
 export function decodeLiveAction(vc) {
   const s = String(vc ?? '').trim();
+  // A 4-digit code carries no team digit (seen: VC="1007", labelled "rivene
+  // fundore" by the owner): same action table, side unknown.
+  if (/^\d{4}$/.test(s) && ACTIONS[s]) return { side: null, kind: ACTIONS[s].kind, label: ACTIONS[s].label };
   if (!/^[12]\d+$/.test(s)) return null;
   const entry = ACTIONS[s.slice(1)];
   if (!entry) return null;

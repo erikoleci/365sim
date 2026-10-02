@@ -1384,6 +1384,11 @@ export async function recordGoalIfChanged(ev, score, minute, prev, eventMinute) 
       [ev.id, team]
     );
     if (have[0] && Number(have[0].n) >= teamScore) return;
+    const { rows: same } = await pool.query(
+      `SELECT 1 FROM match_events WHERE match_id = $1 AND type = 'GOAL' AND team = $2 AND detail = $3 LIMIT 1`,
+      [ev.id, team, score.home + '-' + score.away]
+    );
+    if (same && same.length) return;
     await pool.query(
       `INSERT INTO match_events (match_id, minute, type, team, detail, created_at)
        VALUES ($1,$2,'GOAL',$3,$4,$5)`,

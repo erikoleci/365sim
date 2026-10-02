@@ -13,152 +13,195 @@ interface LivePitchProps {
   flash?: { kind: 'YELLOW_CARD' | 'RED_CARD'; team: 'home' | 'away' } | null;
 }
 
-// Where the ball / attack zone sits for each decoded provider action. Home
-// attacks to the right, away to the left (as on the provider's pitch). x/y
-// are percentages of the pitch.
-function actionSpot(action: NonNullable<Match['liveAction']>) {
+type Action = NonNullable<Match['liveAction']>;
+
+// Everything the pitch draws for one action. The home team attacks to the
+// RIGHT, the away team to the LEFT (same as the provider's pitch). All
+// numbers are percentages of the pitch.
+interface Scene {
+  ball: { x: number; y: number } | null;
+  zone: { side: 'left' | 'right'; depth: number; tone: 'attack' | 'danger' | 'calm' } | null;
+  corner: { x: number } | null;      // x of the corner wedge (0 or 100)
+  offsideX: number | null;           // x of the offside line
+  label: { x: number; align: 'left' | 'right' | 'center' };
+  pulse: boolean;
+}
+
+function sceneFor(action: Action): Scene {
   const home = action.side === 'home';
+  const none = action.side == null;
   switch (action.kind) {
-    case 'dangerous_attack': return { x: home ? 84 : 16, y: 45, zone: 0.32 };
-    case 'attack': return { x: home ? 66 : 34, y: 50, zone: 0.2 };
-    case 'possession': return { x: home ? 42 : 58, y: 55, zone: 0.1 };
-    case 'corner': return { x: home ? 95 : 5, y: 12, zone: 0.28 };
-    case 'offside': return { x: home ? 78 : 22, y: 50, zone: 0.14 };
-    case 'back_line_restart': return { x: home ? 9 : 91, y: 50, zone: 0.08 };
-    default: return null;
+    case 'dangerous_attack':
+      return { ball: none ? null : { x: home ? 87 : 13, y: 60 }, zone: none ? null : { side: home ? 'right' : 'left', depth: 28, tone: 'danger' }, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 72 : 28, align: home ? 'right' : 'left' }, pulse: true };
+    case 'attack':
+      return { ball: none ? null : { x: home ? 72 : 28, y: 62 }, zone: none ? null : { side: home ? 'right' : 'left', depth: 50, tone: 'attack' }, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: 50, align: home ? 'right' : 'left' }, pulse: false };
+    case 'possession':
+      return { ball: none ? null : { x: home ? 36 : 64, y: 66 }, zone: none ? null : { side: home ? 'left' : 'right', depth: 45, tone: 'calm' }, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 47 : 53, align: home ? 'left' : 'right' }, pulse: false };
+    case 'corner':
+      return { ball: none ? null : { x: home ? 97 : 3, y: 93 }, zone: null, corner: none ? null : { x: home ? 100 : 0 }, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 72 : 28, align: home ? 'right' : 'left' }, pulse: true };
+    case 'offside':
+      return { ball: none ? null : { x: home ? 70 : 30, y: 68 }, zone: null, corner: null, offsideX: none ? null : (home ? 78 : 22), label: none ? { x: 50, align: 'center' } : { x: home ? 76 : 24, align: home ? 'right' : 'left' }, pulse: false };
+    case 'back_line_restart':
+      return { ball: none ? null : { x: home ? 8 : 92, y: 62 }, zone: none ? null : { side: home ? 'left' : 'right', depth: 18, tone: 'calm' }, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 22 : 78, align: home ? 'left' : 'right' }, pulse: false };
+    default:
+      return { ball: null, zone: null, corner: null, offsideX: null, label: { x: 50, align: 'center' }, pulse: false };
   }
 }
 
-// Animated pitch view for live matches. Possession dot position is driven
-// by real possession_home/possession_away when the live-detail feed
-// provides them — nothing is shown (no dot, no "Sulm" label) when it
-// doesn't, rather than defaulting to a fake 50/50 split.
+const ZONE_BG: Record<'attack' | 'danger' | 'calm', (toRight: boolean) => string> = {
+  attack: (r) => `linear-gradient(to ${r ? 'right' : 'left'}, rgba(0,0,0,0.04), rgba(0,0,0,0.26))`,
+  danger: (r) => `linear-gradient(to ${r ? 'right' : 'left'}, rgba(205,60,30,0.10), rgba(205,60,30,0.46))`,
+  calm: (r) => `linear-gradient(to ${r ? 'right' : 'left'}, rgba(0,0,0,0.02), rgba(0,0,0,0.14))`,
+};
+
+const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
+
+// Live pitch. Everything drawn here comes from a decoded provider action or
+// real stats; with no known action the pitch just shows the clock and the
+// possession bar -- nothing is invented.
 const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
   const isLive = match.status === MatchStatus.LIVE;
-  // Real in-play minute:second + game half, ticking live client-side just
-  // like the match list cards — same source (stats.minute, falling back to
-  // match.currentMinute) and same hook, so the pitch header never shows a
-  // less precise/stale clock than the card the user just tapped. Hook must
-  // run unconditionally (before the early return below) per rules-of-hooks.
   const liveClock = useTickingClock(
     isLive ? String(stats?.minute ?? match.currentMinute ?? '') : undefined,
-    // stats.minuteUpdatedAt (from GET /matches/:id/live-detail) is the more
-    // authoritative reference when we're actually rendering stats.minute;
-    // fall back to the match-list-shaped currentMinuteUpdatedAt otherwise.
     stats?.minuteUpdatedAt ?? match.currentMinuteUpdatedAt,
     isLive && !isHalftime(match)
   );
   if (!isLive) return null;
 
-  const possHome = stats?.possession_home ?? 50;
-  const possAway = stats?.possession_away ?? (100 - possHome);
-  // Map possession % to a left-position between 25% (away dominant) and 75% (home dominant)
-  const dotLeftPct = 25 + (possHome / 100) * 50;
-  const attackingSide = possHome >= possAway ? match.homeTeam : match.awayTeam;
+  const halftime = isHalftime(match);
+  const action = !halftime && match.liveAction ? match.liveAction : null;
+  const scene = action ? sceneFor(action) : null;
   const clockLabel = formatLiveClock(liveClock);
   const half = liveClock?.half ?? null;
-  const spot = match.liveAction ? actionSpot(match.liveAction) : null;
-  const attackRight = match.liveAction?.side === 'home';
+  const hasPoss = stats?.possession_home != null;
+  const possHome = stats?.possession_home ?? 50;
+  const possAway = stats?.possession_away ?? (100 - possHome);
+  const teamName = action && action.side ? (action.side === 'home' ? match.homeTeam : match.awayTeam) : null;
+
+  const zone = scene?.zone ?? null;
+  const toRight = zone?.side === 'right';
+  const labelTransform = scene?.label.align === 'right' ? 'translate(calc(-100% - 10px), -50%)'
+    : scene?.label.align === 'left' ? 'translate(10px, -50%)' : 'translate(-50%, -50%)';
 
   return (
-    <div className="relative w-full h-44 md:h-52 rounded overflow-hidden border border-brand-divider bg-gradient-to-b from-[#1f6b4a] to-[#155038]">
-      <div className={`absolute top-2 left-1/2 -translate-x-1/2 text-[11px] font-bold px-2 py-0.5 rounded z-10 ${isHalftime(match) ? 'bg-brand-yellow text-black' : 'bg-black/50 text-white'}`}>
-        {isHalftime(match) ? 'Pushim' : (clockLabel ?? formatLiveStatus(match))}
-        {half && !isHalftime(match) && <span className="text-brand-yellow font-semibold"> · {half}</span>}
-      </div>
+    <div className="relative w-full aspect-[2/1] max-h-64 rounded overflow-hidden border border-brand-divider select-none" style={{ background: '#2e8b4d' }}>
+      {/* mowing stripes */}
+      <div className="absolute inset-0" style={{ background: 'repeating-linear-gradient(90deg, rgba(0,0,0,0) 0 8.33%, rgba(0,0,0,0.07) 8.33% 16.66%)' }} />
 
-      <svg viewBox="0 0 400 220" className="absolute inset-0 w-full h-full opacity-40" preserveAspectRatio="none">
-        <rect x="4" y="4" width="392" height="212" fill="none" stroke="#fff" strokeWidth="2" />
-        <line x1="200" y1="4" x2="200" y2="216" stroke="#fff" strokeWidth="2" />
-        <circle cx="200" cy="110" r="30" fill="none" stroke="#fff" strokeWidth="2" />
-        <rect x="4" y="60" width="40" height="100" fill="none" stroke="#fff" strokeWidth="2" />
-        <rect x="356" y="60" width="40" height="100" fill="none" stroke="#fff" strokeWidth="2" />
+      {/* attack zone: slides/widens smoothly, soft curved inner edge */}
+      <div
+        className="absolute top-0 bottom-0"
+        style={{
+          [toRight ? 'right' : 'left']: 0,
+          width: zone ? `${zone.depth}%` : '0%',
+          opacity: zone ? 1 : 0,
+          background: zone ? ZONE_BG[zone.tone](toRight) : 'transparent',
+          borderRadius: toRight ? '55% 0 0 55% / 50% 0 0 50%' : '0 55% 55% 0 / 0 50% 50% 0',
+          transition: `width 900ms ${EASE}, opacity 500ms ease`,
+        }}
+      />
+
+      {/* pitch lines */}
+      <svg viewBox="0 0 200 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full" aria-hidden="true">
+        <g fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="0.7" vectorEffect="non-scaling-stroke">
+          <rect x="1" y="1" width="198" height="98" />
+          <line x1="100" y1="1" x2="100" y2="99" />
+          <ellipse cx="100" cy="50" rx="13" ry="22" />
+          <rect x="1" y="22" width="26" height="56" />
+          <rect x="173" y="22" width="26" height="56" />
+          <rect x="1" y="36" width="9" height="28" />
+          <rect x="190" y="36" width="9" height="28" />
+        </g>
       </svg>
 
-      {/* Attack zone (from the middle towards the goal being attacked) and the
-          ball / flag icons for the action the provider is showing. Positions
-          animate between ticks. Nothing here without a decoded action. */}
-      {spot && (
-        <>
-          <div
-            className="absolute top-0 bottom-0 w-1/2 transition-opacity duration-700 pointer-events-none"
-            style={{
-              [attackRight ? 'right' : 'left']: 0,
-              background: `linear-gradient(to ${attackRight ? 'right' : 'left'}, rgba(255,255,255,0), rgba(255,255,255,${spot.zone}))`,
-            }}
-          />
-          <div
-            className="absolute z-10 flex items-end gap-0.5"
-            style={{ left: `${spot.x}%`, top: `${spot.y}%`, transform: 'translate(-50%, -50%)', transition: 'left 900ms ease-in-out, top 900ms ease-in-out' }}
-          >
-            {match.liveAction?.kind === 'corner' && <CornerFlagIcon className="w-4 h-6" />}
-            {match.liveAction?.kind === 'offside' && <OffsideFlagIcon className="w-4 h-6" />}
-            <span style={{ display: 'inline-block', animation: 'pitch-bob 1s ease-in-out infinite' }}>
-              <BallIcon className="w-5 h-5 drop-shadow" />
-            </span>
-          </div>
-        </>
-      )}
-
-      {/* Card just shown (live CARD message), a few seconds */}
-      {flash && (
+      {/* corner wedge, like the provider's corner view */}
+      {scene?.corner && (
         <div
-          className="absolute left-1/2 top-1/2 z-20 flex items-center gap-2 bg-black/60 rounded px-3 py-1.5"
-          style={{ animation: 'pitch-pop 0.4s ease-out both' }}
-        >
-          <CardIcon color={flash.kind === 'RED_CARD' ? 'red' : 'yellow'} className="w-5 h-7" />
-          <div className="text-white leading-tight">
-            <div className="text-xs font-bold">{flash.kind === 'RED_CARD' ? 'Karton i kuq' : 'Karton i verdhë'}</div>
-            <div className="text-[11px] text-brand-yellow">{flash.team === 'home' ? match.homeTeam : match.awayTeam}</div>
-          </div>
+          className="absolute bottom-0 w-[26%] h-[48%]"
+          style={{
+            [scene.corner.x === 100 ? 'right' : 'left']: 0,
+            background: 'rgba(0,0,0,0.20)',
+            clipPath: scene.corner.x === 100 ? 'polygon(100% 100%, 0% 100%, 100% 0%)' : 'polygon(0% 100%, 100% 100%, 0% 0%)',
+            animation: 'pitch-fade-in 0.5s ease both',
+          }}
+        />
+      )}
+
+      {/* offside line */}
+      {scene?.offsideX != null && (
+        <div className="absolute top-0 bottom-0" style={{ left: `${scene.offsideX}%`, width: 0, borderLeft: '2px dashed rgba(255,255,255,0.85)', animation: 'pitch-fade-in 0.4s ease both' }}>
+          <div className="absolute -top-0.5 left-0.5"><OffsideFlagIcon className="w-3 h-4" /></div>
         </div>
       )}
 
-      {/* Possession dot + attacking-side label — ONLY when the feed actually
-          has real possession numbers. No fallback/default position: an
-          always-on indicator defaulting to 50/50 would silently show the
-          home team as "attacking" on every match with no real data behind
-          it, which is exactly the fabricated-live-data problem to avoid. */}
-      {stats?.possession_home != null && (
-        <>
-          {!spot && <div
-            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-brand-yellow shadow-lg transition-all duration-1000 ease-in-out animate-pulse"
-            style={{ left: `${dotLeftPct}%` }}
-          />}
-          {!match.liveAction && (
-            <div className="absolute bottom-2 left-3 text-white z-10">
-              <div className="text-xs font-bold leading-tight">{attackingSide}</div>
-              <div className="text-[11px] text-brand-yellow font-semibold leading-tight">Sulm</div>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* What the provider's own pitch shows right now (attack, dangerous
-          attack, corner, offside, ...). Only rendered for codes decoded and
-          confirmed server-side (server/liveAction.js); unknown code => nothing. */}
-      {match.liveAction && (
-        <div className="absolute bottom-2 left-3 text-white z-10">
-          <div className="text-xs font-bold leading-tight">
-            {match.liveAction.side === 'home' ? match.homeTeam : match.awayTeam}
-          </div>
-          <div className="text-[11px] text-brand-yellow font-semibold leading-tight">
-            {match.liveAction.label}
-          </div>
-        </div>
-      )}
-      <div className="absolute top-2 left-3 text-white text-xs font-bold">{match.homeTeam}</div>
-      <div className="absolute top-2 right-3 text-white text-xs font-bold">{match.awayTeam}</div>
-      <div className="absolute top-8 left-1/2 -translate-x-1/2 text-white font-mono font-bold text-xl">
-        {match.liveHomeScore ?? 0} - {match.liveAwayScore ?? 0}
+      {/* ball: glides between positions */}
+      <div
+        className="absolute z-10"
+        style={{
+          left: `${scene?.ball?.x ?? 50}%`,
+          top: `${scene?.ball?.y ?? 50}%`,
+          width: 0, height: 0,
+          opacity: scene?.ball ? 1 : 0,
+          transition: `left 1100ms ${EASE}, top 1100ms ${EASE}, opacity 400ms ease`,
+        }}
+      >
+        {scene?.pulse && (
+          <span className="absolute -left-3 -top-3 w-6 h-6 rounded-full border-2 border-white/80" style={{ animation: 'pitch-ping 1.4s ease-out infinite' }} />
+        )}
+        <span className="absolute -left-[7px] -top-[7px] block drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]">
+          <BallIcon className="w-3.5 h-3.5" />
+        </span>
+        {action?.kind === 'corner' && scene?.ball && (
+          <span className="absolute" style={{ left: scene.ball.x > 50 ? -16 : 4, top: -24 }}><CornerFlagIcon className="w-3 h-5" /></span>
+        )}
       </div>
 
-      {/* Live possession bar, when the feed has real numbers */}
-      {stats?.possession_home != null && (
-        <div className="absolute bottom-2 right-3 flex items-center gap-1 text-[10px] text-white font-semibold">
+      {/* team + action, with the provider-style blinking caret */}
+      {action && scene && (
+        <div
+          className="absolute z-10 pointer-events-none"
+          style={{
+            left: `${scene.label.x}%`, top: '38%', transform: labelTransform,
+            transition: `left 900ms ${EASE}`,
+            textAlign: scene.label.align === 'right' ? 'right' : scene.label.align === 'left' ? 'left' : 'center',
+          }}
+        >
+          <div key={`${action.side}-${action.kind}`} className="flex items-stretch gap-1.5" style={{ animation: 'pitch-text-in 0.35s ease-out both', flexDirection: scene.label.align === 'right' ? 'row' : 'row-reverse', justifyContent: scene.label.align === 'center' ? 'center' : undefined }}>
+            <div className="leading-tight whitespace-nowrap" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.55)' }}>
+              {teamName && <div className="text-[11px] md:text-sm font-semibold" style={{ color: '#bff2a8' }}>{teamName}</div>}
+              <div className="text-sm md:text-xl font-bold text-white">{action.label}</div>
+            </div>
+            <span className="w-0.5 bg-white self-stretch" style={{ animation: 'pitch-caret 1s steps(1) infinite' }} />
+          </div>
+        </div>
+      )}
+
+      {/* clock */}
+      <div className={`absolute top-2 left-1/2 -translate-x-1/2 text-[11px] md:text-xs font-bold px-2.5 py-0.5 rounded z-20 ${halftime ? 'bg-brand-yellow text-black' : 'bg-black/55 text-white'}`}>
+        {halftime ? 'Pushim' : (clockLabel ?? formatLiveStatus(match))}
+        {half && !halftime && <span className="text-brand-yellow font-semibold"> · {half}</span>}
+      </div>
+
+      {/* card just shown */}
+      {flash && (
+        <div
+          className="absolute left-1/2 top-9 z-20 flex items-center gap-2 bg-black/70 rounded-full pl-2 pr-3.5 py-1"
+          style={{ animation: 'pitch-card-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2) both' }}
+        >
+          <CardIcon color={flash.kind === 'RED_CARD' ? 'red' : 'yellow'} className="w-3.5 h-5" />
+          <span className="text-white text-xs font-bold leading-none">
+            {flash.kind === 'RED_CARD' ? 'Karton i kuq' : 'Karton i verdhë'}
+            <span className="text-brand-yellow font-semibold"> · {flash.team === 'home' ? match.homeTeam : match.awayTeam}</span>
+          </span>
+        </div>
+      )}
+
+      {/* possession (real numbers only) */}
+      {hasPoss && (
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 text-[10px] md:text-xs text-white font-semibold bg-black/35 rounded-full px-2.5 py-0.5">
           <span>{possHome}%</span>
-          <div className="w-16 h-1.5 rounded-full bg-black/40 overflow-hidden">
-            <div className="h-full bg-brand-yellow" style={{ width: `${possHome}%` }} />
+          <div className="w-16 md:w-24 h-1.5 rounded-full bg-black/40 overflow-hidden">
+            <div className="h-full bg-brand-yellow" style={{ width: `${possHome}%`, transition: 'width 800ms ease' }} />
           </div>
           <span>{possAway}%</span>
         </div>

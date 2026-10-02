@@ -40,7 +40,7 @@ import pool from './db.js';
 import { pushCardEvent, pushLiveTick } from './ws.js';
 import { recordGoalIfChanged, eventMinuteFromClock } from './london365.js';
 import { parseGameDetails } from './gameDetailsParser.js';
-import { decodeLiveAction } from './liveAction.js';
+import { decodeLiveAction, makeAction } from './liveAction.js';
 import { isTrackedGame, getLiveRow, setLiveRow, forgetLiveRow, __resetLiveTrackerForTests } from './liveTracker.js';
 import { bump } from './feedStats.js';
 import { announceGoalIfChanged, clearGoalAnnounced } from './goalAnnouncer.js';
@@ -201,7 +201,38 @@ async function resolveGameIdByTeams(h, a) {
 }
 const TICK_LOG = process.env.LONDON365_GAMEDETAILS_TICK_LOG === '1';
 
-export async function applyGameDetails(raw) {
+// Provider ticks arrive about once a second per match while each tick awaits
+// several DB round trips, so two ticks of one match can overlap and both see
+// the same card/corner baseline -- the cause of duplicated events. Ticks of
+// one match are therefore processed one after another.
+const detailChains = new Map();
+export function applyGameDetails(raw) {
+  const a = parseGameDetails(raw);
+  const key = a ? `${a.EID}|${a.H}|${a.A}` : '_';
+  const prev = detailChains.get(key) || Promise.resolve();
+  const next = prev.then(() => applyGameDetailsNow(raw));
+  const tail = next.catch(() => {});
+  detailChains.set(key, tail);
+  tail.then(() => { if (detailChains.get(key) === tail) detailChains.delete(key); });
+  return next;
+}
+
+// Insert a card/corner row only if the same one (type, team, running count)
+// is not there already.
+async function insertEventOnce(matchId, minute, type, team, detail, now) {
+  const { rows } = await pool.query(
+    'SELECT 1 FROM match_events WHERE match_id = $1 AND type = $2 AND team = $3 AND detail = $4 LIMIT 1',
+    [matchId, type, team, detail]
+  );
+  if (rows && rows.length) return false;
+  await pool.query(
+    `INSERT INTO match_events (match_id, minute, type, team, detail, created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
+    [matchId, minute, type, team, detail, now]
+  );
+  return true;
+}
+
+async function applyGameDetailsNow(raw) {
   bump('gamedetails.received');
   const attrs = parseGameDetails(raw);
   if (!attrs) return;
@@ -359,7 +390,25 @@ export async function applyGameDetails(raw) {
   // safety net — not on every ~1/sec provider tick regardless of content.
   // Values are still only ever the already-verified matches_cache ones
   // (see header comment) — this only changes WHEN we send, never WHAT.
-  const liveAction = decodeLiveAction(attrs.VC);
+  // What the pitch shows: the provider's own VC code when we can decode it;
+  // otherwise the latest increase of a per-team counter, held for a few
+  // seconds. Counters confirmed against hand-labelled captures: C1/C2 corners,
+  // H4/A4 dangerous attacks, H3/A3 attacks, H2/A2 offsides (each rose in the
+  // same message as the matching action). Needs a baseline: the first message
+  // of a match never produces an action.
+  const num = (k) => Number(attrs[k]) || 0;
+  const ctr = { c1: num('C1'), c2: num('C2'), h2: num('H2'), h3: num('H3'), h4: num('H4'), a2: num('A2'), a3: num('A3'), a4: num('A4') };
+  const nowMs = Date.now();
+  let recent = cardBaseline && cardBaseline.recent && cardBaseline.recent.until > nowMs ? cardBaseline.recent : null;
+  if (cardBaseline && cardBaseline.ctr) {
+    const up = (k) => ctr[k] > cardBaseline.ctr[k];
+    const found = up('c1') ? ['home', 'corner'] : up('c2') ? ['away', 'corner']
+      : up('h4') ? ['home', 'dangerous_attack'] : up('a4') ? ['away', 'dangerous_attack']
+      : up('h3') ? ['home', 'attack'] : up('a3') ? ['away', 'attack']
+      : up('h2') ? ['home', 'offside'] : up('a2') ? ['away', 'offside'] : null;
+    if (found) recent = { ...makeAction(found[0], found[1]), until: nowMs + 7000 };
+  }
+  const liveAction = decodeLiveAction(attrs.VC) || (recent ? { side: recent.side, kind: recent.kind, label: recent.label } : null);
   const actionKey = (a) => (a ? a.side + ':' + a.kind : null);
   function broadcastTick() {
     const nowTs = Date.now();
@@ -453,10 +502,7 @@ export async function applyGameDetails(raw) {
   async function recordCard(type, team, count) {
     // Clients first (memory), history row after -- same reasoning as goals.
     pushCardEvent(matchId, { cardType: type, team, count, minute: minuteDisplay || undefined, minuteUpdatedAt: minuteDisplay ? now : undefined });
-    await pool.query(
-      `INSERT INTO match_events (match_id, minute, type, team, detail, created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
-      [matchId, minuteNum, type, team, String(count), now]
-    );
+    if (!(await insertEventOnce(matchId, minuteNum, type, team, String(count), now))) return;
     console.log(`[live-event] ${type} EID=${eid} team=${team} minute=${minuteDisplay || '?'}`);
   }
   // Only against a known baseline: on the first message we ever see for a
@@ -479,10 +525,7 @@ export async function applyGameDetails(raw) {
   if (baselineKnown) {
     const addCorners = async (team, from, to) => {
       for (let n = from + 1; n <= Math.min(to, from + 3); n++) {
-        await pool.query(
-          `INSERT INTO match_events (match_id, minute, type, team, detail, created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
-          [matchId, minuteNum, 'CORNER', team, String(n), now]
-        );
+        await insertEventOnce(matchId, minuteNum, 'CORNER', team, String(n), now);
       }
     };
     if (c1 > prevCards.c1) await addCorners('home', prevCards.c1, c1);
@@ -525,7 +568,7 @@ export async function applyGameDetails(raw) {
     );
   }
 
-  lastSeen.set(eid, { t: Number.isFinite(t) ? t : (prevSeen ? prevSeen.t : 0), yc1, yc2, rc1, rc2, c1, c2, posHome, posAway });
+  lastSeen.set(eid, { t: Number.isFinite(t) ? t : (prevSeen ? prevSeen.t : 0), yc1, yc2, rc1, rc2, c1, c2, posHome, posAway, ctr, recent });
 }
 
 export function getGameDetailsMemoryDiagnostics() {

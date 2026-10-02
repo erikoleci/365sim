@@ -16,7 +16,14 @@ export function reconcileEvents(events, totals) {
     cardAway: Number.isFinite(Number(cardsAway)) && cardsAway != null ? Number(cardsAway) : null,
   };
   const out = [];
+  const seen = new Set();
   for (const ev of events || []) {
+    // Exact duplicate (same type, team and running count/score): shown once.
+    if (ev.detail != null && ev.detail !== '' && ['GOAL', 'CORNER', 'YELLOW_CARD', 'RED_CARD'].includes(ev.type)) {
+      const dk = ev.type + '|' + ev.team + '|' + ev.detail;
+      if (seen.has(dk)) continue;
+      seen.add(dk);
+    }
     let key = null;
     if (ev.type === 'GOAL') key = ev.team === homeTeam ? 'goalHome' : ev.team === awayTeam ? 'goalAway' : null;
     else if (ev.type === 'YELLOW_CARD' || ev.type === 'RED_CARD') key = ev.team === 'home' ? 'cardHome' : ev.team === 'away' ? 'cardAway' : null;

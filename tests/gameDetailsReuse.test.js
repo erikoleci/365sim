@@ -21,6 +21,9 @@ const mocks = vi.hoisted(function () {
       if (row) { row.live_home_score = params[0]; row.live_away_score = params[1]; }
       return Promise.resolve({ rows: [] });
     }
+    if (s.startsWith('SELECT 1 FROM match_events')) {
+      return Promise.resolve({ rows: [] });
+    }
     if (s.startsWith('INSERT INTO match_events')) {
       return Promise.resolve({ rows: [] });
     }

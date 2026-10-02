@@ -95,7 +95,7 @@ export interface Match {
   currentMinuteUpdatedAt?: number;
   // What the provider's pitch shows right now (from the gamedetails VC code);
   // null/undefined when unknown. Never guessed.
-  liveAction?: { side: 'home' | 'away'; kind: string; label: string } | null;
+  liveAction?: { side: 'home' | 'away' | null; kind: string; label: string } | null;
   liveStatus?: string;
   liveHomeScore?: number;
   liveAwayScore?: number;

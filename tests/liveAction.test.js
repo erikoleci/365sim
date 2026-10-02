@@ -25,3 +25,10 @@ describe('decodeLiveAction', () => {
     expect(decodeLiveAction('31000')).toBeNull();
   });
 });
+
+describe('decodeLiveAction 4-digit codes', () => {
+  it('decodes VC=1007 (rivene fundore) with an unknown side', () => {
+    expect(decodeLiveAction('1007')).toMatchObject({ side: null, kind: 'back_line_restart' });
+    expect(decodeLiveAction('1999')).toBeNull();
+  });
+});
