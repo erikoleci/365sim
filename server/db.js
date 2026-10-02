@@ -493,12 +493,24 @@ export async function setKV(key, value) {
 // history is easily hundreds of MB. Cut to a week; that's still plenty for
 // any "how did this price move" question a person would realistically ask,
 // and it keeps ongoing storage growth an order of magnitude smaller.
-const RETENTION_MS = {
-  oddsHistoryDays: 7,
-  matchEventsDays: 7,
-  auditLogDays: 90, // kept longer: security/audit trail
-  finishedMatchesDays: 7,
+// Each window can be overridden with an env var (whole days, minimum 1) so
+// the footprint can be tuned to the plan's storage cap without a redeploy of
+// code. Defaults are unchanged.
+const envDays = (name, def) => {
+  const n = Math.floor(Number(process.env[name]));
+  return Number.isFinite(n) && n >= 1 ? n : def;
 };
+const RETENTION_MS = {
+  oddsHistoryDays: envDays('RETENTION_ODDS_HISTORY_DAYS', 7),
+  matchEventsDays: envDays('RETENTION_MATCH_EVENTS_DAYS', 7),
+  auditLogDays: envDays('RETENTION_AUDIT_LOG_DAYS', 90), // kept longer: security/audit trail
+  finishedMatchesDays: envDays('RETENTION_FINISHED_MATCHES_DAYS', 7),
+};
+// Catch-all age for any imported match (any status) -- see the
+// matches_cache_stale rule in cleanupOldData. Keep it well above the number
+// of days a bet can stay unsettled, because deleting a match row that still
+// has a pending bet would leave that bet without its match.
+const STALE_MATCH_DAYS = envDays('RETENTION_STALE_MATCHES_DAYS', 30);
 
 // Hard safety valve, independent of the day-based windows above: if the
 // database is actually getting close to a storage cap (Aiven's free tier,
@@ -530,6 +542,7 @@ export async function cleanupOldData() {
       const { rows } = await pool.query('SELECT pg_database_size(current_database()) AS bytes');
       const bytes = Number(rows[0]?.bytes || 0);
       underPressure = bytes > DISK_PRESSURE_BYTES;
+      console.log(`[cleanupOldData] database size ${(bytes / 1024 / 1024).toFixed(0)}MB (pressure threshold ${(DISK_PRESSURE_BYTES / 1024 / 1024).toFixed(0)}MB)`);
       if (underPressure) {
         console.warn(`[cleanupOldData] disk pressure: database is ${(bytes / 1024 / 1024).toFixed(0)}MB, above the ${(DISK_PRESSURE_BYTES / 1024 / 1024).toFixed(0)}MB threshold — using a ${EMERGENCY_RETENTION_DAYS}-day emergency window for odds_history/match_events this pass`);
       }
@@ -595,7 +608,8 @@ export async function cleanupOldData() {
     results.matches_cache_stale = (await pool.query(
       `DELETE FROM matches_cache
        WHERE id LIKE 'l365-%'
-         AND start_time_tz(start_time) < NOW() - interval '30 days'`
+         AND start_time_tz(start_time) < NOW() - ($1 || ' days')::interval`,
+      [String(STALE_MATCH_DAYS)]
     )).rowCount;
 
     // live_statistics is keyed by match_id (PRIMARY KEY, one row per match,
