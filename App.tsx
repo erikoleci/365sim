@@ -332,6 +332,7 @@ const App: React.FC = () => {
               liveAwayScore: msg.awayScore ?? m.liveAwayScore,
               currentMinute: msg.minute ?? m.currentMinute,
               currentMinuteUpdatedAt: msg.minute != null ? (msg.minuteUpdatedAt ?? Date.now()) : m.currentMinuteUpdatedAt,
+              liveAction: msg.action !== undefined ? msg.action : m.liveAction,
             } : m));
           } else if (msg.type === 'CARD') {
             // A card changes nothing the LIST carries (score, minute, h2h

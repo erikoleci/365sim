@@ -93,6 +93,9 @@ export interface Match {
   // Lets the ticking clock resync from a real reference instead of the
   // client's own receive time -- see useTickingClock in MatchCard.tsx.
   currentMinuteUpdatedAt?: number;
+  // What the provider's pitch shows right now (from the gamedetails VC code);
+  // null/undefined when unknown. Never guessed.
+  liveAction?: { side: 'home' | 'away'; kind: string; label: string } | null;
   liveStatus?: string;
   liveHomeScore?: number;
   liveAwayScore?: number;

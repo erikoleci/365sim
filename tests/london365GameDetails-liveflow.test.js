@@ -155,17 +155,22 @@ describe('applyGameDetails — DB-skip for already-confirmed-unmatched EIDs (fas
     expect(mocks.getSelectCount()).toBe(0);
   });
 
-  // 52628036 specifically: a longer capture of this EID's raw feed showed
-  // AT LEAST 5 distinct, unrelated real matches (different team pairs)
-  // all sharing this one EID, cycling within the same few seconds -- the
-  // provider multiplexes several real matches onto it. Our data model can
-  // only ever attach updates to a single matches_cache row per id, so this
-  // EID can never be correctly attributed to any one of them no matter how
-  // it's handled -- hence hard-blocked rather than merely "unmatched".
-  it('drops 52628036 specifically (multiple real matches multiplexed onto one EID upstream)', async function () {
+  // 52628036: the provider has been seen both multiplexing several matches on
+  // it and carrying one match for over an hour. It is processed only when the
+  // H/A names in the message match the l365-52628036 row.
+  it('applies 52628036 only when the team names match the stored match', async function () {
+    mocks.store.set('l365-52628036', {
+      id: 'l365-52628036', home_team: 'Hapoel Tel Aviv', away_team: 'Hapoel Haifa',
+      live_home_score: 0, live_away_score: 4, live_minute: '67',
+    });
     await applyGameDetails(tag({ EID: '52628036', T: '500', SC: '0-0', H: 'China PR (W)', A: 'Philippines (W)' }));
     await applyGameDetails(tag({ EID: '52628036', T: '4700', SC: '3-7', H: 'FC Agniputhra', A: 'South United' }));
-    expect(mocks.getSelectCount()).toBe(0);
+    expect(pushLiveTick).not.toHaveBeenCalled();
+    expect(mocks.store.get('l365-52628036').live_home_score).toBe(0);
+
+    await applyGameDetails(tag({ EID: '52628036', T: '4016', SC: '1-4', H: 'Hapoel Tel Aviv', A: 'Hapoel Haifa' }));
+    expect(pushLiveTick).toHaveBeenCalledTimes(1);
+    expect(mocks.store.get('l365-52628036').live_home_score).toBe(1);
   });
 });
 

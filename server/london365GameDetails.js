@@ -40,6 +40,7 @@ import pool from './db.js';
 import { pushCardEvent, pushLiveTick } from './ws.js';
 import { recordGoalIfChanged, minuteToNumber } from './london365.js';
 import { parseGameDetails } from './gameDetailsParser.js';
+import { decodeLiveAction } from './liveAction.js';
 import { isTrackedGame, getLiveRow, setLiveRow, forgetLiveRow, __resetLiveTrackerForTests } from './liveTracker.js';
 import { bump } from './feedStats.js';
 import { announceGoalIfChanged, clearGoalAnnounced } from './goalAnnouncer.js';
@@ -166,7 +167,17 @@ export function startStaleLiveStateSweep(intervalMs = 2 * 60 * 1000) {
 //   it's handled, and it's high enough traffic to be worth dropping
 //   outright rather than silently mis-serving whichever match happens to
 //   win the race.
-const BLOCKED_EIDS = new Set(['58729560', '52628036']);
+const BLOCKED_EIDS = new Set(['58729560']);
+// 52628036 is no longer dropped outright: a later capture showed it carrying
+// one real match (Hapoel Tel Aviv v Hapoel Haifa) for over an hour, while the
+// earlier capture above showed several matches cycling on it. Since we can't
+// know which one it is carrying at any moment, messages for this EID are only
+// applied when the H/A team names in the message match the matches_cache row
+// for l365-<EID>; everything else is dropped (counted in
+// gamedetails.dropped_team_mismatch), so a different match can never overwrite
+// this row's score/minute/cards.
+const TEAM_CHECKED_EIDS = new Set(['52628036']);
+const normTeam = (v) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 const TICK_LOG = process.env.LONDON365_GAMEDETAILS_TICK_LOG === '1';
 
 export async function applyGameDetails(raw) {
@@ -286,6 +297,12 @@ export async function applyGameDetails(raw) {
     return;
   }
 
+  if (TEAM_CHECKED_EIDS.has(eid)
+    && (normTeam(attrs.H) !== normTeam(row.home_team) || normTeam(attrs.A) !== normTeam(row.away_team))) {
+    bump('gamedetails.dropped_team_mismatch');
+    return;
+  }
+
   const score = parseScore(attrs.SC);
   const minuteDisplay = row.live_minute || null; // verified source, see header comment
   // Per-tick log line (~1/sec per live match) is opt-in: it was flooding the
@@ -318,6 +335,8 @@ export async function applyGameDetails(raw) {
   // safety net — not on every ~1/sec provider tick regardless of content.
   // Values are still only ever the already-verified matches_cache ones
   // (see header comment) — this only changes WHEN we send, never WHAT.
+  const liveAction = decodeLiveAction(attrs.VC);
+  const actionKey = (a) => (a ? a.side + ':' + a.kind : null);
   function broadcastTick() {
     const nowTs = Date.now();
     const prevBroadcast = lastBroadcast.get(matchId);
@@ -329,8 +348,13 @@ export async function applyGameDetails(raw) {
       minuteUpdatedAt: minuteDisplay ? nowTs : undefined,
       homeScore: homeScoreForBroadcast ?? undefined,
       awayScore: awayScoreForBroadcast ?? undefined,
+      // What the provider's pitch shows right now (attack, corner, ...),
+      // decoded from VC only for codes confirmed in liveAction.js; null when
+      // the code is unknown so the client clears any previous label.
+      action: liveAction,
     };
     const changed = !prevBroadcast
+      || actionKey(prevBroadcast.action) !== actionKey(liveAction)
       || prevBroadcast.minute !== tickPayload.minute
       || prevBroadcast.homeScore !== tickPayload.homeScore
       || prevBroadcast.awayScore !== tickPayload.awayScore;

@@ -64,11 +64,27 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats }) => {
             className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-brand-yellow shadow-lg transition-all duration-1000 ease-in-out animate-pulse"
             style={{ left: `${dotLeftPct}%` }}
           />
-          <div className="absolute bottom-2 left-3 text-white z-10">
-            <div className="text-xs font-bold leading-tight">{attackingSide}</div>
-            <div className="text-[11px] text-brand-yellow font-semibold leading-tight">Sulm</div>
-          </div>
+          {!match.liveAction && (
+            <div className="absolute bottom-2 left-3 text-white z-10">
+              <div className="text-xs font-bold leading-tight">{attackingSide}</div>
+              <div className="text-[11px] text-brand-yellow font-semibold leading-tight">Sulm</div>
+            </div>
+          )}
         </>
+      )}
+
+      {/* What the provider's own pitch shows right now (attack, dangerous
+          attack, corner, offside, ...). Only rendered for codes decoded and
+          confirmed server-side (server/liveAction.js); unknown code => nothing. */}
+      {match.liveAction && (
+        <div className="absolute bottom-2 left-3 text-white z-10">
+          <div className="text-xs font-bold leading-tight">
+            {match.liveAction.side === 'home' ? match.homeTeam : match.awayTeam}
+          </div>
+          <div className="text-[11px] text-brand-yellow font-semibold leading-tight">
+            {match.liveAction.label}
+          </div>
+        </div>
       )}
       <div className="absolute top-2 left-3 text-white text-xs font-bold">{match.homeTeam}</div>
       <div className="absolute top-2 right-3 text-white text-xs font-bold">{match.awayTeam}</div>
