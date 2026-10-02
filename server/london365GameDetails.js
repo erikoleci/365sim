@@ -84,6 +84,7 @@ export function __resetLiveStateForTests() {
   lastBroadcast.clear();
   unknownEidWarned.clear();
   lastTouched.clear();
+  teamIndex = { at: 0, map: new Map() };
 }
 
 // MEMORY LEAK FIX: lastSeen/lastBroadcast/unknownEidWarned are module-level
@@ -168,24 +169,49 @@ export function startStaleLiveStateSweep(intervalMs = 2 * 60 * 1000) {
 //   outright rather than silently mis-serving whichever match happens to
 //   win the race.
 const BLOCKED_EIDS = new Set(['58729560']);
-// 52628036 is no longer dropped outright: a later capture showed it carrying
-// one real match (Hapoel Tel Aviv v Hapoel Haifa) for over an hour, while the
-// earlier capture above showed several matches cycling on it. Since we can't
-// know which one it is carrying at any moment, messages for this EID are only
-// applied when the H/A team names in the message match the matches_cache row
-// for l365-<EID>; everything else is dropped (counted in
-// gamedetails.dropped_team_mismatch), so a different match can never overwrite
-// this row's score/minute/cards.
-const TEAM_CHECKED_EIDS = new Set(['52628036']);
+// 52628036 is not a match id: the provider sends the details of several
+// different live matches under this one EID (captures: Hapoel Tel Aviv v
+// Hapoel Haifa, then Zaglebie Lubin II v Gornik Polkowice, ...). Applying it
+// by EID would mix matches, and it never matches a l365-<gameId> row, so it
+// used to be dropped. Instead the real match is found from the H/A team
+// names in the message against the LIVE matches we hold; a message whose
+// teams match no single live match (or match two) is dropped.
+const TEAM_RESOLVED_EIDS = new Set(['52628036']);
 const normTeam = (v) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+const TEAM_INDEX_TTL_MS = 10000;
+let teamIndex = { at: 0, map: new Map() };
+async function resolveGameIdByTeams(h, a) {
+  const now = Date.now();
+  if (now - teamIndex.at > TEAM_INDEX_TTL_MS) {
+    try {
+      const { rows } = await pool.query(
+        "SELECT id AS game_id, home_team AS h, away_team AS a FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
+      );
+      const map = new Map();
+      for (const r of rows) {
+        const key = normTeam(r.h) + '|' + normTeam(r.a);
+        map.set(key, map.has(key) ? null : String(r.game_id).replace(/^l365-/, '')); // null = ambiguous
+      }
+      teamIndex = { at: now, map };
+    } catch (err) {
+      teamIndex = { at: now - TEAM_INDEX_TTL_MS + 2000, map: teamIndex.map }; // retry in ~2s, keep old index
+    }
+  }
+  return teamIndex.map.get(normTeam(h) + '|' + normTeam(a)) || null;
+}
 const TICK_LOG = process.env.LONDON365_GAMEDETAILS_TICK_LOG === '1';
 
 export async function applyGameDetails(raw) {
   bump('gamedetails.received');
   const attrs = parseGameDetails(raw);
   if (!attrs) return;
-  const eid = attrs.EID;
+  let eid = attrs.EID;
   if (BLOCKED_EIDS.has(eid)) return;
+  if (TEAM_RESOLVED_EIDS.has(eid)) {
+    const gameId = await resolveGameIdByTeams(attrs.H, attrs.A);
+    if (!gameId) { bump('gamedetails.dropped_team_unresolved'); return; }
+    eid = gameId; // from here on this is the real game id, like any other EID
+  }
   // Not a match we hold (different country/league, never imported): drop it
   // here, before it touches the per-EID maps or the database. This is a
   // membership check on an in-memory Set, evaluated on EVERY message, so a
@@ -294,12 +320,6 @@ export async function applyGameDetails(raw) {
     // later tick for the same EID); only the console.log is gone.
     unknownEidWarned.add(eid);
     lastSeen.set(eid, { t: Number.isFinite(t) ? t : 0, yc1: 0, yc2: 0, rc1: 0, rc2: 0 });
-    return;
-  }
-
-  if (TEAM_CHECKED_EIDS.has(eid)
-    && (normTeam(attrs.H) !== normTeam(row.home_team) || normTeam(attrs.A) !== normTeam(row.away_team))) {
-    bump('gamedetails.dropped_team_mismatch');
     return;
   }
 
@@ -435,6 +455,24 @@ export async function applyGameDetails(raw) {
   if (yc2 > prevCards.yc2) await recordCard('YELLOW_CARD', 'away', yc2);
   if (rc1 > prevCards.rc1) await recordCard('RED_CARD', 'home', rc1);
   if (rc2 > prevCards.rc2) await recordCard('RED_CARD', 'away', rc2);
+
+  // Corners as discrete events (the "Ngjarjet" list), one per increment of
+  // C1/C2. Only once a baseline exists: on the first message we ever see for a
+  // match the totals are history we cannot date, so they must not be turned
+  // into events at the current minute. Capped per tick so a data glitch can't
+  // flood the table.
+  if (cardBaseline) {
+    const addCorners = async (team, from, to) => {
+      for (let n = from + 1; n <= Math.min(to, from + 3); n++) {
+        await pool.query(
+          `INSERT INTO match_events (match_id, minute, type, team, detail, created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
+          [matchId, minuteNum, 'CORNER', team, String(n), now]
+        );
+      }
+    };
+    if (c1 > prevCards.c1) await addCorners('home', prevCards.c1, c1);
+    if (c2 > prevCards.c2) await addCorners('away', prevCards.c2, c2);
+  }
 
   // Keep the aggregate totals the stats panel actually reads
   // (live_statistics.cards_home/away) in step with the discrete

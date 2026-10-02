@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mocks = vi.hoisted(function () {
   const store = new Map();
   const stats = new Map(); // match_id -> { cards_home, cards_away }
+  const events = []; // INSERT INTO match_events params
   let selectCount = 0;
   function query(sql, params) {
     const s = String(sql);
@@ -17,12 +18,15 @@ const mocks = vi.hoisted(function () {
       const row = store.get(params[0]);
       return Promise.resolve({ rows: row ? [row] : [] });
     }
+    if (s.indexOf('SELECT id AS game_id') === 0) {
+      return Promise.resolve({ rows: Array.from(store.values()).filter(function (r) { return String(r.id).indexOf('l365-') === 0; }).map(function (r) { return { game_id: r.id, h: r.home_team, a: r.away_team }; }) });
+    }
     if (s.indexOf('UPDATE matches_cache SET live_home_score') === 0) {
       const row = store.get(params[2]);
       if (row) { row.live_home_score = params[0]; row.live_away_score = params[1]; }
       return Promise.resolve({ rows: [], rowCount: row ? 1 : 0 });
     }
-    if (s.indexOf('INSERT INTO match_events') === 0) return Promise.resolve({ rows: [], rowCount: 1 });
+    if (s.indexOf('INSERT INTO match_events') === 0) { events.push(params); return Promise.resolve({ rows: [], rowCount: 1 }); }
     if (s.indexOf('INSERT INTO live_statistics (match_id, cards_home') === 0) {
       const [matchId, cardsHome, cardsAway] = params;
       stats.set(matchId, { ...stats.get(matchId), cards_home: cardsHome, cards_away: cardsAway });
@@ -40,7 +44,7 @@ const mocks = vi.hoisted(function () {
     }
     return Promise.resolve({ rows: [], rowCount: 0 });
   }
-  return { store, stats, query, getSelectCount: function () { return selectCount; }, resetSelectCount: function () { selectCount = 0; } };
+  return { store, stats, events, query, getSelectCount: function () { return selectCount; }, resetSelectCount: function () { selectCount = 0; } };
 });
 
 vi.mock('../server/db.js', function () {
@@ -155,22 +159,34 @@ describe('applyGameDetails — DB-skip for already-confirmed-unmatched EIDs (fas
     expect(mocks.getSelectCount()).toBe(0);
   });
 
-  // 52628036: the provider has been seen both multiplexing several matches on
-  // it and carrying one match for over an hour. It is processed only when the
-  // H/A names in the message match the l365-52628036 row.
-  it('applies 52628036 only when the team names match the stored match', async function () {
-    mocks.store.set('l365-52628036', {
-      id: 'l365-52628036', home_team: 'Hapoel Tel Aviv', away_team: 'Hapoel Haifa',
-      live_home_score: 0, live_away_score: 4, live_minute: '67',
+  // 52628036 carries several different matches; the real one is found from
+  // the H/A team names among the LIVE matches we hold.
+  it('maps 52628036 to the match with the same teams and drops unknown teams', async function () {
+    mocks.store.set('l365-5177329', {
+      id: 'l365-5177329', home_team: 'Zaglebie Lubin II', away_team: 'Gornik Polkowice',
+      live_home_score: 0, live_away_score: 0, live_minute: '61',
     });
-    await applyGameDetails(tag({ EID: '52628036', T: '500', SC: '0-0', H: 'China PR (W)', A: 'Philippines (W)' }));
     await applyGameDetails(tag({ EID: '52628036', T: '4700', SC: '3-7', H: 'FC Agniputhra', A: 'South United' }));
     expect(pushLiveTick).not.toHaveBeenCalled();
-    expect(mocks.store.get('l365-52628036').live_home_score).toBe(0);
 
-    await applyGameDetails(tag({ EID: '52628036', T: '4016', SC: '1-4', H: 'Hapoel Tel Aviv', A: 'Hapoel Haifa' }));
+    await applyGameDetails(tag({ EID: '52628036', T: '3677', SC: '0-1', H: 'Zaglebie Lubin II', A: 'Gornik Polkowice', VC: '11000' }));
     expect(pushLiveTick).toHaveBeenCalledTimes(1);
-    expect(mocks.store.get('l365-52628036').live_home_score).toBe(1);
+    expect(mocks.store.get('l365-5177329').live_away_score).toBe(1);
+    expect(pushLiveTick.mock.calls[0][0]).toBe('l365-5177329');
+  });
+});
+
+describe('applyGameDetails — corner events', function () {
+  beforeEach(function () { __resetLiveStateForTests(); mocks.store.clear(); mocks.stats.clear(); mocks.events.length = 0; });
+
+  it('records a CORNER event per increment, but not for totals seen on first sight', async function () {
+    mocks.store.set('l365-5177329', { id: 'l365-5177329', home_team: 'A', away_team: 'B', live_home_score: 0, live_away_score: 0, live_minute: '10' });
+    await applyGameDetails(tag({ EID: '5177329', T: '600', SC: '0-0', C1: '3', C2: '1' }));
+    expect(mocks.events.filter(function (e) { return e[2] === 'CORNER'; })).toHaveLength(0);
+    await applyGameDetails(tag({ EID: '5177329', T: '606', SC: '0-0', C1: '4', C2: '1' }));
+    const corners = mocks.events.filter(function (e) { return e[2] === 'CORNER'; });
+    expect(corners).toHaveLength(1);
+    expect(corners[0][3]).toBe('home');
   });
 });
 
