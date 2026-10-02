@@ -65,6 +65,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
   const [activeTab, setActiveTab] = useState<string>('All');
   const [liveDetail, setLiveDetail] = useState<{ statistics: LiveStatistics | null; events: MatchEvent[] } | null>(null);
   const [liveDetailLoading, setLiveDetailLoading] = useState(false);
+  const [cardFlash, setCardFlash] = useState<{ kind: 'YELLOW_CARD' | 'RED_CARD'; team: 'home' | 'away' } | null>(null);
   const headerClock = useTickingClock(
     liveDetail?.statistics?.minute != null ? String(liveDetail.statistics.minute) : match.currentMinute,
     liveDetail?.statistics?.minuteUpdatedAt ?? match.currentMinuteUpdatedAt,
@@ -118,12 +119,18 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
     const interval = match.status === MatchStatus.LIVE ? setInterval(load, 15000) : null;
 
     let socket: WebSocket | null = null;
+    let flashTimer: ReturnType<typeof setTimeout> | null = null;
     if (match.status === MatchStatus.LIVE) {
       socket = new WebSocket(api.getWsUrl());
       socket.onopen = () => socket!.send(JSON.stringify({ type: 'subscribe', topic: `match:${match.id}` }));
       socket.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
+          if (msg.type === 'CARD' && (msg.cardType === 'YELLOW_CARD' || msg.cardType === 'RED_CARD') && (msg.team === 'home' || msg.team === 'away')) {
+            setCardFlash({ kind: msg.cardType, team: msg.team });
+            if (flashTimer) clearTimeout(flashTimer);
+            flashTimer = setTimeout(() => setCardFlash(null), 7000);
+          }
           if (msg.type === 'GOAL' || msg.type === 'GOAL_DISALLOWED' || msg.type === 'CARD' || msg.type === 'MATCH_ENDED') load();
         } catch { /* ignore malformed message */ }
       };
@@ -132,9 +139,23 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
     return () => {
       cancelled = true;
       if (interval) clearInterval(interval);
+      if (flashTimer) clearTimeout(flashTimer);
       socket?.close();
     };
   }, [match.id, hasLiveData, match.status]);
+
+  // Index in the events list where "Fundi i pjesës së parë" goes: before the
+  // first event after minute 45, or at the end when the match has reached the
+  // second half / finished but nothing happened after the break yet. null
+  // while the first half is still being played.
+  const firstHalfDividerAt = useMemo(() => {
+    const evs = liveDetail?.events ?? [];
+    const minuteNow = Number(liveDetail?.statistics?.minute ?? String(match.currentMinute ?? '').match(/^\d+/)?.[0] ?? NaN);
+    const reachedSecondHalf = isFinished || (Number.isFinite(minuteNow) && minuteNow > 45) || evs.some((e) => e.minute != null && e.minute > 45);
+    if (!reachedSecondHalf || !evs.some((e) => e.minute != null && e.minute <= 45)) return null;
+    const idx = evs.findIndex((e) => e.minute != null && e.minute > 45);
+    return idx === -1 ? evs.length : idx;
+  }, [liveDetail, isFinished, match.currentMinute]);
 
   const CATEGORY_LABELS: Record<string, string> = {
     All: 'Të Gjitha',
@@ -193,7 +214,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
              )}
              {isLive && (
                <div className="mb-4">
-                 <LivePitch match={match} stats={liveDetail?.statistics ?? null} />
+                 <LivePitch match={match} stats={liveDetail?.statistics ?? null} flash={cardFlash} />
                </div>
              )}
              <div className="flex justify-center items-center gap-8">
@@ -308,13 +329,21 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
           ) : (
             <div className="space-y-2">
               {liveDetail.events.map((ev, i) => (
-                <div key={i} className="flex items-center gap-3 bg-[#333] rounded px-3 py-2">
+                <React.Fragment key={i}>
+                {i === firstHalfDividerAt && (
+                  <div className="text-center text-brand-yellow text-xs font-bold py-2">Fundi i pjesës së parë</div>
+                )}
+                <div className="flex items-center gap-3 bg-[#333] rounded px-3 py-2">
                   <span className="text-brand-yellow font-mono text-xs w-8 shrink-0">{ev.minute != null ? `${ev.minute}'` : '-'}</span>
                   <span className="text-white text-xs flex-1">{EVENT_LABELS[ev.type] || ev.type}</span>
                   {ev.team && <span className="text-brand-textMuted text-[10px]">{ev.team}</span>}
                   {ev.player && <span className="text-brand-textMuted text-[10px]">{ev.player}</span>}
                 </div>
+                </React.Fragment>
               ))}
+              {firstHalfDividerAt === liveDetail.events.length && (
+                <div className="text-center text-brand-yellow text-xs font-bold py-2">Fundi i pjesës së parë</div>
+              )}
             </div>
           )}
         </div>
