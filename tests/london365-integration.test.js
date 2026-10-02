@@ -182,7 +182,8 @@ describe('london365 live sync and goal dedup', function () {
     await syncLondon365Live();
     expect(mocks.matchEvents).toHaveLength(2);
     expect(mocks.matchEvents[1].team).toBe('X');
-    expect(mocks.matchEvents[1].minute).toBe(63);
+    // clock 63:10 is the 64th minute; the provider lists the goal at 64'
+    expect(mocks.matchEvents[1].minute).toBe(64);
     expect(pushGoal).toHaveBeenCalledTimes(2);
     expect(mocks.liveStats.get('l365-200')).toEqual({ home: 2, away: 0 });
   });

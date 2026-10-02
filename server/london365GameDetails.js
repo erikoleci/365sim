@@ -38,7 +38,7 @@
 
 import pool from './db.js';
 import { pushCardEvent, pushLiveTick } from './ws.js';
-import { recordGoalIfChanged, minuteToNumber } from './london365.js';
+import { recordGoalIfChanged, eventMinuteFromClock } from './london365.js';
 import { parseGameDetails } from './gameDetailsParser.js';
 import { decodeLiveAction } from './liveAction.js';
 import { isTrackedGame, getLiveRow, setLiveRow, forgetLiveRow, __resetLiveTrackerForTests } from './liveTracker.js';
@@ -325,6 +325,10 @@ export async function applyGameDetails(raw) {
 
   const score = parseScore(attrs.SC);
   const minuteDisplay = row.live_minute || null; // verified source, see header comment
+  // Event minute as the provider labels it: T is the game clock in seconds
+  // (verified against its on-screen clock) and the minute in progress is
+  // floor(T/60)+1. Falls back to the stored clock string without a usable T.
+  const eventMinuteNow = Number.isFinite(t) && t >= 0 ? Math.floor(t / 60) + 1 : eventMinuteFromClock(minuteDisplay);
   // Per-tick log line (~1/sec per live match) is opt-in: it was flooding the
   // log stream and costs CPU for no diagnostic value once the feed is confirmed.
   if (TICK_LOG) console.log(`[live] EID=${eid} score=${attrs.SC || '?'} minute=${minuteDisplay || '?'}`);
@@ -413,7 +417,7 @@ export async function applyGameDetails(raw) {
   if (score) {
     const ev = goalEv;
     const before = `${row.live_home_score}-${row.live_away_score}`;
-    await recordGoalIfChanged(ev, score, minuteDisplay, prevScoreRow);
+    await recordGoalIfChanged(ev, score, minuteDisplay, prevScoreRow, eventMinuteNow);
     if (`${score.home}-${score.away}` !== before) {
       const team = Math.sign(score.home - (row.live_home_score || 0)) === 1 ? 'home' : 'away';
       console.log(`[live-event] GOAL EID=${eid} team=${team} score=${score.home}-${score.away} minute=${minuteDisplay || '?'}`);
@@ -440,7 +444,7 @@ export async function applyGameDetails(raw) {
   const posAway = hasPossession ? Number(attrs.A7) : null;
   const prevCards = cardBaseline || { yc1: 0, yc2: 0, rc1: 0, rc2: 0, c1: 0, c2: 0, posHome: null, posAway: null };
   const now = Date.now();
-  const minuteNum = minuteToNumber(minuteDisplay);
+  const minuteNum = eventMinuteNow;
 
   // Totals on a first-ever message are history we cannot date, EXCEPT very
   // early in a match (a fresh session / reused EID), where the true starting

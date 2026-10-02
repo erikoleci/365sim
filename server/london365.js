@@ -1037,6 +1037,18 @@ export function minuteToNumber(minute) {
   return m ? Number(m[1]) : null;
 }
 
+// Minute number to STORE for an event (goal/card/corner). The provider labels
+// an event by the minute in progress, so a clock reading 84:30 is the 85th
+// minute and its list shows 85' (confirmed on a real match: provider 85' /
+// 80' where we stored 84 / 79 by dropping the seconds). A plain "mm" value
+// has no seconds to go by, so it is kept as is.
+export function eventMinuteFromClock(minute) {
+  if (!minute) return null;
+  const m = String(minute).match(/^(\d+):\d+/);
+  if (m) return Number(m[1]) + 1;
+  return minuteToNumber(minute);
+}
+
 // Write-avoidance (LONDON365_SKIP_UNCHANGED_WRITES, default on): the UPSERT below
 // always changed `fetched_at`, so EVERY call -- every 30s per live match from
 // the REST loop, every match on every prematch import -- rewrote the whole
@@ -1348,7 +1360,7 @@ export function withDbLock(key, fn) {
 // that team must be retracted (delete the most recent GOAL match_event for
 // them) and broadcasts GOAL_DISALLOWED with the corrected score instead of
 // GOAL — never invents which team "scored" when nobody did.
-export async function recordGoalIfChanged(ev, score, minute, prev) {
+export async function recordGoalIfChanged(ev, score, minute, prev, eventMinute) {
   if (!score) return;
   const prevHome = prev ? prev.live_home_score : null;
   const prevAway = prev ? prev.live_away_score : null;
@@ -1375,7 +1387,7 @@ export async function recordGoalIfChanged(ev, score, minute, prev) {
     await pool.query(
       `INSERT INTO match_events (match_id, minute, type, team, detail, created_at)
        VALUES ($1,$2,'GOAL',$3,$4,$5)`,
-      [ev.id, minuteToNumber(minute), team, score.home + '-' + score.away, now]
+      [ev.id, eventMinute != null ? eventMinute : eventMinuteFromClock(minute), team, score.home + '-' + score.away, now]
     );
   }
   async function retractLastGoal(team) {

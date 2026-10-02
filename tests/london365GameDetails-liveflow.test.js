@@ -57,6 +57,7 @@ vi.mock('../server/london365.js', function () {
   return {
     recordGoalIfChanged: vi.fn(),
     minuteToNumber: function () { return null; },
+    eventMinuteFromClock: function () { return null; },
   };
 });
 
@@ -187,6 +188,8 @@ describe('applyGameDetails — corner events', function () {
     const corners = mocks.events.filter(function (e) { return e[2] === 'CORNER'; });
     expect(corners).toHaveLength(1);
     expect(corners[0][3]).toBe('home');
+    // T=606s (10:06 on the clock) is the 11th minute, as the provider labels it
+    expect(corners[0][1]).toBe(11);
   });
 });
 
