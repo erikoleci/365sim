@@ -381,7 +381,20 @@ export async function applyGameDetails(raw) {
 
   const yc1 = Number(attrs.YC1) || 0, yc2 = Number(attrs.YC2) || 0;
   const rc1 = Number(attrs.RC1) || 0, rc2 = Number(attrs.RC2) || 0;
-  const prevCards = cardBaseline || { yc1: 0, yc2: 0, rc1: 0, rc2: 0 };
+  // C1/C2 = corners. Naming follows the exact same <letter><side> pattern
+  // as YC1/YC2 (yellow cards) and RC1/RC2 (red cards) above, which is a
+  // real, verified field -- high confidence this is the same convention,
+  // not a guess. H1-H8/A1-A8 are NOT parsed here: their meaning isn't
+  // confirmed (except H7/A7, see below), and mislabeling a live stat wrong
+  // is worse than just not showing it.
+  const c1 = Number(attrs.C1) || 0, c2 = Number(attrs.C2) || 0;
+  // H7/A7 = possession %. Confirmed structurally (not guessed): in every
+  // captured sample H7+A7 sums to exactly 100, which uniquely identifies a
+  // possession-percentage pair among this feed's fields.
+  const hasPossession = attrs.H7 !== undefined && attrs.H7 !== '' && attrs.A7 !== undefined && attrs.A7 !== '';
+  const posHome = hasPossession ? Number(attrs.H7) : null;
+  const posAway = hasPossession ? Number(attrs.A7) : null;
+  const prevCards = cardBaseline || { yc1: 0, yc2: 0, rc1: 0, rc2: 0, c1: 0, c2: 0, posHome: null, posAway: null };
   const now = Date.now();
   const minuteNum = minuteToNumber(minuteDisplay);
 
@@ -415,8 +428,27 @@ export async function applyGameDetails(raw) {
       [matchId, yc1 + rc1, yc2 + rc2, now]
     );
   }
+  // Corners -- same reasoning/shape as cards above, only written on change.
+  if (c1 !== prevCards.c1 || c2 !== prevCards.c2) {
+    await pool.query(
+      `INSERT INTO live_statistics (match_id, corners_home, corners_away, updated_at)
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (match_id) DO UPDATE SET corners_home = excluded.corners_home, corners_away = excluded.corners_away, updated_at = excluded.updated_at`,
+      [matchId, c1, c2, now]
+    );
+  }
+  // Possession -- only written when the feed actually sent a value for
+  // this tick (hasPossession), and only on change, same as the others.
+  if (hasPossession && (posHome !== prevCards.posHome || posAway !== prevCards.posAway)) {
+    await pool.query(
+      `INSERT INTO live_statistics (match_id, possession_home, possession_away, updated_at)
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (match_id) DO UPDATE SET possession_home = excluded.possession_home, possession_away = excluded.possession_away, updated_at = excluded.updated_at`,
+      [matchId, posHome, posAway, now]
+    );
+  }
 
-  lastSeen.set(eid, { t: Number.isFinite(t) ? t : (prevSeen ? prevSeen.t : 0), yc1, yc2, rc1, rc2 });
+  lastSeen.set(eid, { t: Number.isFinite(t) ? t : (prevSeen ? prevSeen.t : 0), yc1, yc2, rc1, rc2, c1, c2, posHome, posAway });
 }
 
 export function getGameDetailsMemoryDiagnostics() {

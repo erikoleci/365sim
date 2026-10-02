@@ -23,9 +23,19 @@ const mocks = vi.hoisted(function () {
       return Promise.resolve({ rows: [], rowCount: row ? 1 : 0 });
     }
     if (s.indexOf('INSERT INTO match_events') === 0) return Promise.resolve({ rows: [], rowCount: 1 });
-    if (s.indexOf('INSERT INTO live_statistics') === 0) {
+    if (s.indexOf('INSERT INTO live_statistics (match_id, cards_home') === 0) {
       const [matchId, cardsHome, cardsAway] = params;
-      stats.set(matchId, { cards_home: cardsHome, cards_away: cardsAway });
+      stats.set(matchId, { ...stats.get(matchId), cards_home: cardsHome, cards_away: cardsAway });
+      return Promise.resolve({ rows: [], rowCount: 1 });
+    }
+    if (s.indexOf('INSERT INTO live_statistics (match_id, corners_home') === 0) {
+      const [matchId, cornersHome, cornersAway] = params;
+      stats.set(matchId, { ...stats.get(matchId), corners_home: cornersHome, corners_away: cornersAway });
+      return Promise.resolve({ rows: [], rowCount: 1 });
+    }
+    if (s.indexOf('INSERT INTO live_statistics (match_id, possession_home') === 0) {
+      const [matchId, possHome, possAway] = params;
+      stats.set(matchId, { ...stats.get(matchId), possession_home: possHome, possession_away: possAway });
       return Promise.resolve({ rows: [], rowCount: 1 });
     }
     return Promise.resolve({ rows: [], rowCount: 0 });
@@ -189,5 +199,44 @@ describe('applyGameDetails — card totals reach live_statistics (the "kartona n
     await applyGameDetails(tag({ EID: '71000001', T: '200', SC: '0-0', YC1: '1', YC2: '0', RC1: '0', RC2: '0' })); // same counts
     expect(writes).toBe(0);
     mocks.stats.set = origSet;
+  });
+});
+
+describe('applyGameDetails — corners (C1/C2) and possession (H7/A7) reach live_statistics', function () {
+  beforeEach(function () {
+    mocks.store.set('l365-72000001', {
+      id: 'l365-72000001', home_team: 'Home FC', away_team: 'Away FC',
+      live_home_score: 0, live_away_score: 0, live_minute: '10',
+    });
+  });
+
+  it('writes corners_home/corners_away from C1/C2 the first time they are seen', async function () {
+    await applyGameDetails(tag({ EID: '72000001', T: '100', SC: '0-0', C1: '2', C2: '1' }));
+    const row = mocks.stats.get('l365-72000001');
+    expect(row.corners_home).toBe(2);
+    expect(row.corners_away).toBe(1);
+  });
+
+  it('does not write corners again when the count has not changed', async function () {
+    await applyGameDetails(tag({ EID: '72000001', T: '100', SC: '0-0', C1: '2', C2: '1' }));
+    let writes = 0;
+    const origSet = mocks.stats.set.bind(mocks.stats);
+    mocks.stats.set = function (...args) { writes++; return origSet(...args); };
+    await applyGameDetails(tag({ EID: '72000001', T: '200', SC: '0-0', C1: '2', C2: '1' })); // unchanged
+    expect(writes).toBe(0);
+    mocks.stats.set = origSet;
+  });
+
+  it('writes possession_home/possession_away from H7/A7 when present (summing to 100)', async function () {
+    await applyGameDetails(tag({ EID: '72000001', T: '100', SC: '0-0', H7: '64', A7: '36' }));
+    const row = mocks.stats.get('l365-72000001');
+    expect(row.possession_home).toBe(64);
+    expect(row.possession_away).toBe(36);
+    expect(row.possession_home + row.possession_away).toBe(100);
+  });
+
+  it('does not write possession when H7/A7 are absent from this tick (does not fabricate 0/0)', async function () {
+    await applyGameDetails(tag({ EID: '72000001', T: '100', SC: '0-0' })); // no H7/A7 at all
+    expect(mocks.stats.get('l365-72000001')).toBeUndefined();
   });
 });
