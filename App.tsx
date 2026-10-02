@@ -801,6 +801,17 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveMatches]);
 
+  // One section per LEAGUE for "Live Tani" (Champions League, Europa League,
+  // La Liga, ...), each with its own title, instead of country headers with
+  // small league sub-labels. European cups first, then the existing order.
+  const liveLeagueSections = useMemo(() => {
+    const isEuropeanCup = (league: string) => /champions|europa|conference/i.test(leagueLabel(league));
+    return liveMatchesByCountry
+      .flatMap(([country, leagues]) => leagues.map(([league, leagueMatches]) => ({ country, league, matches: leagueMatches })))
+      .sort((a, b) => Number(isEuropeanCup(b.league)) - Number(isEuropeanCup(a.league)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveMatchesByCountry]);
+
   const dynamicLeagues = useMemo(() => {
     const fetchedLeagues = Array.from(new Set(matches.map((m) => m.league)));
     return Array.from(new Set(['All Top Football', ...fetchedLeagues])).sort();
@@ -838,6 +849,9 @@ const App: React.FC = () => {
   // mobile chip strip, or resetting via "Home", opens/closes the right
   // group), while still letting the user freely open other groups to browse.
   const [expandedCountry, setExpandedCountry] = useState<string | null>(null);
+  // Futboll in the side menu is a dropdown (favorites, live and the
+  // countries/leagues live inside it); closed until the person taps it.
+  const [isFootballOpen, setIsFootballOpen] = useState(false);
   useEffect(() => {
     if (currentLeague === 'All Top Football' || currentLeague === 'FAVORITES') { setExpandedCountry(null); return; }
     if (isCountryFilter(currentLeague)) { setExpandedCountry(countryFromFilter(currentLeague)); return; }
@@ -1100,32 +1114,24 @@ const App: React.FC = () => {
                   </div>
 
                   <button
-                    onClick={() => { setShowLiveOnly(false); setCurrentLeague('All Top Football'); setDetailMatchId(null); setIsLeagueMenuOpen(false); }}
-                    className={`w-full text-left px-3 py-2.5 border-b border-brand-bg/10 flex items-center gap-2.5 transition-colors hover:bg-[#444] hover:text-white ${currentLeague === 'All Top Football' && !showLiveOnly ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : 'text-brand-text'}`}
+                    onClick={() => setIsFootballOpen((o) => !o)}
+                    aria-expanded={isFootballOpen}
+                    className={`w-full text-left px-3 py-2.5 border-b border-brand-bg/10 flex items-center gap-2.5 transition-colors hover:bg-[#444] hover:text-white ${isFootballOpen ? 'bg-[#444] text-white font-bold' : 'text-brand-text'}`}
                   >
                     <span aria-hidden="true" className="text-base leading-none">⚽</span>
                     <span className="uppercase tracking-wider">Futboll</span>
+                    {liveMatches.length > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveMatches.length}</span>}
+                    <span className="ml-auto text-brand-textMuted">{isFootballOpen ? '▾' : '▸'}</span>
                   </button>
-                  {[
-                    ['🏀', 'Basketboll'], ['⚾', 'Bejsboll'], ['🏒', 'Hokej Akull'], ['🎾', 'Tenis'],
-                    ['🤾', 'Hendboll'], ['🏈', 'Futboll Amerikan'], ['🎱', 'Snooker'], ['🏓', 'Tenis Tavoline'],
-                    ['🏏', 'Kriket'], ['🎯', 'Darts'], ['🏐', 'Volejboll'],
-                  ].map(([icon, name]) => (
-                    <div
-                      key={name}
-                      className="w-full text-left px-3 py-2.5 border-b border-brand-bg/10 flex items-center gap-2.5 text-brand-textMuted/50 cursor-not-allowed select-none"
-                    >
-                      <span aria-hidden="true" className="text-base leading-none opacity-50">{icon}</span>
-                      <span className="uppercase tracking-wider">{name}</span>
-                      <span className="ml-auto text-[9px] normal-case font-normal shrink-0">Së shpejti</span>
-                    </div>
-                  ))}
-
-                  <div className="bg-[#383838] px-3 py-3 text-xs font-bold text-brand-text border-b border-[#444] uppercase flex justify-between items-center sticky top-0">
-                    <span>Countries &amp; Leagues</span>
-                  </div>
-
-                  <button onClick={() => { setShowLiveOnly(false); setCurrentLeague('FAVORITES'); setDetailMatchId(null); setIsLeagueMenuOpen(false); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors hover:bg-[#444] hover:text-white ${currentLeague === 'FAVORITES' ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
+                  {isFootballOpen && (
+                    <div className="bg-[#2b2b2b] border-b border-[#444]">
+                      <button
+                        onClick={() => { setShowLiveOnly(false); setCurrentLeague('All Top Football'); setDetailMatchId(null); setIsLeagueMenuOpen(false); }}
+                        className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex items-center gap-2 uppercase tracking-wider transition-colors hover:bg-[#444] hover:text-white ${currentLeague === 'All Top Football' && !showLiveOnly ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}
+                      >
+                        <span>Të gjitha ndeshjet</span>
+                      </button>
+<button onClick={() => { setShowLiveOnly(false); setCurrentLeague('FAVORITES'); setDetailMatchId(null); setIsLeagueMenuOpen(false); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors hover:bg-[#444] hover:text-white ${currentLeague === 'FAVORITES' ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
                     <div className="flex items-center gap-2">
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className="w-3.5 h-3.5 fill-brand-yellow"><path d="M10 1.5l2.6 5.27 5.82.85-4.21 4.1.99 5.8L10 14.9l-5.2 2.62.99-5.8-4.21-4.1 5.82-.85L10 1.5z" /></svg>
                       <span className="uppercase tracking-wider">Të Preferuarat</span>
@@ -1181,7 +1187,24 @@ const App: React.FC = () => {
                       );
                     })}
                   </div>
-                </div>
+                    </div>
+                  )}
+                  {[
+                    ['🏀', 'Basketboll'], ['⚾', 'Bejsboll'], ['🏒', 'Hokej Akull'], ['🎾', 'Tenis'],
+                    ['🤾', 'Hendboll'], ['🏈', 'Futboll Amerikan'], ['🎱', 'Snooker'], ['🏓', 'Tenis Tavoline'],
+                    ['🏏', 'Kriket'], ['🎯', 'Darts'], ['🏐', 'Volejboll'],
+                  ].map(([icon, name]) => (
+                    <div
+                      key={name}
+                      className="w-full text-left px-3 py-2.5 border-b border-brand-bg/10 flex items-center gap-2.5 text-brand-textMuted/50 cursor-not-allowed select-none"
+                    >
+                      <span aria-hidden="true" className="text-base leading-none opacity-50">{icon}</span>
+                      <span className="uppercase tracking-wider">{name}</span>
+                      <span className="ml-auto text-[9px] normal-case font-normal shrink-0">Së shpejti</span>
+                    </div>
+                  ))}
+
+                                  </div>
               </div>
             )}
           </>
@@ -1406,35 +1429,30 @@ const App: React.FC = () => {
                         // njësoj si lista kryesore e ndeshjeve të ardhshme, që
                         // të dallohet qartë cilit kampionat/shtet i përket çdo
                         // ndeshje live.
-                        liveMatchesByCountry.map(([country, leagues]) => (
-                          <div key={country}>
-                            <div className="bg-[#232323] px-3 py-1.5 text-[11px] font-bold text-white flex items-center gap-1.5 border-b border-[#333]">
-                              <span>{countryFlag(country)}</span>
-                              <span>{country}</span>
+                        liveLeagueSections.map(({ country, league, matches: leagueMatches }) => (
+                          <div key={league}>
+                            <div className="bg-[#2a2a2a] px-3 py-2 text-[11px] font-bold text-white flex items-center gap-1.5 border-b border-[#333]">
+                              <span aria-hidden="true">{countryFlag(country)}</span>
+                              <span className="uppercase tracking-wide">{leagueLabel(league)}</span>
+                              <span className="text-brand-textMuted font-normal">· {country}</span>
+                              <span className="ml-auto text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{leagueMatches.length}</span>
                             </div>
-                            {leagues.map(([league, leagueMatches]) => (
-                              <div key={league}>
-                                <div className="bg-[#2a2a2a] px-3 py-1 text-[10px] font-semibold text-brand-textMuted uppercase tracking-wide border-b border-[#333]">
-                                  {leagueLabel(league)}
-                                </div>
-                                <div className="divide-y divide-brand-divider">
-                                  {leagueMatches.map((match) => (
-                                    <MatchRow
-                                      key={match.id}
-                                      match={match}
-                                      onBetClick={handleToggleSelection}
-                                      onOpenDetail={(m) => setDetailMatchId(m.id)}
-                                      isAdmin={currentUser.role === UserRole.ADMIN}
-                                      onSettleMatch={handleSettleMatch}
-                                      isSimulating={simulatingMatchId === match.id}
-                                      selectedIds={selectedIds}
-                                      favoriteTeams={favoriteTeams}
-                                      onToggleFavoriteTeam={(team) => toggleFavorite('TEAM', team)}
-                                    />
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
+                            <div className="divide-y divide-brand-divider">
+                              {leagueMatches.map((match) => (
+                                <MatchRow
+                                  key={match.id}
+                                  match={match}
+                                  onBetClick={handleToggleSelection}
+                                  onOpenDetail={(m) => setDetailMatchId(m.id)}
+                                  isAdmin={currentUser.role === UserRole.ADMIN}
+                                  onSettleMatch={handleSettleMatch}
+                                  isSimulating={simulatingMatchId === match.id}
+                                  selectedIds={selectedIds}
+                                  favoriteTeams={favoriteTeams}
+                                  onToggleFavoriteTeam={(team) => toggleFavorite('TEAM', team)}
+                                />
+                              ))}
+                            </div>
                           </div>
                         ))
                       )}
