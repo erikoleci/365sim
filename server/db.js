@@ -26,9 +26,19 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
+// Only skip SSL for a genuinely local DB. The old check only matched the
+// literal string 'localhost' -- a local Postgres reached via 127.0.0.1 (the
+// most common default, e.g. many Windows/pgAdmin setups) didn't match, so
+// the pool still attempted an SSL handshake against a local server that
+// isn't configured for SSL at all, which is what was actually producing the
+// cert error at home (not on Render/Supabase, where SSL is correctly used).
+const isLocalDb = /^(localhost|127\.0\.0\.1|\[?::1\]?)$/i.test(
+  (() => { try { return new URL(process.env.DATABASE_URL || '').hostname; } catch { return ''; } })()
+);
+
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
+  ssl: isLocalDb ? false : { rejectUnauthorized: false },
   // Without these, a slow/unreachable DB (e.g. Neon free-tier waking from
   // idle-suspend) leaves pool.connect()/pool.query() waiting indefinitely —
   // combined with the missing async-error handling this is what made
