@@ -26,6 +26,18 @@ describe('decodeLiveAction', () => {
   });
 });
 
+describe('decodeLiveAction half time', () => {
+  // Capture labelled "pushim" (end of first half) by the owner: Odd 2 v Viking 2, T=2700, SC=2-1.
+  it('decodes VC=1015 as the half-time break with no side', () => {
+    expect(decodeLiveAction('1015')).toEqual({ side: null, kind: 'half_time', label: 'Pushim' });
+  });
+
+  it('never attributes the break to a team, even if a team digit is present', () => {
+    expect(decodeLiveAction('11015')).toMatchObject({ side: null, kind: 'half_time' });
+    expect(decodeLiveAction('21015')).toMatchObject({ side: null, kind: 'half_time' });
+  });
+});
+
 describe('decodeLiveAction 4-digit codes', () => {
   it('decodes VC=1007 (rivene fundore) with an unknown side', () => {
     expect(decodeLiveAction('1007')).toMatchObject({ side: null, kind: 'back_line_restart' });

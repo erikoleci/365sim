@@ -1,5 +1,6 @@
 import pg from 'pg';
 import bcrypt from 'bcryptjs';
+import { resolveDbConnection } from './dbConfig.js';
 
 const { Pool } = pg;
 
@@ -26,19 +27,17 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-// Only skip SSL for a genuinely local DB. The old check only matched the
-// literal string 'localhost' -- a local Postgres reached via 127.0.0.1 (the
-// most common default, e.g. many Windows/pgAdmin setups) didn't match, so
-// the pool still attempted an SSL handshake against a local server that
-// isn't configured for SSL at all, which is what was actually producing the
-// cert error at home (not on Render/Supabase, where SSL is correctly used).
-const isLocalDb = /^(localhost|127\.0\.0\.1|\[?::1\]?)$/i.test(
-  (() => { try { return new URL(process.env.DATABASE_URL || '').hostname; } catch { return ''; } })()
-);
+// TLS settings come from dbConfig.js. The old inline `ssl: { rejectUnauthorized:
+// false }` was silently overridden by `?sslmode=require` in DATABASE_URL (pg lets
+// the connection string win), which turned on full verification and produced
+// SELF_SIGNED_CERT_IN_CHAIN against Aiven's private CA. See dbConfig.js.
+const dbConn = resolveDbConnection(process.env);
+console.log('[db] ' + dbConn.description);
+if (dbConn.warning) console.warn('[db] ' + dbConn.warning);
 
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: isLocalDb ? false : { rejectUnauthorized: false },
+  connectionString: dbConn.connectionString,
+  ssl: dbConn.ssl,
   // Without these, a slow/unreachable DB (e.g. Neon free-tier waking from
   // idle-suspend) leaves pool.connect()/pool.query() waiting indefinitely —
   // combined with the missing async-error handling this is what made

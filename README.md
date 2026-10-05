@@ -117,6 +117,14 @@ npm run server      # backend + serve i dist/ (i njëjti proces Express)
 
 **Baza e të dhënave është PostgreSQL** (jo më SQLite) — kjo i mbijeton redeploy-eve/restarteve pa nevojë për disk të qëndrueshëm apo volume të hostit. Krijo një bazë falas te [neon.tech](https://neon.tech) ose [supabase.com](https://supabase.com) (të dyja kanë plan falas të përhershëm) dhe kopjo connection string-un si `DATABASE_URL`.
 
+**Aiven PostgreSQL (SSL).** Aiven e nënshkruan certifikatën e serverit me një CA private të projektit, kështu që një `DATABASE_URL` me `?sslmode=require` jep `SELF_SIGNED_CERT_IN_CHAIN` nëse aplikacioni nuk e njeh atë CA. Zgjidhja është t'i japësh aplikacionit CA-në (lidhja mbetet e verifikuar plotësisht) — **jo** `NODE_TLS_REJECT_UNAUTHORIZED=0`:
+
+1. Te faqja e shërbimit në Aiven shkarko **CA certificate** (`ca.pem`).
+2. Vendos NJËRËN nga variablat: `DATABASE_CA_CERT_FILE=<rruga e ca.pem>` ose `DATABASE_CA_CERT=<teksti PEM>` (në një rresht lejohen `\n` të shkruara).
+3. Verifiko: `npm run db:check` (bën `SELECT 1`, kontrollon që sesioni është i enkriptuar, ekzekuton `initDb()` dhe migrimet).
+
+Pa CA, lidhja mbetet e enkriptuar por pa verifikim të certifikatës (sjellja e mëparshme), dhe në log del paralajmërimi `[db] The database certificate is not being verified…`. Logjika është te `server/dbConfig.js`.
+
 **Platforma të rekomanduara** për vetë serverin (backend+frontend): Railway, Render, Fly.io, ose një VPS.
 
 **Hapat për deploy** (p.sh. Render):

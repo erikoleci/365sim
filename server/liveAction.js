@@ -22,6 +22,8 @@
 //   21024          rivenje anesore     (throw-in)
 //   21011          goditje ne porte    (shot on target)
 //   11013          nderrim             (substitution)
+//   1015           pushim              (end of first half; seen with T=2700, SC=2-1,
+//                                       Odd 2 v Viking 2, no team digit)
 // NOTE: the side of 21002 and 21007 is taken from the same first-digit rule;
 // no counter moved with those two to double-check it.
 
@@ -33,6 +35,7 @@ const ACTIONS = {
   '1007': { kind: 'back_line_restart', label: 'Rivënie fundore' },
   '1011': { kind: 'shot_on_target', label: 'Goditje në portë' },
   '1013': { kind: 'substitution', label: 'Ndërrim' },
+  '1015': { kind: 'half_time', label: 'Pushim' },
   '1024': { kind: 'throw_in', label: 'Rivënie anësore' },
   '1234': { kind: 'offside', label: 'Pozicion jashtë loje' },
 };
@@ -51,5 +54,7 @@ export function decodeLiveAction(vc) {
   if (!/^[12]\d+$/.test(s)) return null;
   const entry = ACTIONS[s.slice(1)];
   if (!entry) return null;
-  return { side: s[0] === '1' ? 'home' : 'away', kind: entry.kind, label: entry.label };
+  // The break belongs to neither team, whatever the first digit says.
+  const side = entry.kind === 'half_time' ? null : s[0] === '1' ? 'home' : 'away';
+  return { side, kind: entry.kind, label: entry.label };
 }

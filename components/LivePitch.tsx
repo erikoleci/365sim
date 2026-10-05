@@ -48,6 +48,7 @@ function sceneFor(action: Action): Scene {
     case 'shot_on_target':
       return { ball: none ? null : { x: home ? 93 : 7, y: 50 }, zone: none ? null : { side: home ? 'right' : 'left', depth: 22, tone: 'danger' }, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 72 : 28, align: home ? 'right' : 'left' }, pulse: true };
     case 'substitution':
+    case 'half_time': // no ball, no team: just the centred "Pushim" label
       return { ball: null, zone: null, corner: null, offsideX: null, label: { x: 50, align: 'center' }, pulse: false };
     default:
       return { ball: null, zone: null, corner: null, offsideX: null, label: { x: 50, align: 'center' }, pulse: false };
