@@ -18,7 +18,13 @@ interface MatchRowProps {
 // Real in-play clock: the provider reports minutes like "62:14" — render the
 // running minute plus the game half (Pjesa I / Pushim / Pjesa II / Shtesë).
 export function parseLiveClock(minute?: string): { minute: number; second: number; half: string } | null {
-  const match = String(minute || '').match(/^(\d+):?(\d{1,2})?/);
+  let raw = String(minute || '').trim();
+  // Bare integer > 130 is a clock in seconds (e.g. "1776" = 29:36).
+  if (/^\d+$/.test(raw) && Number(raw) > 130) {
+    const t = Number(raw);
+    raw = Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0');
+  }
+  const match = raw.match(/^(\d+):?(\d{1,2})?/);
   if (!match) return null;
   const m = parseInt(match[1], 10);
   if (Number.isNaN(m)) return null;

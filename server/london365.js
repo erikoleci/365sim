@@ -1017,7 +1017,7 @@ export function isoFromWholeDate(wholeDate, gameDate, gameTime) {
 }
 
 export function parseScore(result) {
-  const m = String(result || '').match(/^(\d+)\s*-\s*(\d+)$/);
+  const m = String(result || '').trim().match(/^(\d+)\s*[-:]\s*(\d+)$/);
   if (!m) return null;
   return { home: parseInt(m[1], 10), away: parseInt(m[2], 10) };
 }
@@ -1030,10 +1030,22 @@ export function statusFromCommence(commenceTime) {
 
 // Persist one canonical event, recording odds movement into odds_history and
 // pushing live updates over the existing WebSocket channel.
+// Some feeds give the clock as bare SECONDS ("1776" = 29:36). A bare integer
+// above 130 can't be a minute, so convert it to "mm:ss".
+export function normalizeLiveMinute(minute) {
+  if (minute == null || minute === '') return minute ?? null;
+  const str = String(minute).trim();
+  if (/^\d+$/.test(str) && Number(str) > 130) {
+    const t = Number(str);
+    return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0');
+  }
+  return str;
+}
+
 // Convert a provider minute like "48:37" or "72" into a match minute number.
 export function minuteToNumber(minute) {
   if (!minute) return null;
-  const m = String(minute).match(/^(\d+)/);
+  const m = String(normalizeLiveMinute(minute)).match(/^(\d+)/);
   return m ? Number(m[1]) : null;
 }
 
@@ -1044,6 +1056,7 @@ export function minuteToNumber(minute) {
 // has no seconds to go by, so it is kept as is.
 export function eventMinuteFromClock(minute) {
   if (!minute) return null;
+  minute = normalizeLiveMinute(minute);
   const m = String(minute).match(/^(\d+):\d+/);
   if (m) return Number(m[1]) + 1;
   return minuteToNumber(minute);
@@ -1946,14 +1959,19 @@ export async function syncLondon365Live() {
         }
         if (!rows.length) rows = parseOddString(g.odd);
         const odds = hydrateRowNames(rows.filter(function (o) { return o ? !Number.isNaN(o.coef) : false; }));
-        if (!odds.length) continue;
+        // A live match whose markets are all locked/suspended has NO odds rows
+        // (the site shows padlocks). It used to be skipped here, so its score,
+        // clock and status froze at the first value. Only skip when there is
+        // nothing live to record either; empty markets merge into the cached
+        // event (mergeEvents), so the known odds are kept.
+        if (!odds.length && !((liveMeta && (liveMeta.result || liveMeta.minute)) || g.result || g.current_minute)) continue;
         const ev = buildEvent(g.id, g.home_team, g.away_team, isoFromWholeDate(g.whole_date, g.game_date, g.game_time) || new Date().toISOString(), odds);
         // liveMeta comes from /ajax/livegame/{id} (per-game detail, confirmed
         // against the live provider) and is far more reliable than g.result/
         // g.current_minute from the /ajax/livegames LIST response, which was
         // leaving score/minute empty for most matches — see fetchLiveRows.
         const score = parseScore((liveMeta && liveMeta.result) || g.result);
-        const minute = (liveMeta && liveMeta.minute) || g.current_minute || null;
+        const minute = normalizeLiveMinute((liveMeta && liveMeta.minute) || g.current_minute || null);
         // Diagnostic only (no behavior change) -- helps confirm/deny the
         // separate claim that field T can substitute as a minute source
         // when this path is empty, without trusting that claim yet.

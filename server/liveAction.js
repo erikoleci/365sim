@@ -19,6 +19,9 @@
 //   21007          rivene fundore
 //   11004          korne               (corner)
 //   11234          pozicion jashte loje (offside)
+//   21024          rivenje anesore     (throw-in)
+//   21011          goditje ne porte    (shot on target)
+//   11013          nderrim             (substitution)
 // NOTE: the side of 21002 and 21007 is taken from the same first-digit rule;
 // no counter moved with those two to double-check it.
 
@@ -28,6 +31,9 @@ const ACTIONS = {
   '1002': { kind: 'possession', label: 'Zotëron topin' },
   '1004': { kind: 'corner', label: 'Korne' },
   '1007': { kind: 'back_line_restart', label: 'Rivënie fundore' },
+  '1011': { kind: 'shot_on_target', label: 'Goditje në portë' },
+  '1013': { kind: 'substitution', label: 'Ndërrim' },
+  '1024': { kind: 'throw_in', label: 'Rivënie anësore' },
   '1234': { kind: 'offside', label: 'Pozicion jashtë loje' },
 };
 

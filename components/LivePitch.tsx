@@ -43,6 +43,12 @@ function sceneFor(action: Action): Scene {
       return { ball: none ? null : { x: home ? 70 : 30, y: 68 }, zone: null, corner: null, offsideX: none ? null : (home ? 78 : 22), label: none ? { x: 50, align: 'center' } : { x: home ? 76 : 24, align: home ? 'right' : 'left' }, pulse: false };
     case 'back_line_restart':
       return { ball: none ? null : { x: home ? 8 : 92, y: 62 }, zone: none ? null : { side: home ? 'left' : 'right', depth: 18, tone: 'calm' }, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 22 : 78, align: home ? 'left' : 'right' }, pulse: false };
+    case 'throw_in':
+      return { ball: none ? null : { x: home ? 62 : 38, y: 94 }, zone: null, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 62 : 38, align: home ? 'right' : 'left' }, pulse: false };
+    case 'shot_on_target':
+      return { ball: none ? null : { x: home ? 93 : 7, y: 50 }, zone: none ? null : { side: home ? 'right' : 'left', depth: 22, tone: 'danger' }, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 72 : 28, align: home ? 'right' : 'left' }, pulse: true };
+    case 'substitution':
+      return { ball: null, zone: null, corner: null, offsideX: null, label: { x: 50, align: 'center' }, pulse: false };
     default:
       return { ball: null, zone: null, corner: null, offsideX: null, label: { x: 50, align: 'center' }, pulse: false };
   }

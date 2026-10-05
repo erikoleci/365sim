@@ -40,6 +40,15 @@ import pool from './db.js';
 import { pushCardEvent, pushLiveTick } from './ws.js';
 import { recordGoalIfChanged, eventMinuteFromClock } from './london365.js';
 import { parseGameDetails } from './gameDetailsParser.js';
+// Bare integer > 130 is a clock in SECONDS ("1776" = 29:36), not a minute.
+function normalizeLiveMinute(minute) {
+  const str = minute == null ? '' : String(minute).trim();
+  if (/^\d+$/.test(str) && Number(str) > 130) {
+    const t = Number(str);
+    return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0');
+  }
+  return minute ?? null;
+}
 import { decodeLiveAction, makeAction } from './liveAction.js';
 import { isTrackedGame, getLiveRow, setLiveRow, forgetLiveRow, __resetLiveTrackerForTests } from './liveTracker.js';
 import { bump } from './feedStats.js';
@@ -73,6 +82,10 @@ const unknownEidWarned = new Set();
 // occasional re-send even with no change, as a safety net against a
 // client missing a message, just far less often than 1/sec.
 const lastBroadcast = new Map();
+// Matches whose clock we derive from the provider's T (seconds) because the
+// REST feed carries no minute for them, and when we last persisted it.
+const derivedClock = new Map();
+const DERIVED_CLOCK_WRITE_MS = 15000;
 const LIVE_TICK_RESYNC_MS = 15000;
 
 // Test-only: clears in-memory state between test cases so each test is
@@ -82,6 +95,7 @@ export function __resetLiveStateForTests() {
   __resetLiveTrackerForTests(); // also clears the live row cache
   lastSeen.clear();
   lastBroadcast.clear();
+  derivedClock.clear();
   unknownEidWarned.clear();
   lastTouched.clear();
   teamIndex = { at: 0, map: new Map() };
@@ -97,6 +111,8 @@ export function forgetLiveState(eid) {
   if (!id) return;
   lastSeen.delete(id);
   lastBroadcast.delete(id);
+  derivedClock.delete(id);
+  derivedClock.delete('l365-' + id);
   unknownEidWarned.delete(id);
   lastTouched.delete(id);
   forgetLiveRow(id);
@@ -355,7 +371,24 @@ async function applyGameDetailsNow(raw) {
   }
 
   const score = parseScore(attrs.SC);
-  const minuteDisplay = row.live_minute || null; // verified source, see header comment
+  let minuteDisplay = normalizeLiveMinute(row.live_minute) || null; // verified source, see header comment
+  // Most matches carry NO minute on the REST side (they only showed "LIVE").
+  // T is the game clock in seconds (verified), so use it when REST has none,
+  // and keep using it for matches already marked as derived (a value we
+  // stored ourselves would otherwise freeze as the "REST minute").
+  const derivedState = derivedClock.get(matchId);
+  const useDerived = Number.isFinite(t) && t > 0 && t < 8 * 3600 && (!minuteDisplay || derivedState);
+  if (useDerived) {
+    minuteDisplay = Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0');
+    const nowW = Date.now();
+    if (!derivedState || nowW - derivedState.at >= DERIVED_CLOCK_WRITE_MS) {
+      derivedClock.set(matchId, { at: nowW });
+      await pool.query(
+        'UPDATE matches_cache SET live_minute = $1, live_minute_updated_at = $2 WHERE id = $3',
+        [minuteDisplay, nowW, matchId]
+      );
+    }
+  }
   // Event minute as the provider labels it: T is the game clock in seconds
   // (verified against its on-screen clock) and the minute in progress is
   // floor(T/60)+1. Falls back to the stored clock string without a usable T.
