@@ -1253,6 +1253,7 @@ export async function upsertMatch(ev, league, status, liveScores, liveInfo, leag
     setLiveRow(ev.id, {
       home_team: ev.home_team, away_team: ev.away_team,
       live_home_score: eff.live_home_score, live_away_score: eff.live_away_score, live_minute: eff.live_minute,
+      live_status: eff.live_status,
     });
     if (eff.status !== 'FINISHED' && isSparseEvent(ev)) repairNeeded = true;
     return existing;

@@ -333,6 +333,9 @@ const App: React.FC = () => {
               currentMinute: msg.minute ?? m.currentMinute,
               currentMinuteUpdatedAt: msg.minute != null ? (msg.minuteUpdatedAt ?? Date.now()) : m.currentMinuteUpdatedAt,
               liveAction: msg.action !== undefined ? msg.action : m.liveAction,
+              // HT / 1H / 2H from the socket tick: the clock stops at half time and runs
+              // again the moment the second half starts, without waiting for the list refresh.
+              liveStatus: msg.liveStatus !== undefined ? msg.liveStatus : m.liveStatus,
             } : m));
           } else if (msg.type === 'CARD') {
             // A card changes nothing the LIST carries (score, minute, h2h

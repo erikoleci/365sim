@@ -87,6 +87,7 @@ const lastBroadcast = new Map();
 const derivedClock = new Map();
 const DERIVED_CLOCK_WRITE_MS = 15000;
 const LIVE_TICK_RESYNC_MS = 15000;
+const HT_HOLD_MS = 45000; // how long a VC=1015 "pushim" keeps clients in HT (> one REST cycle)
 
 // Test-only: clears in-memory state between test cases so each test is
 // independent (lastSeen/lastBroadcast are intentionally module-level, not
@@ -347,7 +348,7 @@ async function applyGameDetailsNow(raw) {
   } else {
     bump('gamedetails.row_select');
     const { rows } = await pool.query(
-      'SELECT id, home_team, away_team, live_home_score, live_away_score, live_minute FROM matches_cache WHERE id = $1',
+      'SELECT id, home_team, away_team, live_home_score, live_away_score, live_minute, live_status FROM matches_cache WHERE id = $1',
       [matchId]
     );
     row = rows[0];
@@ -443,6 +444,14 @@ async function applyGameDetailsNow(raw) {
   }
   const liveAction = decodeLiveAction(attrs.VC) || (recent ? { side: recent.side, kind: recent.kind, label: recent.label } : null);
   const actionKey = (a) => (a ? a.side + ':' + a.kind : null);
+  // Half time. VC=1015 is the provider's own "pushim" (hand-labelled capture);
+  // it is held for HT_HOLD_MS so one quiet tick cannot flip the clients back to a
+  // running clock before the REST sync (api_status) confirms it. Otherwise the
+  // provider's status code from the REST sync is passed on, so clients learn about
+  // HT / 2H at socket speed instead of at the next list refresh.
+  let htUntil = cardBaseline && cardBaseline.htUntil > nowMs ? cardBaseline.htUntil : 0;
+  if (liveAction && liveAction.kind === 'half_time') htUntil = nowMs + HT_HOLD_MS;
+  const liveStatusNow = htUntil > nowMs ? 'HT' : (row.live_status || undefined);
   function broadcastTick() {
     const nowTs = Date.now();
     const prevBroadcast = lastBroadcast.get(matchId);
@@ -458,9 +467,12 @@ async function applyGameDetailsNow(raw) {
       // decoded from VC only for codes confirmed in liveAction.js; null when
       // the code is unknown so the client clears any previous label.
       action: liveAction,
+      // HT / 1H / 2H ... so the client can stop and restart its clock at once.
+      liveStatus: liveStatusNow,
     };
     const changed = !prevBroadcast
       || actionKey(prevBroadcast.action) !== actionKey(liveAction)
+      || prevBroadcast.liveStatus !== tickPayload.liveStatus
       || prevBroadcast.minute !== tickPayload.minute
       || prevBroadcast.homeScore !== tickPayload.homeScore
       || prevBroadcast.awayScore !== tickPayload.awayScore;
@@ -601,7 +613,7 @@ async function applyGameDetailsNow(raw) {
     );
   }
 
-  lastSeen.set(eid, { t: Number.isFinite(t) ? t : (prevSeen ? prevSeen.t : 0), yc1, yc2, rc1, rc2, c1, c2, posHome, posAway, ctr, recent });
+  lastSeen.set(eid, { t: Number.isFinite(t) ? t : (prevSeen ? prevSeen.t : 0), yc1, yc2, rc1, rc2, c1, c2, posHome, posAway, ctr, recent, htUntil });
 }
 
 export function getGameDetailsMemoryDiagnostics() {

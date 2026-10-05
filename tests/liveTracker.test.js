@@ -62,7 +62,7 @@ describe('liveTracker - live row cache', () => {
     vi.useFakeTimers();
     setLiveRow('l365-9', { home_team: 'A', away_team: 'B', live_home_score: 1, live_away_score: 0, live_minute: '10' });
     const r = getLiveRow('9');
-    expect(r).toEqual({ home_team: 'A', away_team: 'B', live_home_score: 1, live_away_score: 0, live_minute: '10' });
+    expect(r).toEqual({ home_team: 'A', away_team: 'B', live_home_score: 1, live_away_score: 0, live_minute: '10', live_status: null });
     r.live_home_score = 99; // mutating the copy must not touch the cache
     expect(getLiveRow('l365-9').live_home_score).toBe(1);
     vi.advanceTimersByTime(21000);

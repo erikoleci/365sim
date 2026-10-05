@@ -110,6 +110,6 @@ describe('upsertMatch - skips writes that would change nothing', () => {
   it('keeps the in-memory live row in step, including on a skipped write', async () => {
     await upsertMatch(ev(), 'l365_england__premier_league', 'LIVE', { home: 1, away: 0 }, { minute: '33', apiStatus: 2 }, meta);
     await upsertMatch(ev(), 'l365_england__premier_league', 'LIVE', null, null, meta); // skipped
-    expect(getLiveRow('l365-1')).toEqual({ home_team: 'A', away_team: 'B', live_home_score: 1, live_away_score: 0, live_minute: '33' });
+    expect(getLiveRow('l365-1')).toEqual({ home_team: 'A', away_team: 'B', live_home_score: 1, live_away_score: 0, live_minute: '33', live_status: '2' });
   });
 });

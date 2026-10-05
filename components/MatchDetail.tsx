@@ -151,11 +151,11 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
   const firstHalfDividerAt = useMemo(() => {
     const evs = liveDetail?.events ?? [];
     const minuteNow = Number(liveDetail?.statistics?.minute ?? String(match.currentMinute ?? '').match(/^\d+/)?.[0] ?? NaN);
-    const reachedSecondHalf = isFinished || (Number.isFinite(minuteNow) && minuteNow > 45) || evs.some((e) => e.minute != null && e.minute > 45);
+    const reachedSecondHalf = isHalftime(match) || isFinished || (Number.isFinite(minuteNow) && minuteNow > 45) || evs.some((e) => e.minute != null && e.minute > 45);
     if (!reachedSecondHalf || !evs.some((e) => e.minute != null && e.minute <= 45)) return null;
     const idx = evs.findIndex((e) => e.minute != null && e.minute > 45);
     return idx === -1 ? evs.length : idx;
-  }, [liveDetail, isFinished, match.currentMinute]);
+  }, [liveDetail, isFinished, match.currentMinute, match.liveStatus]);
 
   const CATEGORY_LABELS: Record<string, string> = {
     All: 'Të Gjitha',

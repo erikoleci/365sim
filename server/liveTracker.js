@@ -113,6 +113,9 @@ export function setLiveRow(id, row) {
       live_home_score: row.live_home_score ?? null,
       live_away_score: row.live_away_score ?? null,
       live_minute: row.live_minute ?? null,
+      // The provider's own status code (HT / 1H / 2H ...), so the fast socket
+      // tick can tell clients about half time without waiting for a list refresh.
+      live_status: row.live_status ?? null,
     },
   });
 }
