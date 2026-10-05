@@ -40,3 +40,29 @@ describe('LONDON365_ONLY_COUNTRIES=England, France,Spain , Italy,GERMANY + MAJOR
     expect(l365.leagueRejectionReason("FIFA Women's World Cup", 'International')).toBe('international-not-major');
   });
 });
+
+import { normalizeLiveMinute } from '../server/london365.js';
+
+// Production bug (screenshot): matches_cache.live_minute held "300924" for a
+// France vs Belgium match, which the old code turned into "5015:24" and the
+// frontend then labeled "Penallti" (minute >= 105). 300924 is not a sane
+// clock under either reading (not a plausible minute, and /60 is still way
+// past 130), so it must now be treated as "no minute available".
+describe('normalizeLiveMinute - rejects nonsense sentinel values', () => {
+  it('discards a bare integer that is still over 130 minutes once read as seconds', () => {
+    expect(normalizeLiveMinute('300924')).toBeNull(); // the exact production value (was "5015:24")
+    expect(normalizeLiveMinute('999999')).toBeNull();
+  });
+  it('still converts a real seconds-based clock normally', () => {
+    expect(normalizeLiveMinute('1776')).toBe('29:36'); // 29 min 36 sec, a normal in-play value
+    expect(normalizeLiveMinute('7800')).toBe('130:00'); // boundary: exactly 130 minutes, still sane
+  });
+  it('leaves a plain minute value (<=130, or already mm:ss) untouched', () => {
+    expect(normalizeLiveMinute('72')).toBe('72');
+    expect(normalizeLiveMinute('62:14')).toBe('62:14');
+  });
+  it('passes through null/empty unchanged', () => {
+    expect(normalizeLiveMinute(null)).toBeNull();
+    expect(normalizeLiveMinute('')).toBe('');
+  });
+});

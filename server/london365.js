@@ -1032,12 +1032,22 @@ export function statusFromCommence(commenceTime) {
 // pushing live updates over the existing WebSocket channel.
 // Some feeds give the clock as bare SECONDS ("1776" = 29:36). A bare integer
 // above 130 can't be a minute, so convert it to "mm:ss".
+// A SANE match clock, under either reading, is at most ~130 minutes (90 +
+// stoppage + 30 extra time + its stoppage). A bare integer that is STILL over
+// 130 minutes once divided by 60 isn't a clock at all under either reading
+// (seen in production: a sentinel/placeholder value like "300924" during an
+// unusual match state, which the old code turned into the nonsense "5015:24"
+// instead of recognising it as not-a-clock). Such a value is now discarded
+// (treated as "no minute available") rather than displayed.
+const MAX_SANE_MATCH_MINUTES = 130;
 export function normalizeLiveMinute(minute) {
   if (minute == null || minute === '') return minute ?? null;
   const str = String(minute).trim();
-  if (/^\d+$/.test(str) && Number(str) > 130) {
+  if (/^\d+$/.test(str) && Number(str) > MAX_SANE_MATCH_MINUTES) {
     const t = Number(str);
-    return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0');
+    const mins = Math.floor(t / 60);
+    if (mins > MAX_SANE_MATCH_MINUTES) return null; // not a clock under either reading
+    return mins + ':' + String(t % 60).padStart(2, '0');
   }
   return str;
 }

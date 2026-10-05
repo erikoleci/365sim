@@ -17,12 +17,21 @@ interface MatchRowProps {
 
 // Real in-play clock: the provider reports minutes like "62:14" — render the
 // running minute plus the game half (Pjesa I / Pushim / Pjesa II / Shtesë).
+// A sane match clock, under either reading, is at most ~130 minutes (90 +
+// stoppage + 30 extra time + its stoppage). The REST list/detail endpoints
+// serve matches_cache.live_minute as-is (not re-normalized), so this mirrors
+// server/london365.js's normalizeLiveMinute() as a defense-in-depth check:
+// a bare integer still over 130 minutes once divided by 60 isn't a clock
+// under either reading (e.g. a stray provider sentinel like "300924") and is
+// discarded rather than shown as a nonsense "5015:24".
+const MAX_SANE_MATCH_MINUTES = 130;
 export function parseLiveClock(minute?: string): { minute: number; second: number; half: string } | null {
   let raw = String(minute || '').trim();
-  // Bare integer > 130 is a clock in seconds (e.g. "1776" = 29:36).
-  if (/^\d+$/.test(raw) && Number(raw) > 130) {
+  if (/^\d+$/.test(raw) && Number(raw) > MAX_SANE_MATCH_MINUTES) {
     const t = Number(raw);
-    raw = Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0');
+    const mins = Math.floor(t / 60);
+    if (mins > MAX_SANE_MATCH_MINUTES) return null;
+    raw = mins + ':' + String(t % 60).padStart(2, '0');
   }
   const match = raw.match(/^(\d+):?(\d{1,2})?/);
   if (!match) return null;
