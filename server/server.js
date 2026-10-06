@@ -178,7 +178,19 @@ process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err);
 });
 
-app.get('/api/health', (req, res) => res.status(dbReady ? 200 : 503).json({ ok: true, db: dbReady ? 'up' : 'down' }));
+// `commit`/`branch` mirror the '[boot] commit=... branch=...' log line below --
+// RENDER_GIT_COMMIT and RENDER_GIT_BRANCH are set automatically by Render on
+// every deploy. Exposed here (no secret, same info as the boot log) so
+// "is this deploy actually running the latest code?" is a single public GET,
+// not a trip through the Render dashboard/logs -- which matters because the
+// catalogue filter and its boot-time purges only run once, at startup: a
+// process that never restarted after a code change has applied neither.
+app.get('/api/health', (req, res) => res.status(dbReady ? 200 : 503).json({
+  ok: true,
+  db: dbReady ? 'up' : 'down',
+  commit: process.env.RENDER_GIT_COMMIT || null,
+  branch: process.env.RENDER_GIT_BRANCH || null,
+}));
 
 // Mobile-friendly, no-login diagnostic: open this URL directly in any
 // browser address bar (no console, no fetch, no CORS, no Bearer token) to
