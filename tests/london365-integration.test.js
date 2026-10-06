@@ -89,6 +89,7 @@ import {
   removeSocketCoef,
   getLondon365LeagueNames,
 } from '../server/london365.js';
+import { applyTrackerSnapshot, resetLiveTracker } from '../server/liveTracker.js';
 import { pushGoal, pushOddsChanged } from '../server/ws.js';
 import { noteBetOnMatches, hydrateBetMatchIds, __resetOddsHistoryPolicyForTests } from '../server/oddsHistoryPolicy.js';
 
@@ -186,6 +187,34 @@ describe('london365 live sync and goal dedup', function () {
     expect(mocks.matchEvents[1].minute).toBe(64);
     expect(pushGoal).toHaveBeenCalledTimes(2);
     expect(mocks.liveStats.get('l365-200')).toEqual({ home: 2, away: 0 });
+  });
+});
+
+describe('london365 live sync - already-tracked match is never dropped by the live league-filter', function () {
+  it('keeps refreshing score/minute even when the live payload league text fails the filter on its own', async function () {
+    resetLiveTracker();
+    mocks.store.set('l365-300', {
+      id: 'l365-300', league: 'l365_international__uefa_nations_league', league_id: null, country_id: null,
+      home_team: 'Finland', away_team: 'Albania', start_time: 0, status: 'LIVE',
+      raw_json: JSON.stringify({ id: 'l365-300', home_team: 'Finland', away_team: 'Albania', bookmakers: [] }),
+      fetched_at: 0, live_home_score: 0, live_away_score: 0, live_minute: '1\'', live_status: '1',
+    });
+    applyTrackerSnapshot([{ id: 'l365-300', status: 'LIVE' }], Date.now());
+
+    liveGames = [{
+      id: 300, league: 'Some Unrecognized Live Feed Label', name: 'Finland vs Albania',
+      home_team: 'Finland', away_team: 'Albania',
+      game_date: '2026-09-03', game_time: '18:00', result: '1-1',
+      current_minute: '29:35', api_status: 2,
+      odd: '10|1.8|1|55,11|3.4|X|55',
+    }];
+    await syncLondon365Live();
+
+    const row = mocks.store.get('l365-300');
+    expect(row.live_home_score).toBe(1);
+    expect(row.live_away_score).toBe(1);
+    expect(row.live_minute).toBe('29:35');
+    resetLiveTracker();
   });
 });
 

@@ -1949,7 +1949,20 @@ export async function syncLondon365Live() {
       // even with ONLY_COUNTRIES set. Now falls back to the same
       // name-based guess (leagueCountryToken) applySocketGame uses, so an
       // unresolved league is judged by its own name instead of let through.
-      if (!isAllowedByCountryFilter(g, resolvedLeagueEarly)) continue;
+      //
+      // BUT: if we already hold this match (it passed this exact filter at
+      // import time, using the catalog's own league text), skip re-judging
+      // it here from the LIVE payload's text. The live feed's `g.league`
+      // string isn't guaranteed to be phrased identically to the prematch
+      // catalog's (observed concretely: UEFA Nations League fixtures sitting
+      // frozen at 0-0/LIVE for hours — the live payload's league text failed
+      // the name-pattern match that the import-time text had passed,
+      // silently dropping them from every refresh forever after). Trusting
+      // our own already-accepted classification is strictly safer than
+      // re-deriving it from a second, differently-shaped copy of the same
+      // information — a match can only reach isTrackedGame() by having
+      // already cleared this same filter once.
+      if (!isTrackedGame('l365-' + g.id) && !isAllowedByCountryFilter(g, resolvedLeagueEarly)) continue;
       liveIds.add('l365-' + g.id);
       // Each game processed independently: one malformed/failing game must
       // never abort the whole sync cycle. Before this, an uncaught error
