@@ -852,9 +852,6 @@ const App: React.FC = () => {
   // mobile chip strip, or resetting via "Home", opens/closes the right
   // group), while still letting the user freely open other groups to browse.
   const [expandedCountry, setExpandedCountry] = useState<string | null>(null);
-  // Futboll in the side menu is a dropdown (favorites, live and the
-  // countries/leagues live inside it); closed until the person taps it.
-  const [isFootballOpen, setIsFootballOpen] = useState(false);
   useEffect(() => {
     if (currentLeague === 'All Top Football' || currentLeague === 'FAVORITES') { setExpandedCountry(null); return; }
     if (isCountryFilter(currentLeague)) { setExpandedCountry(countryFromFilter(currentLeague)); return; }
@@ -1075,58 +1072,15 @@ const App: React.FC = () => {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-brand-bg text-brand-text flex flex-col font-sans selection:bg-brand-header selection:text-white pb-16 md:pb-0">
-      <Navbar
-        currentUser={currentUser}
-        onLogout={handleLogout}
-        onOpenAdmin={() => setShowAdmin(!showAdmin)}
-        currentView={currentView}
-        onNavigate={setCurrentView}
-        onGoHome={() => { setShowLiveOnly(false); setCurrentLeague('All Top Football'); setSelectedDate('ALL'); setDetailMatchId(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-        onGoLive={() => { setDetailMatchId(null); setShowLiveOnly(true); requestAnimationFrame(() => document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' })); }}
-        liveCount={liveMatches.length}
-      />
-
-      <div className="flex-1 flex max-w-[1450px] mx-auto w-full pt-4 px-2 gap-2 relative">
-
-        {currentView === 'sports' && (
-          <>
-            {/* "Futboll" trigger — opens the sports/leagues list as a dropdown
-                drawer from the left, on every screen size. Previously this
-                was a permanently-open <aside> on large screens (pushing all
-                the page content down/looking like a big static block) and
-                only a drawer below the lg breakpoint; now it's always a
-                dropdown you open on demand, matching the one pattern
-                everywhere instead of two different UIs at different widths. */}
-            <button
-              onClick={() => setIsLeagueMenuOpen(true)}
-              className="fixed left-2 top-[7.5rem] z-40 bg-brand-panel border border-[#444] rounded-full pl-2.5 pr-3.5 py-2.5 shadow-lg flex items-center gap-1.5"
-              aria-label="Hap Futboll dhe ligat"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className="w-5 h-5 fill-brand-yellow"><path fillRule="evenodd" d="M3 5h14a1 1 0 100-2H3a1 1 0 000 2zm0 6h14a1 1 0 100-2H3a1 1 0 000 2zm0 6h14a1 1 0 100-2H3a1 1 0 000 2z" clipRule="evenodd" /></svg>
-              <span className="text-xs font-bold uppercase tracking-wider text-brand-text">Futboll</span>
-            </button>
-
-            {isLeagueMenuOpen && (
-              <div className="fixed inset-0 z-50 flex" onClick={() => setIsLeagueMenuOpen(false)}>
-                <div className="w-72 max-w-[85vw] h-full bg-brand-panel overflow-y-auto custom-scrollbar shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                  <div className="bg-[#383838] px-3 py-3 text-xs font-bold text-brand-text border-b border-[#444] uppercase flex justify-between items-center sticky top-0">
-                    <span>Sportet</span>
-                    <button onClick={() => setIsLeagueMenuOpen(false)} className="text-brand-textMuted hover:text-white text-lg leading-none px-1">✕</button>
-                  </div>
-
-                  <button
-                    onClick={() => setIsFootballOpen((o) => !o)}
-                    aria-expanded={isFootballOpen}
-                    className={`w-full text-left px-3 py-2.5 border-b border-brand-bg/10 flex items-center gap-2.5 transition-colors hover:bg-[#444] hover:text-white ${isFootballOpen ? 'bg-[#444] text-white font-bold' : 'text-brand-text'}`}
-                  >
+  // The Sportet menu body, shared by the permanent desktop column and the
+  // small-screen drawer so both always show exactly the same open list.
+  const leagueMenuList = (
+    <>
+                  <div className="w-full px-3 py-2.5 border-b border-brand-bg/10 flex items-center gap-2.5 bg-[#444] text-white font-bold">
                     <span aria-hidden="true" className="text-base leading-none">⚽</span>
                     <span className="uppercase tracking-wider">Futboll</span>
                     {liveMatches.length > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveMatches.length}</span>}
-                    <span className="ml-auto text-brand-textMuted">{isFootballOpen ? '▾' : '▸'}</span>
-                  </button>
-                  {isFootballOpen && (
+                  </div>
                     <div className="bg-[#2b2b2b] border-b border-[#444]">
                       <button
                         onClick={() => { setShowLiveOnly(false); setCurrentLeague('All Top Football'); setDetailMatchId(null); setIsLeagueMenuOpen(false); }}
@@ -1191,7 +1145,6 @@ const App: React.FC = () => {
                     })}
                   </div>
                     </div>
-                  )}
                   {[
                     ['🏀', 'Basketboll'], ['⚾', 'Bejsboll'], ['🏒', 'Hokej Akull'], ['🎾', 'Tenis'],
                     ['🤾', 'Hendboll'], ['🏈', 'Futboll Amerikan'], ['🎱', 'Snooker'], ['🏓', 'Tenis Tavoline'],
@@ -1207,12 +1160,61 @@ const App: React.FC = () => {
                     </div>
                   ))}
 
-                                  </div>
+    </>
+  );
+
+  return (
+    <div className="min-h-screen bg-brand-bg text-brand-text flex flex-col font-sans selection:bg-brand-header selection:text-white pb-16 md:pb-0">
+      <Navbar
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        onOpenAdmin={() => setShowAdmin(!showAdmin)}
+        currentView={currentView}
+        onNavigate={setCurrentView}
+        onGoHome={() => { setShowLiveOnly(false); setCurrentLeague('All Top Football'); setSelectedDate('ALL'); setDetailMatchId(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+        onGoLive={() => { setDetailMatchId(null); setShowLiveOnly(true); requestAnimationFrame(() => document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' })); }}
+        liveCount={liveMatches.length}
+      />
+
+      <div className="flex-1 flex max-w-[1450px] mx-auto w-full pt-4 px-2 gap-2 relative">
+
+        {currentView === 'sports' && (
+          <>
+            {/* Left menu, permanently open on large screens: Futboll (favorites,
+                live, countries/leagues) is shown directly, no dropdown to open. */}
+            <aside className="hidden lg:block w-60 xl:w-72 flex-shrink-0">
+              <div className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto custom-scrollbar bg-brand-panel rounded border border-[#444] shadow-sm">
+                <div className="bg-[#383838] px-3 py-3 text-xs font-bold text-brand-text border-b border-[#444] uppercase sticky top-0 z-10">
+                  <span>Sportet</span>
+                </div>
+                {leagueMenuList}
+              </div>
+            </aside>
+
+            {/* Small screens have no room for a permanent column: same menu, but as a
+                drawer from the left (already expanded, no dropdown inside it). */}
+            <button
+              onClick={() => setIsLeagueMenuOpen(true)}
+              className="lg:hidden fixed left-2 top-[7.5rem] z-40 bg-brand-panel border border-[#444] rounded-full pl-2.5 pr-3.5 py-2.5 shadow-lg flex items-center gap-1.5"
+              aria-label="Hap Futboll dhe ligat"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className="w-5 h-5 fill-brand-yellow"><path fillRule="evenodd" d="M3 5h14a1 1 0 100-2H3a1 1 0 000 2zm0 6h14a1 1 0 100-2H3a1 1 0 000 2zm0 6h14a1 1 0 100-2H3a1 1 0 000 2z" clipRule="evenodd" /></svg>
+              <span className="text-xs font-bold uppercase tracking-wider text-brand-text">Futboll</span>
+            </button>
+
+            {isLeagueMenuOpen && (
+              <div className="fixed inset-0 z-50 flex lg:hidden" onClick={() => setIsLeagueMenuOpen(false)}>
+                <div className="w-72 max-w-[85vw] h-full bg-brand-panel overflow-y-auto custom-scrollbar shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                  <div className="bg-[#383838] px-3 py-3 text-xs font-bold text-brand-text border-b border-[#444] uppercase flex justify-between items-center sticky top-0 z-10">
+                    <span>Sportet</span>
+                    <button onClick={() => setIsLeagueMenuOpen(false)} className="text-brand-textMuted hover:text-white text-lg leading-none px-1">✕</button>
+                  </div>
+                  {leagueMenuList}
+                </div>
               </div>
             )}
           </>
         )}
-
 
         <main ref={adminPanelRef as React.RefObject<HTMLElement>} className="flex-1 min-w-0 mb-20 md:mb-0">
           {showAdmin && currentUser.role === UserRole.AGENT ? (
