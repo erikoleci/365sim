@@ -1913,6 +1913,18 @@ export function shouldSettleMissingLiveMatch({ consecutiveMisses, fetchedAt, sta
   return confirmedMissing || stale || oldKickoff;
 }
 
+// Auto-settling pays/loses real bets, so it may only use a score the provider
+// actually reported. A row that never had a live clock or a stored score (it was
+// listed but never went live in our feed) has no result: settling it as 0-0 would
+// decide every pending bet on an invented score. Such rows are closed without
+// settlement and their bets stay PENDING for manual settlement.
+export function hasRealLiveResult(row) {
+  if (!row) return false;
+  const hasScore = row.live_home_score != null && row.live_away_score != null;
+  const hasClock = row.live_minute != null && String(row.live_minute).trim() !== '';
+  return hasScore && hasClock;
+}
+
 const LIVE_CONCURRENCY = Math.max(1, Number(process.env.LONDON365_LIVE_CONCURRENCY || 6));
 
 // Runs `worker` over `items` with at most `limit` in flight. Workers must
@@ -2103,7 +2115,7 @@ async function syncLondon365LiveOnce() {
     bump('endDetection.ran');
     const endQueryStartedAt = Date.now();
     const { rows } = await pool.query(
-      "SELECT id, live_home_score, live_away_score, start_time, fetched_at FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
+      "SELECT id, live_home_score, live_away_score, live_minute, start_time, fetched_at FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
     );
     retainLiveKnown(rows.map((r) => r.id), endQueryStartedAt);
     for (const row of rows) {
@@ -2118,6 +2130,18 @@ async function syncLondon365LiveOnce() {
       });
       if (!shouldSettle) continue;
       missedLiveCycles.delete(row.id);
+      if (!hasRealLiveResult(row)) {
+        // Never had a real score/clock: close it (it leaves every LIVE list) but do
+        // NOT settle bets with an invented 0-0 -- they stay PENDING for the admin.
+        await pool.query("UPDATE matches_cache SET status = 'FINISHED', live_status = 'ended' WHERE id = $1 AND status = 'LIVE'", [row.id]);
+        pushMatchEnded(row.id, {});
+        forgetLiveState(row.id);
+        unsubscribeGameDetails(row.id);
+        noteMatchStatus(row.id, 'FINISHED');
+        forgetLiveRow(row.id);
+        console.warn('[london365] ' + row.id + ' left the live feed without ever having a score/clock -- closed WITHOUT settling bets (settle manually if any are pending)');
+        continue;
+      }
       const home = row.live_home_score ?? 0;
       const away = row.live_away_score ?? 0;
       await pool.query("UPDATE matches_cache SET live_status = 'ended' WHERE id = $1", [row.id]);

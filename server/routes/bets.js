@@ -2,7 +2,7 @@ import express from 'express';
 import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
-import { resolveCurrentOdds, mapEventToMatch } from '../oddsUtils.js';
+import { resolveCurrentOdds, mapEventToMatch, isStaleLive } from '../oddsUtils.js';
 import { findConflictingSelection, validateStakeAmount, getCancelBlockReason } from '../betValidation.js';
 import { wrap } from '../asyncHandler.js';
 import { noteBetOnMatches } from '../oddsHistoryPolicy.js';
@@ -148,7 +148,7 @@ router.post('/', wrap(async (req, res) => {
     if (!matchRow) {
       return res.status(400).json({ error: `Match ${sel.matchId} not found or no longer available` });
     }
-    if (matchRow.status === 'FINISHED') {
+    if (matchRow.status === 'FINISHED' || isStaleLive(matchRow.start_time, matchRow.status)) {
       return res.status(400).json({ error: `Match ${matchRow.home_team} vs ${matchRow.away_team} has already finished — betting is closed.` });
     }
     let currentOdds = resolveCurrentOdds(matchRow, sel.marketId, sel.selectionId);
