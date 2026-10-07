@@ -1913,14 +1913,52 @@ export function shouldSettleMissingLiveMatch({ consecutiveMisses, fetchedAt, sta
   return confirmedMissing || stale || oldKickoff;
 }
 
+const LIVE_CONCURRENCY = Math.max(1, Number(process.env.LONDON365_LIVE_CONCURRENCY || 6));
+
+// Runs `worker` over `items` with at most `limit` in flight. Workers must
+// handle their own errors (a rejection would abort the pool).
+export async function runPool(items, limit, worker) {
+  let next = 0;
+  const lanes = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const item = items[next++];
+      await worker(item);
+    }
+  });
+  await Promise.all(lanes);
+}
+
+// A cycle that is still running when the next tick fires is skipped, not
+// stacked: overlapping cycles multiply the request rate against a provider
+// that already answers "Something went wrong" under load, which is exactly
+// what left half the live matches without minute/odds.
+let liveSyncRunning = false;
+export function syncLondon365Live() {
+  if (liveSyncRunning) {
+    bump('live.cycle_skipped_overlap');
+    return Promise.resolve({ games: 0, skipped: true });
+  }
+  liveSyncRunning = true;
+  const startedAt = Date.now();
+  return syncLondon365LiveOnce().finally(() => {
+    liveSyncRunning = false;
+    const took = Date.now() - startedAt;
+    if (took > LIVE_INTERVAL_MS) {
+      console.warn('[london365] live cycle took ' + took + 'ms (> ' + LIVE_INTERVAL_MS + 'ms interval) — consider raising LONDON365_LIVE_CONCURRENCY');
+    }
+  });
+}
+
 // live game exposes its complete market set on /ajax/livegame/{id} — same
 // row shape as the prematch detail endpoint — so we fetch it per game and
 // merge it into the cached event. Games that leave the live feed are
 // auto-settled with their last known score so final results appear.
-export async function syncLondon365Live() {
+async function syncLondon365LiveOnce() {
   if (!ENABLED) return { games: 0 };
   await ensureMarketNamesLoaded();
   let gamesSynced = 0;
+  let detailFailures = 0;
+  let liveSeen = 0;
   const liveIds = new Set();
 
   for (const sid of await resolveSports()) {
@@ -1933,8 +1971,8 @@ export async function syncLondon365Live() {
     }
     if (!Array.isArray(games)) continue;
 
-    for (const g of games) {
-      if (!g || !g.id) continue;
+    const processGame = async (g) => {
+      if (!g || !g.id) return;
       const resolvedLeagueEarly = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
       // Same country allowlist as the prematch import — a live match from a
       // country outside LONDON365_ONLY_COUNTRIES shouldn't sneak into the
@@ -1962,8 +2000,9 @@ export async function syncLondon365Live() {
       // re-deriving it from a second, differently-shaped copy of the same
       // information — a match can only reach isTrackedGame() by having
       // already cleared this same filter once.
-      if (!isTrackedGame('l365-' + g.id) && !isAllowedByCountryFilter(g, resolvedLeagueEarly)) continue;
+      if (!isTrackedGame('l365-' + g.id) && !isAllowedByCountryFilter(g, resolvedLeagueEarly)) return;
       liveIds.add('l365-' + g.id);
+      liveSeen++;
       // Each game processed independently: one malformed/failing game must
       // never abort the whole sync cycle. Before this, an uncaught error
       // here (e.g. a bad upsert) threw past this loop entirely, skipping
@@ -1979,6 +2018,7 @@ export async function syncLondon365Live() {
           rows = await fetchLiveRows(g.id);
           liveMeta = rows.meta || null;
         } catch (err) {
+          detailFailures++;
           console.error('[london365] livegame detail ' + g.id + ' failed (falling back to packed list odds):', err.message);
         }
         if (!rows.length) rows = parseOddString(g.odd);
@@ -1988,7 +2028,7 @@ export async function syncLondon365Live() {
         // clock and status froze at the first value. Only skip when there is
         // nothing live to record either; empty markets merge into the cached
         // event (mergeEvents), so the known odds are kept.
-        if (!odds.length && !((liveMeta && (liveMeta.result || liveMeta.minute)) || g.result || g.current_minute)) continue;
+        if (!odds.length && !((liveMeta && (liveMeta.result || liveMeta.minute)) || g.result || g.current_minute)) return;
         const ev = buildEvent(g.id, g.home_team, g.away_team, isoFromWholeDate(g.whole_date, g.game_date, g.game_time) || new Date().toISOString(), odds);
         // liveMeta comes from /ajax/livegame/{id} (per-game detail, confirmed
         // against the live provider) and is far more reliable than g.result/
@@ -2026,7 +2066,12 @@ export async function syncLondon365Live() {
       } catch (err) {
         console.error('[london365] live game ' + g.id + ' failed to process (skipping, sync continues):', err.message);
       }
-    }
+    };
+    // Bounded parallelism instead of one-by-one: with dozens of live games a
+    // strictly sequential pass (a detail request + DB write each, retries with
+    // backoff on provider hiccups) outlasts the 30s interval, so games late in
+    // the list were refreshed rarely -> no minute / stale locked odds.
+    await runPool(games, LIVE_CONCURRENCY, processGame);
   }
 
   // End detection: a cached LIVE l365 match no longer in the live feed has
@@ -2095,6 +2140,7 @@ export async function syncLondon365Live() {
   // Kept in memory (was a kv_store write every 30s, 24/7, purely for the
   // admin status page). getLondon365Status() reads this first.
   lastLiveSyncAt = Date.now();
+  if (liveSeen) console.log('[london365] live cycle: ' + gamesSynced + '/' + liveSeen + ' games synced, ' + detailFailures + ' detail fetch failures');
   return { games: gamesSynced };
 }
 

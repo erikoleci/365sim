@@ -228,7 +228,7 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
         <div className="text-xs text-brand-textMuted w-12 text-center flex flex-col items-center justify-center shrink-0">
            {isLive ? (
                <div className={`font-bold leading-tight ${isHalftime(match) ? 'text-brand-yellow' : 'text-brand-accent animate-pulse'}`}>
-                   {isHalftime(match) ? 'Pushim' : (liveClock ? formatLiveClock(liveClock) : (match.currentMinute ? `${match.currentMinute}'` : 'LIVE'))}
+                   {isHalftime(match) ? 'Pushim' : `${match.currentMinuteEstimated ? '~' : ''}${liveClock ? formatLiveClock(liveClock) : (match.currentMinute ? `${match.currentMinute}'` : 'LIVE')}`}
                    {liveClock && !isHalftime(match) && <div className="text-[9px] font-semibold text-brand-yellow normal-case leading-none mt-0.5">{liveClock.half}</div>}
                </div>
            ) : (

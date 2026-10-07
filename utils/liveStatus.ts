@@ -4,7 +4,8 @@ import { Match } from '../types';
 // "1H"/"HT"/"2H"/"FT"/"ET"/"PEN", or just a minute number) into a short
 // Albanian label for the live badge — same source of truth used by the
 // match card, the match detail header, and the live pitch widget.
-export function formatLiveStatus(match: Pick<Match, 'currentMinute' | 'liveStatus'>): string {
+export function formatLiveStatus(match: Pick<Match, 'currentMinute' | 'liveStatus' | 'currentMinuteEstimated'>): string {
+  const approx = match.currentMinuteEstimated ? '~' : '';
   const raw = (match.liveStatus || '').toString().toUpperCase().trim();
 
   if (raw === 'HT' || raw === 'HALFTIME' || raw === 'HALF_TIME' || raw === 'PAUSED') {
@@ -20,13 +21,13 @@ export function formatLiveStatus(match: Pick<Match, 'currentMinute' | 'liveStatu
     return 'Penallti';
   }
   if (raw === '1H' || raw === 'FIRST_HALF') {
-    return match.currentMinute ? `${match.currentMinute}' (Pjesa 1)` : 'Pjesa e Parë';
+    return match.currentMinute ? `${approx}${match.currentMinute}' (Pjesa 1)` : 'Pjesa e Parë';
   }
   if (raw === '2H' || raw === 'SECOND_HALF') {
-    return match.currentMinute ? `${match.currentMinute}' (Pjesa 2)` : 'Pjesa e Dytë';
+    return match.currentMinute ? `${approx}${match.currentMinute}' (Pjesa 2)` : 'Pjesa e Dytë';
   }
   if (match.currentMinute) {
-    return `${match.currentMinute}'`;
+    return `${approx}${match.currentMinute}'`;
   }
   return 'LIVE';
 }

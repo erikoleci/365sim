@@ -88,6 +88,9 @@ export interface Match {
   // Live Data
   isLive?: boolean;
   currentMinute?: string;
+  // True when currentMinute is a wall-clock estimate from kickoff time
+  // (the provider sent no minute) -- the UI prefixes it with "~".
+  currentMinuteEstimated?: boolean;
   // Server-side epoch-ms timestamp of when currentMinute was last actually
   // observed to change (see migrations/0002_live_minute_updated_at.sql).
   // Lets the ticking clock resync from a real reference instead of the

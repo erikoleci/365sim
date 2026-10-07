@@ -172,6 +172,31 @@ function isSuspendedPrice(price) {
   return typeof price === 'number' && Number.isFinite(price) && price <= SUSPENDED_PRICE_THRESHOLD;
 }
 
+// Wall-clock estimate of the match minute from the kickoff time, used only
+// when the provider gave no minute. Football-shaped: first half runs ~45
+// (+ a few minutes' stoppage), half-time ~15, second half resumes around
+// kickoff+62 at minute 46. The window right after the first half
+// (kickoff+49..61) is genuinely ambiguous (stoppage vs half-time) so it
+// yields no estimate rather than a wrong number; past ~kickoff+112 (extra
+// time/long delays) there is no estimate either.
+export function estimateLiveMinute(startTime, liveStatus, now = Date.now()) {
+  const kickoff = Date.parse(startTime);
+  if (Number.isNaN(kickoff)) return undefined;
+  const elapsed = Math.floor((now - kickoff) / 60000);
+  if (elapsed < 0) return undefined;
+  const raw = (liveStatus || '').toString().toUpperCase().trim();
+  const firstHalf = !raw || raw === '1H' || raw === 'FIRST_HALF';
+  const secondHalf = raw === '2H' || raw === 'SECOND_HALF';
+  if (firstHalf && elapsed <= 45) return String(elapsed);
+  if (firstHalf && elapsed <= 48) return '45+';
+  const secondHalfPlausible = elapsed >= 62 || (secondHalf && elapsed >= 48);
+  if ((firstHalf || secondHalf) && secondHalfPlausible && elapsed <= 112) {
+    const minute = Math.max(46, 46 + (elapsed - 62));
+    return minute > 90 ? '90+' : String(minute);
+  }
+  return undefined;
+}
+
 export function mapEventToMatch(row) {
   const ev = JSON.parse(row.raw_json);
   const marketMap = new Map(); // key -> { label, category, outMap }
@@ -220,30 +245,15 @@ export function mapEventToMatch(row) {
 
   const status = normalizeStatus(row.start_time, row.status);
 
-  // Estimated first-half minute, ONLY as a fallback for when the provider
-  // hasn't returned a confirmed live_minute yet (this genuinely happens --
-  // /ajax/livegame/{id} can come back with no markets, e.g. right at
-  // kickoff or during a goal/VAR suspension, and the field stays empty).
-  // Deliberately scoped to 0-45 minutes elapsed since kickoff: within that
-  // window there's no half-time/second-half ambiguity to guess about --
-  // "elapsed wall-clock time since a known kickoff timestamp" is simple
-  // arithmetic on trustworthy data, not inventing a value. Beyond 45
-  // minutes elapsed, the real duration of stoppage time, half-time, and
-  // whether the second half has even started are all genuinely unknown
-  // without the provider's own minute/status, so this deliberately does
-  // NOT extend the estimate past that point -- showing nothing (falls
-  // back to the generic "LIVE" label) is preferred over fabricating a
-  // number that drifts further from reality the longer the match runs.
-  let estimatedMinute;
-  if (status === 'LIVE' && !row.live_minute) {
-    const rawLiveStatus = (row.live_status || '').toString().toUpperCase().trim();
-    const halfKnownNotFirstHalf = rawLiveStatus && rawLiveStatus !== '1H' && rawLiveStatus !== 'FIRST_HALF';
-    const kickoff = Date.parse(row.start_time);
-    if (!halfKnownNotFirstHalf && !Number.isNaN(kickoff)) {
-      const elapsedMin = Math.floor((Date.now() - kickoff) / 60000);
-      if (elapsedMin >= 0 && elapsedMin <= 45) estimatedMinute = String(elapsedMin);
-    }
-  }
+  // Estimated minute, ONLY as a fallback for when the provider hasn't
+  // returned a confirmed live_minute (this genuinely happens -- the
+  // /ajax/livegame/{id} detail can come back with no markets, e.g. during a
+  // suspension or when the provider rate-limits, and the field stays empty
+  // for the rest of the match). See estimateLiveMinute for the rules; the
+  // result is flagged currentMinuteEstimated so the UI can show a "~".
+  const estimatedMinute = status === 'LIVE' && !row.live_minute
+    ? estimateLiveMinute(row.start_time, row.live_status)
+    : undefined;
 
   return {
     id: row.id,
@@ -265,6 +275,7 @@ export function mapEventToMatch(row) {
     liveHomeScore: row.live_home_score ?? undefined,
     liveAwayScore: row.live_away_score ?? undefined,
     currentMinute: row.live_minute ?? estimatedMinute,
+    currentMinuteEstimated: !row.live_minute && estimatedMinute !== undefined ? true : undefined,
     // Server-side reference timestamp (ms epoch) for when currentMinute was
     // last actually observed to change — see
     // migrations/0002_live_minute_updated_at.sql. Only meaningful alongside

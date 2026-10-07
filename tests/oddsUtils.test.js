@@ -162,9 +162,29 @@ describe('mapEventToMatch — estimated minute fallback (only when the provider 
     expect(match.currentMinute).toBe('30');
   });
 
-  it('does not estimate past 45 minutes elapsed (half-time/second-half is genuinely ambiguous beyond that)', () => {
-    const match = mapEventToMatch(liveRow({ start_time: minutesAgo(60) }));
+  it('does not guess in the ambiguous stoppage/half-time window (kickoff+49..61)', () => {
+    const match = mapEventToMatch(liveRow({ start_time: minutesAgo(55) }));
     expect(match.currentMinute).toBeUndefined();
+  });
+
+  it('estimates the second half too (the "just LIVE, no minute" case) and flags it as an estimate', () => {
+    const m70 = mapEventToMatch(liveRow({ start_time: minutesAgo(70) }));
+    expect(m70.currentMinute).toBe('54');
+    expect(m70.currentMinuteEstimated).toBe(true);
+    expect(mapEventToMatch(liveRow({ start_time: minutesAgo(100) })).currentMinute).toBe('84');
+    expect(mapEventToMatch(liveRow({ start_time: minutesAgo(110) })).currentMinute).toBe('90+');
+    expect(mapEventToMatch(liveRow({ start_time: minutesAgo(130) })).currentMinute).toBeUndefined();
+  });
+
+  it('a provider-confirmed minute is never flagged as an estimate', () => {
+    const m = mapEventToMatch(liveRow({ start_time: minutesAgo(70), live_minute: '61' }));
+    expect(m.currentMinute).toBe('61');
+    expect(m.currentMinuteEstimated).toBeUndefined();
+  });
+
+  it('provider says 2H: estimate from the clock once it is plausible', () => {
+    const m = mapEventToMatch(liveRow({ start_time: minutesAgo(75), live_status: '2H' }));
+    expect(m.currentMinute).toBe('59');
   });
 
   it('does not estimate when live_status already says we are past the first half (HT/2H/FT/etc.)', () => {
@@ -188,7 +208,9 @@ describe('mapEventToMatch — estimated minute fallback (only when the provider 
     const at45 = mapEventToMatch(liveRow({ start_time: minutesAgo(45) }));
     expect(at45.currentMinute).toBe('45');
     const at46 = mapEventToMatch(liveRow({ start_time: minutesAgo(46) }));
-    expect(at46.currentMinute).toBeUndefined();
+    expect(at46.currentMinute).toBe('45+'); // first-half stoppage time
+    const at49 = mapEventToMatch(liveRow({ start_time: minutesAgo(49) }));
+    expect(at49.currentMinute).toBeUndefined(); // stoppage vs half-time: ambiguous
   });
 });
 
