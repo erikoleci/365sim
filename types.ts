@@ -110,7 +110,8 @@ export enum BetSelection {
 export enum BetStatus {
   PENDING = 'PENDING',
   WON = 'WON',
-  LOST = 'LOST'
+  LOST = 'LOST',
+  VOID = 'VOID'
 }
 
 export interface BetSelectionItem {
@@ -143,6 +144,8 @@ export interface Bet {
   potentialReturn: number;
   status: BetStatus;
   timestamp: number;
+  // Server verdict: false for tickets placed live / on a match that has started.
+  cancellable?: boolean;
   matchDetails?: {
     homeTeam: string;
     awayTeam: string;

@@ -19,11 +19,32 @@ export function findConflictingSelection(selections) {
 
 // Validates a stake against ticket rules. Returns an error message string,
 // or null if the stake is valid.
-export function validateStakeAmount(stake, { min, max }) {
+export function validateStakeAmount(stake, { min, max } = {}) {
   if (typeof stake !== 'number' || !Number.isFinite(stake) || stake <= 0) {
     return 'Stake must be a positive number';
   }
-  if (stake < min) return `Minimum stake is ${min}`;
-  if (stake > max) return `Maximum stake is ${max}`;
+  if (min != null && stake < min) return `Minimum stake is ${min}`;
+  // `max` is optional: no upper stake limit is enforced unless one is passed.
+  if (max != null && stake > max) return `Maximum stake is ${max}`;
+  return null;
+}
+
+// A ticket may only be cancelled while it is PENDING, inside the cancel
+// window, AND every match on it is still not started. Anything placed on a
+// live match (kickoff already passed when the bet was created) can never be
+// cancelled, and a pre-match ticket stops being cancellable the moment its
+// match kicks off -- otherwise a user could cancel after seeing a goal.
+// `matchRows` are the matches_cache rows of the ticket's selections.
+export function getCancelBlockReason(bet, matchRows, { now = Date.now(), windowMs } = {}) {
+  if (bet.status !== 'PENDING') return 'Only pending bets can be cancelled';
+  if (windowMs != null && now - Number(bet.created_at) > windowMs) return 'Cancellation window has expired';
+  if (!matchRows || matchRows.length === 0) return 'Bet cannot be cancelled';
+  for (const m of matchRows) {
+    const kickoff = Date.parse(m.start_time);
+    const started = m.status === 'LIVE' || m.status === 'FINISHED' || m.live_status != null
+      || (Number.isFinite(kickoff) && kickoff <= now);
+    const placedLive = Number.isFinite(kickoff) && kickoff <= Number(bet.created_at);
+    if (started || placedLive) return 'Live bets cannot be cancelled';
+  }
   return null;
 }

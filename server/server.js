@@ -36,6 +36,7 @@ import { getMatchesResponseCacheSize } from './routes/matches.js';
 import { startKeepAliveSelfPing } from './keepAlive.js';
 import { startFeedStatsLog } from './feedStats.js';
 import { hydrateBetMatchIds } from './oddsHistoryPolicy.js';
+import { settleStuckBets } from './matchSettlement.js';
 
 let dbReady = false;
 
@@ -341,6 +342,17 @@ async function start() {
   // markets instead of the full catalog.
   setTimeout(function () { repairSparseEvents({ limit: 40 }).catch(function () {}); }, 45 * 1000);
   setInterval(function () { repairSparseEvents({ limit: 40 }).catch(function () {}); }, 3 * 60 * 1000);
+
+  // Verification pass for open tickets: any PENDING leg whose match is
+  // already FINISHED (score known) gets settled, so a ticket can never sit
+  // "HAPUR" after the game ended. First run 20s after boot, then every 2 min.
+  const runStuckBetSweep = function () {
+    settleStuckBets()
+      .then(function (r) { if (r.settledLegs || r.recomputedBets) console.log('[settle] stuck-bet sweep: ' + JSON.stringify(r)); })
+      .catch(function (err) { console.error('[settle] stuck-bet sweep failed:', err.message); });
+  };
+  setTimeout(runStuckBetSweep, 20 * 1000);
+  setInterval(runStuckBetSweep, 2 * 60 * 1000);
 
   // Diagnostic visibility requested after the OOM crash investigation:
   // logs process memory alongside every known unbounded-risk in-memory

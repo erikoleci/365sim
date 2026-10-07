@@ -224,14 +224,14 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                     </div>
                 )}
                 {myBets.map(bet => {
-                    const canCancel = bet.status === BetStatus.PENDING && (Date.now() - bet.timestamp < 10 * 60 * 1000);
-                    const statusLabel = bet.status === BetStatus.PENDING ? 'Hapur' : bet.status === BetStatus.WON ? 'Fituar' : 'Humbur';
-                    const statusColor = bet.status === BetStatus.WON ? 'border-brand-accent' : bet.status === BetStatus.LOST ? 'border-red-500' : 'border-brand-yellow';
+                    const canCancel = bet.status === BetStatus.PENDING && bet.cancellable === true && (Date.now() - bet.timestamp < 10 * 60 * 1000);
+                    const statusLabel = bet.status === BetStatus.PENDING ? 'Hapur' : bet.status === BetStatus.WON ? 'Fituar' : bet.status === BetStatus.VOID ? 'Rimbursuar' : 'Humbur';
+                    const statusColor = bet.status === BetStatus.WON ? 'border-brand-accent' : bet.status === BetStatus.LOST ? 'border-red-500' : bet.status === BetStatus.VOID ? 'border-gray-500' : 'border-brand-yellow';
                     return (
                         <div key={bet.id} className={`bg-brand-bg border-l-4 ${statusColor} border-y border-r border-brand-divider rounded-lg p-2 text-xs relative`}>
                             <div className="flex justify-between mb-2 border-b border-brand-divider pb-1.5">
                                 <span className="text-brand-textMuted tabular-nums">{new Date(bet.timestamp).toLocaleDateString('sq-AL', { timeZone: 'Europe/Tirane' })} {new Date(bet.timestamp).toLocaleTimeString('sq-AL', { timeZone: 'Europe/Tirane', hour: '2-digit', minute: '2-digit' })}</span>
-                                <span className={`font-bold uppercase text-[10px] tracking-wide px-1.5 py-0.5 rounded ${bet.status === BetStatus.WON ? 'bg-brand-accent/15 text-brand-accent' : bet.status === BetStatus.LOST ? 'bg-red-500/15 text-red-400' : 'bg-brand-yellow/15 text-brand-yellow'}`}>
+                                <span className={`font-bold uppercase text-[10px] tracking-wide px-1.5 py-0.5 rounded ${bet.status === BetStatus.WON ? 'bg-brand-accent/15 text-brand-accent' : bet.status === BetStatus.LOST ? 'bg-red-500/15 text-red-400' : bet.status === BetStatus.VOID ? 'bg-gray-500/20 text-gray-300' : 'bg-brand-yellow/15 text-brand-yellow'}`}>
                                     {statusLabel}
                                 </span>
                             </div>
@@ -247,7 +247,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                                         <div className="text-[10px] flex-shrink-0">
                                             {bet.status !== BetStatus.PENDING && (
                                                 <span className={leg.status === BetStatus.WON ? 'text-brand-accent' : leg.status === BetStatus.LOST ? 'text-red-400' : 'text-gray-500'}>
-                                                    {leg.status === BetStatus.PENDING ? '' : leg.status === BetStatus.WON ? 'Fituar' : 'Humbur'}
+                                                    {leg.status === BetStatus.PENDING ? '' : leg.status === BetStatus.WON ? 'Fituar' : leg.status === BetStatus.VOID ? 'Rimbursuar' : 'Humbur'}
                                                 </span>
                                             )}
                                         </div>

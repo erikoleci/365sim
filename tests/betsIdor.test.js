@@ -11,11 +11,16 @@ const mocks = vi.hoisted(function () {
   const users = new Map();
   const bets = new Map();
   const betSelections = new Map(); // bet_id -> selections[]
+  const matches = new Map(); // match id -> matches_cache row
 
   function reset() {
     users.clear();
     bets.clear();
     betSelections.clear();
+    matches.clear();
+    // The ticket's single leg is on an upcoming match (kickoff in 1h).
+    matches.set('m1', { id: 'm1', start_time: new Date(Date.now() + 3600e3).toISOString(), status: 'UPCOMING', live_status: null });
+    betSelections.set('bet-b1', [{ bet_id: 'bet-b1', match_id: 'm1' }]);
     users.set('user-a', { id: 'user-a', role: 'USER', is_active: true, balance: 1000 });
     users.set('user-b', { id: 'user-b', role: 'USER', is_active: true, balance: 1000 });
     // A pending bet that belongs to user-b, well within the cancel window.
@@ -48,6 +53,14 @@ const mocks = vi.hoisted(function () {
       const row = bets.get(params[0]);
       return Promise.resolve({ rows: row ? [row] : [] });
     }
+    // Cancel rule: the ticket's legs and their matches (live/kickoff check).
+    if (s.startsWith('SELECT match_id FROM bet_selections WHERE bet_id = $1')) {
+      return Promise.resolve({ rows: (betSelections.get(params[0]) || []).map((x) => ({ match_id: x.match_id })) });
+    }
+    if (s.startsWith('SELECT id, start_time, status, live_status FROM matches_cache')) {
+      const ids = new Set(params[0]);
+      return Promise.resolve({ rows: [...matches.values()].filter((m) => ids.has(m.id)) });
+    }
     if (s.startsWith('SELECT balance FROM users WHERE id = $1')) {
       const row = users.get(params[0]);
       return Promise.resolve({ rows: row ? [{ balance: row.balance }] : [] });
@@ -78,7 +91,7 @@ const mocks = vi.hoisted(function () {
     release: vi.fn(),
   };
   const pool = { query, connect: () => Promise.resolve(client) };
-  return { users, bets, betSelections, reset, pool, client };
+  return { users, bets, betSelections, matches, reset, pool, client };
 });
 
 vi.mock('../server/db.js', () => ({ default: mocks.pool, pool: mocks.pool }));
@@ -141,6 +154,18 @@ describe('bets routes - ownership (IDOR) enforcement', () => {
       headers: { authorization: 'Bearer ' + sign('user-b') },
     });
     expect(res.status).toBe(200);
+  });
+
+  it('the owner can NOT cancel a ticket placed on a live match', async () => {
+    mocks.matches.set('m1', { id: 'm1', start_time: new Date(Date.now() - 20 * 60e3).toISOString(), status: 'LIVE', live_status: 'live' });
+    const res = await fetch(`${baseUrl}/api/bets/bet-b1/cancel`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + sign('user-b') },
+    });
+    const body = await res.json();
+    expect(res.status).toBe(400);
+    expect(body.error).toMatch(/live bets cannot be cancelled/i);
+    expect(mocks.bets.get('bet-b1').status).toBe('PENDING');
   });
 
   it('rejects requests with no auth token at all', async () => {

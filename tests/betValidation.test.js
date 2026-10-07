@@ -59,6 +59,8 @@ describe('validateStakeAmount', () => {
   });
   it('rejects above maximum', () => {
     expect(validateStakeAmount(100000, bounds)).toMatch(/Maximum stake is 50000/);
+    // with no max passed there is no upper stake limit at all
+    expect(validateStakeAmount(10000000, { min: 10 })).toBeNull();
   });
   it('accepts the exact boundary values', () => {
     expect(validateStakeAmount(10, bounds)).toBeNull();

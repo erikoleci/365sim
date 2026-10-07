@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
-import { settleMatch, recomputeBetStatus } from '../matchSettlement.js';
+import { settleMatch, recomputeBetStatus, settleStuckBets } from '../matchSettlement.js';
 import { logAudit } from '../auditLog.js';
 import { transferBalance } from '../ledger.js';
 import { importLondon365, getLondon365Status, getLondon365CountryDebug } from '../london365.js';
@@ -469,8 +469,8 @@ router.post('/bets/:id/cancel', async (req, res) => {
 // score (double chance, draw-no-bet, handicaps) — see settle-match comment.
 router.patch('/bet-selections/:id', async (req, res) => {
   const { status } = req.body || {};
-  if (!['WON', 'LOST'].includes(status)) {
-    return res.status(400).json({ error: "status must be 'WON' or 'LOST'" });
+  if (!['WON', 'LOST', 'VOID'].includes(status)) {
+    return res.status(400).json({ error: "status must be 'WON', 'LOST' or 'VOID'" });
   }
   const { rows } = await pool.query('SELECT * FROM bet_selections WHERE id = $1', [req.params.id]);
   const selection = rows[0];
@@ -519,6 +519,14 @@ router.post('/matches/:id/settle', async (req, res) => {
 
   const result = await settleMatch(req.params.id, homeScore, awayScore, { force: true });
   await logAudit(req.user, 'MATCH_SETTLE', req.params.id, { homeScore, awayScore, ...result });
+  res.json({ ok: true, ...result });
+});
+
+// Verifies every open (PENDING) ticket against matches that are already
+// finished and closes the ones whose result is now known.
+router.post('/bets/settle-stuck', async (req, res) => {
+  const result = await settleStuckBets();
+  await logAudit(req.user, 'BETS_SETTLE_STUCK', null, result);
   res.json({ ok: true, ...result });
 });
 

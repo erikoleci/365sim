@@ -228,6 +228,7 @@ function mapServerBet(b: any): Bet {
     potentialReturn: b.potential_return,
     status: b.status,
     timestamp: Number(b.created_at),
+    cancellable: b.cancellable === true,
     selections: (b.selections || []).map((s: any) => ({
       matchId: s.match_id,
       matchHome: s.match_home,

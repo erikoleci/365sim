@@ -3,9 +3,11 @@ import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { resolveCurrentOdds, mapEventToMatch } from '../oddsUtils.js';
-import { findConflictingSelection, validateStakeAmount } from '../betValidation.js';
+import { findConflictingSelection, validateStakeAmount, getCancelBlockReason } from '../betValidation.js';
 import { wrap } from '../asyncHandler.js';
 import { noteBetOnMatches } from '../oddsHistoryPolicy.js';
+
+const CANCEL_WINDOW_MS = 10 * 60 * 1000; // must match the window shown in BetSlip.tsx
 
 const router = express.Router();
 
@@ -14,7 +16,8 @@ router.use(requireAuth);
 // --- Ticket rules (kept simple & proportional to a play-money simulator,
 // not a full enterprise risk-limits system) ---
 const MIN_STAKE = 10;
-const MAX_STAKE = 50000;
+// No maximum stake (removed on purpose). Payout is still bounded by
+// MAX_POTENTIAL_RETURN and the per-selection exposure cap below.
 const MAX_SELECTIONS_PER_TICKET = 20;
 const MAX_POTENTIAL_RETURN = 1000000;
 // Risk Management: max total liability the house will carry on a single
@@ -60,7 +63,26 @@ router.get('/', wrap(async (req, res) => {
       selectionsByBet.get(sel.bet_id).push(sel);
     }
   }
-  const withSelections = bets.map((b) => ({ ...b, selections: selectionsByBet.get(b.id) || [] }));
+  // Server-side verdict on whether each open ticket can still be cancelled
+  // (never placed live, match not started) so the UI hides the button for
+  // exactly the tickets the cancel route would reject.
+  const pendingMatchIds = [...new Set(
+    bets.filter((b) => b.status === 'PENDING').flatMap((b) => (selectionsByBet.get(b.id) || []).map((x) => x.match_id))
+  )];
+  const matchById = new Map();
+  if (pendingMatchIds.length) {
+    const { rows: ms } = await pool.query(
+      'SELECT id, start_time, status, live_status FROM matches_cache WHERE id = ANY($1::text[])', [pendingMatchIds]
+    );
+    for (const m of ms) matchById.set(m.id, m);
+  }
+  const withSelections = bets.map((b) => {
+    const selections = selectionsByBet.get(b.id) || [];
+    const matches = selections.map((x) => matchById.get(x.match_id)).filter(Boolean);
+    const cancellable = matches.length === selections.length &&
+      getCancelBlockReason(b, matches, { windowMs: CANCEL_WINDOW_MS }) === null;
+    return { ...b, selections, cancellable };
+  });
   res.json({ bets: withSelections });
 }));
 
@@ -73,7 +95,7 @@ router.post('/', wrap(async (req, res) => {
   if (selections.length > MAX_SELECTIONS_PER_TICKET) {
     return res.status(400).json({ error: `Maximum ${MAX_SELECTIONS_PER_TICKET} selections per ticket` });
   }
-  const stakeError = validateStakeAmount(stake, { min: MIN_STAKE, max: MAX_STAKE });
+  const stakeError = validateStakeAmount(stake, { min: MIN_STAKE });
   if (stakeError) {
     return res.status(400).json({ error: stakeError });
   }
@@ -244,8 +266,6 @@ router.post('/', wrap(async (req, res) => {
   });
 }));
 
-const CANCEL_WINDOW_MS = 10 * 60 * 1000; // must match the window shown in BetSlip.tsx
-
 // A user can cancel their OWN bet while it's still PENDING and within the
 // cancellation window — enforced server-side (not just hidden in the UI
 // after 10 minutes), since the client's clock/timer can't be trusted.
@@ -254,10 +274,13 @@ router.post('/:id/cancel', wrap(async (req, res) => {
   const bet = betRows[0];
   if (!bet) return res.status(404).json({ error: 'Bet not found' });
   if (bet.user_id !== req.user.id) return res.status(403).json({ error: 'Not your bet' });
-  if (bet.status !== 'PENDING') return res.status(400).json({ error: 'Only pending bets can be cancelled' });
-  if (Date.now() - Number(bet.created_at) > CANCEL_WINDOW_MS) {
-    return res.status(400).json({ error: 'Cancellation window has expired' });
-  }
+  const { rows: legRows } = await pool.query('SELECT match_id FROM bet_selections WHERE bet_id = $1', [bet.id]);
+  const { rows: matchRows } = await pool.query(
+    'SELECT id, start_time, status, live_status FROM matches_cache WHERE id = ANY($1::text[])',
+    [[...new Set(legRows.map((l) => l.match_id))]]
+  );
+  const blocked = getCancelBlockReason(bet, matchRows, { windowMs: CANCEL_WINDOW_MS });
+  if (blocked) return res.status(400).json({ error: blocked });
 
   const client = await pool.connect();
   try {
