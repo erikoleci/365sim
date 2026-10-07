@@ -9,10 +9,12 @@ interface NavbarProps {
   onNavigate: (view: 'sports' | 'casino') => void;
   onGoHome: () => void;
   onGoLive: () => void;
+  onGoSoccer: () => void;
+  activeTab: 'home' | 'live' | 'soccer';
   liveCount: number;
 }
 
-const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, currentView, onNavigate, onGoHome, onGoLive, liveCount }) => {
+const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, currentView, onNavigate, onGoHome, onGoLive, onGoSoccer, activeTab, liveCount }) => {
   return (
     <nav className="bg-brand-header text-brand-text text-sm sticky top-0 z-50 shadow-md flex flex-col">
       {/* Top Bar */}
@@ -74,12 +76,12 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
       <div className="bg-[#282828] border-b border-brand-divider h-8 flex items-center px-4 max-w-[1450px] mx-auto w-full overflow-x-auto no-scrollbar">
          {currentView === 'sports' ? (
              <div className="flex gap-6 text-xs text-brand-textMuted whitespace-nowrap">
-                 <span onClick={onGoHome} className="hover:text-brand-accent cursor-pointer font-bold text-white">Home</span>
-                 <span onClick={onGoLive} className="hover:text-brand-accent cursor-pointer flex items-center gap-1">
+                 <button onClick={onGoHome} aria-current={activeTab === 'home' ? 'page' : undefined} className={`cursor-pointer transition-colors hover:text-brand-accent ${activeTab === 'home' ? 'font-bold text-white' : ''}`}>Home</button>
+                 <button onClick={onGoLive} aria-current={activeTab === 'live' ? 'page' : undefined} className={`cursor-pointer flex items-center gap-1 transition-colors hover:text-brand-accent ${activeTab === 'live' ? 'font-bold text-white' : ''}`}>
                    Live In-Play
                    {liveCount > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveCount}</span>}
-                 </span>
-                 <span className="text-brand-accent cursor-default font-bold">Soccer</span>
+                 </button>
+                 <button onClick={onGoSoccer} aria-current={activeTab === 'soccer' ? 'page' : undefined} className={`cursor-pointer transition-colors hover:text-brand-accent ${activeTab === 'soccer' ? 'font-bold text-white' : ''}`}>Soccer</button>
              </div>
          ) : (
              <div className="flex gap-6 text-xs text-brand-textMuted whitespace-nowrap">

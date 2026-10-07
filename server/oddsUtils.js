@@ -151,10 +151,26 @@ export function diffOddsChanges(matchId, oldEv, newEv) {
 //   future kickoff        -> UPCOMING (always, regardless of any stale flag)
 //   DB/source says FINISHED -> FINISHED
 //   otherwise (past kickoff, not finished) -> LIVE
+// A football match is over long before this (90' + extra time + penalties + breaks
+// is under ~3h). A row that is still not FINISHED this long after kickoff has been
+// abandoned by the feed (never got live data, or the server was down when it
+// ended), so it must not keep showing as LIVE -- or stay bettable -- for days.
+export const MAX_LIVE_AGE_MS = Math.max(
+  2 * 60 * 60 * 1000,
+  Number(process.env.LIVE_MAX_AGE_HOURS || 4) * 60 * 60 * 1000
+);
+
+export function isStaleLive(startTime, dbStatus, now = Date.now()) {
+  if (dbStatus === 'FINISHED') return false;
+  const kickoff = Date.parse(startTime);
+  return !Number.isNaN(kickoff) && kickoff <= now && now - kickoff > MAX_LIVE_AGE_MS;
+}
+
 function normalizeStatus(startTime, dbStatus) {
   const kickoff = Date.parse(startTime);
   if (!Number.isNaN(kickoff) && kickoff > Date.now()) return 'UPCOMING';
   if (dbStatus === 'FINISHED') return 'FINISHED';
+  if (isStaleLive(startTime, dbStatus)) return 'FINISHED';
   return 'LIVE';
 }
 

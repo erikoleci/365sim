@@ -44,6 +44,14 @@ body {
   0%, 49% { opacity: 1; }
   50%, 100% { opacity: 0; }
 }
+@keyframes pitch-chevrons {
+  0% { background-position: 0 0; }
+  100% { background-position: 34px 0; }
+}
+@keyframes pitch-heat {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.28); }
+}
 @media (prefers-reduced-motion: reduce) {
   [style*="pitch-"] { animation: none !important; }
 }

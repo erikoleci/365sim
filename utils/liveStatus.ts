@@ -36,3 +36,15 @@ export function isHalftime(match: Pick<Match, 'liveStatus'>): boolean {
   const raw = (match.liveStatus || '').toString().toUpperCase().trim();
   return raw === 'HT' || raw === 'HALFTIME' || raw === 'HALF_TIME' || raw === 'PAUSED';
 }
+
+// Same rule as the server (server/oddsUtils.js isStaleLive): a match that is
+// still marked LIVE this long after kickoff was abandoned by the feed, not
+// really being played. It is dropped from every list instead of sitting there
+// as "LIVE 0-0" for days.
+export const MAX_LIVE_AGE_MS = 4 * 60 * 60 * 1000;
+
+export function isStaleLiveMatch(match: Pick<Match, 'status' | 'startTime'>, now: number = Date.now()): boolean {
+  if (String(match.status) !== 'LIVE') return false;
+  const kickoff = Date.parse(match.startTime);
+  return !Number.isNaN(kickoff) && kickoff <= now && now - kickoff > MAX_LIVE_AGE_MS;
+}

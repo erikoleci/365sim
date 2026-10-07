@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, startTransition } from 'react';
 import Navbar from './components/Navbar';
 import MatchRow from './components/MatchCard';
 import MatchDetail from './components/MatchDetail';
@@ -11,8 +11,10 @@ import CasinoHub from './components/CasinoHub';
 import { User, Match, Bet, UserRole, BetSelectionItem, MatchStatus } from './types';
 import * as api from './services/api';
 import { albaniaDateKey, albaniaTodayKey, isSameAlbaniaDay } from './utils/albaniaTime';
+import { isStaleLiveMatch, MAX_LIVE_AGE_MS } from './utils/liveStatus';
 import * as leagueGrouping from './utils/leagueGrouping';
 import FeaturedMatchCard from './components/FeaturedMatchCard';
+import LoadMoreSentinel from './components/LoadMoreSentinel';
 
 const App: React.FC = () => {
   // --- Auth State ---
@@ -35,7 +37,7 @@ const App: React.FC = () => {
   // users see their matches instantly instead of the loading spinner
   // — the background refresh below then replaces this with live data) ---
   const [matches, setMatches] = useState<Match[]>(() => {
-    try { return JSON.parse(localStorage.getItem('cachedMatches') || '[]'); } catch { return []; }
+    try { return (JSON.parse(localStorage.getItem('cachedMatches') || '[]') as Match[]).filter((m) => !isStaleLiveMatch(m)); } catch { return []; }
   });
   // League key -> the name EXACTLY as LondonPro365's own API returns it
   // (untouched — no re-slugging/re-titlecasing). Populated from every
@@ -86,6 +88,12 @@ const App: React.FC = () => {
     try { localStorage.setItem('currentLeague', league); } catch {}
   }, []);
   const [selectedDate, setSelectedDate] = useState('ALL'); // 'ALL' or 'YYYY-MM-DD' (local date)
+  // Which top tab ("Home" / "Soccer") was chosen last; "Live In-Play" is showLiveOnly.
+  const [navTab, setNavTab] = useState<'home' | 'soccer'>('home');
+  // The full football list is drawn in slices (rows, not countries) so that switching
+  // views never builds hundreds of match rows in one go.
+  const ROW_SLICE = 60;
+  const [rowBudget, setRowBudget] = useState(ROW_SLICE);
   const [isLoading, setIsLoading] = useState(false);
   // Tracks whether we've EVER successfully loaded matches, across the whole
   // component lifetime — not derived from the current matches array. Using
@@ -180,7 +188,9 @@ const App: React.FC = () => {
     if (!currentUser || currentView !== 'sports') return;
     setIsLoading((prev) => (hasLoadedMatchesOnceRef.current ? prev : true));
     try {
-      const { matches: fresh, leagueNames: freshLeagueNames, leagueMeta: freshLeagueMeta } = await api.fetchMatches();
+      const { matches: freshAll, leagueNames: freshLeagueNames, leagueMeta: freshLeagueMeta } = await api.fetchMatches();
+      // Drop matches the feed abandoned (still "LIVE" hours after kickoff) so they never sit in the lists.
+      const fresh = freshAll.filter((m) => !isStaleLiveMatch(m));
       setMatches(fresh);
       try { localStorage.setItem('cachedMatches', JSON.stringify(fresh)); } catch {}
       if (freshLeagueNames) {
@@ -526,7 +536,7 @@ const App: React.FC = () => {
     });
   }, []);
 
-  const STALE_LIVE_MS = 6 * 60 * 60 * 1000; // matches don't last 6h — treat as stuck/stale if never settled
+  const STALE_LIVE_MS = MAX_LIVE_AGE_MS; // same limit as the server: a match still "LIVE" this long after kickoff is stuck
   const liveMatches = searchFiltered
     .filter((m) => m.status === MatchStatus.LIVE && (Date.now() - new Date(m.startTime).getTime()) < STALE_LIVE_MS)
     .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
@@ -768,6 +778,21 @@ const App: React.FC = () => {
     ] as [string, [string, Match[]][]]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [upcomingMatches, currentLeague]);
+  // Slice of matchesByCountry that is actually drawn (see rowBudget above).
+  const { visibleGroups, hiddenRows } = useMemo(() => {
+    const out: typeof matchesByCountry = [];
+    let rows = 0;
+    let total = 0;
+    for (const g of matchesByCountry) total += g[1].reduce((n, l) => n + l[1].length, 0);
+    for (const g of matchesByCountry) {
+      if (out.length && rows >= rowBudget) break;
+      out.push(g);
+      rows += g[1].reduce((n, l) => n + l[1].length, 0);
+    }
+    return { visibleGroups: out, hiddenRows: Math.max(0, total - rows) };
+  }, [matchesByCountry, rowBudget]);
+  useEffect(() => { setRowBudget(ROW_SLICE); }, [currentLeague, selectedDate, showLiveOnly, searchQuery]);
+
 
   // Same country -> league grouping as matchesByCountry above, but for the
   // dedicated "Live Tani" section specifically. Previously that section was
@@ -1171,8 +1196,10 @@ const App: React.FC = () => {
         onOpenAdmin={() => setShowAdmin(!showAdmin)}
         currentView={currentView}
         onNavigate={setCurrentView}
-        onGoHome={() => { setShowLiveOnly(false); setCurrentLeague('All Top Football'); setSelectedDate('ALL'); setDetailMatchId(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+        activeTab={showLiveOnly ? 'live' : currentLeague === 'All Top Football' ? navTab : 'soccer'}
+        onGoHome={() => { startTransition(() => { setNavTab('home'); setShowLiveOnly(false); setCurrentLeague('All Top Football'); setSelectedDate('ALL'); setDetailMatchId(null); }); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
         onGoLive={() => { setDetailMatchId(null); setShowLiveOnly(true); requestAnimationFrame(() => document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' })); }}
+        onGoSoccer={() => { startTransition(() => { setNavTab('soccer'); setShowLiveOnly(false); setCurrentLeague('All Top Football'); setDetailMatchId(null); }); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
         liveCount={liveMatches.length}
       />
 
@@ -1561,7 +1588,8 @@ const App: React.FC = () => {
                       </div>
                     </div>
                   ) : (
-                    matchesByCountry.map(([country, leagues]: [string, [string, Match[]][]]) => (
+                    <>
+                    {visibleGroups.map(([country, leagues]: [string, [string, Match[]][]]) => (
                       <div key={country} className="bg-brand-panel rounded overflow-hidden shadow-sm">
                         <div className="bg-[#2f2f2f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex items-center gap-2 uppercase tracking-wider">
                           <span aria-hidden="true">{countryFlag(country)}</span>
@@ -1602,7 +1630,9 @@ const App: React.FC = () => {
                           </div>
                         ))}
                       </div>
-                    ))
+                    ))}
+                    {hiddenRows > 0 && <LoadMoreSentinel remaining={hiddenRows} onMore={() => setRowBudget((n) => n + ROW_SLICE)} />}
+                    </>
                   )}
                 </>
               )}
