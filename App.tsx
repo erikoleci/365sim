@@ -290,6 +290,35 @@ const App: React.FC = () => {
     let attempt = 0;
     let cancelled = false;
 
+    // LIVE_TICKs are buffered and applied in ONE setMatches per 250ms. With ~80 live
+    // matches each ticking, applying every message separately re-mapped the whole
+    // match list dozens of times a second (UI stalls, the list "waiting"). The
+    // buffer keeps only the newest value per field per match, so nothing is lost.
+    type TickAcc = { homeScore?: number; awayScore?: number; minute?: string; minuteUpdatedAt?: number; action?: Match['liveAction']; hasAction?: boolean; liveStatus?: string };
+    const tickBuffer = new Map<string, TickAcc>();
+    let tickTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushTicks = () => {
+      if (tickTimer) { clearTimeout(tickTimer); tickTimer = null; }
+      if (tickBuffer.size === 0) return;
+      const batch = new Map(tickBuffer);
+      tickBuffer.clear();
+      setMatches((current) => current.map((m) => {
+        const t = batch.get(m.id);
+        if (!t) return m;
+        return {
+          ...m,
+          liveHomeScore: t.homeScore ?? m.liveHomeScore,
+          liveAwayScore: t.awayScore ?? m.liveAwayScore,
+          currentMinute: t.minute ?? m.currentMinute,
+          currentMinuteUpdatedAt: t.minute != null ? (t.minuteUpdatedAt ?? Date.now()) : m.currentMinuteUpdatedAt,
+          liveAction: t.hasAction ? t.action : m.liveAction,
+          // HT / 1H / 2H from the socket tick: the clock stops at half time and runs
+          // again the moment the second half starts, without waiting for the list refresh.
+          liveStatus: t.liveStatus !== undefined ? t.liveStatus : m.liveStatus,
+        };
+      }));
+    };
+
     const connect = () => {
       socket = new WebSocket(api.getWsUrl());
       socket.onopen = () => {
@@ -304,6 +333,9 @@ const App: React.FC = () => {
         try {
           const msg = JSON.parse(event.data);
           if (!msg.matchId) return;
+          // Buffered ticks are older than this message: apply them first so a stale
+          // tick can never overwrite what this message is about to set.
+          if (msg.type !== 'LIVE_TICK') flushTicks();
           if (msg.type === 'GOAL') {
             setMatches((current) => current.map((m) => m.id === msg.matchId ? {
               ...m,
@@ -330,23 +362,17 @@ const App: React.FC = () => {
               currentMinuteUpdatedAt: msg.minute != null ? (msg.minuteUpdatedAt ?? Date.now()) : m.currentMinuteUpdatedAt,
             } : m));
           } else if (msg.type === 'LIVE_TICK') {
-            // Fast (~1/sec) resync from the gamedetails feed: keeps the
-            // score/minute already shown in sync with the provider without
-            // waiting for a goal or the slow 60s match-list poll. No full
-            // reload — this only ever carries fields already verified on
-            // the server (see server/london365GameDetails.js), so it's
-            // safe/cheap to apply directly to local state every time.
-            setMatches((current) => current.map((m) => m.id === msg.matchId ? {
-              ...m,
-              liveHomeScore: msg.homeScore ?? m.liveHomeScore,
-              liveAwayScore: msg.awayScore ?? m.liveAwayScore,
-              currentMinute: msg.minute ?? m.currentMinute,
-              currentMinuteUpdatedAt: msg.minute != null ? (msg.minuteUpdatedAt ?? Date.now()) : m.currentMinuteUpdatedAt,
-              liveAction: msg.action !== undefined ? msg.action : m.liveAction,
-              // HT / 1H / 2H from the socket tick: the clock stops at half time and runs
-              // again the moment the second half starts, without waiting for the list refresh.
-              liveStatus: msg.liveStatus !== undefined ? msg.liveStatus : m.liveStatus,
-            } : m));
+            // Fast resync from the gamedetails feed (see server/london365GameDetails.js):
+            // only carries fields already verified on the server, so it is applied
+            // directly -- but batched (see flushTicks above), never one render per message.
+            const acc = tickBuffer.get(msg.matchId) || {};
+            if (msg.homeScore != null) acc.homeScore = msg.homeScore;
+            if (msg.awayScore != null) acc.awayScore = msg.awayScore;
+            if (msg.minute != null) { acc.minute = msg.minute; acc.minuteUpdatedAt = msg.minuteUpdatedAt ?? Date.now(); }
+            if (msg.action !== undefined) { acc.action = msg.action; acc.hasAction = true; }
+            if (msg.liveStatus !== undefined) acc.liveStatus = msg.liveStatus;
+            tickBuffer.set(msg.matchId, acc);
+            if (!tickTimer) tickTimer = setTimeout(flushTicks, 250);
           } else if (msg.type === 'CARD') {
             // A card changes nothing the LIST carries (score, minute, h2h
             // odds), so re-downloading and re-computing the whole /api/matches
@@ -427,6 +453,7 @@ const App: React.FC = () => {
     return () => {
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
+      if (tickTimer) clearTimeout(tickTimer);
       socket?.close();
     };
   }, [currentUser, currentView, loadMatches]);

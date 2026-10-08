@@ -233,6 +233,16 @@ const TICK_LOG = process.env.LONDON365_GAMEDETAILS_TICK_LOG === '1';
 // the same card/corner baseline -- the cause of duplicated events. Ticks of
 // one match are therefore processed one after another.
 const detailChains = new Map();
+// The derived clock is "mm:ss" and changes EVERY second; comparing it whole made
+// every ~1/sec provider message a broadcast to every client (80 live matches =
+// ~80 messages/s per connected client, each re-mapping the whole match list).
+// Clients tick the clock themselves from the last anchor, so a broadcast is only
+// due when the WHOLE minute changes (or on the periodic resync that re-anchors).
+function minuteBucket(m) {
+  const mm = String(m ?? '').match(/^(\d+):\d{2}$/);
+  return mm ? mm[1] : m;
+}
+
 // Fingerprint of everything on a message that can change what the pitch shows.
 function actionSignature(attrs) {
   return [attrs.VC, attrs.C1, attrs.C2, attrs.H2, attrs.H3, attrs.H4, attrs.A2, attrs.A3, attrs.A4]
@@ -510,7 +520,7 @@ async function applyGameDetailsNow(raw) {
     const changed = !prevBroadcast
       || actionKey(prevBroadcast.action) !== actionKey(liveAction)
       || prevBroadcast.liveStatus !== tickPayload.liveStatus
-      || prevBroadcast.minute !== tickPayload.minute
+      || minuteBucket(prevBroadcast.minute) !== minuteBucket(tickPayload.minute)
       || prevBroadcast.homeScore !== tickPayload.homeScore
       || prevBroadcast.awayScore !== tickPayload.awayScore;
     const dueForResync = !prevBroadcast || (nowTs - prevBroadcast.ts) >= LIVE_TICK_RESYNC_MS;
