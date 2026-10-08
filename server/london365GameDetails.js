@@ -87,12 +87,22 @@ const lastBroadcast = new Map();
 const derivedClock = new Map();
 const DERIVED_CLOCK_WRITE_MS = 15000;
 const LIVE_TICK_RESYNC_MS = 15000;
+// How long the last decoded pitch action (corner, attack, ...) stays on the
+// pitch when the following messages carry no (decodable) VC. The provider's own
+// pitch keeps showing the last action until the next one; clearing it on the very
+// next ~1/sec tick made it flash for under a second -> "the pitch never shows it".
+const ACTION_HOLD_MS = 8000;
+// VC codes we could not decode, logged once each so they can be labelled in
+// liveAction.js (never guessed). Bounded so a noisy feed cannot grow it.
+const unmappedVcSeen = new Set();
+const UNMAPPED_VC_CAP = 200;
 const HT_HOLD_MS = 45000; // how long a VC=1015 "pushim" keeps clients in HT (> one REST cycle)
 
 // Test-only: clears in-memory state between test cases so each test is
 // independent (lastSeen/lastBroadcast are intentionally module-level, not
 // per-call, in production — see comments above).
 export function __resetLiveStateForTests() {
+  unmappedVcSeen.clear();
   __resetLiveTrackerForTests(); // also clears the live row cache
   lastSeen.clear();
   lastBroadcast.clear();
@@ -223,6 +233,13 @@ const TICK_LOG = process.env.LONDON365_GAMEDETAILS_TICK_LOG === '1';
 // the same card/corner baseline -- the cause of duplicated events. Ticks of
 // one match are therefore processed one after another.
 const detailChains = new Map();
+// Fingerprint of everything on a message that can change what the pitch shows.
+function actionSignature(attrs) {
+  return [attrs.VC, attrs.C1, attrs.C2, attrs.H2, attrs.H3, attrs.H4, attrs.A2, attrs.A3, attrs.A4]
+    .map((v) => (v == null ? '' : String(v)))
+    .join('|');
+}
+
 export function applyGameDetails(raw) {
   const a = parseGameDetails(raw);
   const key = a ? `${a.EID}|${a.H}|${a.A}` : '_';
@@ -309,7 +326,11 @@ async function applyGameDetailsNow(raw) {
   // in-memory counter, so re-processing an identical score is still a
   // no-op there either way.
   if (prevSeen && Number.isFinite(t)) {
-    if (t === prevSeen.t) return;
+    // An exact repeat is only skippable when it ALSO carries the same pitch
+    // action and counters. A corner/attack often arrives between two clock ticks
+    // with the same T as the previous message; dropping it here (the old
+    // `t === prevSeen.t` check) meant that action was never read at all.
+    if (t === prevSeen.t && prevSeen.sig === actionSignature(attrs)) return;
     if (t < prevSeen.t) {
       lastSeen.delete(eid);
       cardBaseline = null;
@@ -442,7 +463,23 @@ async function applyGameDetailsNow(raw) {
       : up('h2') ? ['home', 'offside'] : up('a2') ? ['away', 'offside'] : null;
     if (found) recent = { ...makeAction(found[0], found[1]), until: nowMs + 7000 };
   }
-  const liveAction = decodeLiveAction(attrs.VC) || (recent ? { side: recent.side, kind: recent.kind, label: recent.label } : null);
+  const decodedAction = decodeLiveAction(attrs.VC);
+  const vcText = String(attrs.VC ?? '').trim();
+  if (vcText && !decodedAction && !unmappedVcSeen.has(vcText) && unmappedVcSeen.size < UNMAPPED_VC_CAP) {
+    unmappedVcSeen.add(vcText);
+    console.log('[gamedetails] unmapped VC code "' + vcText + '" (EID ' + eid + ', T=' + attrs.T + ', SC=' + (attrs.SC || '?') + ') -- label it in server/liveAction.js');
+  }
+  // Last real action, kept for ACTION_HOLD_MS so a quiet/unknown next message
+  // does not wipe the pitch the instant after the action arrived.
+  let held = cardBaseline && cardBaseline.held && cardBaseline.held.until > nowMs ? cardBaseline.held : null;
+  if (decodedAction && decodedAction.kind !== 'half_time') {
+    held = { action: decodedAction, until: nowMs + ACTION_HOLD_MS };
+  } else if (recent) {
+    held = { action: { side: recent.side, kind: recent.kind, label: recent.label }, until: Math.max(held ? held.until : 0, recent.until) };
+  }
+  const liveAction = decodedAction
+    || (recent ? { side: recent.side, kind: recent.kind, label: recent.label } : null)
+    || (held ? held.action : null);
   const actionKey = (a) => (a ? a.side + ':' + a.kind : null);
   // Half time. VC=1015 is the provider's own "pushim" (hand-labelled capture);
   // it is held for HT_HOLD_MS so one quiet tick cannot flip the clients back to a
@@ -613,7 +650,7 @@ async function applyGameDetailsNow(raw) {
     );
   }
 
-  lastSeen.set(eid, { t: Number.isFinite(t) ? t : (prevSeen ? prevSeen.t : 0), yc1, yc2, rc1, rc2, c1, c2, posHome, posAway, ctr, recent, htUntil });
+  lastSeen.set(eid, { t: Number.isFinite(t) ? t : (prevSeen ? prevSeen.t : 0), yc1, yc2, rc1, rc2, c1, c2, posHome, posAway, ctr, recent, htUntil, held, sig: actionSignature(attrs) });
 }
 
 export function getGameDetailsMemoryDiagnostics() {
