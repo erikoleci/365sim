@@ -1926,6 +1926,18 @@ export function hasRealLiveResult(row) {
 }
 
 const LIVE_CONCURRENCY = Math.max(1, Number(process.env.LONDON365_LIVE_CONCURRENCY || 6));
+// Upper bound for the adaptive value below; kept at the DB pool size (8) because
+// every in-flight game ends in a database write.
+const LIVE_CONCURRENCY_MAX = Math.max(LIVE_CONCURRENCY, Number(process.env.LONDON365_LIVE_CONCURRENCY_MAX || 8));
+
+// The number of live matches changes from day to day (a handful midweek, well over
+// a hundred on a big Saturday). A fixed parallelism makes the cycle time grow
+// linearly with that number until it no longer fits in the 30s interval, so the
+// parallelism grows with the load instead: ~1 extra lane per 12 games above the
+// base, capped at LIVE_CONCURRENCY_MAX.
+export function liveConcurrencyFor(gameCount) {
+  return Math.min(LIVE_CONCURRENCY_MAX, Math.max(LIVE_CONCURRENCY, Math.ceil((gameCount || 0) / 12)));
+}
 
 // Runs `worker` over `items` with at most `limit` in flight. Workers must
 // handle their own errors (a rejection would abort the pool).
@@ -2083,7 +2095,7 @@ async function syncLondon365LiveOnce() {
     // strictly sequential pass (a detail request + DB write each, retries with
     // backoff on provider hiccups) outlasts the 30s interval, so games late in
     // the list were refreshed rarely -> no minute / stale locked odds.
-    await runPool(games, LIVE_CONCURRENCY, processGame);
+    await runPool(games, liveConcurrencyFor(games.length), processGame);
   }
 
   // End detection: a cached LIVE l365 match no longer in the live feed has

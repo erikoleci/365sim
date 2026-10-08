@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runPool } from '../server/london365.js';
+import { runPool, liveConcurrencyFor } from '../server/london365.js';
 
 describe('runPool (bounded parallelism for the live loop)', () => {
   it('never exceeds the concurrency limit and processes every item exactly once', async () => {
@@ -19,5 +19,19 @@ describe('runPool (bounded parallelism for the live loop)', () => {
     const out = [];
     await runPool([1, 2], 10, async (n) => { out.push(n); });
     expect(out.sort()).toEqual([1, 2]);
+  });
+});
+
+describe('liveConcurrencyFor (parallelism follows the number of live matches)', () => {
+  it('stays at the base for a quiet day and grows with load', () => {
+    expect(liveConcurrencyFor(0)).toBe(6);
+    expect(liveConcurrencyFor(10)).toBe(6);
+    expect(liveConcurrencyFor(72)).toBe(6);
+    expect(liveConcurrencyFor(80)).toBe(7);
+    expect(liveConcurrencyFor(96)).toBe(8);
+  });
+  it('is capped so it can never exceed the DB pool', () => {
+    expect(liveConcurrencyFor(300)).toBe(8);
+    expect(liveConcurrencyFor(5000)).toBe(8);
   });
 });
