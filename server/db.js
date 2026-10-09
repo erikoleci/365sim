@@ -70,7 +70,11 @@ export const pool = new Pool({
   // volume (batching/throttling per-match updates) rather than pushing the
   // pool size closer to that ceiling — a free-tier single shared vCPU has a
   // real throughput limit no pool size works around.
-  max: 8,
+  // 7 per instance: during a Render deploy the old and new instance overlap, and
+  // the Supabase pooler (session mode) allows 15 clients in total -- 2 x 8 = 16
+  // tripped EMAXCONNSESSION at boot. 2 x 7 = 14 fits. Override with PG_POOL_MAX
+  // (e.g. if the database is switched to a pooler with a higher limit).
+  max: Number(process.env.PG_POOL_MAX) || 7,
 });
 
 // REQUIRED by node-postgres: an idle client in the pool can be dropped by
@@ -266,6 +270,10 @@ export async function initDb() {
   // persisted so the frontend can render a live clock for in-play matches.
   await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS live_minute TEXT;`);
   await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS live_status TEXT;`);
+  // Score at the half-time whistle, captured once when the match is first seen at
+  // HT (see halfTime.js). Lets first/second-half markets be settled automatically.
+  await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS ht_home INTEGER;`);
+  await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS ht_away INTEGER;`);
   // League/country identity as real provider IDs, not just the slugged
   // `league` display key. Before this, the ONLY handle on a league was a
   // human-derived string (l365_<country>__<competition>), which is exactly
