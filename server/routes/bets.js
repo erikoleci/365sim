@@ -3,9 +3,13 @@ import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { resolveCurrentOdds, mapEventToMatch, isStaleLive } from '../oddsUtils.js';
-import { findConflictingSelection, validateStakeAmount, getCancelBlockReason } from '../betValidation.js';
+import { findConflictingSelection, validateStakeAmount, getCancelBlockReason, isLiveEventLocked } from '../betValidation.js';
 import { wrap } from '../asyncHandler.js';
 import { noteBetOnMatches } from '../oddsHistoryPolicy.js';
+
+// After a goal / red card on a LIVE match, bets on it are refused for this long so
+// nobody can bet on prices that have not caught up with what just happened. 0 = off.
+const LIVE_EVENT_LOCK_MS = Math.max(0, Number(process.env.LIVE_BET_EVENT_LOCK_MS ?? 30000));
 
 const CANCEL_WINDOW_MS = 10 * 60 * 1000; // must match the window shown in BetSlip.tsx
 
@@ -150,6 +154,18 @@ router.post('/', wrap(async (req, res) => {
     }
     if (matchRow.status === 'FINISHED' || isStaleLive(matchRow.start_time, matchRow.status)) {
       return res.status(400).json({ error: `Match ${matchRow.home_team} vs ${matchRow.away_team} has already finished — betting is closed.` });
+    }
+    if (LIVE_EVENT_LOCK_MS > 0 && (matchRow.status === 'LIVE' || matchRow.live_status != null)) {
+      const { rows: evRows } = await pool.query(
+        "SELECT MAX(created_at) AS last_at FROM match_events WHERE match_id = $1 AND type IN ('GOAL','RED_CARD')",
+        [matchRow.id]
+      );
+      if (isLiveEventLocked(matchRow, evRows[0]?.last_at, { lockMs: LIVE_EVENT_LOCK_MS })) {
+        return res.status(409).json({
+          error: `Betting on ${matchRow.home_team} vs ${matchRow.away_team} is paused for a few seconds after a goal or red card — odds are updating.`,
+          code: 'LIVE_EVENT_LOCK',
+        });
+      }
     }
     let currentOdds = resolveCurrentOdds(matchRow, sel.marketId, sel.selectionId);
     if (currentOdds === null) {

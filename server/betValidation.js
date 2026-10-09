@@ -48,3 +48,17 @@ export function getCancelBlockReason(bet, matchRows, { now = Date.now(), windowM
   }
   return null;
 }
+
+// Live odds reach the cache with a delay (the REST live loop runs every ~30s), so
+// right after a goal or a red card the cached prices are still the OLD ones --
+// anyone watching the match can bet on a result that has already changed. For a
+// short window after such an event, bets on that live match are refused until
+// the odds have caught up. `lastEventAt` is the newest GOAL / RED_CARD event time
+// (ms) for the match, or null. lockMs <= 0 disables the rule.
+export function isLiveEventLocked(matchRow, lastEventAt, { now = Date.now(), lockMs } = {}) {
+  if (!lockMs || lockMs <= 0) return false;
+  const live = matchRow && (matchRow.status === 'LIVE' || matchRow.live_status != null);
+  if (!live || lastEventAt == null) return false;
+  const at = Number(lastEventAt);
+  return Number.isFinite(at) && now - at >= 0 && now - at < lockMs;
+}
