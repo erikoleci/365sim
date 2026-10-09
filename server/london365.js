@@ -69,6 +69,7 @@ import { settleMatch } from './matchSettlement.js';
 import { forgetLiveState } from './london365GameDetails.js';
 import { unsubscribeGameDetails, getSubscribedGameDetailsIds } from './london365Socket.js';
 import { bump, snapshot as feedStatsSnapshot } from './feedStats.js';
+import { captureHalfTimeScore } from './halfTime.js';
 import { announceGoalIfChanged, clearGoalAnnounced } from './goalAnnouncer.js';
 import {
   trackGame, isTrackedGame, noteMatchStatus, hasKnownLiveMatches, applyTrackerSnapshot,
@@ -1260,6 +1261,7 @@ export async function upsertMatch(ev, league, status, liveScores, liveInfo, leag
     // Keep the in-memory view in step with what the row now holds.
     trackGame(ev.id);
     noteMatchStatus(ev.id, eff.status);
+    if (String(eff.live_status || '').toUpperCase() === 'HT') captureHalfTimeScore(ev.id, eff.live_home_score, eff.live_away_score);
     setLiveRow(ev.id, {
       home_team: ev.home_team, away_team: ev.away_team,
       live_home_score: eff.live_home_score, live_away_score: eff.live_away_score, live_minute: eff.live_minute,

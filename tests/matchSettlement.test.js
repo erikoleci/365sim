@@ -139,3 +139,50 @@ describe('determineLegOutcome — every other final-score market', () => {
     expect(determineLegOutcome(L('Rezultat Final & Totali', '1 & Lart 2.5'), R(3, 0))).toBeNull();
   });
 });
+
+describe('determineLegOutcome — first / second half markets (need the half-time score)', () => {
+  const L = (market_name, selection) => ({
+    market_id: 'x_m9', market_name, selection_id: selection, selection_name: selection,
+    match_home: 'Zakynthos', match_away: 'Apollon Kalamarias',
+  });
+  // Final 3-1, half-time 1-1  =>  second half was 2-0
+  const R = { winner: 'HOME', totalGoals: 4, bothScored: true, homeScore: 3, awayScore: 1, htHome: 1, htAway: 1 };
+
+  it('first-half result uses the half-time score (draw at HT)', () => {
+    expect(determineLegOutcome(L('Rezultati Pjesa e Parë', 'X'), R)).toBe('WON');
+    expect(determineLegOutcome(L('Rezultati Pjesa e Parë', '1'), R)).toBe('LOST');
+  });
+  it('second-half result is final minus half-time (2-0 -> home)', () => {
+    expect(determineLegOutcome(L('Rezultati Pjesa e Dytë', '1'), R)).toBe('WON');
+    expect(determineLegOutcome(L('Rezultati Pjesa e Dytë', 'X'), R)).toBe('LOST');
+  });
+  it('goals in the first / second half', () => {
+    expect(determineLegOutcome(L('Numri i Golave në Pjesën e Parë', 'Lart 1.5'), R)).toBe('WON'); // 2 goals
+    expect(determineLegOutcome(L('Numri i Golave në Pjesën e Parë', 'Lart 2.5'), R)).toBe('LOST');
+    expect(determineLegOutcome(L('Numri i Golave Pjesa e Dytë', 'Poshtë 2.5'), R)).toBe('WON'); // 2 goals
+  });
+  it('first-half BTTS, double chance and odd/even', () => {
+    expect(determineLegOutcome(L('Gol/Jogol Pjesa e Parë', 'Po'), R)).toBe('WON');
+    expect(determineLegOutcome(L('Gol/Jogol Pjesa e Dytë', 'Po'), R)).toBe('LOST'); // 2-0
+    expect(determineLegOutcome(L('Dopio Shans - Pjesa 1', '1X'), R)).toBe('WON');
+    expect(determineLegOutcome(L('Tek/Çift Pjesa e Parë', 'Çift'), R)).toBe('WON');
+  });
+  it('English names and "në pushim" are understood too', () => {
+    expect(determineLegOutcome(L('1x2 1st Half', 'X'), R)).toBe('WON');
+    expect(determineLegOutcome(L('Rezultati në Pushim', 'X'), R)).toBe('WON');
+  });
+  it('without a stored half-time score the leg stays pending (never guessed)', () => {
+    const noHt = { ...R, htHome: undefined, htAway: undefined };
+    expect(determineLegOutcome(L('Rezultati Pjesa e Parë', 'X'), noHt)).toBeNull();
+    expect(determineLegOutcome(L('Rezultati Pjesa e Dytë', '1'), noHt)).toBeNull();
+  });
+  it('HT/FT doubles, combos and unknown half markets stay pending', () => {
+    expect(determineLegOutcome(L('Pushim/Fund', 'X/1'), R)).toBeNull();
+    expect(determineLegOutcome(L('Rezultati Pjesa e Parë / Rezultati Final', 'X/1'), R)).toBeNull();
+    expect(determineLegOutcome(L('Pjesa me Shumë Gola', 'E dyta'), R)).toBeNull();
+    expect(determineLegOutcome(L('Rezultati Pjesa e Parë & Totali', '1 & Lart 0.5'), R)).toBeNull();
+  });
+  it('inconsistent data (HT score above the final score) is never settled', () => {
+    expect(determineLegOutcome(L('Rezultati Pjesa e Dytë', '1'), { ...R, homeScore: 0, awayScore: 0 })).toBeNull();
+  });
+});

@@ -52,6 +52,7 @@ function normalizeLiveMinute(minute) {
 import { decodeLiveAction, makeAction } from './liveAction.js';
 import { isTrackedGame, getLiveRow, setLiveRow, forgetLiveRow, __resetLiveTrackerForTests } from './liveTracker.js';
 import { bump } from './feedStats.js';
+import { captureHalfTimeScore } from './halfTime.js';
 import { announceGoalIfChanged, clearGoalAnnounced } from './goalAnnouncer.js';
 export { parseGameDetails };
 
@@ -499,6 +500,12 @@ async function applyGameDetailsNow(raw) {
   let htUntil = cardBaseline && cardBaseline.htUntil > nowMs ? cardBaseline.htUntil : 0;
   if (liveAction && liveAction.kind === 'half_time') htUntil = nowMs + HT_HOLD_MS;
   const liveStatusNow = htUntil > nowMs ? 'HT' : (row.live_status || undefined);
+  if (liveStatusNow === 'HT') {
+    // Score is frozen at the whistle: remember it for first/second-half settlement.
+    const htH = score && Number.isFinite(score.home) ? score.home : row.live_home_score;
+    const htA = score && Number.isFinite(score.away) ? score.away : row.live_away_score;
+    captureHalfTimeScore(matchId, htH, htA);
+  }
   function broadcastTick() {
     const nowTs = Date.now();
     const prevBroadcast = lastBroadcast.get(matchId);

@@ -1,5 +1,33 @@
 import pool from './db.js';
 
+// ---- first / second half markets ------------------------------------------
+// "Rezultati Pjesa e Parë", "Numri i Golave në Pjesën e Dytë", "1X2 1st Half" ...
+// The period phrase is cut out of the (normalised) market name and what is left
+// must be one of the known base markets, otherwise the leg stays PENDING for
+// manual review (HT/FT doubles, "which half has more goals" etc. never match).
+// First half uses the stored half-time score (matches_cache.ht_home/ht_away,
+// captured at the whistle); second half is final score minus half-time score.
+const FIRST_HALF_RE = /(?:\bne\s+)?(?:\bpjes(?:a|en|e)\s+(?:e\s+)?(?:pare|1)\b|\b1\.?\s*pjes(?:a|en|e)\b|\b(?:1st|first)\s+half\b|\bne\s+pushim\b)/;
+const SECOND_HALF_RE = /(?:\bne\s+)?(?:\bpjes(?:a|en|e)\s+(?:e\s+)?(?:dyte|2)\b|\b2\.?\s*pjes(?:a|en|e)\b|\b(?:2nd|second)\s+half\b)/;
+// Names that only make sense WITH a period phrase around them.
+const PERIOD_BASE_ALIASES = {
+  rezultati: 'rezultati final',
+  fituesi: 'rezultati final',
+  golat: 'numri i golave',
+  'mbi/nen': 'numri i golave',
+  'lart/poshte': 'numri i golave',
+};
+
+function splitPeriod(name) {
+  for (const [re, period] of [[FIRST_HALF_RE, 'H1'], [SECOND_HALF_RE, 'H2']]) {
+    if (re.test(name)) {
+      const base = name.replace(re, ' ').replace(/[-:()]/g, ' ').replace(/\s+/g, ' ').trim();
+      return { period, base };
+    }
+  }
+  return { period: null, base: name };
+}
+
 // Pure decision logic for a single bet leg given the final match result.
 // Kept separate from settleMatch (which is DB-coupled) so it can be unit
 // tested without a database. Returns 'WON' | 'LOST' | null (null = leave
@@ -86,7 +114,7 @@ function parseHandicap(leg) {
 // Kept separate from settleMatch (which is DB-coupled) so it can be unit
 // tested without a database. Returns 'WON' | 'LOST' | 'VOID' (stake
 // refunded, e.g. a push) | null (null = leave PENDING for manual review).
-export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeScore, awayScore }) {
+export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeScore, awayScore, htHome, htAway }) {
   const marketId = String(leg.market_id ?? '');
   const hasScore = Number.isFinite(homeScore) && Number.isFinite(awayScore);
 
@@ -105,7 +133,22 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
 
   // ---- name-based (also covers canonical keys with unusual option text) ----
   const marketName = norm(leg.market_name);
-  if (!marketName || PERIOD_OR_COMBO.test(marketName)) return null;
+  if (!marketName) return null;
+
+  const { period, base } = splitPeriod(marketName);
+  if (period) {
+    // Needs the half-time score; without it (e.g. the server was down at HT) the
+    // leg is left PENDING rather than guessed.
+    if (!hasScore || !Number.isFinite(htHome) || !Number.isFinite(htAway)) return null;
+    const h = period === 'H1' ? htHome : homeScore - htHome;
+    const a = period === 'H1' ? htAway : awayScore - htAway;
+    if (h < 0 || a < 0) return null;
+    return determineLegOutcome(
+      { ...leg, market_id: '', market_name: PERIOD_BASE_ALIASES[base] || base },
+      { winner: h > a ? 'HOME' : a > h ? 'AWAY' : 'DRAW', totalGoals: h + a, bothScored: h > 0 && a > 0, homeScore: h, awayScore: a }
+    );
+  }
+  if (PERIOD_OR_COMBO.test(marketName)) return null;
 
   if (H2H_NAMES.has(marketName)) {
     const side = sideOfSelection(leg);
@@ -227,6 +270,17 @@ export async function recomputeBetStatus(betId, client = pool) {
   }
 }
 
+// Legs the rules above cannot decide stay PENDING for manual settlement. The real
+// market names come from the provider, so log each distinct one once per process:
+// that tells which markets people actually bet on that still have no rule.
+const loggedUnrecognized = new Set();
+function noteUnrecognizedMarket(leg) {
+  const key = String(leg.market_name || leg.market_id || '?');
+  if (loggedUnrecognized.has(key) || loggedUnrecognized.size >= 300) return;
+  loggedUnrecognized.add(key);
+  console.log('[settle] no auto rule for market "' + key + '" (selection "' + (leg.selection_name || leg.selection_id) + '") -- left PENDING for manual settlement');
+}
+
 // Given a final score, automatically settles every market whose winner is
 // unambiguous from the final score alone (see determineLegOutcome): 1X2,
 // double chance, draw-no-bet, over/under (match and team), BTTS, odd/even,
@@ -260,13 +314,18 @@ export async function settleMatch(matchId, homeScore, awayScore, { force = false
     try {
       for (const leg of legs) {
         affectedBetIds.add(leg.bet_id);
-        const outcome = determineLegOutcome(leg, { winner, totalGoals, bothScored, homeScore, awayScore });
+        const outcome = determineLegOutcome(leg, {
+          winner, totalGoals, bothScored, homeScore, awayScore,
+          htHome: match.ht_home == null ? undefined : Number(match.ht_home),
+          htAway: match.ht_away == null ? undefined : Number(match.ht_away),
+        });
 
         if (outcome) {
           await client.query('UPDATE bet_selections SET status = $1 WHERE id = $2', [outcome, leg.id]);
           autoSettledCount++;
         } else {
           leftPendingCount++;
+          noteUnrecognizedMarket(leg);
         }
       }
 
@@ -301,7 +360,7 @@ export async function settleStuckBets() {
   const client = await pool.connect();
   try {
     const { rows: legs } = await client.query(
-      `SELECT bs.*, m.result_home, m.result_away
+      `SELECT bs.*, m.result_home, m.result_away, m.ht_home, m.ht_away
          FROM bet_selections bs
          JOIN matches_cache m ON m.id = bs.match_id
         WHERE bs.status = 'PENDING'
@@ -329,8 +388,10 @@ export async function settleStuckBets() {
           bothScored: home > 0 && away > 0,
           homeScore: home,
           awayScore: away,
+          htHome: leg.ht_home == null ? undefined : Number(leg.ht_home),
+          htAway: leg.ht_away == null ? undefined : Number(leg.ht_away),
         });
-        if (!outcome) continue;
+        if (!outcome) { noteUnrecognizedMarket(leg); continue; }
         await client.query('UPDATE bet_selections SET status = $1 WHERE id = $2', [outcome, leg.id]);
         affectedBetIds.add(leg.bet_id);
         settledLegs++;
