@@ -1230,7 +1230,7 @@ const App: React.FC = () => {
         liveCount={liveMatches.length}
       />
 
-      <div className="flex-1 flex max-w-[1450px] mx-auto w-full pt-4 px-2 gap-2 relative">
+      <div className="flex-1 flex w-full pt-4 px-2 lg:px-4 gap-2 relative">
 
         {currentView === 'sports' && (
           <>

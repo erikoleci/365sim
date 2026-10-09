@@ -18,7 +18,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
   return (
     <nav className="bg-brand-header text-brand-text text-sm sticky top-0 z-50 shadow-md flex flex-col">
       {/* Top Bar */}
-      <div className="max-w-[1450px] mx-auto w-full px-4 h-14 flex justify-between items-center">
+      <div className="w-full px-4 h-14 flex justify-between items-center">
         {/* Logo & Nav Section */}
         <div className="flex items-center gap-4 md:gap-6">
           <div className="flex items-center gap-2">
@@ -73,7 +73,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
       </div>
       
       {/* Secondary Nav Bar (Hidden on Mobile for cleaner look, or simplified) */}
-      <div className="bg-[#282828] border-b border-brand-divider h-8 flex items-center px-4 max-w-[1450px] mx-auto w-full overflow-x-auto no-scrollbar">
+      <div className="bg-[#282828] border-b border-brand-divider h-8 flex items-center px-4 w-full overflow-x-auto no-scrollbar">
          {currentView === 'sports' ? (
              <div className="flex gap-6 text-xs text-brand-textMuted whitespace-nowrap">
                  <button onClick={onGoHome} aria-current={activeTab === 'home' ? 'page' : undefined} className={`cursor-pointer transition-colors hover:text-brand-accent ${activeTab === 'home' ? 'font-bold text-white' : ''}`}>Home</button>
