@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
-import { settleMatch, recomputeBetStatus, settleStuckBets } from '../matchSettlement.js';
+import { settleMatch, recomputeBetStatus, settleStuckBets, voidOverdueLegs } from '../matchSettlement.js';
 import { logAudit } from '../auditLog.js';
 import { transferBalance } from '../ledger.js';
 import { importLondon365, getLondon365Status, getLondon365CountryDebug } from '../london365.js';
@@ -525,7 +525,9 @@ router.post('/matches/:id/settle', async (req, res) => {
 // Verifies every open (PENDING) ticket against matches that are already
 // finished and closes the ones whose result is now known.
 router.post('/bets/settle-stuck', async (req, res) => {
-  const result = await settleStuckBets();
+  const settled = await settleStuckBets();
+  const closed = await voidOverdueLegs();
+  const result = { ...settled, overdueVoided: closed.voidedLegs, overdueBetsRecomputed: closed.recomputedBets };
   await logAudit(req.user, 'BETS_SETTLE_STUCK', null, result);
   res.json({ ok: true, ...result });
 });

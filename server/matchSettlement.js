@@ -407,3 +407,60 @@ export async function settleStuckBets() {
     client.release();
   }
 }
+
+// ---- closure guarantee ------------------------------------------------------
+// A ticket is either still open because its match has not finished yet, or it is
+// closed. It must never sit "HAPUR" for good. Two kinds of leg can still get stuck
+// after everything above: a market no rule can decide (the provider's own naming,
+// manual settlement never done) and a match that never produces a result
+// (postponed, abandoned, dropped by the feed). Once the match is more than
+// UNSETTLED_BET_VOID_AFTER_HOURS (default 24h) past kickoff, such a leg is VOIDed:
+// it drops out of the ticket (a single bet is refunded, an accumulator is paid on
+// its remaining legs) -- the same treatment a bookmaker gives a postponed match.
+// 0 disables it. Admins can still settle any of these by hand before the deadline.
+const UNSETTLED_VOID_AFTER_MS = Math.max(0, Number(process.env.UNSETTLED_BET_VOID_AFTER_HOURS ?? 24)) * 3600 * 1000;
+
+export function isLegOverdue({ matchStart, betCreatedAt }, now, olderThanMs) {
+  if (!(olderThanMs > 0)) return false;
+  const start = Date.parse(matchStart);
+  // No match row any more (cleaned up): fall back to when the ticket was placed.
+  const ref = Number.isFinite(start) ? start : Number(betCreatedAt);
+  return Number.isFinite(ref) && now - ref > olderThanMs;
+}
+
+export async function voidOverdueLegs({ olderThanMs = UNSETTLED_VOID_AFTER_MS, now = Date.now() } = {}) {
+  if (!(olderThanMs > 0)) return { voidedLegs: 0, recomputedBets: 0, disabled: true };
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query(
+      `SELECT bs.id, bs.bet_id, bs.match_id, bs.market_name, bs.selection_name,
+              m.start_time AS match_start, b.created_at AS bet_created_at
+         FROM bet_selections bs
+         JOIN bets b ON b.id = bs.bet_id AND b.status = 'PENDING'
+         LEFT JOIN matches_cache m ON m.id = bs.match_id
+        WHERE bs.status = 'PENDING'`
+    );
+    const overdue = rows.filter((r) => isLegOverdue({ matchStart: r.match_start, betCreatedAt: r.bet_created_at }, now, olderThanMs));
+    if (overdue.length === 0) return { voidedLegs: 0, recomputedBets: 0 };
+
+    const betIds = new Set();
+    await client.query('BEGIN');
+    try {
+      for (const leg of overdue) {
+        await client.query(`UPDATE bet_selections SET status = 'VOID' WHERE id = $1 AND status = 'PENDING'`, [leg.id]);
+        betIds.add(leg.bet_id);
+      }
+      for (const betId of betIds) await recomputeBetStatus(betId, client);
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    }
+    for (const leg of overdue) {
+      console.log('[settle] voided overdue leg (no result/rule ' + Math.round(olderThanMs / 3600000) + 'h after kickoff): match ' + leg.match_id + ' / "' + (leg.market_name || '?') + '" / "' + (leg.selection_name || '?') + '"');
+    }
+    return { voidedLegs: overdue.length, recomputedBets: betIds.size };
+  } finally {
+    client.release();
+  }
+}

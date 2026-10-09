@@ -36,7 +36,7 @@ import { getMatchesResponseCacheSize } from './routes/matches.js';
 import { startKeepAliveSelfPing } from './keepAlive.js';
 import { startFeedStatsLog } from './feedStats.js';
 import { hydrateBetMatchIds } from './oddsHistoryPolicy.js';
-import { settleStuckBets } from './matchSettlement.js';
+import { settleStuckBets, voidOverdueLegs } from './matchSettlement.js';
 
 let dbReady = false;
 
@@ -347,8 +347,12 @@ async function start() {
   // already FINISHED (score known) gets settled, so a ticket can never sit
   // "HAPUR" after the game ended. First run 20s after boot, then every 2 min.
   const runStuckBetSweep = function () {
+    // 1) settle everything a rule can decide, 2) then close what can never be
+    // decided (see voidOverdueLegs) -- so no ticket stays open for good.
     settleStuckBets()
       .then(function (r) { if (r.settledLegs || r.recomputedBets) console.log('[settle] stuck-bet sweep: ' + JSON.stringify(r)); })
+      .then(function () { return voidOverdueLegs(); })
+      .then(function (r) { if (r.voidedLegs) console.log('[settle] overdue sweep: ' + JSON.stringify(r)); })
       .catch(function (err) { console.error('[settle] stuck-bet sweep failed:', err.message); });
   };
   setTimeout(runStuckBetSweep, 20 * 1000);
