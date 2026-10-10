@@ -1582,7 +1582,7 @@ const App: React.FC = () => {
                       </button>
                       {isTodaySectionOpen && (
                         <div className="divide-y divide-brand-divider">
-                          {todayMatches.slice(0, 20).map((match) => (
+                          {todayMatches.map((match) => (
                             <MatchRow
                               key={match.id}
                               match={match}

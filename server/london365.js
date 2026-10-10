@@ -124,7 +124,7 @@ const MAJOR_LEAGUES_ONLY = (process.env.LONDON365_MAJOR_ONLY || '1') === '1';
 // default per explicit request: its huge volume of state/regional
 // competitions was cluttering the feed and it isn't a priority market.
 const EXCLUDED_COUNTRIES = new Set(
-  (process.env.LONDON365_EXCLUDE_COUNTRIES || 'brazil')
+  (process.env.LONDON365_EXCLUDE_COUNTRIES ?? 'brazil')
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean)

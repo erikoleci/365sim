@@ -199,7 +199,7 @@ const MATCH_COLUMNS_LIST = `id, league, league_id, country_id, home_team, away_t
 // and the background London365 import.
 const MATCHES_PAGE_SIZE = 200;
 const MAX_CONCURRENT_MATCH_PAGES = 3;
-const MATCHES_PAGE_HARD_CAP = 30; // 30 * 200 = 6000-row safety ceiling against a runaway loop
+const MATCHES_PAGE_HARD_CAP = Math.max(1, Number(process.env.MATCHES_PAGE_HARD_CAP) || 30); // pages of 200 rows (default 30 = 6000 rows); raise it in .env for no practical limit
 
 async function fetchUpcomingMatchRowsPaged() {
   const allRows = [];
