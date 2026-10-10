@@ -25,12 +25,6 @@ export enum MatchStatus {
   FINISHED = 'FINISHED'
 }
 
-export interface MatchOdds {
-  home: number;
-  draw: number;
-  away: number;
-}
-
 export interface MarketOption {
   id: string;
   name: string;

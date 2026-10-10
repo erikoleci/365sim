@@ -375,11 +375,6 @@ export async function agentFetchMe() {
   return request<{ agent: User }>('/agent/me');
 }
 
-export async function agentFetchUsers(): Promise<User[]> {
-  const data = await request<{ users: User[] }>('/agent/users');
-  return data.users;
-}
-
 export async function agentCreateUser(u: { name: string; username: string; password: string; initialBalance?: number }) {
   return request<{ user: User }>('/agent/users', { method: 'POST', body: JSON.stringify(u) });
 }

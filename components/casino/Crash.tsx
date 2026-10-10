@@ -60,7 +60,7 @@ const Crash: React.FC<CrashProps> = ({ onSetBalance, userBalance, onClose }) => 
       cancelAnimationFrame(requestRef.current!);
 
       try {
-        const { crashed, multiplier: finalMultiplier, payout, balance } = await casinoCrashCashout(roundIdRef.current);
+        const { crashed, multiplier: finalMultiplier, balance } = await casinoCrashCashout(roundIdRef.current);
         onSetBalance(balance);
         if (crashed) {
           setMultiplier(finalMultiplier);

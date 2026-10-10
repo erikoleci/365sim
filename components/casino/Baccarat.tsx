@@ -8,17 +8,7 @@ interface BaccaratProps {
 }
 
 type Card = { suit: string; value: string; numValue: number };
-const SUITS = ['♠', '♥', '♦', '♣'];
-const VALUES = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-
 const getCardColor = (suit: string) => (suit === '♥' || suit === '♦' ? 'text-red-500' : 'text-black');
-
-// Baccarat Value: 10, J, Q, K = 0. A = 1. Others face value.
-const getBaccaratValue = (val: string) => {
-    if (['10', 'J', 'Q', 'K'].includes(val)) return 0;
-    if (val === 'A') return 1;
-    return parseInt(val);
-};
 
 const CardView: React.FC<{ card: Card }> = ({ card }) => (
   <div className="w-16 h-24 bg-white rounded flex flex-col items-center justify-center border-2 border-gray-300 shadow-md transform transition-transform hover:scale-105">
@@ -34,7 +24,6 @@ const Baccarat: React.FC<BaccaratProps> = ({ onSetBalance, userBalance, onClose 
   const [selectedBet, setSelectedBet] = useState<'PLAYER' | 'BANKER' | 'TIE' | null>(null);
   const [stake, setStake] = useState(50);
   const [message, setMessage] = useState('Select a hand to bet on');
-  const [winner, setWinner] = useState<'PLAYER' | 'BANKER' | 'TIE' | null>(null);
 
   const calculateScore = (hand: Card[]) => {
       const total = hand.reduce((acc, c) => acc + c.numValue, 0);
@@ -61,7 +50,6 @@ const Baccarat: React.FC<BaccaratProps> = ({ onSetBalance, userBalance, onClose 
       setMessage('Dealing...');
       setPlayerHand([]);
       setBankerHand([]);
-      setWinner(null);
 
       let round;
       try {
@@ -93,7 +81,6 @@ const Baccarat: React.FC<BaccaratProps> = ({ onSetBalance, userBalance, onClose 
           setBankerHand(finalBHand);
       }
 
-      setWinner(result);
       setGameState('FINISHED');
       onSetBalance(round.balance);
 
@@ -108,7 +95,6 @@ const Baccarat: React.FC<BaccaratProps> = ({ onSetBalance, userBalance, onClose 
       setGameState('BETTING');
       setPlayerHand([]);
       setBankerHand([]);
-      setWinner(null);
       setMessage('Place your bet');
   };
 

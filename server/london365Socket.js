@@ -43,10 +43,6 @@ const subscribedGameIds = new Set();
 
 let socket = null;
 
-export function isLondon365SocketConnected() {
-  return !!(socket && socket.connected);
-}
-
 export async function startLondon365Socket() {
   if (!isLondon365Enabled() || !SOCKET_ENABLED || socket) return;
 
@@ -139,13 +135,6 @@ export async function startLondon365Socket() {
   });
 
   console.log('[london365-socket] starting live socket feed for ' + SOCKET_URL);
-}
-
-export function stopLondon365Socket() {
-  if (!socket) return;
-  try { socket.close(); } catch (err) { /* ignore */ }
-  socket = null;
-  setLondon365SocketConnected(false);
 }
 
 // Live-match-DETAIL socket ("gamedetails" event): score, cards, and the
@@ -372,11 +361,6 @@ export function getSubscribedGameDetailsIds() {
   return new Set(subscribedGameIds);
 }
 
-export function stopLondon365GameDetailsSocket() {
-  if (!gameDetailsSocket) return;
-  try { gameDetailsSocket.close(); } catch (err) { /* ignore */ }
-  gameDetailsSocket = null;
-}
 export function getSocketMemoryDiagnostics() {
   return { subscribedGameIds: subscribedGameIds.size };
 }

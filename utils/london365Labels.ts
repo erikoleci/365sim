@@ -1,7 +1,7 @@
-// Frontend copy of server/london365Labels.js — see that file's header for
-// where this dictionary came from and, importantly, what it does NOT
-// confirm (no "who has the ball"/attack indicator has a known live source
-// yet; this is display labels only for event types we DO detect).
+// Albanian display labels for the provider's field/attribute names, used by the live
+// match detail. Display text only: it does not confirm what a field means (for example
+// no "who has the ball" / attack indicator has a known live source) and it only covers
+// the event types we actually detect.
 export const LONDON365_EVENT_LABELS: Record<string, string> = {
   Pushim: 'Pushim',
   Ndeshja_Mbaroi: 'Ndeshja Mbaroi',

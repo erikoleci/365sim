@@ -114,10 +114,6 @@ export const pushOddsChanged = (matchId, data) => {
   broadcast(`match:${matchId}`, { type: 'ODDS_CHANGED', ...data });
   broadcast('odds', { matchId, type: 'ODDS_CHANGED', ...data });
 };
-export const pushMatchStarted = (matchId) => {
-  broadcast(`match:${matchId}`, { type: 'MATCH_STARTED' });
-  broadcast('live', { matchId, type: 'MATCH_STARTED' });
-};
 // Fired the moment a match is confirmed finished (either the live-feed
 // end-detection sweep in syncLondon365Live, or a provider 'game ended'
 // event) — WITHOUT this, a finished match kept sitting in the frontend's
@@ -147,4 +143,3 @@ export const pushLiveTick = (matchId, data) => {
   broadcast(`match:${matchId}`, { type: 'LIVE_TICK', ...data });
   broadcast('live', { matchId, type: 'LIVE_TICK', ...data });
 };
-export const pushUserNotification = (userId, data) => broadcast(`user:${userId}`, { type: 'NOTIFICATION', ...data });

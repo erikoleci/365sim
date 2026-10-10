@@ -282,7 +282,6 @@ const App: React.FC = () => {
   // Auto-reconnects with exponential backoff on drop instead of going
   // permanently silent — the 30s poll above is only a slow fallback, not
   // a substitute for live updates.
-  const [wsConnected, setWsConnected] = useState(false);
   useEffect(() => {
     if (!currentUser || currentView !== 'sports') return;
     let socket: WebSocket | null = null;
@@ -323,7 +322,6 @@ const App: React.FC = () => {
       socket = new WebSocket(api.getWsUrl());
       socket.onopen = () => {
         attempt = 0;
-        setWsConnected(true);
         const token = api.getToken();
         if (token) socket!.send(JSON.stringify({ type: 'auth', token }));
         socket!.send(JSON.stringify({ type: 'subscribe', topic: 'live' }));
@@ -439,7 +437,6 @@ const App: React.FC = () => {
         } catch { /* ignore malformed socket messages */ }
       };
       socket.onclose = () => {
-        setWsConnected(false);
         if (cancelled) return;
         // Exponential backoff: 1s, 2s, 4s, 8s... capped at 30s.
         const delay = Math.min(30000, 1000 * 2 ** attempt);
@@ -659,7 +656,7 @@ const App: React.FC = () => {
   // League/country grouping (pure logic) now lives in utils/leagueGrouping.ts
   // -- see that file for why it was extracted. Re-bound to the same local
   // names so nothing below this point needs to change.
-  const { leagueCountryToken, leagueCountry, countryFlag } = leagueGrouping;
+  const { leagueCountry, countryFlag } = leagueGrouping;
 
   // Filtri "shtet": kur shtypet Spanja, currentLeague bëhet "COUNTRY:Spanja"
   // dhe faqja shfaq TË GJITHA ligat e Spanjës (të grupuara ligë-për-ligë),
