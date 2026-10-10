@@ -324,16 +324,22 @@ export function isLondon365Enabled() {
 }
 
 // HTTP with gentle retry; the API intermittently answers "Something went wrong".
+const API_TIMEOUT_MS = Math.max(1, Number(process.env.LONDON365_API_TIMEOUT_MS || 12000));
+
 async function api(pathname, opts) {
   opts = opts || {};
   const retries = opts.retries || 3;
   let lastErr = null;
   for (let attempt = 1; attempt !== retries + 1; attempt++) {
     try {
+      // Without a timeout a stalled connection never settles. One such request
+      // used to hang a whole live cycle (and, with the overlap guard below, every
+      // later cycle too): all matches froze at 0-0 with an estimated clock.
       const resp = await fetch(API_BASE + pathname, {
         method: opts.method || 'GET',
         headers: HEADERS,
         body: opts.body ? JSON.stringify(opts.body) : undefined,
+        signal: AbortSignal.timeout(API_TIMEOUT_MS),
       });
       const text = await resp.text();
       if (resp.ok === false) throw new Error('HTTP ' + resp.status);
@@ -862,7 +868,7 @@ export async function fetchDetailRows(gameId) {
 // returns zero rows once a game kicks off. Same row shape as
 // fetchDetailRows so buildEvent, the repair pass and the live loop share it.
 export async function fetchLiveRows(gameId) {
-  const detail = await api('/ajax/livegame/' + gameId, { retries: 4 });
+  const detail = await api('/ajax/livegame/' + gameId, { retries: 2 });
   const rows = [];
   const groups = Array.isArray(detail) ? detail : [];
   // The detail response repeats result/current_minute/api_status on every
@@ -1209,7 +1215,7 @@ export async function upsertMatch(ev, league, status, liveScores, liveInfo, leag
       bump(existing ? 'upsert.written' : 'upsert.inserted');
       await pool.query(
         `INSERT INTO matches_cache (id, league, league_id, country_id, home_team, away_team, start_time, status, raw_json, fetched_at, live_home_score, live_away_score, live_minute, live_status, live_minute_updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$16)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::text,$14,(CASE WHEN $13::text IS NULL THEN NULL ELSE $16::bigint END))
          ON CONFLICT (id) DO UPDATE SET
            league = CASE WHEN excluded.league = '' THEN matches_cache.league ELSE excluded.league END,
            -- COALESCE, not overwrite: not every upsert path resolves a
@@ -1927,6 +1933,19 @@ export function hasRealLiveResult(row) {
   return hasScore && hasClock;
 }
 
+// "missing live data" is logged per game; with ~100 live games and a cycle every
+// 30s that is hundreds of lines a minute and buries everything else. Once per game
+// per 10 minutes is enough to see which games are affected.
+const missingLiveLoggedAt = new Map();
+const MISSING_LIVE_LOG_EVERY_MS = 10 * 60 * 1000;
+export function shouldLogMissingLive(gameId, now = Date.now()) {
+  const last = missingLiveLoggedAt.get(gameId);
+  if (last != null && now - last < MISSING_LIVE_LOG_EVERY_MS) return false;
+  if (missingLiveLoggedAt.size > 2000) missingLiveLoggedAt.clear();
+  missingLiveLoggedAt.set(gameId, now);
+  return true;
+}
+
 const LIVE_CONCURRENCY = Math.max(1, Number(process.env.LONDON365_LIVE_CONCURRENCY || 6));
 // Upper bound for the adaptive value below; kept at the DB pool size (8) because
 // every in-flight game ends in a database write.
@@ -1959,15 +1978,37 @@ export async function runPool(items, limit, worker) {
 // that already answers "Something went wrong" under load, which is exactly
 // what left half the live matches without minute/odds.
 let liveSyncRunning = false;
+let liveSyncStartedAt = 0;
+let liveSyncToken = 0;
+// A cycle older than this is considered stuck (a hung request or lock) and is
+// abandoned: the guard is released and a fresh cycle starts. Without it one stuck
+// cycle would make every later cycle skip, freezing all live data until a restart.
+const LIVE_CYCLE_MAX_MS = Math.max(LIVE_INTERVAL_MS * 3, 90000);
+
+// 'start' a new cycle, 'skip' this tick (previous cycle still healthy), or
+// 'reset' (previous cycle is stuck: release the guard and start anyway).
+export function liveCycleDecision(running, startedAt, now, maxMs) {
+  if (!running) return 'start';
+  return now - startedAt < maxMs ? 'skip' : 'reset';
+}
+
 export function syncLondon365Live() {
-  if (liveSyncRunning) {
+  const decision = liveCycleDecision(liveSyncRunning, liveSyncStartedAt, Date.now(), LIVE_CYCLE_MAX_MS);
+  if (decision === 'skip') {
     bump('live.cycle_skipped_overlap');
     return Promise.resolve({ games: 0, skipped: true });
   }
+  if (decision === 'reset') {
+    console.error('[london365] live cycle stuck for ' + (Date.now() - liveSyncStartedAt) + 'ms — releasing the guard and starting a fresh cycle');
+    bump('live.cycle_watchdog_reset');
+  }
+  const token = ++liveSyncToken;
   liveSyncRunning = true;
-  const startedAt = Date.now();
+  liveSyncStartedAt = Date.now();
+  const startedAt = liveSyncStartedAt;
   return syncLondon365LiveOnce().finally(() => {
-    liveSyncRunning = false;
+    // Only the newest cycle may release the guard (an abandoned one finishing late must not).
+    if (token === liveSyncToken) liveSyncRunning = false;
     const took = Date.now() - startedAt;
     if (took > LIVE_INTERVAL_MS) {
       console.warn('[london365] live cycle took ' + took + 'ms (> ' + LIVE_INTERVAL_MS + 'ms interval) — consider raising LONDON365_LIVE_CONCURRENCY');
@@ -1985,6 +2026,8 @@ async function syncLondon365LiveOnce() {
   let gamesSynced = 0;
   let detailFailures = 0;
   let liveSeen = 0;
+  let noMinute = 0;
+  let noScore = 0;
   const liveIds = new Set();
 
   for (const sid of await resolveSports()) {
@@ -2065,7 +2108,9 @@ async function syncLondon365LiveOnce() {
         // Diagnostic only (no behavior change) -- helps confirm/deny the
         // separate claim that field T can substitute as a minute source
         // when this path is empty, without trusting that claim yet.
-        if (!minute || !score) {
+        if (!minute) noMinute++;
+        if (!score) noScore++;
+        if ((!minute || !score) && shouldLogMissingLive(g.id)) {
           console.warn(
             '[london365] game ' + g.id + ' missing live data — ' +
             'detailFetched=' + Boolean(liveMeta) +
@@ -2178,7 +2223,7 @@ async function syncLondon365LiveOnce() {
   // Kept in memory (was a kv_store write every 30s, 24/7, purely for the
   // admin status page). getLondon365Status() reads this first.
   lastLiveSyncAt = Date.now();
-  if (liveSeen) console.log('[london365] live cycle: ' + gamesSynced + '/' + liveSeen + ' games synced, ' + detailFailures + ' detail fetch failures');
+  if (liveSeen) console.log('[london365] live cycle: ' + gamesSynced + '/' + liveSeen + ' games synced, ' + detailFailures + ' detail fetch failures, ' + noMinute + ' without minute, ' + noScore + ' without score');
   return { games: gamesSynced };
 }
 

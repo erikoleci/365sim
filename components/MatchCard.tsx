@@ -1,7 +1,7 @@
 import React from 'react';
 import { Match, MatchStatus } from '../types';
 import { formatMatchTime, formatMatchDayMonth, isSameAlbaniaDay, albaniaTodayKey } from '../utils/albaniaTime';
-import { formatLiveStatus, isHalftime } from '../utils/liveStatus';
+import { isHalftime } from '../utils/liveStatus';
 
 interface MatchRowProps {
   match: Match;
@@ -25,6 +25,7 @@ interface MatchRowProps {
 // under either reading (e.g. a stray provider sentinel like "300924") and is
 // discarded rather than shown as a nonsense "5015:24".
 const MAX_SANE_MATCH_MINUTES = 130;
+const MAX_CLOCK_STAMP_AGE_MS = 3 * 60 * 60 * 1000;
 export function parseLiveClock(minute?: string): { minute: number; second: number; half: string } | null {
   let raw = String(minute || '').trim();
   if (/^\d+$/.test(raw) && Number(raw) > MAX_SANE_MATCH_MINUTES) {
@@ -74,6 +75,15 @@ export function projectClock(totalSecondsAtReceivedAt: number, receivedAt: numbe
   return { minute, second, half };
 }
 
+// When a minute reading was received: the server's stamp if it is plausible, else
+// `now`. A stamp older than a few hours, or in the future, cannot belong to this
+// match's running clock (rows imported days before kickoff used to carry their
+// import time), so it is ignored instead of producing a clock like "11081:42".
+export function clockReceivedAt(serverUpdatedAt: number | undefined, now: number): number {
+  const ok = serverUpdatedAt != null && serverUpdatedAt <= now && now - serverUpdatedAt < MAX_CLOCK_STAMP_AGE_MS;
+  return ok ? (serverUpdatedAt as number) : now;
+}
+
 export function useTickingClock(
   rawMinute?: string,
   // Real server-side "as of" timestamp for rawMinute (epoch ms) — see
@@ -103,7 +113,9 @@ export function useTickingClock(
       return;
     }
     const incomingTotalSeconds = base.minute * 60 + base.second;
-    const receivedAt = serverUpdatedAt ?? Date.now();
+    // A minute reading older than a few hours (or from the future) cannot belong to
+    // this match's running clock: fall back to the local receive time.
+    const receivedAt = clockReceivedAt(serverUpdatedAt, Date.now());
     // Never let the displayed clock jump BACKWARD within the same match.
     // A real match clock only ever moves forward; a lower incoming value
     // means this update is stale/out of order relative to what we already
@@ -130,9 +142,12 @@ export function useTickingClock(
   }, [!!base, ticking]);
 
   if (!base || !baseRef.current) return base;
-  return ticking
+  const projected = ticking
     ? projectClock(baseRef.current.totalSeconds, baseRef.current.receivedAt, Date.now())
     : projectClock(baseRef.current.totalSeconds, baseRef.current.receivedAt, baseRef.current.receivedAt); // frozen: elapsed=0
+  // Never display an impossible clock (it would read like "11081:42"): callers fall
+  // back to the plain "LIVE" label when there is no usable clock.
+  return projected.minute > MAX_SANE_MATCH_MINUTES ? null : projected;
 }
 
 // "61:01" gjatë lojës normale; kur provideri s'jep fare minutë (vetëm "LIVE"

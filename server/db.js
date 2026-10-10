@@ -274,6 +274,9 @@ export async function initDb() {
   // HT (see halfTime.js). Lets first/second-half markets be settled automatically.
   await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS ht_home INTEGER;`);
   await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS ht_away INTEGER;`);
+  // Rows imported before a match started were stamped with their import time even
+  // though they had no minute; that stale stamp made the live clock read days.
+  await pool.query(`UPDATE matches_cache SET live_minute_updated_at = NULL WHERE live_minute IS NULL AND live_minute_updated_at IS NOT NULL;`);
   // League/country identity as real provider IDs, not just the slugged
   // `league` display key. Before this, the ONLY handle on a league was a
   // human-derived string (l365_<country>__<competition>), which is exactly

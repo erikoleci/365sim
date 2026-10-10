@@ -328,7 +328,10 @@ router.get('/:id/live-detail', wrap(async (req, res) => {
   // migrations/0002_live_minute_updated_at.sql) -- when the pitch/header
   // clock resync from this endpoint, this is what lets it show the correct
   // elapsed time immediately instead of the raw minute alone.
-  if (statistics && cache?.live_minute_updated_at != null) {
+  // Only meaningful alongside a REAL provider minute: a row's stamp can predate it
+  // (older rows were stamped with their import time), and pairing that with an
+  // estimated minute produced clocks like "11081:42".
+  if (statistics && cache?.live_minute && cache?.live_minute_updated_at != null) {
     statistics = { ...statistics, minuteUpdatedAt: Number(cache.live_minute_updated_at) };
   }
   const shownEvents = cache
