@@ -4,94 +4,19 @@ import { queryWithRetry } from '../db.js';
 import { mapEventToMatch } from '../oddsUtils.js';
 import { ensureLondon365Import, getLondon365LeagueNames, getLondon365LeagueMeta } from '../london365.js';
 import { wrap } from '../asyncHandler.js';
+import { dedupeMatches } from '../fixtureDedupe.js';
 
 const router = express.Router();
 
-// --- Fixture de-duplication safety net -------------------------------
-// LondonPro365 is the ONLY match source. Every row's id is 'l365-<gameId>',
-// which is already unique per fixture, so true duplicates shouldn't occur —
-// this stays only as a defensive net (e.g. a fixture briefly reachable
-// under two different league classifications during a country/league
-// remap) and to keep the richer LIVE/FINISHED status when it does.
-function outcomeCount(m) {
-  let n = 0;
-  for (const mk of m.markets || []) n += (mk.options || []).length;
-  return n;
-}
-function normTeam(s) {
-  return String(s || '')
-    .toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/\b(fc|cf|sc|ac|afc|fk|if|bk|sk|cd|sd|ud|club)\b/g, ' ')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-function levenshtein(a, b) {
-  if (a === b) return 0;
-  if (!a.length) return b.length;
-  if (!b.length) return a.length;
-  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    const cur = [i];
-    for (let j = 1; j <= b.length; j++) {
-      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
-    }
-    prev = cur;
-  }
-  return prev[b.length];
-}
-function teamSim(a, b) {
-  if (!a || !b) return 0;
-  if (a === b) return 1;
-  const d = levenshtein(a, b);
-  return 1 - d / Math.max(a.length, b.length);
-}
-function sameFixture(a, b) {
-  const ah = normTeam(a.homeTeam), aa = normTeam(a.awayTeam);
-  const bh = normTeam(b.homeTeam), ba = normTeam(b.awayTeam);
-  const direct = teamSim(ah, bh) >= 0.75 && teamSim(aa, ba) >= 0.75;
-  const swapped = teamSim(ah, ba) >= 0.75 && teamSim(aa, bh) >= 0.75;
-  return direct || swapped;
-}
-const STATUS_RANK = { UPCOMING: 0, LIVE: 1, FINISHED: 2 };
-function dedupeMatches(list) {
-  const WINDOW_MS = 3 * 60 * 60 * 1000;
-  const sorted = [...list].sort((x, y) => Date.parse(x.startTime) - Date.parse(y.startTime));
-  const groups = []; // {rep, candidates, time}
-  for (const m of sorted) {
-    const t = Date.parse(m.startTime);
-    let placed = false;
-    if (!Number.isNaN(t)) {
-      for (const g of groups) {
-        if (Math.abs(t - g.time) > WINDOW_MS) continue;
-        if (sameFixture(g.rep, m)) {
-          g.candidates.push(m);
-          placed = true;
-          break;
-        }
-      }
-    }
-    if (!placed) groups.push({ rep: m, candidates: [m], time: t });
-  }
-  return groups.map((g) => {
-    let best = g.candidates[0];
-    for (const c of g.candidates) {
-      const cs = outcomeCount(c);
-      const bs = outcomeCount(best);
-      if (cs > bs) best = c;
-    }
-    best = { ...best };
-    for (const c of g.candidates) {
-      if (c === best || (STATUS_RANK[c.status] || 0) <= (STATUS_RANK[best.status] || 0)) continue;
-      best.status = c.status;
-      best.isLive = c.isLive;
-      best.liveHomeScore = c.liveHomeScore ?? best.liveHomeScore;
-      best.liveAwayScore = c.liveAwayScore ?? best.liveAwayScore;
-      best.currentMinute = c.currentMinute ?? best.currentMinute;
-      best.currentMinuteUpdatedAt = c.currentMinuteUpdatedAt ?? best.currentMinuteUpdatedAt;
-    }
-    return best;
-  });
+// Evidence for "same fixture under two provider ids": logged once per id-set so
+// the server log shows exactly which ids were merged and which one fed live data.
+const mergeLogged = new Set();
+function logMerge(ids, keptId, liveSourceId) {
+  const key = ids.slice().sort().join('+');
+  if (mergeLogged.has(key)) return;
+  if (mergeLogged.size > 2000) mergeLogged.clear();
+  mergeLogged.add(key);
+  console.warn('[matches] same fixture under several ids: ' + ids.join(', ') + ' -> kept ' + keptId + (liveSourceId ? ' (live data from ' + liveSourceId + ')' : ''));
 }
 
 // LondonPro365 is the sole match/odds source. Every request kicks a
@@ -268,7 +193,7 @@ router.get('/', wrap(async (req, res) => {
       )).rows
     : await fetchUpcomingMatchRowsPaged();
   console.log(`[matches] GET / -> ${rows.length} cached row(s)${req.query.league ? ` for league=${req.query.league}` : ''}`);
-  const body = { matches: dedupeMatches(rows.map(mapEventToMatch)), leagueNames: getLondon365LeagueNames(), leagueMeta: getLondon365LeagueMeta() };
+  const body = { matches: dedupeMatches(rows.map(mapEventToMatch), logMerge), leagueNames: getLondon365LeagueNames(), leagueMeta: getLondon365LeagueMeta() };
   matchesResponseCache.set(cacheKey, { body, computedAt: Date.now() });
   res.json(body);
 }));

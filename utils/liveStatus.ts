@@ -32,6 +32,30 @@ export function formatLiveStatus(match: Pick<Match, 'currentMinute' | 'liveStatu
   return 'LIVE';
 }
 
+// WebSocket live messages (GOAL, LIVE_TICK, MATCH_ENDED...) carry the id of the provider
+// record that receives live data. When the same fixture is shown from a duplicate record
+// (richer odds), the server marks it with liveSourceId; both ids must hit the same row.
+export function isMessageForMatch(m: { id: string; liveSourceId?: string }, matchId: string): boolean {
+  return m.id === matchId || m.liveSourceId === matchId;
+}
+
+// An estimated minute is a wall-clock guess from kickoff time, not a provider reading:
+// show it as a rounded "~40'" -- never with ticking seconds ("~40:19"), which would
+// look like a precise provider clock.
+export function formatEstimatedMinute(minute: string | undefined | null): string {
+  const raw = String(minute ?? '').trim();
+  if (!raw) return 'LIVE';
+  const m = raw.match(/^(\d+)(\+?)/);
+  if (!m) return 'LIVE';
+  return `~${m[1]}${m[2] ? '+' : "'"}`;
+}
+
+// Text for the live badge when there is no usable ticking clock.
+export function liveMinuteFallback(match: { currentMinute?: string; currentMinuteEstimated?: boolean }): string {
+  if (match.currentMinuteEstimated) return formatEstimatedMinute(match.currentMinute);
+  return match.currentMinute ? `${match.currentMinute}'` : 'LIVE';
+}
+
 export function isHalftime(match: Pick<Match, 'liveStatus'>): boolean {
   const raw = (match.liveStatus || '').toString().toUpperCase().trim();
   return raw === 'HT' || raw === 'HALFTIME' || raw === 'HALF_TIME' || raw === 'PAUSED';

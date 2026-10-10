@@ -2,7 +2,7 @@ import React from 'react';
 import { Match, MatchStatus } from '../types';
 import { formatMatchTime, formatMatchDayMonth, isSameAlbaniaDay, albaniaTodayKey } from '../utils/albaniaTime';
 import { getMatchWinnerMarket, useTickingClock, formatLiveClock } from './MatchCard';
-import { isHalftime } from '../utils/liveStatus';
+import { isHalftime, liveMinuteFallback } from '../utils/liveStatus';
 
 interface FeaturedMatchCardProps {
   match: Match;
@@ -21,7 +21,7 @@ const FeaturedMatchCard: React.FC<FeaturedMatchCardProps> = ({ match, onBetClick
   const matchWinnerMarket = getMatchWinnerMarket(match);
   const isToday = isSameAlbaniaDay(match.startTime, albaniaTodayKey());
   const shortId = match.id.replace(/^l365-/, '');
-  const liveClock = useTickingClock(match.currentMinute, match.currentMinuteUpdatedAt, isLive && !isHalftime(match));
+  const liveClock = useTickingClock(match.currentMinute, match.currentMinuteUpdatedAt, isLive && !isHalftime(match), !!match.currentMinuteEstimated);
 
   const getButtonClass = (marketId: string, selectionId: string) => {
     const uniqueId = `${match.id}-${marketId}-${selectionId}`;
@@ -38,7 +38,7 @@ const FeaturedMatchCard: React.FC<FeaturedMatchCardProps> = ({ match, onBetClick
         <div className="flex items-center justify-between text-[10px] text-brand-textMuted mb-1.5">
           <span className={isLive ? 'text-brand-accent font-bold animate-pulse' : ''}>
             {isLive
-              ? (isHalftime(match) ? 'Pushim' : liveClock ? formatLiveClock(liveClock) : (match.currentMinute ? `${match.currentMinute}'` : 'LIVE'))
+              ? (isHalftime(match) ? 'Pushim' : liveClock ? formatLiveClock(liveClock) : liveMinuteFallback(match))
               : isToday ? formatMatchTime(match.startTime) : formatMatchDayMonth(match.startTime)}
           </span>
           <span className="opacity-60 hidden sm:inline">{shortId}</span>

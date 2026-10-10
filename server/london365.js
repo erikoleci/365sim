@@ -1402,6 +1402,23 @@ export async function recordGoalIfChanged(ev, score, minute, prev, eventMinute) 
   if (homeDelta === 0 && awayDelta === 0) return;
   const now = Date.now();
 
+  // First time we see a score for this match and it already holds 2+ goals (server restarted
+  // mid-match, match imported late, e.g. first seen as 5-1 at minute 72): at least one goal
+  // is certainly OLD and the provider only gives the aggregate score, so WHEN they happened
+  // is unknown. Stamping them with the current clock would invent goal events (all "at 72'").
+  // Only the score itself is stored; real goal events are logged from the next observed
+  // change onwards. A first score of exactly one goal (1-0 / 0-1) is still treated as the
+  // goal it most likely is.
+  if (!hadScoreBefore && score.home + score.away >= 2) {
+    await pool.query(
+      `INSERT INTO live_statistics (match_id, home_score, away_score, updated_at)
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (match_id) DO UPDATE SET home_score = excluded.home_score, away_score = excluded.away_score, updated_at = excluded.updated_at`,
+      [ev.id, score.home, score.away, now]
+    );
+    return;
+  }
+
   // Tell the clients FIRST (memory only), persist afterwards. No-op if the
   // gamedetails socket already announced this exact score change.
   announceGoalIfChanged(ev, score, minute, prev);

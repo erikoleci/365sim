@@ -95,4 +95,25 @@ describe('recordGoalIfChanged', function () {
     expect(pushGoalDisallowed).not.toHaveBeenCalled();
     expect(mocks.events).toEqual([]);
   });
+
+  it('a score first seen mid-match with 2+ goals (5-1 at minute 72) is stored but does NOT invent goal events or a goal push', async function () {
+    await recordGoalIfChanged(ev, { home: 5, away: 1 }, '72:10', null);
+    expect(mocks.events).toEqual([]);
+    expect(pushGoal).not.toHaveBeenCalled();
+    expect(mocks.query.mock.calls.some((c) => String(c[0]).indexOf('INSERT INTO live_statistics') === 0)).toBe(true);
+  });
+
+  it('after that, the next real goal is logged normally with the observed minute', async function () {
+    await recordGoalIfChanged(ev, { home: 5, away: 1 }, '72:10', null);
+    await recordGoalIfChanged(ev, { home: 6, away: 1 }, '75:39', { live_home_score: 5, live_away_score: 1 });
+    expect(mocks.events).toHaveLength(1);
+    expect(mocks.events[0]).toMatchObject({ team: 'Home FC', detail: '6-1', minute: 76 });
+    expect(pushGoal).toHaveBeenCalledTimes(1);
+  });
+
+  it('a first score of exactly one goal is still logged as a goal', async function () {
+    await recordGoalIfChanged(ev, { home: 1, away: 0 }, '48:37', null);
+    expect(mocks.events).toHaveLength(1);
+    expect(pushGoal).toHaveBeenCalledTimes(1);
+  });
 });

@@ -11,6 +11,7 @@
     "test": "vitest run",
     "migrate": "node server/runMigrationsCli.js",
     "db:check": "node server/checkDb.js",
+    "audit:live": "node server/auditLiveFixtures.js",
     "test:watch": "vitest",
     "server": "node --max-old-space-size=400 server/server.js",
     "server:dev": "node --watch server/server.js"

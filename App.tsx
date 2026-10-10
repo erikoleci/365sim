@@ -11,7 +11,7 @@ import CasinoHub from './components/CasinoHub';
 import { User, Match, Bet, UserRole, BetSelectionItem, MatchStatus } from './types';
 import * as api from './services/api';
 import { albaniaDateKey, albaniaTodayKey, isSameAlbaniaDay } from './utils/albaniaTime';
-import { isStaleLiveMatch, MAX_LIVE_AGE_MS } from './utils/liveStatus';
+import { isStaleLiveMatch, MAX_LIVE_AGE_MS, isMessageForMatch } from './utils/liveStatus';
 import * as leagueGrouping from './utils/leagueGrouping';
 import FeaturedMatchCard from './components/FeaturedMatchCard';
 import LoadMoreSentinel from './components/LoadMoreSentinel';
@@ -302,7 +302,7 @@ const App: React.FC = () => {
       const batch = new Map(tickBuffer);
       tickBuffer.clear();
       setMatches((current) => current.map((m) => {
-        const t = batch.get(m.id);
+        const t = batch.get(m.id) ?? (m.liveSourceId ? batch.get(m.liveSourceId) : undefined);
         if (!t) return m;
         return {
           ...m,
@@ -335,7 +335,7 @@ const App: React.FC = () => {
           // tick can never overwrite what this message is about to set.
           if (msg.type !== 'LIVE_TICK') flushTicks();
           if (msg.type === 'GOAL') {
-            setMatches((current) => current.map((m) => m.id === msg.matchId ? {
+            setMatches((current) => current.map((m) => isMessageForMatch(m, msg.matchId) ? {
               ...m,
               status: MatchStatus.LIVE,
               isLive: true,
@@ -352,7 +352,7 @@ const App: React.FC = () => {
             // back at all: the old code treated every score change as a new
             // goal, so a disallowed goal showed up as a fabricated goal for
             // the WRONG team (see server/london365.js recordGoalIfChanged).
-            setMatches((current) => current.map((m) => m.id === msg.matchId ? {
+            setMatches((current) => current.map((m) => isMessageForMatch(m, msg.matchId) ? {
               ...m,
               liveHomeScore: msg.homeScore ?? m.liveHomeScore,
               liveAwayScore: msg.awayScore ?? m.liveAwayScore,
@@ -381,7 +381,7 @@ const App: React.FC = () => {
           } else if (msg.type === 'LIVE_EVENT') {
             loadMatches();
           } else if (msg.type === 'MATCH_STARTED') {
-            setMatches((current) => current.map((m) => m.id === msg.matchId ? { ...m, status: MatchStatus.LIVE, isLive: true } : m));
+            setMatches((current) => current.map((m) => isMessageForMatch(m, msg.matchId) ? { ...m, status: MatchStatus.LIVE, isLive: true } : m));
             loadMatches();
           } else if (msg.type === 'MATCH_ENDED') {
             // Without this, a match that just finished stayed in the "Live"
@@ -389,7 +389,7 @@ const App: React.FC = () => {
             // poll (widened to 5 min for bandwidth) caught up. Apply the
             // final score and flip status immediately so it drops out of
             // any Live-only view right away instead of minutes later.
-            setMatches((current) => current.map((m) => m.id === msg.matchId ? {
+            setMatches((current) => current.map((m) => isMessageForMatch(m, msg.matchId) ? {
               ...m,
               status: MatchStatus.FINISHED,
               isLive: false,

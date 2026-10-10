@@ -4,7 +4,7 @@ import * as api from '../services/api';
 import type { LiveStatistics, MatchEvent } from '../services/api';
 import LivePitch from './LivePitch';
 import { useTickingClock, formatLiveClock } from './MatchCard';
-import { isHalftime } from '../utils/liveStatus';
+import { isHalftime, liveMinuteFallback } from '../utils/liveStatus';
 import { LONDON365_EVENT_LABELS, LONDON365_STAT_LABELS } from '../utils/london365Labels';
 
 interface MatchDetailProps {
@@ -69,7 +69,9 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
   const headerClock = useTickingClock(
     liveDetail?.statistics?.minute != null ? String(liveDetail.statistics.minute) : match.currentMinute,
     liveDetail?.statistics?.minuteUpdatedAt ?? match.currentMinuteUpdatedAt,
-    match.status === MatchStatus.LIVE && !isHalftime(match)
+    match.status === MatchStatus.LIVE && !isHalftime(match),
+    // estimated only when no real provider minute came with the live detail
+    liveDetail?.statistics?.minute == null && !!match.currentMinuteEstimated
   );
 
   // Odds-movement arrows: remember the last-seen price per option id, and
@@ -105,7 +107,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
     let cancelled = false;
     const load = () => {
       setLiveDetailLoading(true);
-      api.fetchMatchLiveDetail(match.id)
+      api.fetchMatchLiveDetail(match.liveSourceId ?? match.id)
         .then((d) => { if (!cancelled) setLiveDetail(d); })
         .catch(() => { if (!cancelled) setLiveDetail({ statistics: null, events: [] }); })
         .finally(() => { if (!cancelled) setLiveDetailLoading(false); });
@@ -122,7 +124,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
     let flashTimer: ReturnType<typeof setTimeout> | null = null;
     if (match.status === MatchStatus.LIVE) {
       socket = new WebSocket(api.getWsUrl());
-      socket.onopen = () => socket!.send(JSON.stringify({ type: 'subscribe', topic: `match:${match.id}` }));
+      socket.onopen = () => socket!.send(JSON.stringify({ type: 'subscribe', topic: `match:${match.liveSourceId ?? match.id}` }));
       socket.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
@@ -209,7 +211,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
              <div className="text-xs text-brand-textMuted uppercase tracking-wider mb-2">{leagueLabel}</div>
              {isLive && (
                <div className={`inline-block mb-2 text-xs font-bold px-3 py-1 rounded-full ${isHalftime(match) ? 'bg-brand-yellow text-black' : 'bg-brand-accent/90 text-black'}`}>
-                 {isHalftime(match) ? 'Pushim' : headerClock ? `${formatLiveClock(headerClock)} · ${headerClock.half}` : (match.currentMinute ? `${match.currentMinute}'` : 'LIVE')}
+                 {isHalftime(match) ? 'Pushim' : headerClock ? `${formatLiveClock(headerClock)} · ${headerClock.half}` : liveMinuteFallback(match)}
                </div>
              )}
              {isLive && (

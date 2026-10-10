@@ -55,7 +55,9 @@ describe('clockReceivedAt (the "11081:42" bug)', () => {
     const base = parseLiveClock('40');
     const total = base.minute * 60 + base.second;
     const stale = now - 664_900_000; // the stamp that produced 11081:42
-    expect(projectClock(total, stale, now).minute).toBeGreaterThan(10000);
+    // Before the guards this read 11081 minutes; the projection itself is now capped too
+    // (MAX_PROJECTION_SECONDS), so even an unfiltered stale stamp can no longer run away.
+    expect(projectClock(total, stale, now).minute).toBeLessThanOrEqual(42);
     expect(projectClock(total, clockReceivedAt(stale, now), now).minute).toBe(40);
   });
 });

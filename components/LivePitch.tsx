@@ -122,7 +122,8 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
   const liveClock = useTickingClock(
     isLive ? String(stats?.minute ?? match.currentMinute ?? '') : undefined,
     stats?.minuteUpdatedAt ?? match.currentMinuteUpdatedAt,
-    isLive && !isHalftime(match)
+    isLive && !isHalftime(match),
+    stats?.minute == null && !!match.currentMinuteEstimated
   );
   if (!isLive) return null;
 

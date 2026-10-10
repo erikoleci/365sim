@@ -94,6 +94,9 @@ export interface Match {
   // null/undefined when unknown. Never guessed.
   liveAction?: { side: 'home' | 'away' | null; kind: string; label: string } | null;
   liveStatus?: string;
+  // Set by the server when the same real fixture exists under two provider ids and the
+  // live data (score/minute/events/socket messages) belongs to this other id.
+  liveSourceId?: string;
   liveHomeScore?: number;
   liveAwayScore?: number;
 }

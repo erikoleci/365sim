@@ -1,7 +1,7 @@
 import React from 'react';
 import { Match, MatchStatus } from '../types';
 import { formatMatchTime, formatMatchDayMonth, isSameAlbaniaDay, albaniaTodayKey } from '../utils/albaniaTime';
-import { isHalftime } from '../utils/liveStatus';
+import { isHalftime, liveMinuteFallback } from '../utils/liveStatus';
 
 interface MatchRowProps {
   match: Match;
@@ -26,6 +26,13 @@ interface MatchRowProps {
 // discarded rather than shown as a nonsense "5015:24".
 const MAX_SANE_MATCH_MINUTES = 130;
 const MAX_CLOCK_STAMP_AGE_MS = 3 * 60 * 60 * 1000;
+// The client only extrapolates seconds between two provider readings. The server refreshes the
+// clock every ~15-30s, so if no new reading arrives for this long the provider has stopped
+// (or the feed is stale) and the clock FREEZES instead of running on for hours.
+export const MAX_PROJECTION_SECONDS = 120;
+// A clock that came as a bare minute ("72", no seconds) says nothing about the seconds: never
+// let the extrapolation roll over into the next minute ahead of the provider.
+export const MAX_PROJECTION_BARE_MINUTE_SECONDS = 59;
 export function parseLiveClock(minute?: string): { minute: number; second: number; half: string } | null {
   let raw = String(minute || '').trim();
   if (/^\d+$/.test(raw) && Number(raw) > MAX_SANE_MATCH_MINUTES) {
@@ -66,8 +73,8 @@ export function shouldAcceptNewClockBase(
 // {minute,second} as of `receivedAt`, what should the clock read `now`?
 // This is the exact "source_time + received_at -> current elapsed" resync
 // arithmetic — e.g. source 41:23 received at T, asked at T+7s -> 41:30.
-export function projectClock(totalSecondsAtReceivedAt: number, receivedAt: number, now: number): { minute: number; second: number; half: string } {
-  const elapsed = Math.max(0, Math.floor((now - receivedAt) / 1000));
+export function projectClock(totalSecondsAtReceivedAt: number, receivedAt: number, now: number, maxElapsedSeconds: number = MAX_PROJECTION_SECONDS): { minute: number; second: number; half: string } {
+  const elapsed = Math.min(maxElapsedSeconds, Math.max(0, Math.floor((now - receivedAt) / 1000)));
   const total = totalSecondsAtReceivedAt + elapsed;
   const minute = Math.floor(total / 60);
   const second = total % 60;
@@ -101,9 +108,16 @@ export function useTickingClock(
   // running through a break that hasn't actually resumed. See isHalftime()
   // in utils/liveStatus.ts for the source of truth this is normally paired
   // with at the call site.
-  ticking: boolean = true
+  ticking: boolean = true,
+  // The minute is a wall-clock guess from the kickoff time (currentMinuteEstimated), not a
+  // provider reading: no clock is built from it (callers show "~40'" instead of "40:19").
+  estimated: boolean = false
 ): { minute: number; second: number; half: string } | null {
-  const base = parseLiveClock(rawMinute);
+  const base = estimated ? null : parseLiveClock(rawMinute);
+  // Seconds are only trustworthy when the provider's own value carried them ("72:14", or a
+  // bare seconds counter such as "1776"); a bare "72" does not.
+  const maxProject = /:\d/.test(String(rawMinute ?? '')) || (/^\d+$/.test(String(rawMinute ?? '').trim()) && Number(rawMinute) > MAX_SANE_MATCH_MINUTES)
+    ? MAX_PROJECTION_SECONDS : MAX_PROJECTION_BARE_MINUTE_SECONDS;
   const [, forceTick] = React.useState(0);
   const baseRef = React.useRef<{ totalSeconds: number; receivedAt: number } | null>(null);
 
@@ -143,8 +157,8 @@ export function useTickingClock(
 
   if (!base || !baseRef.current) return base;
   const projected = ticking
-    ? projectClock(baseRef.current.totalSeconds, baseRef.current.receivedAt, Date.now())
-    : projectClock(baseRef.current.totalSeconds, baseRef.current.receivedAt, baseRef.current.receivedAt); // frozen: elapsed=0
+    ? projectClock(baseRef.current.totalSeconds, baseRef.current.receivedAt, Date.now(), maxProject)
+    : projectClock(baseRef.current.totalSeconds, baseRef.current.receivedAt, baseRef.current.receivedAt, maxProject); // frozen: elapsed=0
   // Never display an impossible clock (it would read like "11081:42"): callers fall
   // back to the plain "LIVE" label when there is no usable clock.
   return projected.minute > MAX_SANE_MATCH_MINUTES ? null : projected;
@@ -195,7 +209,7 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
   const isFinished = match.status === MatchStatus.FINISHED;
   const isLive = match.status === MatchStatus.LIVE;
   const matchWinnerMarket = getMatchWinnerMarket(match);
-  const liveClock = useTickingClock(match.currentMinute, match.currentMinuteUpdatedAt, isLive && !isHalftime(match));
+  const liveClock = useTickingClock(match.currentMinute, match.currentMinuteUpdatedAt, isLive && !isHalftime(match), !!match.currentMinuteEstimated);
 
   // Odds-movement arrows in the list view, same approach as MatchDetail:
   // remember last-seen price per selection, flash up/down briefly on change.
@@ -243,7 +257,7 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
         <div className="text-xs text-brand-textMuted w-12 text-center flex flex-col items-center justify-center shrink-0">
            {isLive ? (
                <div className={`font-bold leading-tight ${isHalftime(match) ? 'text-brand-yellow' : 'text-brand-accent animate-pulse'}`}>
-                   {isHalftime(match) ? 'Pushim' : `${match.currentMinuteEstimated ? '~' : ''}${liveClock ? formatLiveClock(liveClock) : (match.currentMinute ? `${match.currentMinute}'` : 'LIVE')}`}
+                   {isHalftime(match) ? 'Pushim' : (liveClock ? formatLiveClock(liveClock) : liveMinuteFallback(match))}
                    {liveClock && !isHalftime(match) && <div className="text-[9px] font-semibold text-brand-yellow normal-case leading-none mt-0.5">{liveClock.half}</div>}
                </div>
            ) : (
