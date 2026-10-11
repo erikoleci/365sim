@@ -5,6 +5,7 @@ import { mapEventToMatch } from '../oddsUtils.js';
 import { ensureLondon365Import, getLondon365LeagueNames, getLondon365LeagueMeta } from '../london365.js';
 import { wrap } from '../asyncHandler.js';
 import { dedupeMatches } from '../fixtureDedupe.js';
+import { fetchMatchRowsPrioritized, PAGE_SIZE } from '../matchRows.js';
 
 const router = express.Router();
 
@@ -122,38 +123,15 @@ const MATCH_COLUMNS_LIST = `id, league, league_id, country_id, home_team, away_t
 // under the pool's `max: 6` (server/db.js) since this endpoint's queries
 // share that pool with every other route, the live WebSocket sync loop,
 // and the background London365 import.
-const MATCHES_PAGE_SIZE = 200;
-const MAX_CONCURRENT_MATCH_PAGES = 3;
 const MATCHES_PAGE_HARD_CAP = Math.max(1, Number(process.env.MATCHES_PAGE_HARD_CAP) || 30); // pages of 200 rows (default 30 = 6000 rows); raise it in .env for no practical limit
 
 async function fetchUpcomingMatchRowsPaged() {
-  const allRows = [];
-  for (let page = 0; page < MATCHES_PAGE_HARD_CAP; page += MAX_CONCURRENT_MATCH_PAGES) {
-    const pageIndexes = Array.from({ length: MAX_CONCURRENT_MATCH_PAGES }, (_, i) => page + i);
-    const results = await Promise.all(pageIndexes.map((p) => queryWithRetry(
-      `SELECT ${MATCH_COLUMNS_LIST}
-       FROM matches_cache
-       WHERE id LIKE 'l365-%'
-         AND start_time_tz(start_time) > NOW() - interval '2 days'
-         AND start_time_tz(start_time) < NOW() + interval '21 days'
-       ORDER BY start_time ASC, id ASC
-       LIMIT $1 OFFSET $2`,
-      [MATCHES_PAGE_SIZE, p * MATCHES_PAGE_SIZE],
-      // A bit more headroom than the 6000ms default: each page is a much
-      // smaller, bounded slice (measured well under this), so this is
-      // real margin for a slow page, not a blanket "make timeouts bigger"
-      // — and it's still comfortably under Postgres's own 15s
-      // statement_timeout in server/db.js.
-      { attemptTimeoutMs: 8000 }
-    )));
-    let anyShortPage = false;
-    for (const { rows } of results) {
-      allRows.push(...rows);
-      if (rows.length < MATCHES_PAGE_SIZE) anyShortPage = true;
-    }
-    if (anyShortPage) break; // reached the end of the window
-  }
-  return allRows;
+  const { rows, truncated } = await fetchMatchRowsPrioritized(
+    queryWithRetry, MATCH_COLUMNS_LIST, MATCHES_PAGE_HARD_CAP, Date.now(),
+    (seg) => console.warn(`[matches] row cap reached (MATCHES_PAGE_HARD_CAP=${MATCHES_PAGE_HARD_CAP} pages x ${PAGE_SIZE} rows): segment "${seg}" and later ones were NOT read -- raise MATCHES_PAGE_HARD_CAP in .env`)
+  );
+  if (truncated) console.warn(`[matches] list is incomplete: ${rows.length} rows served`);
+  return rows;
 }
 
 router.get('/', wrap(async (req, res) => {
