@@ -5,6 +5,7 @@ import { mapEventToMatch } from '../oddsUtils.js';
 import { ensureLondon365Import, getLondon365LeagueNames, getLondon365LeagueMeta } from '../london365.js';
 import { wrap } from '../asyncHandler.js';
 import { dedupeMatches } from '../fixtureDedupe.js';
+import { buildLiveStatistics } from '../liveDetail.js';
 import { fetchMatchRowsPrioritized, PAGE_SIZE } from '../matchRows.js';
 
 const router = express.Router();
@@ -208,35 +209,9 @@ router.get('/:id/live-detail', wrap(async (req, res) => {
     ),
     queryWithRetry('SELECT home_team, away_team, live_minute, live_home_score, live_away_score, status, live_minute_updated_at FROM matches_cache WHERE id = $1', [req.params.id]),
   ]);
-  // The provider's live feed carries the real in-play clock (e.g. "62:14")
-  // even when the stats table has no minute yet — expose it so the pitch
-  // shows a genuine running minute for LondonPro365 games.
-  let statistics = statsRows[0] || null;
   const cache = cacheRows[0];
-  const lastUpdated = statistics ? Number(statistics.updated_at) : null;
-  if (cache) {
-    const m = String(cache.live_minute || '').match(/^(\d+)/);
-    if (!statistics) {
-      statistics = {
-        minute: m ? Number(m[1]) : null,
-        home_score: cache.live_home_score,
-        away_score: cache.live_away_score,
-      };
-    } else if (statistics.minute == null && m) {
-      statistics = { ...statistics, minute: Number(m[1]) };
-    }
-  }
-  const isStale = cache && cache.status === 'LIVE' && lastUpdated != null && Date.now() - lastUpdated > STATS_STALE_MS;
-  // Server-side reference timestamp for the live clock (see
-  // migrations/0002_live_minute_updated_at.sql) -- when the pitch/header
-  // clock resync from this endpoint, this is what lets it show the correct
-  // elapsed time immediately instead of the raw minute alone.
-  // Only meaningful alongside a REAL provider minute: a row's stamp can predate it
-  // (older rows were stamped with their import time), and pairing that with an
-  // estimated minute produced clocks like "11081:42".
-  if (statistics && cache?.live_minute && cache?.live_minute_updated_at != null) {
-    statistics = { ...statistics, minuteUpdatedAt: Number(cache.live_minute_updated_at) };
-  }
+  const lastUpdated = statsRows[0] ? Number(statsRows[0].updated_at) : null;
+  const statistics = buildLiveStatistics(statsRows[0] || null, cache || null, Date.now(), STATS_STALE_MS);
   const shownEvents = cache
     ? reconcileEvents(eventRows, {
         homeTeam: cache.home_team, awayTeam: cache.away_team,
@@ -244,7 +219,7 @@ router.get('/:id/live-detail', wrap(async (req, res) => {
         cardsHome: statsRows[0]?.cards_home, cardsAway: statsRows[0]?.cards_away,
       })
     : eventRows;
-  res.json({ statistics: isStale ? null : statistics, events: shownEvents, last_updated: lastUpdated });
+  res.json({ statistics, events: shownEvents, last_updated: lastUpdated });
 }));
 
 router.get('/:id', wrap(async (req, res) => {

@@ -50,6 +50,32 @@ export function formatEstimatedMinute(minute: string | undefined | null): string
   return `~${m[1]}${m[2] ? '+' : "'"}`;
 }
 
+// A score that is missing must look missing ("–"), never "0": a real 0-0 comes from the
+// provider as an explicit 0.
+export function formatScore(v: number | null | undefined): string {
+  return v == null ? '–' : String(v);
+}
+
+// The clock for the detail view/pitch: ONE coherent (minute, stamp) pair, never a minute from one
+// source with the stamp of another. The live list/socket pair is the freshest, so it wins when it
+// holds a real provider minute; otherwise the live-detail clock (same provider clock, its own
+// stamp); otherwise the estimated minute is shown as "~".
+export function pickClockSource(
+  match: { currentMinute?: string; currentMinuteUpdatedAt?: number; currentMinuteEstimated?: boolean },
+  stats: { clock?: string; minute?: number | null; minuteUpdatedAt?: number } | null | undefined,
+): { raw: string | undefined; stamp: number | undefined; estimated: boolean } {
+  if (match.currentMinute && !match.currentMinuteEstimated) {
+    return { raw: String(match.currentMinute), stamp: match.currentMinuteUpdatedAt, estimated: false };
+  }
+  if (stats?.clock && stats.minuteUpdatedAt != null) {
+    return { raw: stats.clock, stamp: stats.minuteUpdatedAt, estimated: false };
+  }
+  if (stats?.minute != null) {
+    return { raw: String(stats.minute), stamp: undefined, estimated: false };
+  }
+  return { raw: match.currentMinute, stamp: match.currentMinuteUpdatedAt, estimated: !!match.currentMinuteEstimated };
+}
+
 // Text for the live badge when there is no usable ticking clock.
 export function liveMinuteFallback(match: { currentMinute?: string; currentMinuteEstimated?: boolean }): string {
   if (match.currentMinuteEstimated) return formatEstimatedMinute(match.currentMinute);

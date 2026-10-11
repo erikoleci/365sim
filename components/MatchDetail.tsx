@@ -4,7 +4,7 @@ import * as api from '../services/api';
 import type { LiveStatistics, MatchEvent } from '../services/api';
 import LivePitch from './LivePitch';
 import { useTickingClock, formatLiveClock } from './MatchCard';
-import { isHalftime, liveMinuteFallback } from '../utils/liveStatus';
+import { isHalftime, liveMinuteFallback, formatScore, pickClockSource } from '../utils/liveStatus';
 import { LONDON365_EVENT_LABELS, LONDON365_STAT_LABELS } from '../utils/london365Labels';
 
 interface MatchDetailProps {
@@ -53,6 +53,8 @@ const StatBar: React.FC<{ label: string; home: number | null; away: number | nul
   );
 };
 
+const STAT_FIELDS = ['possession_home', 'shots_home', 'shots_on_target_home', 'corners_home', 'cards_home', 'xg_home', 'possession_away', 'shots_away', 'shots_on_target_away', 'corners_away', 'cards_away', 'xg_away'];
+
 const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, onBetClick, selectedIds }) => {
   const isFinished = match.status === MatchStatus.FINISHED;
   const isLive = match.status === MatchStatus.LIVE;
@@ -66,12 +68,12 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
   const [liveDetail, setLiveDetail] = useState<{ statistics: LiveStatistics | null; events: MatchEvent[] } | null>(null);
   const [liveDetailLoading, setLiveDetailLoading] = useState(false);
   const [cardFlash, setCardFlash] = useState<{ kind: 'YELLOW_CARD' | 'RED_CARD'; team: 'home' | 'away' } | null>(null);
+  const clockSrc = pickClockSource(match, liveDetail?.statistics);
   const headerClock = useTickingClock(
-    liveDetail?.statistics?.minute != null ? String(liveDetail.statistics.minute) : match.currentMinute,
-    liveDetail?.statistics?.minuteUpdatedAt ?? match.currentMinuteUpdatedAt,
+    clockSrc.raw,
+    clockSrc.stamp,
     match.status === MatchStatus.LIVE && !isHalftime(match),
-    // estimated only when no real provider minute came with the live detail
-    liveDetail?.statistics?.minute == null && !!match.currentMinuteEstimated
+    clockSrc.estimated
   );
 
   // Odds-movement arrows: remember the last-seen price per option id, and
@@ -105,20 +107,23 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
   useEffect(() => {
     if (!hasLiveData) { setLiveDetail(null); return; }
     let cancelled = false;
-    const load = () => {
-      setLiveDetailLoading(true);
+    // `initial`: only the first load shows the "Duke ngarkuar..." spinner. The 15s poll and the
+    // socket refreshes replace the data silently, and a failed refresh keeps what is on screen
+    // (it used to blank the events list / stats every time one poll failed or reloaded).
+    const load = (initial = false) => {
+      if (initial) setLiveDetailLoading(true);
       api.fetchMatchLiveDetail(match.liveSourceId ?? match.id)
         .then((d) => { if (!cancelled) setLiveDetail(d); })
-        .catch(() => { if (!cancelled) setLiveDetail({ statistics: null, events: [] }); })
-        .finally(() => { if (!cancelled) setLiveDetailLoading(false); });
+        .catch(() => { if (!cancelled) setLiveDetail((prev) => prev ?? { statistics: null, events: [] }); })
+        .finally(() => { if (!cancelled && initial) setLiveDetailLoading(false); });
     };
-    load();
+    load(true);
     // Live games: keep stats, events, minute and odds fresh on their own
     // cadence while the detail panel is open, without any manual refresh.
     // This polling interval is only the fallback safety net — the socket
     // subscription below is the real-time path and fires immediately on
     // every goal/card, same as the provider's own feed.
-    const interval = match.status === MatchStatus.LIVE ? setInterval(load, 15000) : null;
+    const interval = match.status === MatchStatus.LIVE ? setInterval(() => load(), 15000) : null;
 
     let socket: WebSocket | null = null;
     let flashTimer: ReturnType<typeof setTimeout> | null = null;
@@ -234,7 +239,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
                     {isFinished
                       ? `${match.score?.home} - ${match.score?.away}`
                       : isLive
-                        ? `${match.liveHomeScore ?? 0} - ${match.liveAwayScore ?? 0}`
+                        ? `${formatScore(match.liveHomeScore)} - ${formatScore(match.liveAwayScore)}`
                         : 'v'}
                  </div>
                  <div className="flex flex-col items-center gap-1">
@@ -304,7 +309,8 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
         <div className="p-4 overflow-y-auto flex-1 bg-[#282828]">
           {liveDetailLoading ? (
             <div className="text-center text-brand-textMuted text-xs py-8">Duke ngarkuar statistikat...</div>
-          ) : !liveDetail?.statistics ? (
+          
+          ) : !liveDetail?.statistics || !STAT_FIELDS.some((k) => (liveDetail.statistics as any)[k] != null) ? (
             <div className="text-center text-brand-textMuted text-xs py-8">
               Statistika live s'janë të disponueshme për këtë ndeshje.
             </div>

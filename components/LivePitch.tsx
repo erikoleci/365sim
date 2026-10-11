@@ -1,7 +1,7 @@
 import React from 'react';
 import { Match, MatchStatus } from '../types';
 import type { LiveStatistics } from '../services/api';
-import { formatLiveStatus, isHalftime } from '../utils/liveStatus';
+import { formatLiveStatus, isHalftime, formatScore, pickClockSource } from '../utils/liveStatus';
 import { useTickingClock, formatLiveClock } from './MatchCard';
 import { BallIcon, CornerFlagIcon, CardIcon, OffsideFlagIcon } from './PitchIcons';
 
@@ -119,11 +119,12 @@ const PitchLines: React.FC = () => (
 // possession bar -- nothing is invented.
 const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
   const isLive = match.status === MatchStatus.LIVE;
+  const clockSrc = pickClockSource(match, stats);
   const liveClock = useTickingClock(
-    isLive ? String(stats?.minute ?? match.currentMinute ?? '') : undefined,
-    stats?.minuteUpdatedAt ?? match.currentMinuteUpdatedAt,
+    isLive ? clockSrc.raw : undefined,
+    clockSrc.stamp,
     isLive && !isHalftime(match),
-    stats?.minute == null && !!match.currentMinuteEstimated
+    clockSrc.estimated
   );
   if (!isLive) return null;
 
@@ -144,8 +145,8 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
   const labelTransform = scene?.label.align === 'right' ? 'translate(calc(-100% - 10px), -50%)'
     : scene?.label.align === 'left' ? 'translate(10px, -50%)' : 'translate(-50%, -50%)';
   const chevrons = zone && zone.tone !== 'calm';
-  const homeGoals = match.liveHomeScore ?? 0;
-  const awayGoals = match.liveAwayScore ?? 0;
+  const homeGoals = formatScore(match.liveHomeScore);
+  const awayGoals = formatScore(match.liveAwayScore);
 
   return (
     <div

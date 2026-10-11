@@ -156,6 +156,10 @@ export interface LiveStatistics {
   // when GET /matches/:id/live-detail had a matches_cache row to pull it
   // from.
   minuteUpdatedAt?: number;
+  // The provider's raw clock ("75:39") that minuteUpdatedAt belongs to -- only present together.
+  clock?: string;
+  home_score?: number | null;
+  away_score?: number | null;
   possession_home: number | null;
   possession_away: number | null;
   shots_home: number | null;
