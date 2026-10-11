@@ -65,9 +65,49 @@ function teamSim(a, b) {
   return 1 - d / Math.max(a.length, b.length);
 }
 
+// The provider names the same club differently per record ("Manchester City" / "Man City",
+// "Man Utd" / "Manchester United"). Plain letter similarity scores those ~0.5, so the two records
+// of one match were never merged and the list showed the fixture twice. Same number of words,
+// every word equal or an abbreviation (prefix of 3+ letters) of the other, at least one equal.
+const TOKEN_ALIASES = { utd: 'united', nottm: 'nottingham', wolves: 'wolverhampton', spurs: 'tottenham' };
+function abbrevEqual(a, b) {
+  const ta = a.split(' ').filter(Boolean).map((t) => TOKEN_ALIASES[t] || t);
+  const tb = b.split(' ').filter(Boolean).map((t) => TOKEN_ALIASES[t] || t);
+  if (ta.length !== tb.length) {
+    // "Tottenham" / "Tottenham Hotspur", "Newcastle" / "Newcastle United": the shorter name is
+    // the first word(s) of the longer one, spelled exactly (and long enough not to be "Inter").
+    const [s, l] = ta.length < tb.length ? [ta, tb] : [tb, ta];
+    return s.join(' ').length >= 6 && s.every((t, i) => t === l[i]);
+  }
+  if (ta.length < 2) return false;
+  let exact = 0;
+  for (let i = 0; i < ta.length; i++) {
+    if (ta[i] === tb[i]) { exact++; continue; }
+    const [s, l] = ta[i].length <= tb[i].length ? [ta[i], tb[i]] : [tb[i], ta[i]];
+    if (s.length < 3 || !l.startsWith(s)) return false;
+  }
+  return exact >= 1;
+}
+
+// "Sheffield Utd" / "Sheffield Wed" differ by 2 letters (similarity 0.85) yet are two clubs: when two
+// names have the same number of words, share all but ONE, and that word is not an abbreviation
+// of the other, they are different clubs no matter how similar the letters look.
+function differsByOneUnrelatedWord(a, b) {
+  const ta = a.split(' ').filter(Boolean).map((t) => TOKEN_ALIASES[t] || t);
+  const tb = b.split(' ').filter(Boolean).map((t) => TOKEN_ALIASES[t] || t);
+  if (ta.length !== tb.length || ta.length < 2) return false;
+  const diff = ta.map((t, i) => [t, tb[i]]).filter(([x, y]) => x !== y);
+  if (diff.length !== 1) return false;
+  const [s, l] = diff[0][0].length <= diff[0][1].length ? diff[0] : [diff[0][1], diff[0][0]];
+  return !(s.length >= 3 && l.startsWith(s));
+}
+
 function sameTeam(x, y) {
   if (teamQualifier(x) !== teamQualifier(y)) return false;
-  return teamSim(stripQualifier(normTeam(x)), stripQualifier(normTeam(y))) >= 0.75;
+  const nx = stripQualifier(normTeam(x));
+  const ny = stripQualifier(normTeam(y));
+  if (differsByOneUnrelatedWord(nx, ny)) return false;
+  return teamSim(nx, ny) >= 0.8 || abbrevEqual(nx, ny);
 }
 
 export function sameFixture(a, b) {

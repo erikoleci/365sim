@@ -11,7 +11,7 @@ import CasinoHub from './components/CasinoHub';
 import { User, Match, Bet, UserRole, BetSelectionItem, MatchStatus } from './types';
 import * as api from './services/api';
 import { albaniaDateKey, albaniaTodayKey, isSameAlbaniaDay } from './utils/albaniaTime';
-import { isStaleLiveMatch, MAX_LIVE_AGE_MS, isMessageForMatch } from './utils/liveStatus';
+import { isStaleLiveMatch, MAX_LIVE_AGE_MS, isMessageForMatch, isGhostLiveMatch } from './utils/liveStatus';
 import * as leagueGrouping from './utils/leagueGrouping';
 import FeaturedMatchCard from './components/FeaturedMatchCard';
 import LoadMoreSentinel from './components/LoadMoreSentinel';
@@ -36,9 +36,12 @@ const App: React.FC = () => {
   // localStorage snapshot of the last successful fetch so returning
   // users see their matches instantly instead of the loading spinner
   // — the background refresh below then replaces this with live data) ---
-  const [matches, setMatches] = useState<Match[]>(() => {
+  const [allMatches, setMatches] = useState<Match[]>(() => {
     try { return (JSON.parse(localStorage.getItem('cachedMatches') || '[]') as Match[]).filter((m) => !isStaleLiveMatch(m)); } catch { return []; }
   });
+  // What every list/section shows: LIVE rows without a real provider clock are hidden (see
+  // isGhostLiveMatch). Derived, so a hidden row appears the moment a live tick brings its clock.
+  const matches = useMemo(() => allMatches.filter((m) => !isGhostLiveMatch(m)), [allMatches]);
   // League key -> the name EXACTLY as LondonPro365's own API returns it
   // (untouched — no re-slugging/re-titlecasing). Populated from every
   // /matches response; leagueLabel() below prefers this over any derived

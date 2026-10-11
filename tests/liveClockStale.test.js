@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseLiveClock, projectClock, MAX_PROJECTION_SECONDS, MAX_PROJECTION_BARE_MINUTE_SECONDS, shouldAcceptNewClockBase, clockReceivedAt,
 } from '../components/MatchCard.tsx';
-import { formatEstimatedMinute, liveMinuteFallback, isMessageForMatch, isHalftime } from '../utils/liveStatus.ts';
+import { formatEstimatedMinute, liveMinuteFallback, isMessageForMatch, isHalftime, isGhostLiveMatch } from '../utils/liveStatus.ts';
 
 describe('parseLiveClock - verified provider formats and rejects', () => {
   it('parses "72", "72:14" and the live API sample "75:39"', () => {
@@ -76,5 +76,25 @@ describe('halftime / full-time statuses (text codes only; numeric provider codes
   it('HT stops the clock', () => {
     expect(isHalftime({ liveStatus: 'HT' })).toBe(true);
     expect(isHalftime({ liveStatus: '2H' })).toBe(false);
+  });
+});
+
+describe('isGhostLiveMatch - LIVE rows that are not receiving live data are hidden', () => {
+  const NOW = Date.parse('2026-10-11T16:47:00.000Z');
+  const kick = (minsAgo) => new Date(NOW - minsAgo * 60000).toISOString();
+  it('hides an estimated minute ("~60\'") and a LIVE row with no minute at all', () => {
+    expect(isGhostLiveMatch({ status: 'LIVE', startTime: kick(62), currentMinute: '60', currentMinuteEstimated: true }, NOW)).toBe(true);
+    expect(isGhostLiveMatch({ status: 'LIVE', startTime: kick(130) }, NOW)).toBe(true);
+  });
+  it('keeps a row with a real provider clock', () => {
+    expect(isGhostLiveMatch({ status: 'LIVE', startTime: kick(62), currentMinute: '58:49' }, NOW)).toBe(false);
+  });
+  it('keeps halftime and a match that kicked off a moment ago', () => {
+    expect(isGhostLiveMatch({ status: 'LIVE', startTime: kick(50), liveStatus: 'HT' }, NOW)).toBe(false);
+    expect(isGhostLiveMatch({ status: 'LIVE', startTime: kick(2) }, NOW)).toBe(false);
+  });
+  it('only ever concerns LIVE rows', () => {
+    expect(isGhostLiveMatch({ status: 'UPCOMING', startTime: kick(-30) }, NOW)).toBe(false);
+    expect(isGhostLiveMatch({ status: 'FINISHED', startTime: kick(200) }, NOW)).toBe(false);
   });
 });

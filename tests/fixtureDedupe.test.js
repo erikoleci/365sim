@@ -98,3 +98,26 @@ describe('fixture identity - similar team names must not merge different fixture
     expect(dedupeMatches([a, b])).toHaveLength(2);
   });
 });
+
+describe('abbreviated club names are the same fixture (the duplicate Liverpool-Man City on the live list)', () => {
+  const opt2 = (n) => Array.from({ length: n }, (_, i) => ({ id: 'o' + i, odds: 2 }));
+  const ghost = { id: 'l365-ghost', homeTeam: 'Liverpool FC', awayTeam: 'Manchester City', startTime: '2026-10-11T15:45:00.000Z', status: 'LIVE', markets: [{ options: opt2(30) }], currentMinute: '60', currentMinuteEstimated: true, liveHomeScore: 0, liveAwayScore: 0 };
+  const real = { id: 'l365-real', homeTeam: 'Liverpool', awayTeam: 'Man City', startTime: '2026-10-11T15:45:00.000Z', status: 'LIVE', markets: [{ options: opt2(3) }], currentMinute: '58:49', currentMinuteUpdatedAt: 1791646491714, liveHomeScore: 1, liveAwayScore: 0, liveStatus: '2' };
+
+  it('merges "Liverpool FC v Manchester City" with "Liverpool v Man City" and keeps the real clock/score', () => {
+    const res = dedupeMatches([ghost, real]);
+    expect(res).toHaveLength(1);
+    expect(res[0]).toMatchObject({ currentMinute: '58:49', liveHomeScore: 1, liveAwayScore: 0, liveSourceId: 'l365-real' });
+    expect(res[0].currentMinuteEstimated).toBeUndefined();
+  });
+  it('knows common abbreviations', () => {
+    expect(sameFixture({ homeTeam: 'Man Utd', awayTeam: 'Tottenham' }, { homeTeam: 'Manchester United', awayTeam: 'Tottenham Hotspur' })).toBe(true);
+    expect(sameFixture({ homeTeam: 'Nottm Forest', awayTeam: 'Wolves' }, { homeTeam: 'Nottingham Forest', awayTeam: 'Wolverhampton Wanderers' })).toBe(true);
+  });
+  it('but never merges different clubs that share a word', () => {
+    expect(sameFixture({ homeTeam: 'Man City', awayTeam: 'Arsenal' }, { homeTeam: 'Man Utd', awayTeam: 'Arsenal' })).toBe(false);
+    expect(sameFixture({ homeTeam: 'Sheffield Utd', awayTeam: 'Leeds' }, { homeTeam: 'Sheffield Wed', awayTeam: 'Leeds' })).toBe(false);
+    expect(sameFixture({ homeTeam: 'Real Madrid', awayTeam: 'Getafe' }, { homeTeam: 'Real Betis', awayTeam: 'Getafe' })).toBe(false);
+    expect(sameFixture({ homeTeam: 'AC Milan', awayTeam: 'Roma' }, { homeTeam: 'Inter Milan', awayTeam: 'Roma' })).toBe(false);
+  });
+});

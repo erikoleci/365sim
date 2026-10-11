@@ -82,6 +82,28 @@ export function liveMinuteFallback(match: { currentMinute?: string; currentMinut
   return match.currentMinute ? `${match.currentMinute}'` : 'LIVE';
 }
 
+// A row marked LIVE that has NO real provider clock is not receiving live data: its minute is
+// only a wall-clock guess ("~60'") or missing ("LIVE"), and its score is a default 0-0. These
+// are leftovers of the pre-match catalogue (or a second record of a match whose live record
+// does work) and were shown next to the working ones, e.g. "Liverpool FC v Manchester City ~60'"
+// beside the real "Liverpool v Man City 58:49". They are hidden. Kept: any row with a real
+// provider clock, halftime, and a match that kicked off a moment ago (the feed needs a minute
+// to deliver its first clock).
+export const HIDE_LIVE_WITHOUT_PROVIDER_CLOCK = true;
+export const LIVE_FIRST_CLOCK_GRACE_MS = 5 * 60 * 1000;
+export function isGhostLiveMatch(
+  match: { status: unknown; startTime: string; currentMinute?: string; currentMinuteEstimated?: boolean; liveStatus?: string },
+  now: number = Date.now(),
+): boolean {
+  if (!HIDE_LIVE_WITHOUT_PROVIDER_CLOCK) return false;
+  if (String(match.status) !== 'LIVE') return false;
+  if (isHalftime(match as any)) return false;
+  if (match.currentMinute && !match.currentMinuteEstimated) return false;
+  const kickoff = Date.parse(match.startTime);
+  if (!Number.isNaN(kickoff) && kickoff <= now && now - kickoff <= LIVE_FIRST_CLOCK_GRACE_MS) return false;
+  return true;
+}
+
 export function isHalftime(match: Pick<Match, 'liveStatus'>): boolean {
   const raw = (match.liveStatus || '').toString().toUpperCase().trim();
   return raw === 'HT' || raw === 'HALFTIME' || raw === 'HALF_TIME' || raw === 'PAUSED';
