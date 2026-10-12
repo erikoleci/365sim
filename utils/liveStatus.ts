@@ -78,7 +78,8 @@ export function pickClockSource(
 
 // Text for the live badge when there is no usable ticking clock.
 export function liveMinuteFallback(match: { currentMinute?: string; currentMinuteEstimated?: boolean }): string {
-  if (match.currentMinuteEstimated) return formatEstimatedMinute(match.currentMinute);
+  // A wall-clock guess is never shown as a minute: just "LIVE" until the provider's clock arrives.
+  if (match.currentMinuteEstimated) return 'LIVE';
   return match.currentMinute ? `${match.currentMinute}'` : 'LIVE';
 }
 
@@ -91,14 +92,31 @@ export function liveMinuteFallback(match: { currentMinute?: string; currentMinut
 // to deliver its first clock).
 export const HIDE_LIVE_WITHOUT_PROVIDER_CLOCK = true;
 export const LIVE_FIRST_CLOCK_GRACE_MS = 5 * 60 * 1000;
+export const LIVE_RECENT_CLOCK_MS = 30 * 60 * 1000;
+
+// The provider clock stopped moving: the client froze it (MAX_PROJECTION_SECONDS = 120). Shown as
+// a small marker so a frozen "72:14" is never mistaken for a live one. Not for halftime.
+export const LIVE_CLOCK_STALE_MS = 150 * 1000;
+export function isLiveClockStale(
+  match: { status: unknown; currentMinute?: string; currentMinuteUpdatedAt?: number; currentMinuteEstimated?: boolean; liveStatus?: string },
+  now: number = Date.now(),
+): boolean {
+  if (String(match.status) !== 'LIVE' || isHalftime(match as any)) return false;
+  if (!match.currentMinute || match.currentMinuteEstimated) return false;
+  const stamp = Number(match.currentMinuteUpdatedAt);
+  return Number.isFinite(stamp) && stamp > 0 && now - stamp > LIVE_CLOCK_STALE_MS;
+}
 export function isGhostLiveMatch(
-  match: { status: unknown; startTime: string; currentMinute?: string; currentMinuteEstimated?: boolean; liveStatus?: string },
+  match: { status: unknown; startTime: string; currentMinute?: string; currentMinuteUpdatedAt?: number; currentMinuteEstimated?: boolean; liveStatus?: string },
   now: number = Date.now(),
 ): boolean {
   if (!HIDE_LIVE_WITHOUT_PROVIDER_CLOCK) return false;
   if (String(match.status) !== 'LIVE') return false;
   if (isHalftime(match as any)) return false;
   if (match.currentMinute && !match.currentMinuteEstimated) return false;
+  // It had a real provider clock a moment ago (halftime, a brief feed gap): not a ghost.
+  const stamp = Number(match.currentMinuteUpdatedAt);
+  if (Number.isFinite(stamp) && stamp > 0 && now - stamp <= LIVE_RECENT_CLOCK_MS) return false;
   const kickoff = Date.parse(match.startTime);
   if (!Number.isNaN(kickoff) && kickoff <= now && now - kickoff <= LIVE_FIRST_CLOCK_GRACE_MS) return false;
   return true;

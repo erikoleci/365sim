@@ -1,7 +1,7 @@
 import React from 'react';
 import { Match, MatchStatus } from '../types';
 import { formatMatchTime, formatMatchDayMonth, isSameAlbaniaDay, albaniaTodayKey } from '../utils/albaniaTime';
-import { isHalftime, liveMinuteFallback } from '../utils/liveStatus';
+import { isHalftime, liveMinuteFallback, isLiveClockStale } from '../utils/liveStatus';
 
 interface MatchRowProps {
   match: Match;
@@ -258,6 +258,7 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
            {isLive ? (
                <div className={`font-bold leading-tight ${isHalftime(match) ? 'text-brand-yellow' : 'text-brand-accent animate-pulse'}`}>
                    {isHalftime(match) ? 'Pushim' : (liveClock ? formatLiveClock(liveClock) : liveMinuteFallback(match))}
+                   {isLiveClockStale(match) && <span title="Pa përditësim nga provider-i" className="ml-1 text-amber-400">●</span>}
                    {liveClock && !isHalftime(match) && <div className="text-[9px] font-semibold text-brand-yellow normal-case leading-none mt-0.5">{liveClock.half}</div>}
                </div>
            ) : (

@@ -4,7 +4,7 @@ import * as api from '../services/api';
 import type { LiveStatistics, MatchEvent } from '../services/api';
 import LivePitch from './LivePitch';
 import { useTickingClock, formatLiveClock } from './MatchCard';
-import { isHalftime, liveMinuteFallback, formatScore, pickClockSource } from '../utils/liveStatus';
+import { isHalftime, liveMinuteFallback, formatScore, pickClockSource, isLiveClockStale } from '../utils/liveStatus';
 import { LONDON365_EVENT_LABELS, LONDON365_STAT_LABELS } from '../utils/london365Labels';
 
 interface MatchDetailProps {
@@ -217,6 +217,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
              {isLive && (
                <div className={`inline-block mb-2 text-xs font-bold px-3 py-1 rounded-full ${isHalftime(match) ? 'bg-brand-yellow text-black' : 'bg-brand-accent/90 text-black'}`}>
                  {isHalftime(match) ? 'Pushim' : headerClock ? `${formatLiveClock(headerClock)} · ${headerClock.half}` : liveMinuteFallback(match)}
+                 {isLiveClockStale(match) && <span title="Pa përditësim nga provider-i" className="ml-1 text-amber-400">●</span>}
                </div>
              )}
              {isLive && (
@@ -333,7 +334,11 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
           {liveDetailLoading ? (
             <div className="text-center text-brand-textMuted text-xs py-8">Duke ngarkuar ngjarjet...</div>
           ) : !liveDetail?.events.length ? (
-            <div className="text-center text-brand-textMuted text-xs py-8">Ende s'ka ngjarje të regjistruara.</div>
+            <div className="text-center text-brand-textMuted text-xs py-8 px-4">
+              {(match.liveHomeScore ?? 0) + (match.liveAwayScore ?? 0) > 0
+                ? `Rezultati është ${formatScore(match.liveHomeScore)} - ${formatScore(match.liveAwayScore)}. Provider-i jep vetëm rezultatin: golashënuesit dhe minutat e golave nuk janë të disponueshme.`
+                : "Ende s'ka ngjarje të regjistruara."}
+            </div>
           ) : (
             <div className="space-y-2">
               {liveDetail.events.map((ev, i) => (

@@ -56,6 +56,7 @@
 //   LONDON365_LIVE_INTERVAL_MS   default 30000 (min 10000)
 //   LONDON365_IMPORT_THROTTLE_MS default 600000
 
+import { createStatusSampler } from './liveStatusSampler.js';
 import pool, { getKV, setKV } from './db.js';
 import { diffOddsChanges } from './oddsUtils.js';
 import { pushOddsChanged, pushGoal, pushGoalDisallowed, pushMatchEnded } from './ws.js';
@@ -1362,6 +1363,7 @@ function hydrateRowNames(rows) {
 // growing latency exactly when responsiveness matters most. Different
 // matches now only ever block each other if they happen to share a key,
 // which never happens (each match's key is its own id).
+const statusSampler = createStatusSampler();
 const dbWriteLocks = new Map(); // matchId -> tail Promise of that match's write queue
 export function withDbLock(key, fn) {
   const prevTail = dbWriteLocks.get(key) || Promise.resolve();
@@ -2314,6 +2316,8 @@ export async function applySocketGame(g, status) {
   const score = parseScore(g.result);
   const minute = g.current_minute || null;
   const resolved = status || (minute ? 'LIVE' : statusFromCommence(commence));
+  const statusLine = statusSampler.note(g.api_status, minute, ev.id);
+  if (statusLine) console.log(statusLine);
   const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : leagueKeyFromCountry(null, g.league || ''), resolved, score, { minute: minute, apiStatus: g.api_status }, resolvedLeague ? { id: resolvedLeague.id, countryId: resolvedLeague.countryId } : undefined);
   await recordGoalIfChanged(ev, score, minute, prev);
   return true;

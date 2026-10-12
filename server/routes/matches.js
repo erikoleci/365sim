@@ -6,6 +6,7 @@ import { ensureLondon365Import, getLondon365LeagueNames, getLondon365LeagueMeta 
 import { wrap } from '../asyncHandler.js';
 import { dedupeMatches } from '../fixtureDedupe.js';
 import { buildLiveStatistics } from '../liveDetail.js';
+import { summarizeLiveHealth } from '../liveHealth.js';
 import { fetchMatchRowsPrioritized, PAGE_SIZE } from '../matchRows.js';
 
 const router = express.Router();
@@ -175,6 +176,17 @@ router.get('/', wrap(async (req, res) => {
   const body = { matches: dedupeMatches(rows.map(mapEventToMatch), logMerge), leagueNames: getLondon365LeagueNames(), leagueMeta: getLondon365LeagueMeta() };
   matchesResponseCache.set(cacheKey, { body, computedAt: Date.now() });
   res.json(body);
+}));
+
+router.get('/live-health', wrap(async (_req, res) => {
+  const { rows } = await queryWithRetry(
+    `SELECT id, live_minute, live_minute_updated_at, live_home_score, live_away_score
+       FROM matches_cache
+      WHERE id LIKE 'l365-%' AND status <> 'FINISHED'
+        AND start_time_tz(start_time) > NOW() - interval '8 hours' AND start_time_tz(start_time) <= NOW()`,
+    [], { attemptTimeoutMs: 5000 }
+  );
+  res.json(summarizeLiveHealth(rows));
 }));
 
 router.get('/:id/odds-history', wrap(async (req, res) => {

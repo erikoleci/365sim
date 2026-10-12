@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseLiveClock, projectClock, MAX_PROJECTION_SECONDS, MAX_PROJECTION_BARE_MINUTE_SECONDS, shouldAcceptNewClockBase, clockReceivedAt,
 } from '../components/MatchCard.tsx';
-import { formatEstimatedMinute, liveMinuteFallback, isMessageForMatch, isHalftime, isGhostLiveMatch } from '../utils/liveStatus.ts';
+import { formatEstimatedMinute, liveMinuteFallback, isMessageForMatch, isHalftime, isGhostLiveMatch, isLiveClockStale } from '../utils/liveStatus.ts';
 
 describe('parseLiveClock - verified provider formats and rejects', () => {
   it('parses "72", "72:14" and the live API sample "75:39"', () => {
@@ -56,7 +56,7 @@ describe('estimated minute is never shown as a precise clock', () => {
     expect(formatEstimatedMinute(undefined)).toBe('LIVE');
   });
   it('badge fallback: estimate vs provider minute vs nothing', () => {
-    expect(liveMinuteFallback({ currentMinute: '40', currentMinuteEstimated: true })).toBe("~40'");
+    expect(liveMinuteFallback({ currentMinute: '40', currentMinuteEstimated: true })).toBe('LIVE'); // a guess is never shown as a minute
     expect(liveMinuteFallback({ currentMinute: '61' })).toBe("61'");
     expect(liveMinuteFallback({})).toBe('LIVE');
   });
@@ -96,5 +96,23 @@ describe('isGhostLiveMatch - LIVE rows that are not receiving live data are hidd
   it('only ever concerns LIVE rows', () => {
     expect(isGhostLiveMatch({ status: 'UPCOMING', startTime: kick(-30) }, NOW)).toBe(false);
     expect(isGhostLiveMatch({ status: 'FINISHED', startTime: kick(200) }, NOW)).toBe(false);
+  });
+});
+
+describe('halftime / feed gaps are not ghosts, a frozen clock is flagged', () => {
+  const NOW = Date.parse('2026-10-11T16:47:00.000Z');
+  const kick = (m) => new Date(NOW - m * 60000).toISOString();
+  it('a row with no minute right now but a provider stamp from the last 30 min stays visible (halftime)', () => {
+    expect(isGhostLiveMatch({ status: 'LIVE', startTime: kick(55), currentMinute: undefined, currentMinuteUpdatedAt: NOW - 10 * 60000 }, NOW)).toBe(false);
+  });
+  it('an old stamp (hours) does not protect a dead row', () => {
+    expect(isGhostLiveMatch({ status: 'LIVE', startTime: kick(200), currentMinuteUpdatedAt: NOW - 3 * 3600000 }, NOW)).toBe(true);
+  });
+  it('flags a clock that stopped moving, not a fresh one, not halftime, not an estimate', () => {
+    const base = { status: 'LIVE', currentMinute: '72:14', currentMinuteEstimated: false };
+    expect(isLiveClockStale({ ...base, currentMinuteUpdatedAt: NOW - 10_000 }, NOW)).toBe(false);
+    expect(isLiveClockStale({ ...base, currentMinuteUpdatedAt: NOW - 200_000 }, NOW)).toBe(true);
+    expect(isLiveClockStale({ ...base, liveStatus: 'HT', currentMinuteUpdatedAt: NOW - 600_000 }, NOW)).toBe(false);
+    expect(isLiveClockStale({ ...base, currentMinuteEstimated: true, currentMinuteUpdatedAt: NOW - 600_000 }, NOW)).toBe(false);
   });
 });
