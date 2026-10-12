@@ -36,6 +36,7 @@
 // truth for logging; this module never derives a minute from the
 // unverified fields above.
 
+import { buildTeamIndex, normTeam } from './teamIndex.js';
 import pool from './db.js';
 import { pushCardEvent, pushLiveTick } from './ws.js';
 import { recordGoalIfChanged, eventMinuteFromClock } from './london365.js';
@@ -205,7 +206,6 @@ const BLOCKED_EIDS = new Set(['58729560']);
 // names in the message against the LIVE matches we hold; a message whose
 // teams match no single live match (or match two) is dropped.
 const TEAM_RESOLVED_EIDS = new Set(['52628036']);
-const normTeam = (v) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 const TEAM_INDEX_TTL_MS = 10000;
 let teamIndex = { at: 0, map: new Map() };
 async function resolveGameIdByTeams(h, a) {
@@ -213,14 +213,9 @@ async function resolveGameIdByTeams(h, a) {
   if (now - teamIndex.at > TEAM_INDEX_TTL_MS) {
     try {
       const { rows } = await pool.query(
-        "SELECT id AS game_id, home_team AS h, away_team AS a FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
+        "SELECT id AS game_id, home_team AS h, away_team AS a, live_minute, live_minute_updated_at, live_home_score, live_away_score FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
       );
-      const map = new Map();
-      for (const r of rows) {
-        const key = normTeam(r.h) + '|' + normTeam(r.a);
-        map.set(key, map.has(key) ? null : String(r.game_id).replace(/^l365-/, '')); // null = ambiguous
-      }
-      teamIndex = { at: now, map };
+      teamIndex = { at: now, map: buildTeamIndex(rows) };
     } catch (err) {
       teamIndex = { at: now - TEAM_INDEX_TTL_MS + 2000, map: teamIndex.map }; // retry in ~2s, keep old index
     }

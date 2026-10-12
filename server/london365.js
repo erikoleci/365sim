@@ -1425,7 +1425,7 @@ export async function recordGoalIfChanged(ev, score, minute, prev, eventMinute) 
   // gamedetails socket already announced this exact score change.
   announceGoalIfChanged(ev, score, minute, prev);
 
-  async function logGoal(team) {
+  async function logGoal(team, nthInGap = 1) {
     // Never log more goal rows for a team than its score says: a repeated
     // "new" goal (score briefly unknown/reset between writers) must not
     // add a second row for the same goal.
@@ -1435,11 +1435,15 @@ export async function recordGoalIfChanged(ev, score, minute, prev, eventMinute) 
       [ev.id, team]
     );
     if (have[0] && Number(have[0].n) >= teamScore) return;
-    const { rows: same } = await pool.query(
-      `SELECT 1 FROM match_events WHERE match_id = $1 AND type = 'GOAL' AND team = $2 AND detail = $3 LIMIT 1`,
-      [ev.id, team, score.home + '-' + score.away]
-    );
-    if (same && same.length) return;
+    // The 2nd, 3rd... goal of one gap (two goals between two provider readings) share the same
+    // score text, so the same-score guard only applies to the first one of a gap.
+    if (nthInGap === 1) {
+      const { rows: same } = await pool.query(
+        `SELECT 1 FROM match_events WHERE match_id = $1 AND type = 'GOAL' AND team = $2 AND detail = $3 LIMIT 1`,
+        [ev.id, team, score.home + '-' + score.away]
+      );
+      if (same && same.length) return;
+    }
     await pool.query(
       `INSERT INTO match_events (match_id, minute, type, team, detail, created_at)
        VALUES ($1,$2,'GOAL',$3,$4,$5)`,
@@ -1454,9 +1458,12 @@ export async function recordGoalIfChanged(ev, score, minute, prev, eventMinute) 
     if (rows[0]) await pool.query('DELETE FROM match_events WHERE id = $1', [rows[0].id]);
   }
 
-  if (homeDelta > 0) await logGoal(ev.home_team);
+  // One event per goal even when the score jumped by 2+ between two readings (the provider only
+  // gives the score; all of them carry the observation minute). Capped: a jump above 6 is a
+  // correction, not six goals.
+  if (homeDelta > 0) { for (let k = 1; k <= Math.min(homeDelta, 6); k++) await logGoal(ev.home_team, k); }
   else if (homeDelta < 0) await retractLastGoal(ev.home_team);
-  if (awayDelta > 0) await logGoal(ev.away_team);
+  if (awayDelta > 0) { for (let k = 1; k <= Math.min(awayDelta, 6); k++) await logGoal(ev.away_team, k); }
   else if (awayDelta < 0) await retractLastGoal(ev.away_team);
 
   await pool.query(

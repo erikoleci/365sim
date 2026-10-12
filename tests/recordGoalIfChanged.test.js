@@ -33,6 +33,14 @@ const mocks = vi.hoisted(function () {
       if (idx !== -1) events.splice(idx, 1);
       return Promise.resolve({ rows: [], rowCount: idx !== -1 ? 1 : 0 });
     }
+    if (s.indexOf('SELECT COUNT(*)') === 0) {
+      const [matchId, team] = params;
+      return Promise.resolve({ rows: [{ n: events.filter((e) => e.match_id === matchId && e.team === team).length }] });
+    }
+    if (s.indexOf('SELECT 1 FROM match_events') === 0) {
+      const [matchId, team, detail] = params;
+      return Promise.resolve({ rows: events.filter((e) => e.match_id === matchId && e.team === team && e.detail === detail).length ? [{ '?column?': 1 }] : [] });
+    }
     if (s.indexOf('INSERT INTO live_statistics') === 0) return Promise.resolve({ rows: [], rowCount: 1 });
     return Promise.resolve({ rows: [], rowCount: 0 });
   });
@@ -115,5 +123,14 @@ describe('recordGoalIfChanged', function () {
     await recordGoalIfChanged(ev, { home: 1, away: 0 }, '48:37', null);
     expect(mocks.events).toHaveLength(1);
     expect(pushGoal).toHaveBeenCalledTimes(1);
+  });
+
+  it('two goals between two readings give two events (not one), never more than the score says', async function () {
+    await recordGoalIfChanged(ev, { home: 0, away: 0 }, '10:00', null);
+    await recordGoalIfChanged(ev, { home: 2, away: 0 }, '12:30', { live_home_score: 0, live_away_score: 0 });
+    expect(mocks.events.filter((e) => e.team === 'Home FC')).toHaveLength(2);
+    // the same reading arriving again adds nothing
+    await recordGoalIfChanged(ev, { home: 2, away: 0 }, '12:35', { live_home_score: 2, live_away_score: 0 });
+    expect(mocks.events.filter((e) => e.team === 'Home FC')).toHaveLength(2);
   });
 });
