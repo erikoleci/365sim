@@ -12,6 +12,7 @@ import { User, Match, Bet, UserRole, BetSelectionItem, MatchStatus } from './typ
 import * as api from './services/api';
 import { albaniaDateKey, albaniaTodayKey, isSameAlbaniaDay } from './utils/albaniaTime';
 import { recentResults, groupResultsByLeague } from './utils/results';
+import { navKey, planNav, type Nav } from './utils/navHistory';
 import { isStaleLiveMatch, MAX_LIVE_AGE_MS, isMessageForMatch, isGhostLiveMatch } from './utils/liveStatus';
 import * as leagueGrouping from './utils/leagueGrouping';
 import FeaturedMatchCard from './components/FeaturedMatchCard';
@@ -890,6 +891,46 @@ const App: React.FC = () => {
   // Drilling into a league/country leaves the results view.
   useEffect(() => { if (currentLeague !== 'All Top Football') setShowResults(false); }, [currentLeague]);
 
+  // ---- Phone back button / swipe-back: one browser-history entry per screen (see utils/navHistory).
+  const navStackRef = useRef<Nav[]>([]);
+  const navIdxRef = useRef(0);
+  const currentNav: Nav = { detailMatchId, isMobileSlipOpen, showLiveOnly, showResults, currentLeague };
+  const currentNavRef = useRef(currentNav);
+  currentNavRef.current = currentNav;
+  const currentNavKey = navKey(currentNav);
+  useEffect(() => {
+    navStackRef.current = [currentNavRef.current];
+    navIdxRef.current = 0;
+    // the entry we are on after a reload must describe the (reset) screen, not a stale one
+    window.history.replaceState({ nav: currentNavRef.current, idx: 0 }, '');
+    const onPop = (e: PopStateEvent) => {
+      const idx = typeof e.state?.idx === 'number' ? e.state.idx : 0;
+      const nav: Nav | undefined = navStackRef.current[idx] ?? e.state?.nav;
+      navIdxRef.current = Math.max(0, Math.min(idx, navStackRef.current.length - 1));
+      if (!nav || navKey(nav) === navKey(currentNavRef.current)) return;
+      setDetailMatchId(nav.detailMatchId);
+      setIsMobileSlipOpen(nav.isMobileSlipOpen);
+      setShowLiveOnly(nav.showLiveOnly);
+      setShowResults(nav.showResults);
+      setCurrentLeague(nav.currentLeague);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+  useEffect(() => {
+    const plan = planNav(navStackRef.current, navIdxRef.current, currentNavRef.current);
+    if (plan.type === 'none') return;
+    if (plan.type === 'back') { window.history.back(); return; }
+    navStackRef.current = plan.stack;
+    navIdxRef.current = plan.idx;
+    window.history.pushState({ nav: currentNavRef.current, idx: plan.idx }, '');
+  }, [currentNavKey]);
+  // The phone-style "back" used by the on-screen buttons: it walks the same history.
+  const goBackScreen = useCallback(() => {
+    if (navIdxRef.current > 0) window.history.back();
+    else { setDetailMatchId(null); setIsMobileSlipOpen(false); }
+  }, []);
+
   const dynamicLeagues = useMemo(() => {
     const fetchedLeagues = Array.from(new Set(matches.map((m) => m.league)));
     return Array.from(new Set(['All Top Football', ...fetchedLeagues])).sort();
@@ -1320,7 +1361,7 @@ const App: React.FC = () => {
               key={detailMatch.id}
               match={detailMatch}
               leagueLabel={leagueLabel(detailMatch.league)}
-              onClose={() => setDetailMatchId(null)}
+              onClose={goBackScreen}
               onBetClick={handleToggleSelection}
               selectedIds={selectedIds}
             />
@@ -1795,7 +1836,7 @@ const App: React.FC = () => {
               <div className="w-full h-full bg-brand-panel flex flex-col">
                 <div className="flex justify-between items-center p-4 bg-brand-header text-white shadow-lg">
                   <span className="font-bold">Bet Slip</span>
-                  <button onClick={() => setIsMobileSlipOpen(false)} className="text-white font-bold p-2">Close &times;</button>
+                  <button onClick={goBackScreen} className="text-white font-bold p-2">Close &times;</button>
                 </div>
                 <div className="flex-1 overflow-hidden">
                   {betError && (

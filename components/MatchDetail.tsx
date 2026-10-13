@@ -213,6 +213,19 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
 
   return (
     <div className="bg-brand-bg text-brand-text h-full flex flex-col">
+      {/* Phone: a clear back bar (the small "‹ Soccer" link below is hidden under the FUTBOLL menu
+          button on narrow screens) plus a floating pill that stays visible while scrolling markets.
+          Both go back through the browser history, same as the phone's own back button; the bet
+          slip selections stay as they were. */}
+      <div className="md:hidden flex items-center gap-2 bg-[#1f1f1f] border-b border-brand-divider px-3 py-2">
+        <button onClick={onClose} className="flex items-center gap-1 bg-brand-yellow text-black font-bold text-sm px-4 min-h-[44px] rounded">
+          <span aria-hidden="true">←</span> Kthehu
+        </button>
+        <span className="text-xs text-brand-textMuted truncate">{match.homeTeam} v {match.awayTeam}</span>
+      </div>
+      <button onClick={onClose} aria-label="Kthehu" className="md:hidden fixed bottom-4 left-4 z-40 flex items-center gap-1 bg-brand-yellow text-black font-bold text-sm px-4 min-h-[48px] rounded-full shadow-2xl border-2 border-white">
+        <span aria-hidden="true">←</span> Kthehu
+      </button>
       {/* Match Header */}
       <div className="bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] bg-brand-headerDark/30 p-6 relative border-b border-brand-divider">
         <button onClick={onClose} className="absolute top-4 left-4 text-brand-textMuted hover:text-white text-xs font-bold flex items-center gap-1">
