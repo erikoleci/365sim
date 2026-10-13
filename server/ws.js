@@ -83,13 +83,42 @@ export function initWebSocket(httpServer) {
   return wss;
 }
 
-export function broadcast(topic, payload) {
+// A client that cannot keep up (phone on a bad network) would otherwise make the
+// server queue unlimited data for it. Droppable frames (live ticks, which are
+// superseded by the next one anyway) are skipped for a socket whose outgoing buffer
+// is already this large; critical frames (goals, settlements) are always sent.
+const MAX_SOCKET_BUFFER_BYTES = 1024 * 1024;
+
+export function broadcast(topic, payload, { droppable = false } = {}) {
   const set = subscribers.get(topic);
   if (!set || set.size === 0) return;
   const msg = JSON.stringify({ topic, ...payload });
   for (const socket of set) {
-    if (socket.readyState === socket.OPEN) socket.send(msg);
+    if (socket.readyState !== socket.OPEN) continue;
+    if (droppable && socket.bufferedAmount > MAX_SOCKET_BUFFER_BYTES) continue;
+    socket.send(msg);
   }
+}
+
+// Match ids (bare, no "l365-" prefix) that at least one client currently has open
+// (subscribed to `match:<id>`). The live loop refreshes these first.
+export function getWatchedMatchIds() {
+  const ids = [];
+  for (const topic of subscribers.keys()) {
+    if (topic.startsWith('match:')) ids.push(topic.slice(6).replace(/^l365-/, ''));
+  }
+  return ids;
+}
+
+// Test-only: attach a fake socket to a topic.
+export function __subscribeForTests(topic, socket) {
+  if (!subscribers.has(topic)) subscribers.set(topic, new Set());
+  subscribers.get(topic).add(socket);
+}
+export function __resetWsForTests() {
+  subscribers.clear();
+  tickQueue.clear();
+  if (tickTimer) { clearTimeout(tickTimer); tickTimer = null; }
 }
 
 // Convenience helpers matching the notification types from the spec.
@@ -139,7 +168,32 @@ export const pushCardEvent = (matchId, data) => {
 // poll. Payload only ever carries values already confirmed elsewhere
 // (matches_cache.live_minute, live_home_score/away_score) — this never
 // invents a minute from the unverified T/H1-H8 fields.
+// Ticks for the global 'live' topic are COALESCED: with hundreds or thousands of
+// live matches ticking, one message per tick per client is a flood. Instead the
+// newest tick per match is queued and sent as ONE batched frame every
+// TICK_FLUSH_MS (LIVE_TICKS). Only the per-match topic (a client viewing that
+// match) still gets each tick immediately.
+const TICK_FLUSH_MS = 250;
+const TICKS_PER_FRAME = 200;
+const tickQueue = new Map(); // matchId -> newest tick payload
+let tickTimer = null;
+
 export const pushLiveTick = (matchId, data) => {
-  broadcast(`match:${matchId}`, { type: 'LIVE_TICK', ...data });
-  broadcast('live', { matchId, type: 'LIVE_TICK', ...data });
+  broadcast(`match:${matchId}`, { type: 'LIVE_TICK', ...data }, { droppable: true });
+  tickQueue.set(matchId, { matchId, ...data });
+  if (!tickTimer) {
+    tickTimer = setTimeout(flushLiveTicks, TICK_FLUSH_MS);
+    tickTimer.unref?.();
+  }
 };
+
+export function flushLiveTicks() {
+  tickTimer = null;
+  if (tickQueue.size === 0) return 0;
+  const ticks = Array.from(tickQueue.values());
+  tickQueue.clear();
+  for (let i = 0; i < ticks.length; i += TICKS_PER_FRAME) {
+    broadcast('live', { type: 'LIVE_TICKS', ticks: ticks.slice(i, i + TICKS_PER_FRAME) }, { droppable: true });
+  }
+  return ticks.length;
+}

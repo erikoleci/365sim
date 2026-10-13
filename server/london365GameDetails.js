@@ -54,6 +54,7 @@ import { decodeLiveAction, makeAction } from './liveAction.js';
 import { isTrackedGame, getLiveRow, setLiveRow, forgetLiveRow, __resetLiveTrackerForTests } from './liveTracker.js';
 import { bump } from './feedStats.js';
 import { captureHalfTimeScore } from './halfTime.js';
+import { queueClockWrite } from './clockWrites.js';
 import { announceGoalIfChanged, clearGoalAnnounced } from './goalAnnouncer.js';
 export { parseGameDetails };
 
@@ -88,6 +89,9 @@ const lastBroadcast = new Map();
 // REST feed carries no minute for them, and when we last persisted it.
 const derivedClock = new Map();
 const DERIVED_CLOCK_WRITE_MS = 15000;
+let lastPruneAt = 0;
+let pruneRuns = 0;
+const PRUNE_MIN_INTERVAL_MS = 30000;
 const LIVE_TICK_RESYNC_MS = 15000;
 // How long the last decoded pitch action (corner, attack, ...) stays on the
 // pitch when the following messages carry no (decodable) VC. The provider's own
@@ -104,6 +108,8 @@ const HT_HOLD_MS = 45000; // how long a VC=1015 "pushim" keeps clients in HT (> 
 // independent (lastSeen/lastBroadcast are intentionally module-level, not
 // per-call, in production — see comments above).
 export function __resetLiveStateForTests() {
+  lastPruneAt = 0;
+  pruneRuns = 0;
   unmappedVcSeen.clear();
   __resetLiveTrackerForTests(); // also clears the live row cache
   lastSeen.clear();
@@ -302,7 +308,16 @@ async function applyGameDetailsNow(raw) {
   // scheduled sweep — this is what actually prevents the heap from
   // filling up between timer ticks during a high-volume burst, which is
   // what a merely-more-frequent interval alone still cannot guarantee.
-  if (lastTouched.size > 5000) pruneStaleLiveState(Date.now(), 10 * 60 * 1000);
+  // Safety valve against unbounded growth. It used to run on EVERY message once more
+  // than 5000 matches were tracked, and each run walks the whole map: O(N) per message,
+  // so with ~10,000 live matches the handler collapsed (measured: 39k -> 2k msg/s)
+  // while pruning nothing (every entry was fresh). Throttled to once per 30s.
+  const pruneNow = Date.now();
+  if (lastTouched.size > 5000 && pruneNow - lastPruneAt >= PRUNE_MIN_INTERVAL_MS) {
+    lastPruneAt = pruneNow;
+    pruneRuns++;
+    pruneStaleLiveState(pruneNow, 10 * 60 * 1000);
+  }
   const t = Number(attrs.T);
   const prevSeen = lastSeen.get(eid);
   // Tracks the card-count baseline separately from `prevSeen` itself: when
@@ -411,10 +426,8 @@ async function applyGameDetailsNow(raw) {
     const nowW = Date.now();
     if (!derivedState || nowW - derivedState.at >= DERIVED_CLOCK_WRITE_MS) {
       derivedClock.set(matchId, { at: nowW });
-      await pool.query(
-        'UPDATE matches_cache SET live_minute = $1, live_minute_updated_at = $2 WHERE id = $3',
-        [minuteDisplay, nowW, matchId]
-      );
+      // Batched (see clockWrites.js): not one awaited UPDATE per match in this hot path.
+      queueClockWrite(matchId, minuteDisplay, nowW);
     }
   }
   // Event minute as the provider labels it: T is the game clock in seconds
@@ -667,6 +680,7 @@ async function applyGameDetailsNow(raw) {
 
 export function getGameDetailsMemoryDiagnostics() {
   return {
+    pruneRuns,
     lastSeen: lastSeen.size,
     lastTouched: lastTouched.size,
     unknownEidWarned: unknownEidWarned.size,

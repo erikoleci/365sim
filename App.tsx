@@ -321,6 +321,18 @@ const App: React.FC = () => {
       }));
     };
 
+    // Folds one tick into the buffer (newest value per field per match wins).
+    const queueTick = (msg: any) => {
+      const acc = tickBuffer.get(msg.matchId) || {};
+      if (msg.homeScore != null) acc.homeScore = msg.homeScore;
+      if (msg.awayScore != null) acc.awayScore = msg.awayScore;
+      if (msg.minute != null) { acc.minute = msg.minute; acc.minuteUpdatedAt = msg.minuteUpdatedAt ?? Date.now(); }
+      if (msg.action !== undefined) { acc.action = msg.action; acc.hasAction = true; }
+      if (msg.liveStatus !== undefined) acc.liveStatus = msg.liveStatus;
+      tickBuffer.set(msg.matchId, acc);
+      if (!tickTimer) tickTimer = setTimeout(flushTicks, 250);
+    };
+
     const connect = () => {
       socket = new WebSocket(api.getWsUrl());
       socket.onopen = () => {
@@ -333,6 +345,11 @@ const App: React.FC = () => {
       socket.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
+          // One frame carrying the newest tick of many matches (server-side coalescing).
+          if (msg.type === 'LIVE_TICKS' && Array.isArray(msg.ticks)) {
+            for (const t of msg.ticks) if (t && t.matchId) queueTick(t);
+            return;
+          }
           if (!msg.matchId) return;
           // Buffered ticks are older than this message: apply them first so a stale
           // tick can never overwrite what this message is about to set.
@@ -363,17 +380,7 @@ const App: React.FC = () => {
               currentMinuteUpdatedAt: msg.minute != null ? (msg.minuteUpdatedAt ?? Date.now()) : m.currentMinuteUpdatedAt,
             } : m));
           } else if (msg.type === 'LIVE_TICK') {
-            // Fast resync from the gamedetails feed (see server/london365GameDetails.js):
-            // only carries fields already verified on the server, so it is applied
-            // directly -- but batched (see flushTicks above), never one render per message.
-            const acc = tickBuffer.get(msg.matchId) || {};
-            if (msg.homeScore != null) acc.homeScore = msg.homeScore;
-            if (msg.awayScore != null) acc.awayScore = msg.awayScore;
-            if (msg.minute != null) { acc.minute = msg.minute; acc.minuteUpdatedAt = msg.minuteUpdatedAt ?? Date.now(); }
-            if (msg.action !== undefined) { acc.action = msg.action; acc.hasAction = true; }
-            if (msg.liveStatus !== undefined) acc.liveStatus = msg.liveStatus;
-            tickBuffer.set(msg.matchId, acc);
-            if (!tickTimer) tickTimer = setTimeout(flushTicks, 250);
+            queueTick(msg);
           } else if (msg.type === 'CARD') {
             // A card changes nothing the LIST carries (score, minute, h2h
             // odds), so re-downloading and re-computing the whole /api/matches

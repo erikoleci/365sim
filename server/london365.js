@@ -59,7 +59,8 @@
 import { createStatusSampler } from './liveStatusSampler.js';
 import pool, { getKV, setKV } from './db.js';
 import { diffOddsChanges } from './oddsUtils.js';
-import { pushOddsChanged, pushGoal, pushGoalDisallowed, pushMatchEnded } from './ws.js';
+import { pushOddsChanged, pushGoal, pushGoalDisallowed, pushMatchEnded, getWatchedMatchIds } from './ws.js';
+import { selectDetailTargets, markDetailFetched, pruneDetailAt } from './liveDetailPlan.js';
 import { settleMatch } from './matchSettlement.js';
 // Deferred/lazy-safe: these two only import each other's functions for use
 // inside function bodies (never at module top-level), so the cycle
@@ -119,13 +120,19 @@ const wantsFullDetailFor = (countryName) =>
 // Carioca, Paulista, Amazonense...) or U20/women/amateur competitions for
 // every single country. LONDON365_MAJOR_ONLY=0 disables this (full catalog,
 // old/slower behavior).
-const MAJOR_LEAGUES_ONLY = (process.env.LONDON365_MAJOR_ONLY || '1') === '1';
+// Master switch: LONDON365_ALL_MATCHES=1 imports EVERY match the provider carries
+// (no country whitelist, no "major leagues only", no second-tier or country
+// exclusions). Without it the narrower catalogue below applies. More matches means
+// more load, which the live loop handles by budgeting the expensive per-game
+// refresh (see liveDetailPlan.js).
+const ALL_MATCHES = ['1', 'true', 'yes'].includes(String(process.env.LONDON365_ALL_MATCHES || '').toLowerCase());
+const MAJOR_LEAGUES_ONLY = !ALL_MATCHES && (process.env.LONDON365_MAJOR_ONLY || '1') === '1';
 // Countries excluded entirely (no leagues, no matches at all) — csv of real
 // country names, comma-separated, case-insensitive. Brazil is excluded by
 // default per explicit request: its huge volume of state/regional
 // competitions was cluttering the feed and it isn't a priority market.
 const EXCLUDED_COUNTRIES = new Set(
-  (process.env.LONDON365_EXCLUDE_COUNTRIES ?? 'brazil')
+  (ALL_MATCHES ? '' : (process.env.LONDON365_EXCLUDE_COUNTRIES ?? 'brazil'))
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean)
@@ -152,7 +159,7 @@ function parseOnlyCountries(raw) {
   if (/^(\*|all|any)$/i.test(v)) return new Set();
   return new Set(v.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean));
 }
-const ONLY_COUNTRIES = parseOnlyCountries(process.env.LONDON365_ONLY_COUNTRIES);
+const ONLY_COUNTRIES = ALL_MATCHES ? new Set() : parseOnlyCountries(process.env.LONDON365_ONLY_COUNTRIES);
 // International/continental competitions (Champions League, Europa League,
 // Nations League, World Cup qualifiers...) are never excludable via
 // LONDON365_ONLY_COUNTRIES — someone listing "england,spain,italy,..." to
@@ -246,7 +253,7 @@ const BRAZIL_STATE_LEAGUE_PATTERN = /gaucho|carioca|paulista|mineiro|baiano|amaz
 // LONDON365_EXCLUDE_LEAGUE_PATTERN (regex source, case-insensitive).
 const LOWER_DIVISION_PATTERN = /\bregionalliga\b|\boberliga\b|\bverbandsliga\b|\blandesliga\b|\bkreisliga\b|\bbezirksliga\b|\bgruppenliga\b|\btercera\b|\bsegunda b\b|\brfef\b|\bpreferente\b|\bserie d\b|\beccellenza\b|\bpromozione\b|\bnational [23]\b|\bnational league\b|\bnorthern premier\b|\bsouthern (?:premier|league)\b|\bisthmian\b|\bnon[- ]league\b/i;
 let EXTRA_EXCLUDE_RE = null;
-if (process.env.LONDON365_EXCLUDE_LEAGUE_PATTERN) {
+if (!ALL_MATCHES && process.env.LONDON365_EXCLUDE_LEAGUE_PATTERN) {
   try { EXTRA_EXCLUDE_RE = new RegExp(process.env.LONDON365_EXCLUDE_LEAGUE_PATTERN, 'i'); }
   catch (err) { console.error('[london365] invalid LONDON365_EXCLUDE_LEAGUE_PATTERN, ignoring it:', err.message); }
 }
@@ -258,7 +265,7 @@ if (process.env.LONDON365_EXCLUDE_LEAGUE_PATTERN) {
 // domestic cups and super cups (FA Cup, Coppa Italia, DFB-Pokal, Coupe de
 // France, Copa del Rey...) are watched and KEPT. International is unaffected
 // (it keeps its own UEFA/Nations League allowlist).
-const EXCLUDE_SECOND_TIER = (process.env.LONDON365_EXCLUDE_SECOND_TIER || '1') === '1';
+const EXCLUDE_SECOND_TIER = !ALL_MATCHES && (process.env.LONDON365_EXCLUDE_SECOND_TIER || '1') === '1';
 const DOMESTIC_SECOND_TIER_PATTERNS = {
   england: /\bchampionship\b/i,
   france: /\bligue\s*2\b/i,
@@ -586,6 +593,7 @@ export function leagueRejectionReason(leagueName, countryName) {
 export function getLondon365FilterConfig() {
   return {
     sports: SPORTS_RAW,
+    allMatches: ALL_MATCHES,
     onlyCountries: Array.from(ONLY_COUNTRIES),
     whitelistActive: ONLY_COUNTRIES.size > 0,
     majorOnly: MAJOR_LEAGUES_ONLY,
@@ -1972,6 +1980,29 @@ export function shouldLogMissingLive(gameId, now = Date.now()) {
   return true;
 }
 
+// Per cycle, at most this many live games get the full-market refresh (see
+// liveDetailPlan.js). The cheap list data covers all the others. 0 = no limit.
+const LIVE_DETAIL_BUDGET = Math.max(0, Number(process.env.LONDON365_LIVE_DETAIL_BUDGET ?? 120));
+
+// Games that must be refreshed first: ones with an open bet, and ones a client is
+// looking at right now. Bare provider ids (no "l365-" prefix).
+let priorityLookupWarned = false;
+async function collectPriorityGameIds() {
+  const ids = new Set();
+  try {
+    for (const id of getWatchedMatchIds()) ids.add(String(id));
+    const { rows } = await pool.query("SELECT DISTINCT match_id FROM bet_selections WHERE status = 'PENDING'");
+    for (const r of rows) ids.add(String(r.match_id).replace(/^l365-/, ''));
+  } catch (err) {
+    // Priority is an optimisation; never let it stop a cycle. Logged once.
+    if (!priorityLookupWarned) {
+      priorityLookupWarned = true;
+      console.error('[london365] could not load bet/viewer priority for the detail refresh:', err.message);
+    }
+  }
+  return ids;
+}
+
 const LIVE_CONCURRENCY = Math.max(1, Number(process.env.LONDON365_LIVE_CONCURRENCY || 6));
 // Upper bound for the adaptive value below; kept at the DB pool size (8) because
 // every in-flight game ends in a database write.
@@ -2051,6 +2082,7 @@ async function syncLondon365LiveOnce() {
   await ensureMarketNamesLoaded();
   let gamesSynced = 0;
   let detailFailures = 0;
+  let detailFetched = 0;
   let liveSeen = 0;
   let noMinute = 0;
   let noScore = 0;
@@ -2066,6 +2098,7 @@ async function syncLondon365LiveOnce() {
     }
     if (!Array.isArray(games)) continue;
 
+    const detailTargets = selectDetailTargets(games, { budget: LIVE_DETAIL_BUDGET, priorityIds: await collectPriorityGameIds() });
     const processGame = async (g) => {
       if (!g || !g.id) return;
       const resolvedLeagueEarly = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
@@ -2108,13 +2141,17 @@ async function syncLondon365LiveOnce() {
       try {
         let rows = [];
         let liveMeta = null;
-        try {
-          if (DETAIL_DELAY_MS) await sleep(DETAIL_DELAY_MS);
-          rows = await fetchLiveRows(g.id);
-          liveMeta = rows.meta || null;
-        } catch (err) {
-          detailFailures++;
-          console.error('[london365] livegame detail ' + g.id + ' failed (falling back to packed list odds):', err.message);
+        if (detailTargets.has(String(g.id))) {
+          try {
+            if (DETAIL_DELAY_MS) await sleep(DETAIL_DELAY_MS);
+            rows = await fetchLiveRows(g.id);
+            liveMeta = rows.meta || null;
+            markDetailFetched(g.id);
+            detailFetched++;
+          } catch (err) {
+            detailFailures++;
+            console.error('[london365] livegame detail ' + g.id + ' failed (falling back to packed list odds):', err.message);
+          }
         }
         if (!rows.length) rows = parseOddString(g.odd);
         const odds = hydrateRowNames(rows.filter(function (o) { return o ? !Number.isNaN(o.coef) : false; }));
@@ -2248,8 +2285,9 @@ async function syncLondon365LiveOnce() {
 
   // Kept in memory (was a kv_store write every 30s, 24/7, purely for the
   // admin status page). getLondon365Status() reads this first.
+  pruneDetailAt(new Set(Array.from(liveIds, (id) => String(id).replace(/^l365-/, ''))));
   lastLiveSyncAt = Date.now();
-  if (liveSeen) console.log('[london365] live cycle: ' + gamesSynced + '/' + liveSeen + ' games synced, ' + detailFailures + ' detail fetch failures, ' + noMinute + ' without minute, ' + noScore + ' without score');
+  if (liveSeen) console.log('[london365] live cycle: ' + gamesSynced + '/' + liveSeen + ' games synced, ' + detailFailures + ' detail fetch failures, ' + detailFetched + ' full refreshes, ' + noMinute + ' without minute, ' + noScore + ' without score');
   return { games: gamesSynced };
 }
 

@@ -97,6 +97,43 @@ LONDON365_SOCKET_ENABLED=1       # 0 = vetëm polling REST, pa socket
 
 `tests/london365.test.js` mbulon parser-in e kuotave, mapping-un e tregjeve dhe ndihmësit e datës/resolut. `tests/london365-integration.test.js` simulon provider-in me një `matches_cache` në memori dhe verifikon: importin e plotë, sinkronizimin live me deduplikim golash, handler-at Socket.IO (`new-coefs`, `new-live-game`, `delete-live-game`, `delete-live-coef`) dhe mbrojtjen nga payload-et e paplotë. Xhiro me `pnpm run test`.
 
+## Rruga live dhe shkallëzimi
+
+Të dhënat live vijnë nga dy rrugë që plotësojnë njëra-tjetrën:
+
+| Rruga | Skedari | Çfarë sjell | Kosto |
+|---|---|---|---|
+| Lista REST (çdo 30 s) | `server/london365.js` (`syncLondon365Live`) | të gjitha ndeshjet: rezultat, minutë, koeficientët 1X2 | **1 kërkesë** për të gjitha ndeshjet |
+| Rifreskimi i plotë i tregjeve | `server/london365.js` + `server/liveDetailPlan.js` | të gjitha tregjet e një ndeshjeje | 1 kërkesë për ndeshje, me **buxhet** për cikël |
+| Socket-i i detajeve (~1/s) | `server/london365GameDetails.js` | ora, rezultati, kartonat, veprimi në fushë | 1 lidhje për të gjitha ndeshjet |
+
+Si arrin te klienti: `ws.js` grumbullon tikët në një kornizë `LIVE_TICKS` çdo 250 ms (jo një mesazh për ndeshje),
+dhe `App.tsx` i zbaton të gjitha me një `setMatches` çdo 250 ms. Orën e ndeshjes e shkruan në DB `clockWrites.js`, në grupe.
+
+Rifreskimi i plotë ka buxhet (`LONDON365_LIVE_DETAIL_BUDGET`): ndeshjet me bast të hapur dhe ato që po i shikon dikush
+rifreskohen të parat, pastaj ato që s'janë rifreskuar kurrë, pastaj rrotullim sipas më të vjetrës. Nëse ka më pak ndeshje
+se buxheti, rifreskohen të gjitha në çdo cikël.
+
+### Variabla që ndikojnë live-in
+
+| Variabla | Parazgjedhja | Çfarë bën |
+|---|---|---|
+| `LONDON365_ALL_MATCHES` | çaktivizuar | `1` = importo **çdo** ndeshje (pa filtër shtetesh, ligash, divizioni të dytë) |
+| `LONDON365_LIVE_DETAIL_BUDGET` | `120` | sa ndeshje marrin rifreskim të plotë tregjesh në çdo cikël (`0` = të gjitha) |
+| `LONDON365_LIVE_CONCURRENCY` / `_MAX` | `6` / `8` | kërkesa paralele te provideri; rritet vetë sipas numrit të ndeshjeve, deri te maksimumi |
+| `LONDON365_API_TIMEOUT_MS` | `12000` | koha maksimale e një kërkese te provideri |
+| `LIVE_BET_EVENT_LOCK_MS` | `30000` | bastet pezullohen kaq kohë pas golit/kartonit të kuq (`0` = fikur) |
+| `LIVE_BET_ODDS_MAX_AGE_MS` | `120000` | bastet refuzohen nëse tregjet jo-1X2 s'janë rifreskuar kaq kohë (`0` = fikur) |
+| `UNSETTLED_BET_VOID_AFTER_HOURS` | `24` | leg pa rezultat/rregull rimbursohet kaq orë pas fillimit (`0` = fikur) |
+| `PG_POOL_MAX` | `7` | lidhje DB për instancë (2 instanca gjatë deploy duhet të futen nën limitin e pooler-it) |
+
+### Kapaciteti (matur, jo premtim)
+
+Matja me DB të simuluar, vetëm për shtresën e socket-it (`applyGameDetails`): rreth 29,000 mesazhe/s me 10,000 ndeshje
+njëkohësisht. Serveri real mund të jetë më ngadalë. Kufijtë e vërtetë janë tre: sa ndeshje dhe sa shpejt jep **provideri**,
+CPU/memoria e **hostit**, dhe madhësia e listës `/api/matches` (përmban të gjitha tregjet e secilës ndeshje; me mijëra
+ndeshje duhet faqosje ose version i lehtë).
+
 ## Kufizime të njohura (të qëllimshme, jo bug)
 
 - **Double Chance, Draw No Bet, Hendikep**: emërtimet e outcome-ve nga API ndryshojnë sipas bookmaker-it dhe s'janë testuar kundrejt të dhënave reale prodhimi — settlement-i i tyre kërkon konfirmim manual nga admin (`PATCH /api/admin/bet-selections/:id`) në vend që të hamendësohet logjikë e pakonfirmuar.

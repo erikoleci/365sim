@@ -4,12 +4,18 @@ import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { resolveCurrentOdds, mapEventToMatch, isStaleLive } from '../oddsUtils.js';
 import { findConflictingSelection, validateStakeAmount, getCancelBlockReason, isLiveEventLocked } from '../betValidation.js';
+import { getLiveDetailAgeMs, isLiveDetailStale } from '../liveDetailPlan.js';
 import { wrap } from '../asyncHandler.js';
 import { noteBetOnMatches } from '../oddsHistoryPolicy.js';
 
 // After a goal / red card on a LIVE match, bets on it are refused for this long so
 // nobody can bet on prices that have not caught up with what just happened. 0 = off.
 const LIVE_EVENT_LOCK_MS = Math.max(0, Number(process.env.LIVE_BET_EVENT_LOCK_MS ?? 30000));
+
+// Markets other than 1X2 on a LIVE match come from the budgeted full-market refresh
+// (liveDetailPlan.js). If that refresh is older than this, the prices may be stale
+// and bets on them are refused until it catches up. 0 = off.
+const LIVE_ODDS_MAX_AGE_MS = Math.max(0, Number(process.env.LIVE_BET_ODDS_MAX_AGE_MS ?? 120000));
 
 const CANCEL_WINDOW_MS = 10 * 60 * 1000; // must match the window shown in BetSlip.tsx
 
@@ -164,6 +170,19 @@ router.post('/', wrap(async (req, res) => {
         return res.status(409).json({
           error: `Betting on ${matchRow.home_team} vs ${matchRow.away_team} is paused for a few seconds after a goal or red card — odds are updating.`,
           code: 'LIVE_EVENT_LOCK',
+        });
+      }
+    }
+    if (LIVE_ODDS_MAX_AGE_MS > 0 && (matchRow.status === 'LIVE' || matchRow.live_status != null) && !String(sel.marketId).endsWith('-h2h')) {
+      const stale = isLiveDetailStale({
+        ageMs: getLiveDetailAgeMs(matchRow.id),
+        maxAgeMs: LIVE_ODDS_MAX_AGE_MS,
+        uptimeMs: process.uptime() * 1000,
+      });
+      if (stale) {
+        return res.status(409).json({
+          error: `Odds for ${matchRow.home_team} vs ${matchRow.away_team} are being refreshed — please try again in a moment.`,
+          code: 'LIVE_ODDS_STALE',
         });
       }
     }

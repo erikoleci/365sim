@@ -37,6 +37,7 @@ import { startKeepAliveSelfPing } from './keepAlive.js';
 import { startFeedStatsLog } from './feedStats.js';
 import { hydrateBetMatchIds } from './oddsHistoryPolicy.js';
 import { settleStuckBets, voidOverdueLegs } from './matchSettlement.js';
+import { startClockWriteFlusher } from './clockWrites.js';
 
 let dbReady = false;
 
@@ -342,6 +343,8 @@ async function start() {
   // markets instead of the full catalog.
   setTimeout(function () { repairSparseEvents({ limit: 40 }).catch(function () {}); }, 45 * 1000);
   setInterval(function () { repairSparseEvents({ limit: 40 }).catch(function () {}); }, 3 * 60 * 1000);
+
+  startClockWriteFlusher(); // batched persistence of the derived live clock
 
   // Verification pass for open tickets: any PENDING leg whose match is
   // already FINISHED (score known) gets settled, so a ticket can never sit
