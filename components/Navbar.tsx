@@ -9,12 +9,14 @@ interface NavbarProps {
   onNavigate: (view: 'sports' | 'casino') => void;
   onGoHome: () => void;
   onGoLive: () => void;
+  onGoResults: () => void;
+  resultsCount?: number;
   onGoSoccer: () => void;
-  activeTab: 'home' | 'live' | 'soccer';
+  activeTab: 'home' | 'live' | 'results' | 'soccer';
   liveCount: number;
 }
 
-const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, currentView, onNavigate, onGoHome, onGoLive, onGoSoccer, activeTab, liveCount }) => {
+const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, currentView, onNavigate, onGoHome, onGoLive, onGoResults, onGoSoccer, activeTab, liveCount, resultsCount }) => {
   return (
     <nav className="bg-brand-header text-brand-text text-sm sticky top-0 z-50 shadow-md flex flex-col">
       {/* Top Bar */}
@@ -80,6 +82,10 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
                  <button onClick={onGoLive} aria-current={activeTab === 'live' ? 'page' : undefined} className={`cursor-pointer flex items-center gap-1 transition-colors hover:text-brand-accent ${activeTab === 'live' ? 'font-bold text-white' : ''}`}>
                    Live In-Play
                    {liveCount > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveCount}</span>}
+                 </button>
+                 <button onClick={onGoResults} aria-current={activeTab === 'results' ? 'page' : undefined} className={`cursor-pointer flex items-center gap-1 transition-colors hover:text-brand-accent ${activeTab === 'results' ? 'font-bold text-white' : ''}`}>
+                   Rezultate
+                   {!!resultsCount && <span className="text-[10px] bg-[#555] text-white px-1.5 rounded font-bold">{resultsCount}</span>}
                  </button>
                  <button onClick={onGoSoccer} aria-current={activeTab === 'soccer' ? 'page' : undefined} className={`cursor-pointer transition-colors hover:text-brand-accent ${activeTab === 'soccer' ? 'font-bold text-white' : ''}`}>Soccer</button>
              </div>

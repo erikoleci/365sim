@@ -1,7 +1,7 @@
 import React from 'react';
 import { Match, MatchStatus } from '../types';
 import { formatMatchTime, formatMatchDayMonth, isSameAlbaniaDay, albaniaTodayKey } from '../utils/albaniaTime';
-import { isHalftime, liveMinuteFallback, isLiveClockStale } from '../utils/liveStatus';
+import { isHalftime, liveMinuteFallback, isLiveClockStale, formatScore } from '../utils/liveStatus';
 
 interface MatchRowProps {
   match: Match;
@@ -282,7 +282,7 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
                  </span>
                  {(isFinished || isLive) && (
                     <span className={`font-mono font-bold text-lg w-8 text-right leading-none ${isLive ? 'text-brand-yellow drop-shadow-md' : 'text-brand-accent'}`}>
-                        {isLive ? (match.liveHomeScore ?? 0) : match.score?.home}
+                        {isLive ? formatScore(match.liveHomeScore) : formatScore(match.score?.home)}
                     </span>
                  )}
                </div>
@@ -296,7 +296,7 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
                  </span>
                  {(isFinished || isLive) && (
                     <span className={`font-mono font-bold text-lg w-8 text-right leading-none ${isLive ? 'text-brand-yellow drop-shadow-md' : 'text-brand-accent'}`}>
-                        {isLive ? (match.liveAwayScore ?? 0) : match.score?.away}
+                        {isLive ? formatScore(match.liveAwayScore) : formatScore(match.score?.away)}
                     </span>
                  )}
                </div>

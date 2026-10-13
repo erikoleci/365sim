@@ -11,6 +11,7 @@ import CasinoHub from './components/CasinoHub';
 import { User, Match, Bet, UserRole, BetSelectionItem, MatchStatus } from './types';
 import * as api from './services/api';
 import { albaniaDateKey, albaniaTodayKey, isSameAlbaniaDay } from './utils/albaniaTime';
+import { recentResults, groupResultsByLeague } from './utils/results';
 import { isStaleLiveMatch, MAX_LIVE_AGE_MS, isMessageForMatch, isGhostLiveMatch } from './utils/liveStatus';
 import * as leagueGrouping from './utils/leagueGrouping';
 import FeaturedMatchCard from './components/FeaturedMatchCard';
@@ -70,6 +71,8 @@ const App: React.FC = () => {
   // fetched/rendered only once the person actively presses "Live", not
   // mixed into the home feed by default.
   const [showLiveOnly, setShowLiveOnly] = useState(false);
+  // "Rezultate": finished matches of the last 48 hours.
+  const [showResults, setShowResults] = useState(false);
   const [detailMatchId, setDetailMatchId] = useState<string | null>(null);
   // GET /api/matches (the list) now only returns the 1X2/"h2h" market per
   // match to keep that payload small/fast (see server/routes/matches.js).
@@ -874,6 +877,19 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveMatchesByCountry]);
 
+  // Rezultate: finished within 48h, newest first, grouped by league (see utils/results.ts).
+  const resultsList = useMemo(() => recentResults(matches, searchQuery), [matches, searchQuery]);
+  const resultsSections = useMemo(() => groupResultsByLeague(resultsList), [resultsList]);
+  const goResults = () => {
+    setDetailMatchId(null);
+    setShowLiveOnly(false);
+    setCurrentLeague('All Top Football');
+    setShowResults(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  // Drilling into a league/country leaves the results view.
+  useEffect(() => { if (currentLeague !== 'All Top Football') setShowResults(false); }, [currentLeague]);
+
   const dynamicLeagues = useMemo(() => {
     const fetchedLeagues = Array.from(new Set(matches.map((m) => m.league)));
     return Array.from(new Set(['All Top Football', ...fetchedLeagues])).sort();
@@ -1142,19 +1158,19 @@ const App: React.FC = () => {
                   </div>
                     <div className="bg-[#2b2b2b] border-b border-[#444]">
                       <button
-                        onClick={() => { setShowLiveOnly(false); setCurrentLeague('All Top Football'); setDetailMatchId(null); setIsLeagueMenuOpen(false); }}
+                        onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague('All Top Football'); setDetailMatchId(null); setIsLeagueMenuOpen(false); }}
                         className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex items-center gap-2 uppercase tracking-wider transition-colors hover:bg-[#444] hover:text-white ${currentLeague === 'All Top Football' && !showLiveOnly ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}
                       >
                         <span>Të gjitha ndeshjet</span>
                       </button>
-<button onClick={() => { setShowLiveOnly(false); setCurrentLeague('FAVORITES'); setDetailMatchId(null); setIsLeagueMenuOpen(false); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors hover:bg-[#444] hover:text-white ${currentLeague === 'FAVORITES' ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
+<button onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague('FAVORITES'); setDetailMatchId(null); setIsLeagueMenuOpen(false); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors hover:bg-[#444] hover:text-white ${currentLeague === 'FAVORITES' ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
                     <div className="flex items-center gap-2">
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className="w-3.5 h-3.5 fill-brand-yellow"><path d="M10 1.5l2.6 5.27 5.82.85-4.21 4.1.99 5.8L10 14.9l-5.2 2.62.99-5.8-4.21-4.1 5.82-.85L10 1.5z" /></svg>
                       <span className="uppercase tracking-wider">Të Preferuarat</span>
                     </div>
                   </button>
 
-                  <button onClick={() => { setDetailMatchId(null); setIsLeagueMenuOpen(false); setShowLiveOnly(true); requestAnimationFrame(() => document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' })); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors ${showLiveOnly ? 'bg-[#444] text-white font-bold' : ''}`}>
+                  <button onClick={() => { setDetailMatchId(null); setIsLeagueMenuOpen(false); setShowLiveOnly(true); setShowResults(false); requestAnimationFrame(() => document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' })); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors ${showLiveOnly ? 'bg-[#444] text-white font-bold' : ''}`}>
                     <div className="flex items-center gap-2">
                       <span className="relative flex h-2 w-2">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-accent opacity-75"></span>
@@ -1162,6 +1178,12 @@ const App: React.FC = () => {
                       </span>
                       <span className="uppercase tracking-wider">In-Play / Live</span>
                       {liveMatches.length > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveMatches.length}</span>}
+                    </div>
+                  </button>
+                  <button onClick={() => { setIsLeagueMenuOpen(false); goResults(); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors ${showResults ? 'bg-[#444] text-white font-bold' : ''}`}>
+                    <div className="flex items-center gap-2">
+                      <span className="uppercase tracking-wider">Rezultate</span>
+                      {resultsList.length > 0 && <span className="text-[10px] bg-[#555] text-white px-1.5 rounded font-bold">{resultsList.length}</span>}
                     </div>
                   </button>
 
@@ -1172,7 +1194,7 @@ const App: React.FC = () => {
                         <div key={country}>
                           <div className={`w-full flex items-stretch bg-[#333] border-b border-brand-bg/10 ${currentLeague === countryFilterKey(country) ? 'border-l-4 border-l-brand-yellow' : ''}`}>
                             <button
-                              onClick={() => { setShowLiveOnly(false); setCurrentLeague(countryFilterKey(country)); setDetailMatchId(null); setIsLeagueMenuOpen(false); }}
+                              onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague(countryFilterKey(country)); setDetailMatchId(null); setIsLeagueMenuOpen(false); }}
                               className={`flex-1 min-w-0 text-left px-3 py-2 hover:bg-[#3a3a3a] text-brand-text font-bold uppercase text-[10px] tracking-wider transition-colors ${currentLeague === countryFilterKey(country) ? 'text-white bg-[#444]' : ''}`}
                             >
                               <span className="flex items-center gap-1.5">
@@ -1190,12 +1212,12 @@ const App: React.FC = () => {
                             </button>
                           </div>
                           {isOpen && (
-                            <button onClick={() => { setShowLiveOnly(false); setCurrentLeague(countryFilterKey(country)); setDetailMatchId(null); setIsLeagueMenuOpen(false); }} className={`px-3 py-2 pl-6 w-full text-left text-[10px] uppercase tracking-wider hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 ${currentLeague === countryFilterKey(country) ? 'bg-[#444] text-white font-bold' : 'text-brand-yellow'}`}>
+                            <button onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague(countryFilterKey(country)); setDetailMatchId(null); setIsLeagueMenuOpen(false); }} className={`px-3 py-2 pl-6 w-full text-left text-[10px] uppercase tracking-wider hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 ${currentLeague === countryFilterKey(country) ? 'bg-[#444] text-white font-bold' : 'text-brand-yellow'}`}>
                               Të gjitha ligat ({leagues.length})
                             </button>
                           )}
                           {isOpen && leagues.map((league) => (
-                            <button key={league} onClick={() => { setShowLiveOnly(false); setCurrentLeague(league); setDetailMatchId(null); setIsLeagueMenuOpen(false); }} className={`px-3 py-2.5 pl-6 hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 flex justify-between items-center group text-left w-full ${currentLeague === league ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
+                            <button key={league} onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague(league); setDetailMatchId(null); setIsLeagueMenuOpen(false); }} className={`px-3 py-2.5 pl-6 hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 flex justify-between items-center group text-left w-full ${currentLeague === league ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
                               <span className="truncate">{leagueLabel(league)}</span>
                             </button>
                           ))}
@@ -1230,10 +1252,12 @@ const App: React.FC = () => {
         onOpenAdmin={() => setShowAdmin(!showAdmin)}
         currentView={currentView}
         onNavigate={setCurrentView}
-        activeTab={showLiveOnly ? 'live' : currentLeague === 'All Top Football' ? navTab : 'soccer'}
-        onGoHome={() => { startTransition(() => { setNavTab('home'); setShowLiveOnly(false); setCurrentLeague('All Top Football'); setSelectedDate('ALL'); setDetailMatchId(null); }); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-        onGoLive={() => { setDetailMatchId(null); setShowLiveOnly(true); requestAnimationFrame(() => document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' })); }}
-        onGoSoccer={() => { startTransition(() => { setNavTab('soccer'); setShowLiveOnly(false); setCurrentLeague('All Top Football'); setDetailMatchId(null); }); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+        activeTab={showLiveOnly ? 'live' : showResults ? 'results' : currentLeague === 'All Top Football' ? navTab : 'soccer'}
+        onGoHome={() => { startTransition(() => { setNavTab('home'); setShowLiveOnly(false); setShowResults(false); setCurrentLeague('All Top Football'); setSelectedDate('ALL'); setDetailMatchId(null); }); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+        onGoLive={() => { setDetailMatchId(null); setShowLiveOnly(true); setShowResults(false); requestAnimationFrame(() => document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' })); }}
+        onGoSoccer={() => { startTransition(() => { setNavTab('soccer'); setShowLiveOnly(false); setShowResults(false); setCurrentLeague('All Top Football'); setDetailMatchId(null); }); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+        onGoResults={goResults}
+        resultsCount={resultsList.length}
         liveCount={liveMatches.length}
       />
 
@@ -1308,7 +1332,7 @@ const App: React.FC = () => {
                   already covers the same job). Soccer active; the rest
                   honestly disabled ("Së shpejti") since only soccer has
                   real data right now. */}
-              {!showLiveOnly && currentLeague === 'All Top Football' && (
+              {!showLiveOnly && !showResults && currentLeague === 'All Top Football' && (
                 <div className="flex gap-1 overflow-x-auto pb-1 no-scrollbar">
                   <button className="shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded bg-[#333] border-b-2 border-brand-yellow text-white">
                     <span className="text-lg leading-none" aria-hidden="true">⚽</span>
@@ -1331,12 +1355,14 @@ const App: React.FC = () => {
                   shown once the person has drilled into something specific,
                   same idea as the reference site's context bar. Home/
                   Favorites/root views stay breadcrumb-less on purpose. */}
-              {(showLiveOnly || (currentLeague !== 'All Top Football' && currentLeague !== 'FAVORITES')) && (
+              {(showLiveOnly || showResults || (currentLeague !== 'All Top Football' && currentLeague !== 'FAVORITES')) && (
                 <div className="bg-[#2a2a2a] border border-brand-divider rounded px-3 py-2 text-xs text-brand-textMuted flex items-center justify-between gap-2">
                   <span className="truncate">
                     <span className="text-brand-text font-semibold">Futboll</span>
                     {showLiveOnly ? (
                       <span> / <span className="text-brand-accent font-semibold">Live InPlay</span></span>
+                    ) : showResults ? (
+                      <span> / <span className="text-brand-text font-semibold">Rezultate (48 orët e fundit)</span></span>
                     ) : isCountryFilter(currentLeague) ? (
                       <span> / <span className="text-brand-text font-semibold">{countryFromFilter(currentLeague)}</span></span>
                     ) : (
@@ -1344,7 +1370,7 @@ const App: React.FC = () => {
                     )}
                   </span>
                   <button
-                    onClick={() => { setShowLiveOnly(false); setCurrentLeague('All Top Football'); setDetailMatchId(null); }}
+                    onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague('All Top Football'); setDetailMatchId(null); }}
                     className="shrink-0 text-[10px] uppercase tracking-wide text-brand-textMuted hover:text-white"
                   >
                     ← Kryefaqja
@@ -1353,13 +1379,14 @@ const App: React.FC = () => {
               )}
 
               <div className="lg:hidden flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-                <button onClick={() => { setShowLiveOnly(true); requestAnimationFrame(() => document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' })); }} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 ${showLiveOnly ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>
+                <button onClick={() => { setShowLiveOnly(true); setShowResults(false); requestAnimationFrame(() => document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' })); }} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 ${showLiveOnly ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>
                   <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse"></span>
                   LIVE {liveMatches.length > 0 && `(${liveMatches.length})`}
                 </button>
-                <button onClick={() => { setShowLiveOnly(false); setCurrentLeague('All Top Football'); }} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${currentLeague === 'All Top Football' ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>Të Gjitha</button>
+                <button onClick={goResults} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${showResults ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>REZULTATE {resultsList.length > 0 && `(${resultsList.length})`}</button>
+                <button onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague('All Top Football'); }} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${currentLeague === 'All Top Football' ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>Të Gjitha</button>
                 {leaguesByCountry.map(([country, leagues]) => (
-                  <button key={country} onClick={() => { setShowLiveOnly(false); setCurrentLeague(countryFilterKey(country)); setDetailMatchId(null); }} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 ${currentLeague === countryFilterKey(country) ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>
+                  <button key={country} onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague(countryFilterKey(country)); setDetailMatchId(null); }} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 ${currentLeague === countryFilterKey(country) ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>
                     <span aria-hidden="true">{countryFlag(country)}</span>
                     {country}
                     <span className={`text-[10px] font-normal ${currentLeague === countryFilterKey(country) ? 'text-black/60' : 'text-brand-textMuted'}`}>{leagues.length}</span>
@@ -1433,7 +1460,7 @@ const App: React.FC = () => {
                       <>
                         <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-brand-textMuted">Liga</div>
                         {searchSuggestions.leagues.map((league) => (
-                          <button key={league} onMouseDown={(e) => { e.preventDefault(); setShowLiveOnly(false); setCurrentLeague(league); setSearchQuery(''); commitSearchHistory(leagueLabel(league)); setIsSearchFocused(false); }} className="w-full text-left px-3 py-2 text-white hover:bg-[#444]">
+                          <button key={league} onMouseDown={(e) => { e.preventDefault(); setShowLiveOnly(false); setShowResults(false); setCurrentLeague(league); setSearchQuery(''); commitSearchHistory(leagueLabel(league)); setIsSearchFocused(false); }} className="w-full text-left px-3 py-2 text-white hover:bg-[#444]">
                             {leagueLabel(league)}
                           </button>
                         ))}
@@ -1468,6 +1495,55 @@ const App: React.FC = () => {
                 </div>
               ) : (
                 <>
+                  {/* REZULTATE — only rendered when the person pressed "Rezultate": matches that
+                      FINISHED within the last 48 hours, newest first, grouped by league. Real
+                      data only; an honest message when there is none. */}
+                  {showResults && (
+                    <div id="results-section" className="bg-brand-panel rounded overflow-hidden shadow-sm border border-[#444] scroll-mt-4">
+                      <div className="bg-[#2a2a2a] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex items-center gap-2 justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="uppercase tracking-wider">Rezultate · 48 orët e fundit</span>
+                          {resultsList.length > 0 && <span className="text-[10px] bg-[#555] text-white px-1.5 rounded font-bold">{resultsList.length}</span>}
+                        </div>
+                        <button onClick={() => { setShowResults(false); }} className="text-[10px] text-brand-textMuted hover:text-white uppercase tracking-wide">
+                          Kthehu te Kryefaqja ✕
+                        </button>
+                      </div>
+                      {resultsList.length === 0 ? (
+                        <div className="text-center text-brand-textMuted text-xs py-8 px-4">
+                          Nuk ka ndeshje të mbaruara në 48 orët e fundit{searchQuery ? ' për këtë kërkim' : ''}.
+                        </div>
+                      ) : (
+                        resultsSections.map(({ league, matches: leagueMatches }) => (
+                          <div key={league}>
+                            <div className="bg-[#2a2a2a] px-3 py-2 text-[11px] font-bold text-white flex items-center gap-1.5 border-b border-[#333]">
+                              <span aria-hidden="true">{countryFlag(leagueCountry(league))}</span>
+                              <span className="uppercase tracking-wide">{leagueLabel(league)}</span>
+                              <span className="text-brand-textMuted font-normal">· {leagueCountry(league)}</span>
+                              <span className="ml-auto text-[10px] bg-[#555] text-white px-1.5 rounded font-bold">{leagueMatches.length}</span>
+                            </div>
+                            <div className="divide-y divide-brand-divider">
+                              {leagueMatches.map((match) => (
+                                <MatchRow
+                                  key={match.id}
+                                  match={match}
+                                  onBetClick={handleToggleSelection}
+                                  onOpenDetail={(m) => setDetailMatchId(m.id)}
+                                  isAdmin={currentUser.role === UserRole.ADMIN}
+                                  onSettleMatch={handleSettleMatch}
+                                  isSimulating={simulatingMatchId === match.id}
+                                  selectedIds={selectedIds}
+                                  favoriteTeams={favoriteTeams}
+                                  onToggleFavoriteTeam={(team) => toggleFavorite('TEAM', team)}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
                   {/* LIVE — only rendered when the person pressed "Live In-Play".
                       Shown even if empty (real "no live matches" message, no
                       fake data) since that's the whole point of the button. */}
@@ -1482,7 +1558,7 @@ const App: React.FC = () => {
                           <span className="text-brand-accent uppercase tracking-wider">Live Tani</span>
                           {liveMatches.length > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveMatches.length}</span>}
                         </div>
-                        <button onClick={() => setShowLiveOnly(false)} className="text-[10px] text-brand-textMuted hover:text-white uppercase tracking-wide">
+                        <button onClick={() => { setShowLiveOnly(false); setShowResults(false); }} className="text-[10px] text-brand-textMuted hover:text-white uppercase tracking-wide">
                           Kthehu te Kryefaqja ✕
                         </button>
                       </div>
@@ -1525,7 +1601,7 @@ const App: React.FC = () => {
                     </div>
                   )}
 
-                  {!showLiveOnly && dateFallbackActive && (
+                  {!showLiveOnly && !showResults && dateFallbackActive && (
                     <div className="bg-[#3a3320] border border-brand-yellow/40 text-brand-yellow text-xs rounded px-3 py-2 flex items-center justify-between gap-2">
                       <span>
                         Nuk ka ndeshje për datën e zgjedhur — po shfaqen ndeshjet e ardhshme, të ndara sipas datës.
@@ -1536,10 +1612,10 @@ const App: React.FC = () => {
                     </div>
                   )}
 
-                  {!showLiveOnly && currentLeague === 'All Top Football' && topLeagueMatches.list.length > 0 && (
+                  {!showLiveOnly && !showResults && currentLeague === 'All Top Football' && topLeagueMatches.list.length > 0 && (
                     <div className="bg-brand-panel rounded overflow-hidden shadow-sm">
                       <button
-                        onClick={() => { setShowLiveOnly(false); setCurrentLeague(topLeagueMatches.key!); setDetailMatchId(null); }}
+                        onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague(topLeagueMatches.key!); setDetailMatchId(null); }}
                         className="w-full bg-[#2f2f2f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] uppercase tracking-wider text-left hover:text-brand-yellow"
                       >
                         {topLeagueMatches.label}
@@ -1562,7 +1638,7 @@ const App: React.FC = () => {
                       root/home view (not once a specific country/league is
                       selected, and not on the dedicated Live tab), same
                       placement as the reference site's homepage. */}
-                  {!showLiveOnly && currentLeague === 'All Top Football' && featuredMatches.length > 0 && (
+                  {!showLiveOnly && !showResults && currentLeague === 'All Top Football' && featuredMatches.length > 0 && (
                     <div className="bg-brand-panel rounded overflow-hidden shadow-sm">
                       <div className="bg-[#2f2f2f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] uppercase tracking-wider">
                         Ndeshjet Kryesore
@@ -1581,7 +1657,7 @@ const App: React.FC = () => {
                     </div>
                   )}
 
-                  {!showLiveOnly && currentLeague === 'All Top Football' && todayMatches.length > 0 && (
+                  {!showLiveOnly && !showResults && currentLeague === 'All Top Football' && todayMatches.length > 0 && (
                     <div className="bg-brand-panel rounded overflow-hidden shadow-sm">
                       <button
                         onClick={() => setIsTodaySectionOpen((o) => !o)}
@@ -1612,7 +1688,7 @@ const App: React.FC = () => {
                   )}
 
                   {/* Upcoming — grouped like the London site: Shtet -> Ligue -> ndeshje */}
-                  {showLiveOnly ? null : matchesByCountry.length === 0 ? (
+                  {(showLiveOnly || showResults) ? null : matchesByCountry.length === 0 ? (
                     <div className="flex flex-col justify-center items-center h-64 bg-brand-panel rounded border border-brand-divider text-center px-6">
                       <div className="text-brand-textMuted text-sm mb-2">Asnjë ndeshje e disponueshme.</div>
                       <div className="text-brand-textMuted text-xs opacity-70">

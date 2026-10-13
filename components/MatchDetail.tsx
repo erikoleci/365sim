@@ -68,6 +68,13 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
   const [liveDetail, setLiveDetail] = useState<{ statistics: LiveStatistics | null; events: MatchEvent[] } | null>(null);
   const [liveDetailLoading, setLiveDetailLoading] = useState(false);
   const [cardFlash, setCardFlash] = useState<{ kind: 'YELLOW_CARD' | 'RED_CARD'; team: 'home' | 'away' } | null>(null);
+  // The provider rarely sends statistics (possession, shots, corners, xG...). When none arrived
+  // the "Statistika" tab would only ever say "not available", so the tab is not shown at all.
+  const hasAnyStat = !!liveDetail?.statistics && STAT_FIELDS.some((k) => (liveDetail.statistics as any)[k] != null);
+  useEffect(() => {
+    if (activeTab === 'STATS' && !liveDetailLoading && !hasAnyStat) setActiveTab(hasLiveData ? 'EVENTS' : 'All');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, liveDetailLoading, hasAnyStat]);
   const clockSrc = pickClockSource(match, liveDetail?.statistics);
   const headerClock = useTickingClock(
     clockSrc.raw,
@@ -267,6 +274,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
          <div className="flex">
             {hasLiveData && (
               <>
+                {hasAnyStat && (
                 <button
                     onClick={() => setActiveTab('STATS')}
                     className={`px-4 py-3 text-xs font-bold uppercase transition-colors whitespace-nowrap ${
@@ -277,6 +285,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
                 >
                     Statistika
                 </button>
+                )}
                 <button
                     onClick={() => setActiveTab('EVENTS')}
                     className={`px-4 py-3 text-xs font-bold uppercase transition-colors whitespace-nowrap ${
