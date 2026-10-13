@@ -353,7 +353,7 @@ async function start() {
     // 1) settle everything a rule can decide, 2) then close what can never be
     // decided (see voidOverdueLegs) -- so no ticket stays open for good.
     settleStuckBets()
-      .then(function (r) { if (r.settledLegs || r.recomputedBets) console.log('[settle] stuck-bet sweep: ' + JSON.stringify(r)); })
+      .then(function (r) { if (r.settledLegs || r.recomputedBets || r.closedUnsettled) console.log('[settle] stuck-bet sweep: ' + JSON.stringify(r)); })
       .then(function () { return voidOverdueLegs(); })
       .then(function (r) { if (r.voidedLegs) console.log('[settle] overdue sweep: ' + JSON.stringify(r)); })
       .catch(function (err) { console.error('[settle] stuck-bet sweep failed:', err.message); });

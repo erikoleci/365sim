@@ -97,7 +97,9 @@ router.get('/', wrap(async (req, res) => {
 }));
 
 router.post('/', wrap(async (req, res) => {
-  const { type, stake, selections } = req.body || {};
+  const { stake, selections } = req.body || {};
+  // Ticket type is derived from the selections, never trusted from the client.
+  const ticketType = Array.isArray(selections) && selections.length > 1 ? 'ACCUMULATOR' : 'SINGLE';
 
   if (!Array.isArray(selections) || selections.length === 0) {
     return res.status(400).json({ error: 'At least one selection is required' });
@@ -241,23 +243,6 @@ router.post('/', wrap(async (req, res) => {
     return res.status(400).json({ error: `Maximum potential payout is ${MAX_POTENTIAL_RETURN}. Reduce your stake or selections.` });
   }
 
-  // Risk Management: exposure check — for each selection, sum the
-  // potential_return already committed on PENDING tickets backing that
-  // same outcome, and reject if this new ticket would push it past the
-  // house-wide cap.
-  for (const sel of verifiedSelections) {
-    const { rows: exposureRows } = await pool.query(
-      `SELECT COALESCE(SUM(b.potential_return), 0) AS exposure
-       FROM bet_selections bs JOIN bets b ON b.id = bs.bet_id
-       WHERE bs.match_id = $1 AND bs.market_id = $2 AND bs.selection_id = $3 AND b.status = 'PENDING'`,
-      [sel.matchId, sel.marketId, sel.selectionId]
-    );
-    const currentExposure = Number(exposureRows[0].exposure);
-    if (currentExposure + potentialReturn > MAX_SELECTION_EXPOSURE) {
-      return res.status(400).json({ error: `This selection is temporarily limited due to high exposure. Try a smaller stake.` });
-    }
-  }
-
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -269,11 +254,45 @@ router.post('/', wrap(async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Insufficient balance' });
     }
+    const balanceBefore = Number(lockedUser[0].balance);
+    const balanceAfter = Number((balanceBefore - stake).toFixed(2));
+
+    // Risk Management: exposure check. It must run INSIDE the transaction and
+    // under a per-selection advisory lock: checked before BEGIN, two
+    // simultaneous tickets on the same outcome could both read the old
+    // exposure, both pass, and together blow through the cap. Keys are locked
+    // in sorted order so concurrent tickets can never deadlock each other.
+    const lockKeys = [...new Set(verifiedSelections.map((s) => `${s.matchId}::${s.marketId}::${s.selectionId}`))].sort();
+    for (const key of lockKeys) {
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [key]);
+    }
+    for (const sel of verifiedSelections) {
+      const { rows: exposureRows } = await client.query(
+        `SELECT COALESCE(SUM(b.potential_return), 0) AS exposure
+         FROM bet_selections bs JOIN bets b ON b.id = bs.bet_id
+         WHERE bs.match_id = $1 AND bs.market_id = $2 AND bs.selection_id = $3 AND b.status = 'PENDING'`,
+        [sel.matchId, sel.marketId, sel.selectionId]
+      );
+      if (Number(exposureRows[0].exposure) + potentialReturn > MAX_SELECTION_EXPOSURE) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `This selection is temporarily limited due to high exposure. Try a smaller stake.` });
+      }
+    }
+
     await client.query('UPDATE users SET balance = balance - $1 WHERE id = $2', [stake, user.id]);
     await client.query(
       `INSERT INTO bets (id, user_id, type, stake, total_odds, potential_return, status, created_at)
        VALUES ($1,$2,$3,$4,$5,$6,'PENDING',$7)`,
-      [betId, user.id, type || 'SINGLE', stake, totalOdds, potentialReturn, Date.now()]
+      [betId, user.id, ticketType, stake, totalOdds, potentialReturn, Date.now()]
+    );
+    // Audit trail: the stake debit is recorded (reference = bet id) so the money
+    // movement survives even if the ticket row is later cancelled/deleted.
+    await client.query(
+      `INSERT INTO transactions
+        (actor_id, source_id, target_id, amount, type, reference,
+         source_balance_before, source_balance_after, target_balance_before, target_balance_after, created_at)
+       VALUES ($1,$1,$1,$2,'BET_STAKE',$3,$4,$5,$4,$5,$6)`,
+      [user.id, stake, betId, balanceBefore, balanceAfter, Date.now()]
     );
     for (const sel of verifiedSelections) {
       await client.query(
@@ -320,7 +339,25 @@ router.post('/:id/cancel', wrap(async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // Lock the bet row and re-check it INSIDE the transaction. Without this two
+    // simultaneous cancel requests both passed the checks above and both
+    // refunded the stake (the second DELETE just matched nothing).
+    const { rows: lockedBet } = await client.query('SELECT status FROM bets WHERE id = $1 FOR UPDATE', [bet.id]);
+    if (!lockedBet[0] || lockedBet[0].status !== 'PENDING') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Only pending bets can be cancelled' });
+    }
+    const { rows: lockedUser } = await client.query('SELECT balance FROM users WHERE id = $1 FOR UPDATE', [bet.user_id]);
+    const balanceBefore = Number(lockedUser[0].balance);
+    const balanceAfter = Number((balanceBefore + Number(bet.stake)).toFixed(2));
     await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [bet.stake, bet.user_id]);
+    await client.query(
+      `INSERT INTO transactions
+        (actor_id, source_id, target_id, amount, type, reference,
+         source_balance_before, source_balance_after, target_balance_before, target_balance_after, created_at)
+       VALUES ($1,$1,$1,$2,'BET_CANCEL_REFUND',$3,$4,$5,$4,$5,$6)`,
+      [bet.user_id, bet.stake, bet.id, balanceBefore, balanceAfter, Date.now()]
+    );
     await client.query('DELETE FROM bet_selections WHERE bet_id = $1', [bet.id]);
     await client.query('DELETE FROM bets WHERE id = $1', [bet.id]);
     await client.query('COMMIT');

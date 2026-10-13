@@ -61,6 +61,15 @@ const mocks = vi.hoisted(function () {
       const ids = new Set(params[0]);
       return Promise.resolve({ rows: [...matches.values()].filter((m) => ids.has(m.id)) });
     }
+    // Cancel re-checks the bet row under a lock inside the transaction.
+    if (s.startsWith('SELECT status FROM bets WHERE id = $1 FOR UPDATE')) {
+      const row = bets.get(params[0]);
+      return Promise.resolve({ rows: row ? [{ status: row.status }] : [] });
+    }
+    // Ledger row written for the refund.
+    if (s.includes('INSERT INTO transactions')) {
+      return Promise.resolve({ rows: [] });
+    }
     if (s.startsWith('SELECT balance FROM users WHERE id = $1')) {
       const row = users.get(params[0]);
       return Promise.resolve({ rows: row ? [{ balance: row.balance }] : [] });

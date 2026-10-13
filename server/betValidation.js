@@ -23,6 +23,9 @@ export function validateStakeAmount(stake, { min, max } = {}) {
   if (typeof stake !== 'number' || !Number.isFinite(stake) || stake <= 0) {
     return 'Stake must be a positive number';
   }
+  // Money has 2 decimals (the DB column is NUMERIC(14,2)); anything finer would be
+  // silently rounded in storage but still checked against the balance unrounded.
+  if (Math.round(stake * 100) / 100 !== stake) return 'Stake can have at most 2 decimal places';
   if (min != null && stake < min) return `Minimum stake is ${min}`;
   // `max` is optional: no upper stake limit is enforced unless one is passed.
   if (max != null && stake > max) return `Maximum stake is ${max}`;

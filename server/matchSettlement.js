@@ -357,6 +357,35 @@ export async function settleMatch(matchId, homeScore, awayScore, { force = false
 // Idempotent: recomputeBetStatus locks the bet row and only pays on the
 // transition into WON, so running it repeatedly never double-pays.
 export async function settleStuckBets() {
+  // Step 0: matches that were closed (FINISHED) WITHOUT being settled, so they have
+  // no stored final score. Their last live score + clock is the best final score we
+  // have; settleMatch() stores it and decides every leg. Only matches that really
+  // had a score AND a running clock qualify (same guard as hasRealLiveResult in
+  // london365.js) -- a match that never had live data is never settled on an
+  // invented 0-0 and stays for the admin.
+  let closedUnsettled = 0;
+  try {
+    const { rows: unsettled } = await pool.query(
+      `SELECT DISTINCT m.id, m.live_home_score, m.live_away_score
+         FROM matches_cache m
+         JOIN bet_selections bs ON bs.match_id = m.id AND bs.status = 'PENDING'
+        WHERE m.status = 'FINISHED'
+          AND (m.result_home IS NULL OR m.result_away IS NULL)
+          AND m.live_home_score IS NOT NULL AND m.live_away_score IS NOT NULL
+          AND m.live_minute IS NOT NULL AND TRIM(m.live_minute::text) <> ''`
+    );
+    for (const m of unsettled) {
+      try {
+        const r = await settleMatch(m.id, Number(m.live_home_score), Number(m.live_away_score));
+        if (r) closedUnsettled++;
+      } catch (err) {
+        console.error('[settle] could not settle closed match ' + m.id + ':', err.message);
+      }
+    }
+  } catch (err) {
+    console.error('[settle] closed-unsettled pass failed:', err.message);
+  }
+
   const client = await pool.connect();
   try {
     const { rows: legs } = await client.query(
@@ -402,7 +431,7 @@ export async function settleStuckBets() {
       await client.query('ROLLBACK');
       throw err;
     }
-    return { settledLegs, recomputedBets: affectedBetIds.size };
+    return { settledLegs, recomputedBets: affectedBetIds.size, closedUnsettled };
   } finally {
     client.release();
   }

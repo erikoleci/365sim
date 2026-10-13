@@ -2373,7 +2373,7 @@ export async function markLondon365GameEnded(gameId) {
   if (!isTrackedGame(id)) return 0; // never imported: nothing to end (was a SELECT + UPDATE per message)
   return withDbLock(id, async () => {
     const { rows } = await pool.query(
-      'SELECT live_home_score, live_away_score FROM matches_cache WHERE id = $1', [id]
+      'SELECT live_home_score, live_away_score, live_minute FROM matches_cache WHERE id = $1', [id]
     );
     const res = await pool.query(
       `UPDATE matches_cache SET status = 'FINISHED', live_status = 'ended' WHERE id = $1 AND status = 'LIVE'`,
@@ -2387,6 +2387,22 @@ export async function markLondon365GameEnded(gameId) {
       noteMatchStatus(id, 'FINISHED');
       forgetLiveRow(id);
       clearGoalAnnounced(id);
+      // BUG FIX: this path used to flip the match to FINISHED and stop there. The
+      // match then left the status = 'LIVE' query that end-detection settles from,
+      // and it had no result_home/result_away, which settleStuckBets() requires --
+      // so every ticket on it stayed "HAPUR" until the 24h overdue sweep VOIDed it
+      // (refund instead of WON/LOST). Settle it right here, the same way the
+      // end-detection path does, with the same "real score + clock" guard.
+      if (hasRealLiveResult(row)) {
+        try {
+          await settleMatch(id, Number(row.live_home_score), Number(row.live_away_score));
+          console.log('[london365] auto-settled ' + id + ' ' + row.live_home_score + '-' + row.live_away_score + ' (socket end)');
+        } catch (err) {
+          console.error('[london365] socket-end settle ' + id + ' failed:', err.message);
+        }
+      } else {
+        console.warn('[london365] ' + id + ' ended via socket without a real score/clock -- NOT settled (settle manually if any bets are pending)');
+      }
     }
     return res ? res.rowCount : 0;
   });

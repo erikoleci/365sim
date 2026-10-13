@@ -11,6 +11,8 @@ interface BetSlipProps {
   myBets: Bet[];
 }
 
+const MIN_STAKE = 10; // must match MIN_STAKE in server/routes/bets.js
+
 const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClearAll, onPlaceBet, onCancelBet, userBalance, myBets }) => {
   const [stake, setStake] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'slip' | 'mybets'>('slip');
@@ -35,7 +37,9 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
   // match — combine and label distinctly from a normal cross-match accumulator.
   const isSameGameMultiple = isAccumulator && new Set(selections.map((s) => s.matchId)).size === 1;
   const potentialReturn = (parseFloat(stake || '0') * totalOdds).toFixed(2);
-  const isValidStake = parseFloat(stake || '0') > 0 && parseFloat(stake || '0') <= userBalance;
+  const stakeNum = parseFloat(stake || '0');
+  const hasValidDecimals = Math.round(stakeNum * 100) / 100 === stakeNum;
+  const isValidStake = stakeNum >= MIN_STAKE && stakeNum <= userBalance && hasValidDecimals;
   const changedSelections = selections.filter((s) => typeof s.previousOdds === 'number');
 
   const handlePlaceBetClick = () => {
@@ -206,8 +210,13 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                             >
                                 {changedSelections.length > 0 ? 'Prano Ndryshimet & Vendos' : 'Vendos Biletën'}
                             </button>
-                            {!isValidStake && stake && parseFloat(stake) > userBalance && (
+                            {!isValidStake && stake && stakeNum > userBalance && (
                                 <p className="text-red-400 text-xs text-center mt-2">Fonde të pamjaftueshme</p>
+                            )}
+                            {!isValidStake && stake && stakeNum <= userBalance && stakeNum > 0 && (
+                                <p className="text-red-400 text-xs text-center mt-2">
+                                    {!hasValidDecimals ? 'Maksimumi 2 shifra pas presjes' : `Stake minimal është ${MIN_STAKE} L`}
+                                </p>
                             )}
                         </div>
                     </div>

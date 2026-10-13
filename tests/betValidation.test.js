@@ -54,6 +54,13 @@ describe('validateStakeAmount', () => {
     expect(validateStakeAmount(0, bounds)).toMatch(/positive number/);
     expect(validateStakeAmount(-5, bounds)).toMatch(/positive number/);
   });
+  it('rejects more than 2 decimal places but accepts normal cents', () => {
+    expect(validateStakeAmount(10.123456, bounds)).toMatch(/2 decimal places/);
+    expect(validateStakeAmount(10.005, bounds)).toMatch(/2 decimal places/);
+    expect(validateStakeAmount(10.1, bounds)).toBeNull();
+    expect(validateStakeAmount(1.15 * 10, bounds)).toBeNull();
+    expect(validateStakeAmount(10.25, bounds)).toBeNull();
+  });
   it('rejects below minimum', () => {
     expect(validateStakeAmount(5, bounds)).toMatch(/Minimum stake is 10/);
   });
