@@ -17,9 +17,12 @@ export function normMarketText(str) {
     .trim();
 }
 
-// "Rezultati Pjesa e Parë", "1st Half Goals", "1. pjesa" ... (input must be normalised)
-export const FIRST_HALF_RE = /(?:\bne\s+)?(?:\bpjes(?:a|en|e)\s+(?:e\s+)?(?:pare|1)\b|\b1\.?\s*pjes(?:a|en|e)\b|\b(?:1st|first)\s+half\b|\bne\s+pushim\b)/;
-export const SECOND_HALF_RE = /(?:\bne\s+)?(?:\bpjes(?:a|en|e)\s+(?:e\s+)?(?:dyte|2)\b|\b2\.?\s*pjes(?:a|en|e)\b|\b(?:2nd|second)\s+half\b)/;
+// The provider names periods in several forms, all seen on real tickets:
+//   "Rezultati Pjesa e Parë", "Rezultati Pjesës së Parë" (genitive: pjesës + së),
+//   "Rezultati Pjesa I" / "Pjesa II" (Roman numerals), "1. pjesa", "1st Half".
+// (input must be normalised: lowercase, no diacritics -> "pjeses se pare")
+export const FIRST_HALF_RE = /(?:\bne\s+)?(?:\bpjes(?:a|en|es|e)\s+(?:s?e\s+)?(?:pare|1|i)\b|\b1\.?\s*pjes(?:a|en|es|e)\b|\b(?:1st|first)\s+half\b|\bne\s+pushim\b)/;
+export const SECOND_HALF_RE = /(?:\bne\s+)?(?:\bpjes(?:a|en|es|e)\s+(?:s?e\s+)?(?:dyte|2|ii)\b|\b2\.?\s*pjes(?:a|en|es|e)\b|\b(?:2nd|second)\s+half\b)/;
 
 // 'H1' | 'H2' | null. A name that mentions both halves ("1st half / 2nd half")
 // is ambiguous and returns null rather than being closed by guess.

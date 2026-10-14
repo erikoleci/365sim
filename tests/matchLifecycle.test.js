@@ -106,7 +106,15 @@ describe('marketPeriod', () => {
     expect(marketPeriod('Totali i Golave - Pjesa e Dytë')).toBe('H2');
     expect(marketPeriod('Over/Under 2nd Half')).toBe('H2');
   });
+  it('recognises the exact period names the provider uses on real tickets (genitive and Roman numerals)', () => {
+    expect(marketPeriod('Rezultati Pjesës së Parë')).toBe('H1');
+    expect(marketPeriod('Rezultati Pjesa I')).toBe('H1');
+    expect(marketPeriod('Rezultati Pjesa II')).toBe('H2');
+    expect(marketPeriod('Rezultati Pjesës së Dytë')).toBe('H2');
+  });
   it('leaves full-time, ambiguous and empty names alone', () => {
+    expect(marketPeriod('Rezultat Final & Numri i Golave në Ndeshje')).toBeNull();
+    expect(marketPeriod('Shuma e korneve P1+P2')).toBeNull();
     expect(marketPeriod('1X2 - Fituesi')).toBeNull();
     expect(marketPeriod('Totali i Golave')).toBeNull();
     expect(marketPeriod('1st half / 2nd half')).toBeNull();
@@ -346,6 +354,31 @@ describe('recoverFinishedWithoutResult (LIVE -> FINISHED by the socket, result n
     expect(mocks.bets.get('h2-home').status).toBe('LOST');  // 2nd half = FT 2-1 minus HT 1-0 = 1-1, not the full-time score
     expect(mocks.bets.get('h2-draw').status).toBe('WON');
     expect(mocks.bets.get('ft-home').status).toBe('WON');   // full time 2-1
+  });
+});
+
+describe('first-half tickets with the provider\'s real market names settle from the half-time score', () => {
+  it.each(['Rezultati Pjesës së Parë', 'Rezultati Pjesa I'])('%s: HT 1-0, FT 2-0 -> backing "1" wins, "X" loses', async (name) => {
+    seedMatch({ live_home_score: 2, live_away_score: 0, ht_home: 1, ht_away: 0 });
+    seedBet('home', 'u1', 100, 1.76, { market_id: 'x', market_name: name, selection_id: '1', selection_name: '1' });
+    seedBet('draw', 'u2', 100, 3, { market_id: 'x', market_name: name, selection_id: 'X', selection_name: 'X' });
+    await recoverFinishedWithoutResult({ now: NOW });
+    expect(mocks.bets.get('home').status).toBe('WON');
+    expect(mocks.users.get('u1').balance).toBe(176);
+    expect(mocks.bets.get('draw').status).toBe('LOST');
+  });
+  it('without a stored half-time score the first-half leg stays PENDING (never guessed)', async () => {
+    seedMatch({ ht_home: null, ht_away: null });
+    seedBet('home', 'u1', 100, 1.76, { market_id: 'x', market_name: 'Rezultati Pjesa I', selection_id: '1', selection_name: '1' });
+    await recoverFinishedWithoutResult({ now: NOW });
+    expect(mocks.bets.get('home').status).toBe('PENDING');
+    expect(mocks.users.get('u1').balance).toBe(0);
+  });
+  it('a combo market (Rezultat Final & Numri i Golave) is not auto-settled', async () => {
+    seedMatch();
+    seedBet('combo', 'u1', 100, 7.91, { market_id: 'x', market_name: 'Rezultat Final & Numri i Golave në Ndeshje', selection_id: '1/0-1', selection_name: '1/0-1' });
+    await recoverFinishedWithoutResult({ now: NOW });
+    expect(mocks.bets.get('combo').status).toBe('PENDING');
   });
 });
 
