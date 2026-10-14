@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BetSelectionItem, Bet, BetStatus } from '../types';
+import { useI18n } from '../i18n';
 
 interface BetSlipProps {
   selections: BetSelectionItem[];
@@ -14,6 +15,7 @@ interface BetSlipProps {
 const MIN_STAKE = 10; // must match MIN_STAKE in server/routes/bets.js
 
 const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClearAll, onPlaceBet, onCancelBet, userBalance, myBets }) => {
+  const { t, locale } = useI18n();
   const [stake, setStake] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'slip' | 'mybets'>('slip');
   const [showConfirm, setShowConfirm] = useState(false);
@@ -22,7 +24,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
   const [, setTick] = useState(0);
 
   useEffect(() => {
-    const timer = setInterval(() => setTick(t => t + 1), 30000); // Check every 30s
+    const timer = setInterval(() => setTick(n => n + 1), 30000); // Check every 30s
     return () => clearInterval(timer);
   }, []);
 
@@ -63,7 +65,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
       {/* Confirmation Modal Overlay */}
       {showConfirm && (
           <div className="absolute inset-0 bg-black/90 z-20 flex flex-col items-center justify-center p-4 text-center transition-opacity duration-150">
-              <h3 className="text-white font-bold text-lg mb-4 tracking-tight">Konfirmo Biletën</h3>
+              <h3 className="text-white font-bold text-lg mb-4 tracking-tight">{t('Konfirmo Biletën')}</h3>
               {/* Ticket receipt: dashed tear-line + punched notches, echoing a real betting slip stub */}
               <div className="relative bg-brand-bg border border-brand-divider rounded-lg w-full mb-4 overflow-hidden">
                   <div className="absolute -left-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-black/90" />
@@ -74,19 +76,19 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                         <span className="text-white font-bold tabular-nums">{parseFloat(stake).toFixed(2)} L</span>
                     </div>
                     <div className="flex justify-between mb-3 text-brand-textMuted text-xs">
-                        <span>Kuota Totale</span>
+                        <span>{t('Kuota Totale')}</span>
                         <span className="text-brand-yellow font-bold tabular-nums">@{totalOdds.toFixed(2)}</span>
                     </div>
                     <div className="border-t border-dashed border-brand-divider" />
                     <div className="flex justify-between pt-3">
-                        <span className="text-brand-text">Fitimi i Mundshëm</span>
+                        <span className="text-brand-text">{t('Fitimi i Mundshëm')}</span>
                         <span className="text-brand-accent font-bold text-base tabular-nums">{potentialReturn} L</span>
                     </div>
                   </div>
               </div>
               <div className="flex gap-2 w-full">
-                  <button onClick={cancelConfirm} className="flex-1 bg-transparent border border-brand-divider hover:border-white text-brand-text py-2.5 rounded-lg font-bold transition-colors">Anulo</button>
-                  <button onClick={confirmBet} className="flex-1 bg-brand-yellow hover:bg-yellow-400 text-brand-bg py-2.5 rounded-lg font-bold shadow-lg shadow-brand-yellow/10 transition-colors">Vendos Biletën</button>
+                  <button onClick={cancelConfirm} className="flex-1 bg-transparent border border-brand-divider hover:border-white text-brand-text py-2.5 rounded-lg font-bold transition-colors">{t('Anulo')}</button>
+                  <button onClick={confirmBet} className="flex-1 bg-brand-yellow hover:bg-yellow-400 text-brand-bg py-2.5 rounded-lg font-bold shadow-lg shadow-brand-yellow/10 transition-colors">{t('Vendos Biletën')}</button>
               </div>
           </div>
       )}
@@ -97,13 +99,13 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
             className={`flex-1 py-3 font-bold text-center transition-colors relative ${activeTab === 'slip' ? 'bg-brand-header text-white' : 'text-brand-textMuted hover:bg-brand-bg'}`}
             onClick={() => setActiveTab('slip')}
         >
-            Bileta {selections.length > 0 && <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] bg-brand-yellow text-brand-bg rounded-full text-[11px] font-extrabold">{selections.length}</span>}
+            {t('Bileta')} {selections.length > 0 && <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] bg-brand-yellow text-brand-bg rounded-full text-[11px] font-extrabold">{selections.length}</span>}
         </button>
         <button
             className={`flex-1 py-3 font-bold text-center transition-colors ${activeTab === 'mybets' ? 'bg-brand-header text-white' : 'text-brand-textMuted hover:bg-brand-bg'}`}
             onClick={() => setActiveTab('mybets')}
         >
-            Biletat e Mia
+            {t('Biletat e Mia')}
         </button>
       </div>
 
@@ -116,13 +118,13 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                     <div className="w-12 h-12 rounded-full border-2 border-dashed border-brand-divider flex items-center justify-center text-brand-textMuted text-xl mb-3">
                         +
                     </div>
-                    <p className="text-brand-text font-bold mb-1">Bileta jote është bosh</p>
-                    <p className="text-brand-textMuted text-xs leading-relaxed">Zgjidh një kuotë nga tabela e ndeshjeve për ta shtuar këtu.</p>
+                    <p className="text-brand-text font-bold mb-1">{t('Bileta jote është bosh')}</p>
+                    <p className="text-brand-textMuted text-xs leading-relaxed">{t('Zgjidh një kuotë nga tabela e ndeshjeve për ta shtuar këtu.')}</p>
                 </div>
             ) : (
                 <div className="space-y-2">
                     <div className="flex justify-end">
-                         <button onClick={onClearAll} className="text-[11px] text-brand-textMuted hover:text-white transition-colors">Hiq të Gjitha</button>
+                         <button onClick={onClearAll} className="text-[11px] text-brand-textMuted hover:text-white transition-colors">{t('Hiq të Gjitha')}</button>
                     </div>
 
                     {/* Odds-changed notice — appears the moment a placeBet attempt
@@ -134,10 +136,10 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                     {changedSelections.length > 0 && (
                         <div className="bg-amber-900/30 border border-amber-700/50 rounded-lg p-2.5 text-xs">
                             <p className="text-amber-300 font-bold mb-0.5">
-                                {changedSelections.length === 1 ? 'Kuota ndryshoi' : `Kuotat ndryshuan (${changedSelections.length})`}
+                                {changedSelections.length === 1 ? t('Kuota ndryshoi') : t('Kuotat ndryshuan ({n})', { n: changedSelections.length })}
                             </p>
                             <p className="text-amber-200/80 leading-snug">
-                                Çmimi u përditësua më poshtë. Prano ndryshimet dhe vendos biletën sërish, ose hiqe zgjedhjen nëse s'e pranon.
+                                {t("Çmimi u përditësua më poshtë. Prano ndryshimet dhe vendos biletën sërish, ose hiqe zgjedhjen nëse s'e pranon.")}
                             </p>
                         </div>
                     )}
@@ -161,7 +163,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                              </div>
                              <button
                                 onClick={() => onRemoveSelection(`${sel.matchId}-${sel.marketId}-${sel.selectionId}`)}
-                                aria-label="Hiq nga bileta"
+                                aria-label={t('Hiq nga bileta')}
                                 className="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center rounded-full text-brand-textMuted hover:text-white hover:bg-white/10 transition-colors"
                              >✕</button>
                         </div>
@@ -174,12 +176,12 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                         <div className="border-t border-dashed border-brand-divider mx-4" />
                         <div className="p-3">
                             <div className="flex justify-between items-center mb-2">
-                                <span className="font-bold text-white">{isSameGameMultiple ? `Same Game Multiple (${selections.length})` : isAccumulator ? `${selections.length}-Fish` : 'Bast i Thjeshtë'}</span>
+                                <span className="font-bold text-white">{isSameGameMultiple ? `Same Game Multiple (${selections.length})` : isAccumulator ? t('{n}-Fish', { n: selections.length }) : t('Bast i Thjeshtë')}</span>
                                 <span className="bg-brand-yellow text-brand-bg px-2 py-0.5 rounded font-bold text-xs tabular-nums">@{totalOdds.toFixed(2)}</span>
                             </div>
                             {isSameGameMultiple && (
                                 <div className="text-[10px] text-brand-textMuted italic mb-2 leading-snug">
-                                    Kuotë e vlerësuar (shumëzim i kuotave individuale) — asnjë provider nuk jep çmim të dedikuar SGM, kështu që ky kombinim s'e llogarit varësinë mes rezultateve në të njëjtën ndeshje.
+                                    {t("Kuotë e vlerësuar (shumëzim i kuotave individuale) — asnjë provider nuk jep çmim të dedikuar SGM, kështu që ky kombinim s'e llogarit varësinë mes rezultateve në të njëjtën ndeshje.")}
                                 </div>
                             )}
 
@@ -199,7 +201,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                             </div>
 
                             <div className="flex justify-between text-xs text-brand-textMuted mb-4">
-                                <span>Fitimi i Mundshëm</span>
+                                <span>{t('Fitimi i Mundshëm')}</span>
                                 <span className="text-brand-text font-bold tabular-nums">{potentialReturn} L</span>
                             </div>
 
@@ -208,10 +210,10 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                                 disabled={!isValidStake}
                                 className="w-full bg-brand-yellow hover:bg-yellow-400 disabled:opacity-40 disabled:cursor-not-allowed text-brand-bg font-extrabold py-2.5 rounded-lg shadow-md shadow-brand-yellow/10 transition-all active:scale-[0.98]"
                             >
-                                {changedSelections.length > 0 ? 'Prano Ndryshimet & Vendos' : 'Vendos Biletën'}
+                                {changedSelections.length > 0 ? t('Prano Ndryshimet & Vendos') : t('Vendos Biletën')}
                             </button>
                             {!isValidStake && stake && stakeNum > userBalance && (
-                                <p className="text-red-400 text-xs text-center mt-2">Fonde të pamjaftueshme</p>
+                                <p className="text-red-400 text-xs text-center mt-2">{t('Fonde të pamjaftueshme')}</p>
                             )}
                             {!isValidStake && stake && stakeNum <= userBalance && stakeNum > 0 && (
                                 <p className="text-red-400 text-xs text-center mt-2">
@@ -228,18 +230,18 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                 {myBets.length === 0 && (
                     <div className="flex flex-col items-center text-center mt-14 px-4">
                         <div className="w-12 h-12 rounded-full border-2 border-dashed border-brand-divider flex items-center justify-center text-brand-textMuted text-lg mb-3">🎟</div>
-                        <p className="text-brand-text font-bold mb-1">Ende s'ke bileta</p>
-                        <p className="text-brand-textMuted text-xs leading-relaxed">Biletat e vendosura shfaqen këtu, me statusin e tyre në kohë reale.</p>
+                        <p className="text-brand-text font-bold mb-1">{t("Ende s'ke bileta")}</p>
+                        <p className="text-brand-textMuted text-xs leading-relaxed">{t('Biletat e vendosura shfaqen këtu, me statusin e tyre në kohë reale.')}</p>
                     </div>
                 )}
                 {myBets.map(bet => {
                     const canCancel = bet.status === BetStatus.PENDING && bet.cancellable === true && (Date.now() - bet.timestamp < 10 * 60 * 1000);
-                    const statusLabel = bet.status === BetStatus.PENDING ? 'Hapur' : bet.status === BetStatus.WON ? 'Fituar' : bet.status === BetStatus.VOID ? 'Rimbursuar' : 'Humbur';
+                    const statusLabel = bet.status === BetStatus.PENDING ? t('Hapur') : bet.status === BetStatus.WON ? t('Fituar') : bet.status === BetStatus.VOID ? t('Rimbursuar') : t('Humbur');
                     const statusColor = bet.status === BetStatus.WON ? 'border-brand-accent' : bet.status === BetStatus.LOST ? 'border-red-500' : bet.status === BetStatus.VOID ? 'border-gray-500' : 'border-brand-yellow';
                     return (
                         <div key={bet.id} className={`bg-brand-bg border-l-4 ${statusColor} border-y border-r border-brand-divider rounded-lg p-2 text-xs relative`}>
                             <div className="flex justify-between mb-2 border-b border-brand-divider pb-1.5">
-                                <span className="text-brand-textMuted tabular-nums">{new Date(bet.timestamp).toLocaleDateString('sq-AL', { timeZone: 'Europe/Tirane' })} {new Date(bet.timestamp).toLocaleTimeString('sq-AL', { timeZone: 'Europe/Tirane', hour: '2-digit', minute: '2-digit' })}</span>
+                                <span className="text-brand-textMuted tabular-nums">{new Date(bet.timestamp).toLocaleDateString(locale, { timeZone: 'Europe/Tirane' })} {new Date(bet.timestamp).toLocaleTimeString(locale, { timeZone: 'Europe/Tirane', hour: '2-digit', minute: '2-digit' })}</span>
                                 <span className={`font-bold uppercase text-[10px] tracking-wide px-1.5 py-0.5 rounded ${bet.status === BetStatus.WON ? 'bg-brand-accent/15 text-brand-accent' : bet.status === BetStatus.LOST ? 'bg-red-500/15 text-red-400' : bet.status === BetStatus.VOID ? 'bg-gray-500/20 text-gray-300' : 'bg-brand-yellow/15 text-brand-yellow'}`}>
                                     {statusLabel}
                                 </span>
@@ -256,7 +258,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                                         <div className="text-[10px] flex-shrink-0">
                                             {bet.status !== BetStatus.PENDING && (
                                                 <span className={leg.status === BetStatus.WON ? 'text-brand-accent' : leg.status === BetStatus.LOST ? 'text-red-400' : 'text-gray-500'}>
-                                                    {leg.status === BetStatus.PENDING ? '' : leg.status === BetStatus.WON ? 'Fituar' : leg.status === BetStatus.VOID ? 'Rimbursuar' : 'Humbur'}
+                                                    {leg.status === BetStatus.PENDING ? '' : leg.status === BetStatus.WON ? t('Fituar') : leg.status === BetStatus.VOID ? t('Rimbursuar') : t('Humbur')}
                                                 </span>
                                             )}
                                         </div>
@@ -274,7 +276,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                                         onClick={() => onCancelBet(bet.id, 'USER')}
                                         className="bg-red-900/40 hover:bg-red-800 text-red-200 border border-red-800 px-2 py-0.5 rounded-md text-[10px] transition-colors"
                                     >
-                                        Anulo Biletën
+                                        {t('Anulo Biletën')}
                                     </button>
                                 )}
                             </div>

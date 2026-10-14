@@ -6,6 +6,7 @@ import LivePitch from './LivePitch';
 import { useTickingClock, formatLiveClock } from './MatchCard';
 import { isHalftime, liveMinuteFallback, formatScore, pickClockSource, isLiveClockStale } from '../utils/liveStatus';
 import { LONDON365_EVENT_LABELS, LONDON365_STAT_LABELS } from '../utils/london365Labels';
+import { useI18n } from '../i18n';
 
 interface MatchDetailProps {
   match: Match;
@@ -56,6 +57,7 @@ const StatBar: React.FC<{ label: string; home: number | null; away: number | nul
 const STAT_FIELDS = ['possession_home', 'shots_home', 'shots_on_target_home', 'corners_home', 'cards_home', 'xg_home', 'possession_away', 'shots_away', 'shots_on_target_away', 'corners_away', 'cards_away', 'xg_away'];
 
 const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, onBetClick, selectedIds }) => {
+  const { t, tn } = useI18n();
   const isFinished = match.status === MatchStatus.FINISHED;
   const isLive = match.status === MatchStatus.LIVE;
   const hasLiveData = isLive || isFinished;
@@ -106,8 +108,8 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
     }
     if (changed) {
       setOddsFlash(nextFlash);
-      const t = setTimeout(() => setOddsFlash(new Map()), 2500);
-      return () => clearTimeout(t);
+      const flashTimer = setTimeout(() => setOddsFlash(new Map()), 2500);
+      return () => clearTimeout(flashTimer);
     }
   }, [match.markets]);
 
@@ -172,15 +174,15 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
   }, [liveDetail, isFinished, match.currentMinute, match.liveStatus]);
 
   const CATEGORY_LABELS: Record<string, string> = {
-    All: 'Të Gjitha',
-    main: 'Kryesore',
-    goals: 'Golat',
-    btts: 'Gol/JoGol',
-    handicap: 'Hendikep',
-    cards: 'Kartona',
-    corners: 'Korne',
-    scorers: 'Golashenues',
-    other: 'Speciale',
+    All: t('Të Gjitha'),
+    main: t('Kryesore'),
+    goals: t('Golat'),
+    btts: t('Gol/JoGol'),
+    handicap: t('Hendikep'),
+    cards: t('Kartona'),
+    corners: t('Korne'),
+    scorers: t('Golashenues'),
+    other: t('Speciale'),
   };
 
   // Extract unique categories in provider order (Kryesore first, then the
@@ -219,12 +221,12 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
           slip selections stay as they were. */}
       <div className="md:hidden flex items-center gap-2 bg-[#1f1f1f] border-b border-brand-divider px-3 py-2">
         <button onClick={onClose} className="flex items-center gap-1 bg-brand-yellow text-black font-bold text-sm px-4 min-h-[44px] rounded">
-          <span aria-hidden="true">←</span> Kthehu
+          <span aria-hidden="true">←</span> {t('Kthehu')}
         </button>
         <span className="text-xs text-brand-textMuted truncate">{match.homeTeam} v {match.awayTeam}</span>
       </div>
-      <button onClick={onClose} aria-label="Kthehu" className="md:hidden fixed bottom-4 left-4 z-40 flex items-center gap-1 bg-brand-yellow text-black font-bold text-sm px-4 min-h-[48px] rounded-full shadow-2xl border-2 border-white">
-        <span aria-hidden="true">←</span> Kthehu
+      <button onClick={onClose} aria-label={t('Kthehu')} className="md:hidden fixed bottom-4 left-4 z-40 flex items-center gap-1 bg-brand-yellow text-black font-bold text-sm px-4 min-h-[48px] rounded-full shadow-2xl border-2 border-white">
+        <span aria-hidden="true">←</span> {t('Kthehu')}
       </button>
       {/* Match Header */}
       <div className="bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] bg-brand-headerDark/30 p-6 relative border-b border-brand-divider">
@@ -236,8 +238,8 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
              <div className="text-xs text-brand-textMuted uppercase tracking-wider mb-2">{leagueLabel}</div>
              {isLive && (
                <div className={`inline-block mb-2 text-xs font-bold px-3 py-1 rounded-full ${isHalftime(match) ? 'bg-brand-yellow text-black' : 'bg-brand-accent/90 text-black'}`}>
-                 {isHalftime(match) ? 'Pushim' : headerClock ? `${formatLiveClock(headerClock)} · ${headerClock.half}` : liveMinuteFallback(match)}
-                 {isLiveClockStale(match) && <span title="Pa përditësim nga provider-i" className="ml-1 text-amber-400">●</span>}
+                 {isHalftime(match) ? t('Pushim') : headerClock ? `${formatLiveClock(headerClock)} · ${t(headerClock.half)}` : liveMinuteFallback(match)}
+                 {isLiveClockStale(match) && <span title={t('Pa përditësim nga provider-i')} className="ml-1 text-amber-400">●</span>}
                </div>
              )}
              {isLive && (
@@ -296,7 +298,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
                         : 'text-brand-textMuted hover:text-white hover:bg-[#3a3a3a]'
                     }`}
                 >
-                    Statistika
+                    {t('Statistika')}
                 </button>
                 )}
                 <button
@@ -307,7 +309,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
                         : 'text-brand-textMuted hover:text-white hover:bg-[#3a3a3a]'
                     }`}
                 >
-                    Ngjarjet
+                    {t('Ngjarjet')}
                 </button>
               </>
             )}
@@ -331,22 +333,22 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
       {activeTab === 'STATS' ? (
         <div className="p-4 overflow-y-auto flex-1 bg-[#282828]">
           {liveDetailLoading ? (
-            <div className="text-center text-brand-textMuted text-xs py-8">Duke ngarkuar statistikat...</div>
+            <div className="text-center text-brand-textMuted text-xs py-8">{t('Duke ngarkuar statistikat...')}</div>
           
           ) : !liveDetail?.statistics || !STAT_FIELDS.some((k) => (liveDetail.statistics as any)[k] != null) ? (
             <div className="text-center text-brand-textMuted text-xs py-8">
-              Statistika live s'janë të disponueshme për këtë ndeshje.
+              {t("Statistika live s'janë të disponueshme për këtë ndeshje.")}
             </div>
           ) : (
             <div>
               <div className="text-[10px] text-brand-textMuted uppercase text-center mb-4">
-                Statistika nga burimi i të dhënave — jo verifikim zyrtar
+                {t('Statistika nga burimi i të dhënave — jo verifikim zyrtar')}
               </div>
-              <StatBar label={LONDON365_STAT_LABELS.Statistika_ZoterimTopi.replace(' %', '')} home={liveDetail.statistics.possession_home} away={liveDetail.statistics.possession_away} suffix="%" />
-              <StatBar label={LONDON365_STAT_LABELS.Statistika_Goditje_ne_porte} home={liveDetail.statistics.shots_on_target_home} away={liveDetail.statistics.shots_on_target_away} />
-              <StatBar label={LONDON365_STAT_LABELS.Statistika_Goditje_jasht_porte} home={liveDetail.statistics.shots_home != null && liveDetail.statistics.shots_on_target_home != null ? liveDetail.statistics.shots_home - liveDetail.statistics.shots_on_target_home : null} away={liveDetail.statistics.shots_away != null && liveDetail.statistics.shots_on_target_away != null ? liveDetail.statistics.shots_away - liveDetail.statistics.shots_on_target_away : null} />
-              <StatBar label="Korne" home={liveDetail.statistics.corners_home} away={liveDetail.statistics.corners_away} />
-              <StatBar label="Kartonë" home={liveDetail.statistics.cards_home} away={liveDetail.statistics.cards_away} />
+              <StatBar label={t(LONDON365_STAT_LABELS.Statistika_ZoterimTopi.replace(' %', ''))} home={liveDetail.statistics.possession_home} away={liveDetail.statistics.possession_away} suffix="%" />
+              <StatBar label={t(LONDON365_STAT_LABELS.Statistika_Goditje_ne_porte)} home={liveDetail.statistics.shots_on_target_home} away={liveDetail.statistics.shots_on_target_away} />
+              <StatBar label={t(LONDON365_STAT_LABELS.Statistika_Goditje_jasht_porte)} home={liveDetail.statistics.shots_home != null && liveDetail.statistics.shots_on_target_home != null ? liveDetail.statistics.shots_home - liveDetail.statistics.shots_on_target_home : null} away={liveDetail.statistics.shots_away != null && liveDetail.statistics.shots_on_target_away != null ? liveDetail.statistics.shots_away - liveDetail.statistics.shots_on_target_away : null} />
+              <StatBar label={t('Korne')} home={liveDetail.statistics.corners_home} away={liveDetail.statistics.corners_away} />
+              <StatBar label={t('Kartonë')} home={liveDetail.statistics.cards_home} away={liveDetail.statistics.cards_away} />
               <StatBar label="xG" home={liveDetail.statistics.xg_home} away={liveDetail.statistics.xg_away} />
             </div>
           )}
@@ -354,30 +356,30 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
       ) : activeTab === 'EVENTS' ? (
         <div className="p-4 overflow-y-auto flex-1 bg-[#282828]">
           {liveDetailLoading ? (
-            <div className="text-center text-brand-textMuted text-xs py-8">Duke ngarkuar ngjarjet...</div>
+            <div className="text-center text-brand-textMuted text-xs py-8">{t('Duke ngarkuar ngjarjet...')}</div>
           ) : !liveDetail?.events.length ? (
             <div className="text-center text-brand-textMuted text-xs py-8 px-4">
               {(match.liveHomeScore ?? 0) + (match.liveAwayScore ?? 0) > 0
-                ? `Rezultati është ${formatScore(match.liveHomeScore)} - ${formatScore(match.liveAwayScore)}. Provider-i jep vetëm rezultatin: golashënuesit dhe minutat e golave nuk janë të disponueshme.`
-                : "Ende s'ka ngjarje të regjistruara."}
+                ? t('Rezultati është {score}. Provider-i jep vetëm rezultatin: golashënuesit dhe minutat e golave nuk janë të disponueshme.', { score: `${formatScore(match.liveHomeScore)} - ${formatScore(match.liveAwayScore)}` })
+                : t("Ende s'ka ngjarje të regjistruara.")}
             </div>
           ) : (
             <div className="space-y-2">
               {liveDetail.events.map((ev, i) => (
                 <React.Fragment key={i}>
                 {i === firstHalfDividerAt && (
-                  <div className="text-center text-brand-yellow text-xs font-bold py-2">Fundi i pjesës së parë</div>
+                  <div className="text-center text-brand-yellow text-xs font-bold py-2">{t('Fundi i pjesës së parë')}</div>
                 )}
                 <div className="flex items-center gap-3 bg-[#333] rounded px-3 py-2">
                   <span className="text-brand-yellow font-mono text-xs w-8 shrink-0">{ev.minute != null ? `${ev.minute}'` : '-'}</span>
-                  <span className="text-white text-xs flex-1">{EVENT_LABELS[ev.type] || ev.type}</span>
+                  <span className="text-white text-xs flex-1">{EVENT_LABELS[ev.type] ? t(EVENT_LABELS[ev.type]) : ev.type}</span>
                   {ev.team && <span className="text-brand-textMuted text-[10px]">{ev.team}</span>}
                   {ev.player && <span className="text-brand-textMuted text-[10px]">{ev.player}</span>}
                 </div>
                 </React.Fragment>
               ))}
               {firstHalfDividerAt === liveDetail.events.length && (
-                <div className="text-center text-brand-yellow text-xs font-bold py-2">Fundi i pjesës së parë</div>
+                <div className="text-center text-brand-yellow text-xs font-bold py-2">{t('Fundi i pjesës së parë')}</div>
               )}
             </div>
           )}
@@ -389,7 +391,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
             return (
             <div key={market.id} className="overflow-hidden mb-2">
                 <div className="bg-brand-header px-3 py-2 text-xs font-bold text-white">
-                    {market.name}
+                    {tn(market.name)}
                 </div>
                 <div
                     className="grid gap-px bg-brand-bg"
@@ -403,9 +405,9 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
                             <div
                               key={opt.id}
                               className="flex flex-col items-center justify-center py-2 opacity-40 cursor-not-allowed select-none"
-                              title="Tregu është pezulluar përkohësisht"
+                              title={t('Tregu është pezulluar përkohësisht')}
                             >
-                              <span className="text-xs text-brand-text">{opt.name}</span>
+                              <span className="text-xs text-brand-text">{tn(opt.name)}</span>
                               <span className="font-bold text-sm">🔒</span>
                             </div>
                           );
@@ -416,7 +418,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
                             onClick={() => !isFinished && onBetClick(match, market.id, opt.id)}
                             className={getButtonClass(market.id, opt.id)}
                         >
-                            <span className={`text-xs ${isSelected ? 'text-brand-headerDark' : 'text-brand-text'}`}>{opt.name}</span>
+                            <span className={`text-xs ${isSelected ? 'text-brand-headerDark' : 'text-brand-text'}`}>{tn(opt.name)}</span>
                             <span className={`font-bold text-sm flex items-center gap-0.5 ${isSelected ? 'text-brand-headerDark' : 'text-brand-yellow'}`}>
                               {opt.odds.toFixed(2)}
                               {flash === 'up' && <span className="text-[10px] text-green-400">▲</span>}

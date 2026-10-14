@@ -17,8 +17,23 @@ import { isStaleLiveMatch, MAX_LIVE_AGE_MS, isMessageForMatch, isGhostLiveMatch 
 import * as leagueGrouping from './utils/leagueGrouping';
 import FeaturedMatchCard from './components/FeaturedMatchCard';
 import LoadMoreSentinel from './components/LoadMoreSentinel';
+import { useI18n } from './i18n';
+
+const SQ_DAY_NAMES = ['Die', 'Hën', 'Mar', 'Mër', 'Enj', 'Pre', 'Sht'];
+const SQ_MONTH_NAMES = ['Jan', 'Shk', 'Mar', 'Pri', 'Maj', 'Qer', 'Kor', 'Gus', 'Sht', 'Tet', 'Nën', 'Dhj'];
+// "Die 5 Jan" in Albanian; in English the weekday/month come from Intl (the
+// Albanian arrays can't be run through t(): 'Mar' is both a day and a month).
+const formatDayLabel = (d: Date, lang: string): string => {
+  if (lang === 'en') {
+    const wd = new Intl.DateTimeFormat('en-GB', { weekday: 'short' }).format(d);
+    const mo = new Intl.DateTimeFormat('en-GB', { month: 'short' }).format(d);
+    return `${wd} ${d.getDate()} ${mo}`;
+  }
+  return `${SQ_DAY_NAMES[d.getDay()]} ${d.getDate()} ${SQ_MONTH_NAMES[d.getMonth()]}`;
+};
 
 const App: React.FC = () => {
+  const { t, lang } = useI18n();
   // --- Auth State ---
   // Same idea as the matches cache below: seed from the last known user so
   // a refresh shows the app instantly instead of a full-screen spinner
@@ -220,6 +235,7 @@ const App: React.FC = () => {
       if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
     } catch (e) {
       console.error('Failed to load matches', e);
+      // Stored as the Albanian source text and translated where it is rendered (t(loadError)), so it follows the language switch.
       setLoadError('S\'arritëm të lidhemi me serverin. Kontrollo internetin dhe provo përsëri.');
       // Backoff: 10s, 20s, 40s, capped at 60s -- fast enough to ride out a
       // crash-restart cycle or a DB timeout cascade unattended, capped so
@@ -522,29 +538,25 @@ const App: React.FC = () => {
   // Always compare using Albania's calendar date (Europe/Tirane), not the
   // visitor's device timezone, so "today" is correct for the target audience.
   const dateOptions = useMemo(() => {
-    const dayNames = ['Die', 'Hën', 'Mar', 'Mër', 'Enj', 'Pre', 'Sht'];
-    const monthNames = ['Jan', 'Shk', 'Mar', 'Pri', 'Maj', 'Qer', 'Kor', 'Gus', 'Sht', 'Tet', 'Nën', 'Dhj'];
-    const opts: { value: string; label: string }[] = [{ value: 'ALL', label: 'Të gjitha' }];
+    const opts: { value: string; label: string }[] = [{ value: 'ALL', label: t('Të gjitha') }];
     for (let i = 0; i < 7; i++) {
       const value = albaniaTodayKey(i);
       const d = new Date(value + 'T12:00:00'); // noon avoids any DST-edge day-shift when re-deriving weekday/day/month
-      const label = i === 0 ? 'Sot' : i === 1 ? 'Nesër' : `${dayNames[d.getDay()]} ${d.getDate()} ${monthNames[d.getMonth()]}`;
+      const label = i === 0 ? t('Sot') : i === 1 ? t('Nesër') : formatDayLabel(d, lang);
       opts.push({ value, label });
     }
     return opts;
-  }, []);
+  }, [t, lang]);
 
   // Etiketa e një date-kalendarike (YYYY-MM-DD, sipas kohës së Shqipërisë)
   // e përdorur si ndarës brenda çdo lige, kështu që kur një ligë nuk ka
   // ndeshje sot, ndeshjet e ditëve të tjera shfaqen me datën e tyre.
-  const SQ_DAY_NAMES = ['Die', 'Hën', 'Mar', 'Mër', 'Enj', 'Pre', 'Sht'];
-  const SQ_MONTH_NAMES = ['Jan', 'Shk', 'Mar', 'Pri', 'Maj', 'Qer', 'Kor', 'Gus', 'Sht', 'Tet', 'Nën', 'Dhj'];
   const dateKeyLabel = (key: string): string => {
-    if (key === albaniaTodayKey(0)) return 'Sot';
-    if (key === albaniaTodayKey(1)) return 'Nesër';
+    if (key === albaniaTodayKey(0)) return t('Sot');
+    if (key === albaniaTodayKey(1)) return t('Nesër');
     const d = new Date(key + 'T12:00:00');
     if (Number.isNaN(d.getTime())) return key;
-    return `${SQ_DAY_NAMES[d.getDay()]} ${d.getDate()} ${SQ_MONTH_NAMES[d.getMonth()]}`;
+    return formatDayLabel(d, lang);
   };
   const groupMatchesByDate = (list: Match[]): [string, Match[]][] => {
     const byDate = new Map<string, Match[]>();
@@ -614,6 +626,10 @@ const App: React.FC = () => {
         // not "Brazil Amazonense Serie B").
         key.replace(/^(soccer|l365)_[a-z0-9-]+__/, '').replace(/^(soccer|l365)_/, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/\b\w/g, (c) => c.toUpperCase());
 
+  // Display text for a league: leagueLabel() stays the Albanian internal label
+  // (used for ranking/sorting); only what is SHOWN goes through t().
+  const leagueText = (key: string) => t(leagueLabel(key));
+
   // Within a country, most people only care about the flagship top-flight
   // league (and, for "Ndërkombëtare", the big UEFA competitions) — everything
   // else (development leagues, reserve/U19 sides, obscure cups) is noise
@@ -652,13 +668,13 @@ const App: React.FC = () => {
     });
     const leagueSet = new Set<string>();
     matches.forEach((m) => {
-      if (leagueLabel(m.league).toLowerCase().includes(q)) leagueSet.add(m.league);
+      if (leagueLabel(m.league).toLowerCase().includes(q) || leagueText(m.league).toLowerCase().includes(q)) leagueSet.add(m.league);
     });
     const directMatches = matches.filter((m) => m.homeTeam.toLowerCase().includes(q) || m.awayTeam.toLowerCase().includes(q)).slice(0, 5);
 
     return { teams: Array.from(teamSet).slice(0, 5), leagues: Array.from(leagueSet).slice(0, 5), matches: directMatches };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, matches]);
+  }, [searchQuery, matches, t]);
 
   // Sport keys generally follow "<provider>_<country>_<league>" (e.g.
   // "soccer_spain_la_liga"). We use that country token to group leagues by
@@ -1019,8 +1035,8 @@ const App: React.FC = () => {
     } catch (e: any) {
       if (e?.code === 'USER_HAS_HISTORY') {
         const confirmed = window.confirm(
-          (e.message || 'Ky user ka histori.') +
-          '\n\nA doni ta fshini PLOTËSISHT këtë user, duke përfshirë të gjitha kuponat, transaksionet dhe historikun financiar? Ky veprim s\'kthehet mbrapa.'
+          (e.message || t('Ky user ka histori.')) +
+          '\n\n' + t('A doni ta fshini PLOTËSISHT këtë user, duke përfshirë të gjitha kuponat, transaksionet dhe historikun financiar? Ky veprim s\'kthehet mbrapa.')
         );
         if (confirmed) {
           try {
@@ -1114,6 +1130,13 @@ const App: React.FC = () => {
         }));
         return;
       }
+      // The market (or whole match) closed between picking and submitting: the
+      // server says exactly which selections are dead -- drop them from the slip
+      // so the person is not stuck resubmitting a ticket that can never be placed.
+      if (e instanceof api.ApiError && (e.code === 'MARKET_CLOSED' || e.code === 'MATCH_FINISHED') && Array.isArray(e.body?.closed)) {
+        const closed = e.body.closed as { matchId: string; marketId: string; selectionId: string }[];
+        setSelections((prev) => prev.filter((sel) => !closed.some((c) => c.matchId === sel.matchId && c.marketId === sel.marketId && c.selectionId === sel.selectionId)));
+      }
       setBetError(e.message || 'Could not place bet');
     }
   }, [currentUser, selections, loadMyBets]);
@@ -1135,9 +1158,9 @@ const App: React.FC = () => {
       setCurrentUser((u) => (u ? { ...u, balance } : u));
       await loadMyBets();
     } catch (e: any) {
-      alert(e.message || 'Anulimi dështoi.');
+      alert(e.message || t('Anulimi dështoi.'));
     }
-  }, [loadAdminData, loadMyBets]);
+  }, [loadAdminData, loadMyBets, t]);
 
   const handleSettleMatch = useCallback(async (match: Match, homeScore: number, awayScore: number) => {
     if (simulatingMatchId) return;
@@ -1146,8 +1169,8 @@ const App: React.FC = () => {
       const result = await api.adminSettleMatch(match.id, homeScore, awayScore);
       if (result.leftPendingForManualReview > 0) {
         alert(
-          `${result.autoSettledLegs} kupon(a) u zgjidhën automatikisht.\n` +
-          `${result.leftPendingForManualReview} kupon(a) mbetën PENDING (tregje si Double Chance/Handicap kërkojnë rishikim manual te "All Tickets").`
+          t('{n} kupon(a) u zgjidhën automatikisht.', { n: result.autoSettledLegs }) + '\n' +
+          t('{n} kupon(a) mbetën PENDING (tregje si Double Chance/Handicap kërkojnë rishikim manual te "All Tickets").', { n: result.leftPendingForManualReview })
         );
       }
       await Promise.all([loadMatches(), loadAdminData()]);
@@ -1156,7 +1179,7 @@ const App: React.FC = () => {
     } finally {
       setSimulatingMatchId(null);
     }
-  }, [simulatingMatchId, loadMatches, loadAdminData]);
+  }, [simulatingMatchId, loadMatches, loadAdminData, t]);
 
   if (!authChecked) {
     return (
@@ -1194,7 +1217,7 @@ const App: React.FC = () => {
     <>
                   <div className="w-full px-3 py-2.5 border-b border-brand-bg/10 flex items-center gap-2.5 bg-[#444] text-white font-bold">
                     <span aria-hidden="true" className="text-base leading-none">⚽</span>
-                    <span className="uppercase tracking-wider">Futboll</span>
+                    <span className="uppercase tracking-wider">{t('Futboll')}</span>
                     {liveMatches.length > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveMatches.length}</span>}
                   </div>
                     <div className="bg-[#2b2b2b] border-b border-[#444]">
@@ -1202,12 +1225,12 @@ const App: React.FC = () => {
                         onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague('All Top Football'); setDetailMatchId(null); setIsLeagueMenuOpen(false); }}
                         className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex items-center gap-2 uppercase tracking-wider transition-colors hover:bg-[#444] hover:text-white ${currentLeague === 'All Top Football' && !showLiveOnly ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}
                       >
-                        <span>Të gjitha ndeshjet</span>
+                        <span>{t('Të gjitha ndeshjet')}</span>
                       </button>
 <button onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague('FAVORITES'); setDetailMatchId(null); setIsLeagueMenuOpen(false); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors hover:bg-[#444] hover:text-white ${currentLeague === 'FAVORITES' ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
                     <div className="flex items-center gap-2">
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className="w-3.5 h-3.5 fill-brand-yellow"><path d="M10 1.5l2.6 5.27 5.82.85-4.21 4.1.99 5.8L10 14.9l-5.2 2.62.99-5.8-4.21-4.1 5.82-.85L10 1.5z" /></svg>
-                      <span className="uppercase tracking-wider">Të Preferuarat</span>
+                      <span className="uppercase tracking-wider">{t('Të Preferuarat')}</span>
                     </div>
                   </button>
 
@@ -1223,7 +1246,7 @@ const App: React.FC = () => {
                   </button>
                   <button onClick={() => { setIsLeagueMenuOpen(false); goResults(); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors ${showResults ? 'bg-[#444] text-white font-bold' : ''}`}>
                     <div className="flex items-center gap-2">
-                      <span className="uppercase tracking-wider">Rezultate</span>
+                      <span className="uppercase tracking-wider">{t('Rezultate')}</span>
                       {resultsList.length > 0 && <span className="text-[10px] bg-[#555] text-white px-1.5 rounded font-bold">{resultsList.length}</span>}
                     </div>
                   </button>
@@ -1240,26 +1263,26 @@ const App: React.FC = () => {
                             >
                               <span className="flex items-center gap-1.5">
                                 <span aria-hidden="true">{countryFlag(country)}</span>
-                                <span className="truncate">{country}</span>
+                                <span className="truncate">{t(country)}</span>
                                 <span className="ml-auto text-[9px] text-brand-textMuted font-normal shrink-0">{leagues.length}</span>
                               </span>
                             </button>
                             <button
                               onClick={() => setExpandedCountry(isOpen ? null : country)}
                               className="px-3 text-brand-textMuted hover:text-white hover:bg-[#3a3a3a] transition-colors"
-                              aria-label={isOpen ? `Mbyll ligat e ${country}` : `Hap ligat e ${country}`}
+                              aria-label={isOpen ? t('Mbyll ligat e {country}', { country: t(country) }) : t('Hap ligat e {country}', { country: t(country) })}
                             >
                               {isOpen ? '▾' : '▸'}
                             </button>
                           </div>
                           {isOpen && (
                             <button onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague(countryFilterKey(country)); setDetailMatchId(null); setIsLeagueMenuOpen(false); }} className={`px-3 py-2 pl-6 w-full text-left text-[10px] uppercase tracking-wider hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 ${currentLeague === countryFilterKey(country) ? 'bg-[#444] text-white font-bold' : 'text-brand-yellow'}`}>
-                              Të gjitha ligat ({leagues.length})
+                              {t('Të gjitha ligat ({n})', { n: leagues.length })}
                             </button>
                           )}
                           {isOpen && leagues.map((league) => (
                             <button key={league} onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague(league); setDetailMatchId(null); setIsLeagueMenuOpen(false); }} className={`px-3 py-2.5 pl-6 hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 flex justify-between items-center group text-left w-full ${currentLeague === league ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
-                              <span className="truncate">{leagueLabel(league)}</span>
+                              <span className="truncate">{leagueText(league)}</span>
                             </button>
                           ))}
                         </div>
@@ -1277,8 +1300,8 @@ const App: React.FC = () => {
                       className="w-full text-left px-3 py-2.5 border-b border-brand-bg/10 flex items-center gap-2.5 text-brand-textMuted/50 cursor-not-allowed select-none"
                     >
                       <span aria-hidden="true" className="text-base leading-none opacity-50">{icon}</span>
-                      <span className="uppercase tracking-wider">{name}</span>
-                      <span className="ml-auto text-[9px] normal-case font-normal shrink-0">Së shpejti</span>
+                      <span className="uppercase tracking-wider">{t(name)}</span>
+                      <span className="ml-auto text-[9px] normal-case font-normal shrink-0">{t('Së shpejti')}</span>
                     </div>
                   ))}
 
@@ -1311,7 +1334,7 @@ const App: React.FC = () => {
             <aside className="hidden lg:block w-60 xl:w-72 flex-shrink-0">
               <div className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto custom-scrollbar bg-brand-panel rounded border border-[#444] shadow-sm">
                 <div className="bg-[#383838] px-3 py-3 text-xs font-bold text-brand-text border-b border-[#444] uppercase sticky top-0 z-10">
-                  <span>Sportet</span>
+                  <span>{t('Sportet')}</span>
                 </div>
                 {leagueMenuList}
               </div>
@@ -1322,17 +1345,17 @@ const App: React.FC = () => {
             <button
               onClick={() => setIsLeagueMenuOpen(true)}
               className="lg:hidden fixed left-2 top-[7.5rem] z-40 bg-brand-panel border border-[#444] rounded-full pl-2.5 pr-3.5 py-2.5 shadow-lg flex items-center gap-1.5"
-              aria-label="Hap Futboll dhe ligat"
+              aria-label={t('Hap Futboll dhe ligat')}
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className="w-5 h-5 fill-brand-yellow"><path fillRule="evenodd" d="M3 5h14a1 1 0 100-2H3a1 1 0 000 2zm0 6h14a1 1 0 100-2H3a1 1 0 000 2zm0 6h14a1 1 0 100-2H3a1 1 0 000 2z" clipRule="evenodd" /></svg>
-              <span className="text-xs font-bold uppercase tracking-wider text-brand-text">Futboll</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-brand-text">{t('Futboll')}</span>
             </button>
 
             {isLeagueMenuOpen && (
               <div className="fixed inset-0 z-50 flex lg:hidden" onClick={() => setIsLeagueMenuOpen(false)}>
                 <div className="w-72 max-w-[85vw] h-full bg-brand-panel overflow-y-auto custom-scrollbar shadow-2xl" onClick={(e) => e.stopPropagation()}>
                   <div className="bg-[#383838] px-3 py-3 text-xs font-bold text-brand-text border-b border-[#444] uppercase flex justify-between items-center sticky top-0 z-10">
-                    <span>Sportet</span>
+                    <span>{t('Sportet')}</span>
                     <button onClick={() => setIsLeagueMenuOpen(false)} className="text-brand-textMuted hover:text-white text-lg leading-none px-1">✕</button>
                   </div>
                   {leagueMenuList}
@@ -1360,7 +1383,7 @@ const App: React.FC = () => {
               // instead of resetting to the new match's real one.
               key={detailMatch.id}
               match={detailMatch}
-              leagueLabel={leagueLabel(detailMatch.league)}
+              leagueLabel={leagueText(detailMatch.league)}
               onClose={goBackScreen}
               onBetClick={handleToggleSelection}
               selectedIds={selectedIds}
@@ -1377,16 +1400,16 @@ const App: React.FC = () => {
                 <div className="flex gap-1 overflow-x-auto pb-1 no-scrollbar">
                   <button className="shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded bg-[#333] border-b-2 border-brand-yellow text-white">
                     <span className="text-lg leading-none" aria-hidden="true">⚽</span>
-                    <span className="text-[9px] uppercase tracking-wide">Futboll</span>
+                    <span className="text-[9px] uppercase tracking-wide">{t('Futboll')}</span>
                   </button>
                   {[
                     ['🏀', 'Basketboll'], ['⚾', 'Bejsboll'], ['🏒', 'Hokej'], ['🎾', 'Tenis'],
                     ['🤾', 'Hendboll'], ['🏈', 'Am. Futboll'], ['🎱', 'Snooker'], ['🏓', 'T. Tavoline'],
                     ['🏏', 'Kriket'], ['🎯', 'Darts'], ['🏐', 'Volejboll'],
                   ].map(([icon, name]) => (
-                    <div key={name} className="shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded text-brand-textMuted/40 cursor-not-allowed" title="Së shpejti">
+                    <div key={name} className="shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded text-brand-textMuted/40 cursor-not-allowed" title={t('Së shpejti')}>
                       <span className="text-lg leading-none opacity-50" aria-hidden="true">{icon}</span>
-                      <span className="text-[9px] uppercase tracking-wide">{name}</span>
+                      <span className="text-[9px] uppercase tracking-wide">{t(name)}</span>
                     </div>
                   ))}
                 </div>
@@ -1399,22 +1422,22 @@ const App: React.FC = () => {
               {(showLiveOnly || showResults || (currentLeague !== 'All Top Football' && currentLeague !== 'FAVORITES')) && (
                 <div className="bg-[#2a2a2a] border border-brand-divider rounded px-3 py-2 text-xs text-brand-textMuted flex items-center justify-between gap-2">
                   <span className="truncate">
-                    <span className="text-brand-text font-semibold">Futboll</span>
+                    <span className="text-brand-text font-semibold">{t('Futboll')}</span>
                     {showLiveOnly ? (
                       <span> / <span className="text-brand-accent font-semibold">Live InPlay</span></span>
                     ) : showResults ? (
-                      <span> / <span className="text-brand-text font-semibold">Rezultate (48 orët e fundit)</span></span>
+                      <span> / <span className="text-brand-text font-semibold">{t('Rezultate (48 orët e fundit)')}</span></span>
                     ) : isCountryFilter(currentLeague) ? (
-                      <span> / <span className="text-brand-text font-semibold">{countryFromFilter(currentLeague)}</span></span>
+                      <span> / <span className="text-brand-text font-semibold">{t(countryFromFilter(currentLeague))}</span></span>
                     ) : (
-                      <span> / <span className="text-brand-text font-semibold">{leagueCountry(currentLeague)} - {leagueLabel(currentLeague)}</span></span>
+                      <span> / <span className="text-brand-text font-semibold">{t(leagueCountry(currentLeague))} - {leagueText(currentLeague)}</span></span>
                     )}
                   </span>
                   <button
                     onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague('All Top Football'); setDetailMatchId(null); }}
                     className="shrink-0 text-[10px] uppercase tracking-wide text-brand-textMuted hover:text-white"
                   >
-                    ← Kryefaqja
+                    {t('← Kryefaqja')}
                   </button>
                 </div>
               )}
@@ -1424,12 +1447,12 @@ const App: React.FC = () => {
                   <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse"></span>
                   LIVE {liveMatches.length > 0 && `(${liveMatches.length})`}
                 </button>
-                <button onClick={goResults} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${showResults ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>REZULTATE {resultsList.length > 0 && `(${resultsList.length})`}</button>
-                <button onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague('All Top Football'); }} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${currentLeague === 'All Top Football' ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>Të Gjitha</button>
+                <button onClick={goResults} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${showResults ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>{t('Rezultate').toUpperCase()} {resultsList.length > 0 && `(${resultsList.length})`}</button>
+                <button onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague('All Top Football'); }} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${currentLeague === 'All Top Football' ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>{t('Të Gjitha')}</button>
                 {leaguesByCountry.map(([country, leagues]) => (
                   <button key={country} onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague(countryFilterKey(country)); setDetailMatchId(null); }} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 ${currentLeague === countryFilterKey(country) ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>
                     <span aria-hidden="true">{countryFlag(country)}</span>
-                    {country}
+                    {t(country)}
                     <span className={`text-[10px] font-normal ${currentLeague === countryFilterKey(country) ? 'text-black/60' : 'text-brand-textMuted'}`}>{leagues.length}</span>
                   </button>
                 ))}
@@ -1456,7 +1479,7 @@ const App: React.FC = () => {
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-brand-textMuted shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                   <input
                     type="text"
-                    placeholder="Kërko skuadra, liga..."
+                    placeholder={t('Kërko skuadra, liga...')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onFocus={() => setIsSearchFocused(true)}
@@ -1474,8 +1497,8 @@ const App: React.FC = () => {
                     {!searchQuery.trim() && searchHistory.length > 0 && (
                       <>
                         <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-brand-textMuted flex justify-between items-center">
-                          <span>Kërkime të fundit</span>
-                          <button onMouseDown={(e) => { e.preventDefault(); setSearchHistory([]); localStorage.removeItem('searchHistory'); }} className="hover:text-white">Pastro</button>
+                          <span>{t('Kërkime të fundit')}</span>
+                          <button onMouseDown={(e) => { e.preventDefault(); setSearchHistory([]); localStorage.removeItem('searchHistory'); }} className="hover:text-white">{t('Pastro')}</button>
                         </div>
                         {searchHistory.map((term) => (
                           <button key={term} onMouseDown={(e) => { e.preventDefault(); setSearchQuery(term); commitSearchHistory(term); setIsSearchFocused(false); }} className="w-full text-left px-3 py-2 text-brand-textMuted hover:bg-[#444] hover:text-white flex items-center gap-2">
@@ -1487,7 +1510,7 @@ const App: React.FC = () => {
 
                     {searchQuery.trim() && searchSuggestions.teams.length > 0 && (
                       <>
-                        <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-brand-textMuted">Skuadra</div>
+                        <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-brand-textMuted">{t('Skuadra')}</div>
                         {searchSuggestions.teams.map((team) => (
                           <button key={team} onMouseDown={(e) => { e.preventDefault(); setSearchQuery(team); commitSearchHistory(team); setIsSearchFocused(false); }} className="w-full text-left px-3 py-2 text-white hover:bg-[#444] flex items-center justify-between">
                             <span>{team}</span>
@@ -1499,10 +1522,10 @@ const App: React.FC = () => {
 
                     {searchQuery.trim() && searchSuggestions.leagues.length > 0 && (
                       <>
-                        <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-brand-textMuted">Liga</div>
+                        <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-brand-textMuted">{t('Liga')}</div>
                         {searchSuggestions.leagues.map((league) => (
                           <button key={league} onMouseDown={(e) => { e.preventDefault(); setShowLiveOnly(false); setShowResults(false); setCurrentLeague(league); setSearchQuery(''); commitSearchHistory(leagueLabel(league)); setIsSearchFocused(false); }} className="w-full text-left px-3 py-2 text-white hover:bg-[#444]">
-                            {leagueLabel(league)}
+                            {leagueText(league)}
                           </button>
                         ))}
                       </>
@@ -1510,7 +1533,7 @@ const App: React.FC = () => {
 
                     {searchQuery.trim() && searchSuggestions.matches.length > 0 && (
                       <>
-                        <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-brand-textMuted">Ndeshje</div>
+                        <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-brand-textMuted">{t('Ndeshje')}</div>
                         {searchSuggestions.matches.map((m) => (
                           <button key={m.id} onMouseDown={(e) => { e.preventDefault(); commitSearchHistory(searchQuery); setDetailMatchId(m.id); setSearchQuery(''); setIsSearchFocused(false); }} className="w-full text-left px-3 py-2 text-white hover:bg-[#444]">
                             {m.homeTeam} <span className="text-brand-textMuted">vs</span> {m.awayTeam}
@@ -1524,15 +1547,15 @@ const App: React.FC = () => {
 
               {loadError ? (
                 <div className="flex flex-col justify-center items-center h-64 bg-brand-panel rounded border border-brand-divider gap-3">
-                  <div className="text-brand-textMuted text-sm text-center px-4">{loadError}</div>
+                  <div className="text-brand-textMuted text-sm text-center px-4">{t(loadError)}</div>
                   <button onClick={() => loadMatches()} className="bg-brand-yellow hover:bg-yellow-400 text-brand-bg font-bold px-4 py-2 rounded text-sm">
-                    Provo Përsëri
+                    {t('Provo Përsëri')}
                   </button>
                 </div>
               ) : isLoading ? (
                 <div className="flex flex-col justify-center items-center h-64 bg-brand-panel rounded border border-brand-divider">
                   <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-brand-yellow mb-4"></div>
-                  <div className="text-brand-textMuted text-xs animate-pulse">Duke ngarkuar ndeshjet...</div>
+                  <div className="text-brand-textMuted text-xs animate-pulse">{t('Duke ngarkuar ndeshjet...')}</div>
                 </div>
               ) : (
                 <>
@@ -1543,24 +1566,24 @@ const App: React.FC = () => {
                     <div id="results-section" className="bg-brand-panel rounded overflow-hidden shadow-sm border border-[#444] scroll-mt-4">
                       <div className="bg-[#2a2a2a] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex items-center gap-2 justify-between">
                         <div className="flex items-center gap-2">
-                          <span className="uppercase tracking-wider">Rezultate · 48 orët e fundit</span>
+                          <span className="uppercase tracking-wider">{t('Rezultate · 48 orët e fundit')}</span>
                           {resultsList.length > 0 && <span className="text-[10px] bg-[#555] text-white px-1.5 rounded font-bold">{resultsList.length}</span>}
                         </div>
                         <button onClick={() => { setShowResults(false); }} className="text-[10px] text-brand-textMuted hover:text-white uppercase tracking-wide">
-                          Kthehu te Kryefaqja ✕
+                          {t('Kthehu te Kryefaqja ✕')}
                         </button>
                       </div>
                       {resultsList.length === 0 ? (
                         <div className="text-center text-brand-textMuted text-xs py-8 px-4">
-                          Nuk ka ndeshje të mbaruara në 48 orët e fundit{searchQuery ? ' për këtë kërkim' : ''}.
+                          {searchQuery ? t('Nuk ka ndeshje të mbaruara në 48 orët e fundit për këtë kërkim.') : t('Nuk ka ndeshje të mbaruara në 48 orët e fundit.')}
                         </div>
                       ) : (
                         resultsSections.map(({ league, matches: leagueMatches }) => (
                           <div key={league}>
                             <div className="bg-[#2a2a2a] px-3 py-2 text-[11px] font-bold text-white flex items-center gap-1.5 border-b border-[#333]">
                               <span aria-hidden="true">{countryFlag(leagueCountry(league))}</span>
-                              <span className="uppercase tracking-wide">{leagueLabel(league)}</span>
-                              <span className="text-brand-textMuted font-normal">· {leagueCountry(league)}</span>
+                              <span className="uppercase tracking-wide">{leagueText(league)}</span>
+                              <span className="text-brand-textMuted font-normal">· {t(leagueCountry(league))}</span>
                               <span className="ml-auto text-[10px] bg-[#555] text-white px-1.5 rounded font-bold">{leagueMatches.length}</span>
                             </div>
                             <div className="divide-y divide-brand-divider">
@@ -1596,16 +1619,16 @@ const App: React.FC = () => {
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-accent opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-accent"></span>
                           </span>
-                          <span className="text-brand-accent uppercase tracking-wider">Live Tani</span>
+                          <span className="text-brand-accent uppercase tracking-wider">{t('Live Tani')}</span>
                           {liveMatches.length > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveMatches.length}</span>}
                         </div>
                         <button onClick={() => { setShowLiveOnly(false); setShowResults(false); }} className="text-[10px] text-brand-textMuted hover:text-white uppercase tracking-wide">
-                          Kthehu te Kryefaqja ✕
+                          {t('Kthehu te Kryefaqja ✕')}
                         </button>
                       </div>
                       {liveMatches.length === 0 ? (
                         <div className="text-center text-brand-textMuted text-xs py-8 px-4">
-                          Nuk ka asnjë ndeshje live aktualisht.
+                          {t('Nuk ka asnjë ndeshje live aktualisht.')}
                         </div>
                       ) : (
                         // Grouped shtet -> ligë -> ndeshje (jo listë e sheshtë),
@@ -1616,8 +1639,8 @@ const App: React.FC = () => {
                           <div key={league}>
                             <div className="bg-[#2a2a2a] px-3 py-2 text-[11px] font-bold text-white flex items-center gap-1.5 border-b border-[#333]">
                               <span aria-hidden="true">{countryFlag(country)}</span>
-                              <span className="uppercase tracking-wide">{leagueLabel(league)}</span>
-                              <span className="text-brand-textMuted font-normal">· {country}</span>
+                              <span className="uppercase tracking-wide">{leagueText(league)}</span>
+                              <span className="text-brand-textMuted font-normal">· {t(country)}</span>
                               <span className="ml-auto text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{leagueMatches.length}</span>
                             </div>
                             <div className="divide-y divide-brand-divider">
@@ -1645,10 +1668,10 @@ const App: React.FC = () => {
                   {!showLiveOnly && !showResults && dateFallbackActive && (
                     <div className="bg-[#3a3320] border border-brand-yellow/40 text-brand-yellow text-xs rounded px-3 py-2 flex items-center justify-between gap-2">
                       <span>
-                        Nuk ka ndeshje për datën e zgjedhur — po shfaqen ndeshjet e ardhshme, të ndara sipas datës.
+                        {t('Nuk ka ndeshje për datën e zgjedhur — po shfaqen ndeshjet e ardhshme, të ndara sipas datës.')}
                       </span>
                       <button onClick={() => setSelectedDate('ALL')} className="shrink-0 underline hover:text-white uppercase text-[10px] tracking-wide">
-                        Të gjitha datat
+                        {t('Të gjitha datat')}
                       </button>
                     </div>
                   )}
@@ -1659,7 +1682,7 @@ const App: React.FC = () => {
                         onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague(topLeagueMatches.key!); setDetailMatchId(null); }}
                         className="w-full bg-[#2f2f2f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] uppercase tracking-wider text-left hover:text-brand-yellow"
                       >
-                        {topLeagueMatches.label}
+                        {t(leagueCountry(topLeagueMatches.key!))} {leagueText(topLeagueMatches.key!)}
                       </button>
                       <div className="flex gap-2 overflow-x-auto p-2.5 custom-scrollbar snap-x snap-mandatory">
                         {topLeagueMatches.list.map((match) => (
@@ -1682,7 +1705,7 @@ const App: React.FC = () => {
                   {!showLiveOnly && !showResults && currentLeague === 'All Top Football' && featuredMatches.length > 0 && (
                     <div className="bg-brand-panel rounded overflow-hidden shadow-sm">
                       <div className="bg-[#2f2f2f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] uppercase tracking-wider">
-                        Ndeshjet Kryesore
+                        {t('Ndeshjet Kryesore')}
                       </div>
                       <div className="flex gap-2 overflow-x-auto p-2.5 custom-scrollbar snap-x snap-mandatory">
                         {featuredMatches.map((match) => (
@@ -1704,7 +1727,7 @@ const App: React.FC = () => {
                         onClick={() => setIsTodaySectionOpen((o) => !o)}
                         className="w-full bg-[#2f2f2f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] uppercase tracking-wider flex items-center justify-between"
                       >
-                        <span>Ndeshjet Sot ({todayMatches.length})</span>
+                        <span>{t('Ndeshjet Sot ({n})', { n: todayMatches.length })}</span>
                         <span className={`transition-transform ${isTodaySectionOpen ? '' : '-rotate-90'}`}>▾</span>
                       </button>
                       {isTodaySectionOpen && (
@@ -1731,11 +1754,11 @@ const App: React.FC = () => {
                   {/* Upcoming — grouped like the London site: Shtet -> Ligue -> ndeshje */}
                   {(showLiveOnly || showResults) ? null : matchesByCountry.length === 0 ? (
                     <div className="flex flex-col justify-center items-center h-64 bg-brand-panel rounded border border-brand-divider text-center px-6">
-                      <div className="text-brand-textMuted text-sm mb-2">Asnjë ndeshje e disponueshme.</div>
+                      <div className="text-brand-textMuted text-sm mb-2">{t('Asnjë ndeshje e disponueshme.')}</div>
                       <div className="text-brand-textMuted text-xs opacity-70">
                         {selectedDate !== 'ALL'
-                          ? 'Nuk ka ndeshje të planifikuara për këtë datë në këtë kampionat. Provo "Të gjitha" ose një datë tjetër.'
-                          : 'Ky kampionat mund të jetë aktualisht pa ndeshje të planifikuara (pushim sezonal) — provo përsëri më vonë, ose zgjidh një kampionat tjetër nga lista.'}
+                          ? t('Nuk ka ndeshje të planifikuara për këtë datë në këtë kampionat. Provo "Të gjitha" ose një datë tjetër.')
+                          : t('Ky kampionat mund të jetë aktualisht pa ndeshje të planifikuara (pushim sezonal) — provo përsëri më vonë, ose zgjidh një kampionat tjetër nga lista.')}
                       </div>
                     </div>
                   ) : (
@@ -1744,21 +1767,21 @@ const App: React.FC = () => {
                       <div key={country} className="bg-brand-panel rounded overflow-hidden shadow-sm">
                         <div className="bg-[#2f2f2f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex items-center gap-2 uppercase tracking-wider">
                           <span aria-hidden="true">{countryFlag(country)}</span>
-                          <span>{country}</span>
-                          <span className="ml-auto text-[10px] text-brand-textMuted font-normal">{leagues.length} ligë</span>
+                          <span>{t(country)}</span>
+                          <span className="ml-auto text-[10px] text-brand-textMuted font-normal">{t('{n} ligë', { n: leagues.length })}</span>
                         </div>
                         {leagues.map(([league, leagueMatches]: [string, Match[]]) => (
                           <div key={league} className="border-b border-brand-divider last:border-b-0">
                             <div className="bg-[#383838] px-3 py-2 text-xs font-bold text-white flex items-center gap-2">
                               <span className="w-1 h-3 rounded-full bg-brand-yellow"></span>
-                              <span>{leagueLabel(league)}</span>
+                              <span>{leagueText(league)}</span>
                               <span className="ml-auto text-[10px] text-brand-textMuted font-normal">{leagueMatches.length}</span>
                             </div>
                             {groupMatchesByDate(leagueMatches).map(([dateKey, dayMatches]) => (
                               <div key={dateKey}>
                                 <div className="bg-[#2b2b2b] px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 border-b border-brand-bg/20">
                                   <span className="text-brand-yellow">{dateKeyLabel(dateKey)}</span>
-                                  <span className="text-brand-textMuted font-normal normal-case">{dayMatches.length} ndeshje</span>
+                                  <span className="text-brand-textMuted font-normal normal-case">{t('{n} ndeshje', { n: dayMatches.length })}</span>
                                 </div>
                                 <div className="divide-y divide-brand-divider">
                                   {dayMatches.map((match) => (

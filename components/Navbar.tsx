@@ -1,5 +1,7 @@
 import React from 'react';
 import { User, UserRole } from '../types';
+import { useI18n } from '../i18n';
+import LanguageSwitcher from './LanguageSwitcher';
 
 interface NavbarProps {
   currentUser: User;
@@ -17,6 +19,7 @@ interface NavbarProps {
 }
 
 const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, currentView, onNavigate, onGoHome, onGoLive, onGoResults, onGoSoccer, activeTab, liveCount, resultsCount }) => {
+  const { t } = useI18n();
   return (
     <nav className="bg-brand-header text-brand-text text-sm sticky top-0 z-50 shadow-md flex flex-col">
       {/* Top Bar */}
@@ -55,9 +58,11 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
               onClick={onOpenAdmin}
               className="bg-brand-headerDark hover:bg-black/20 text-brand-yellow px-2 md:px-3 py-1.5 rounded font-bold border border-brand-yellow/30 transition-colors uppercase tracking-wide text-[10px] md:text-xs whitespace-nowrap"
             >
-              {currentUser.role === UserRole.AGENT ? 'Userat e Mi' : 'Admin'}
+              {currentUser.role === UserRole.AGENT ? t('Userat e Mi') : 'Admin'}
             </button>
           )}
+
+          <LanguageSwitcher />
 
           <div className="flex items-center gap-2 cursor-pointer group">
              <div className="text-right leading-tight">
@@ -84,7 +89,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
                    {liveCount > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveCount}</span>}
                  </button>
                  <button onClick={onGoResults} aria-current={activeTab === 'results' ? 'page' : undefined} className={`cursor-pointer flex items-center gap-1 transition-colors hover:text-brand-accent ${activeTab === 'results' ? 'font-bold text-white' : ''}`}>
-                   Rezultate
+                   {t('Rezultate')}
                    {!!resultsCount && <span className="text-[10px] bg-[#555] text-white px-1.5 rounded font-bold">{resultsCount}</span>}
                  </button>
                  <button onClick={onGoSoccer} aria-current={activeTab === 'soccer' ? 'page' : undefined} className={`cursor-pointer transition-colors hover:text-brand-accent ${activeTab === 'soccer' ? 'font-bold text-white' : ''}`}>Soccer</button>

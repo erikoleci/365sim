@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { User } from '../types';
 import * as api from '../services/api';
+import { useI18n } from '../i18n';
+import LanguageSwitcher from './LanguageSwitcher';
 
 interface LoginProps {
   onAuthenticated: (user: User) => void;
@@ -11,6 +13,7 @@ interface LoginProps {
 // a login-only screen. See server/routes/auth.js for the backend side of
 // that decision.
 const Login: React.FC<LoginProps> = ({ onAuthenticated }) => {
+  const { t } = useI18n();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -33,7 +36,7 @@ const Login: React.FC<LoginProps> = ({ onAuthenticated }) => {
       const user = await api.login(username, password);
       onAuthenticated(user);
     } catch (err: any) {
-      setError(err.message || 'Diçka shkoi keq. Provo përsëri.');
+      setError(err.message || t('Diçka shkoi keq. Provo përsëri.'));
     } finally {
       clearTimeout(slowTimer);
       setIsSubmitting(false);
@@ -43,6 +46,9 @@ const Login: React.FC<LoginProps> = ({ onAuthenticated }) => {
 
   return (
     <div className="min-h-screen bg-brand-bg flex items-center justify-center p-4 relative overflow-hidden">
+      <div className="absolute top-4 right-4 z-10">
+        <LanguageSwitcher />
+      </div>
       {/* Soft ambient glow behind the card -- purely decorative, no assets */}
       <div className="pointer-events-none absolute -top-32 left-1/2 -translate-x-1/2 w-[36rem] h-[36rem] rounded-full bg-brand-yellow/10 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-40 -right-20 w-[28rem] h-[28rem] rounded-full bg-brand-accent/10 blur-3xl" />
@@ -52,14 +58,14 @@ const Login: React.FC<LoginProps> = ({ onAuthenticated }) => {
           <div className="font-bold text-4xl tracking-tighter italic text-white mb-1">
             bet<span className="text-brand-yellow">365</span>sim
           </div>
-          <p className="text-brand-textMuted text-sm">Hyr në llogarinë tënde</p>
+          <p className="text-brand-textMuted text-sm">{t('Hyr në llogarinë tënde')}</p>
         </div>
 
         <div className="bg-brand-panel/90 backdrop-blur w-full rounded-2xl shadow-2xl border border-brand-divider p-7">
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label htmlFor="login-username" className="block text-xs font-bold text-brand-textMuted mb-2 uppercase tracking-wide">
-                Përdoruesi
+                {t('Përdoruesi')}
               </label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-brand-textMuted">
@@ -73,7 +79,7 @@ const Login: React.FC<LoginProps> = ({ onAuthenticated }) => {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full bg-brand-bg border border-brand-divider rounded-lg py-3 pl-10 pr-3 text-white focus:border-brand-yellow focus:ring-1 focus:ring-brand-yellow/40 outline-none transition-colors"
-                  placeholder="Shkruaj përdoruesin"
+                  placeholder={t('Shkruaj përdoruesin')}
                   autoComplete="username"
                   autoFocus
                   required
@@ -83,7 +89,7 @@ const Login: React.FC<LoginProps> = ({ onAuthenticated }) => {
 
             <div>
               <label htmlFor="login-password" className="block text-xs font-bold text-brand-textMuted mb-2 uppercase tracking-wide">
-                Fjalëkalimi
+                {t('Fjalëkalimi')}
               </label>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-brand-textMuted">
@@ -97,7 +103,7 @@ const Login: React.FC<LoginProps> = ({ onAuthenticated }) => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full bg-brand-bg border border-brand-divider rounded-lg py-3 pl-10 pr-10 text-white focus:border-brand-yellow focus:ring-1 focus:ring-brand-yellow/40 outline-none transition-colors"
-                  placeholder="Shkruaj fjalëkalimin"
+                  placeholder={t('Shkruaj fjalëkalimin')}
                   autoComplete="current-password"
                   required
                 />
@@ -105,7 +111,7 @@ const Login: React.FC<LoginProps> = ({ onAuthenticated }) => {
                   type="button"
                   onClick={() => setShowPassword((s) => !s)}
                   className="absolute inset-y-0 right-0 flex items-center pr-3 text-brand-textMuted hover:text-white transition-colors"
-                  aria-label={showPassword ? 'Fshih fjalëkalimin' : 'Shfaq fjalëkalimin'}
+                  aria-label={showPassword ? t('Fshih fjalëkalimin') : t('Shfaq fjalëkalimin')}
                   tabIndex={-1}
                 >
                   {showPassword ? (
@@ -133,13 +139,13 @@ const Login: React.FC<LoginProps> = ({ onAuthenticated }) => {
               disabled={isSubmitting}
               className="w-full bg-brand-yellow hover:bg-yellow-400 text-black font-bold py-3 rounded-lg transition-colors shadow-lg shadow-brand-yellow/10 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSubmitting ? (slowConnect ? 'Duke u lidhur me serverin…' : 'Një moment…') : 'Hyr'}
+              {isSubmitting ? (slowConnect ? t('Duke u lidhur me serverin…') : t('Një moment…')) : t('Hyr')}
             </button>
           </form>
         </div>
 
         <p className="text-center text-brand-textMuted text-xs mt-5">
-          S'ke llogari? Kontakto administratorin ose agjentin tënd për ta hapur.
+          {t("S'ke llogari? Kontakto administratorin ose agjentin tënd për ta hapur.")}
         </p>
       </div>
     </div>

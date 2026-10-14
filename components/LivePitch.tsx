@@ -4,6 +4,7 @@ import type { LiveStatistics } from '../services/api';
 import { formatLiveStatus, isHalftime, formatScore, pickClockSource } from '../utils/liveStatus';
 import { useTickingClock, formatLiveClock } from './MatchCard';
 import { BallIcon, CornerFlagIcon, CardIcon, OffsideFlagIcon } from './PitchIcons';
+import { useI18n } from '../i18n';
 
 interface LivePitchProps {
   match: Match;
@@ -118,6 +119,7 @@ const PitchLines: React.FC = () => (
 // real stats; with no known action the pitch just shows the clock and the
 // possession bar -- nothing is invented.
 const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
+  const { t } = useI18n();
   const isLive = match.status === MatchStatus.LIVE;
   const clockSrc = pickClockSource(match, stats);
   const liveClock = useTickingClock(
@@ -153,7 +155,7 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
       className="relative w-full mx-auto max-w-[640px] aspect-[110/73] rounded-xl overflow-hidden select-none ring-1 ring-black/50 shadow-[0_14px_34px_-14px_rgba(0,0,0,0.85)]"
       style={{ background: TURF }}
       role="img"
-      aria-label={halftime ? 'Pushim' : action ? `${teamName ? teamName + ': ' : ''}${action.label}` : 'Ndeshja live'}
+      aria-label={halftime ? t('Pushim') : action ? `${teamName ? teamName + ': ' : ''}${t(action.label)}` : t('Ndeshja live')}
     >
       {/* mowing stripes + floodlight falloff */}
       <div className="absolute inset-0" style={{ background: STRIPES }} />
@@ -249,7 +251,7 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
             style={{ borderLeft: `3px solid ${accent}`, animation: 'pitch-text-in 0.35s ease-out both' }}
           >
             {teamName && <div className="text-[10px] md:text-xs font-semibold leading-tight text-white/75 truncate">{teamName}</div>}
-            <div className="text-sm md:text-xl font-extrabold leading-tight text-white tracking-tight whitespace-nowrap">{action.label}</div>
+            <div className="text-sm md:text-xl font-extrabold leading-tight text-white tracking-tight whitespace-nowrap">{t(action.label)}</div>
           </div>
         </div>
       )}
@@ -269,16 +271,16 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
         className={`absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 rounded-full px-3 py-0.5 text-[11px] md:text-sm font-bold tabular-nums shadow-md ${halftime ? 'bg-brand-yellow text-black' : 'bg-black/65 backdrop-blur-sm text-white'}`}
       >
         {!halftime && <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />}
-        <span>{halftime ? 'Pushim' : (clockLabel ?? formatLiveStatus(match))}</span>
-        {half && !halftime && <span className="text-brand-yellow font-semibold text-[10px] md:text-xs">{half}</span>}
+        <span>{halftime ? t('Pushim') : (clockLabel ?? formatLiveStatus(match))}</span>
+        {half && !halftime && <span className="text-brand-yellow font-semibold text-[10px] md:text-xs">{t(half)}</span>}
       </div>
 
       {/* half time: the pitch rests, the score stays */}
       {halftime && (
         <div className="absolute inset-0 z-10 flex items-center justify-center" style={{ background: 'radial-gradient(circle at 50% 50%, rgba(0,0,0,0.5), rgba(0,0,0,0.62))', animation: 'pitch-fade-in 0.5s ease both' }}>
           <div className="text-center">
-            <div className="text-2xl md:text-5xl font-black tracking-tight text-white">Pushim</div>
-            <div className="mt-1 text-xs md:text-sm font-semibold text-white/75">Fundi i pjesës së parë</div>
+            <div className="text-2xl md:text-5xl font-black tracking-tight text-white">{t('Pushim')}</div>
+            <div className="mt-1 text-xs md:text-sm font-semibold text-white/75">{t('Fundi i pjesës së parë')}</div>
             <div className="mt-2 inline-flex items-center gap-3 rounded-full bg-black/45 px-4 py-1 text-lg md:text-2xl font-black tabular-nums text-brand-yellow">
               <span>{homeGoals}</span><span className="text-white/50">-</span><span>{awayGoals}</span>
             </div>
@@ -294,7 +296,7 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
         >
           <CardIcon color={flash.kind === 'RED_CARD' ? 'red' : 'yellow'} className="w-4 h-6" />
           <span className="text-white text-xs md:text-sm font-bold leading-none">
-            {flash.kind === 'RED_CARD' ? 'Karton i kuq' : 'Karton i verdhë'}
+            {flash.kind === 'RED_CARD' ? t('Karton i kuq') : t('Karton i verdhë')}
             <span className="text-brand-yellow font-semibold"> · {flash.team === 'home' ? match.homeTeam : match.awayTeam}</span>
           </span>
         </div>

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { User } from '../types';
 import * as api from '../services/api';
+import { useI18n, getLocale } from '../i18n';
 
-const money = (n: number) => Number(n || 0).toLocaleString('sq-AL', { maximumFractionDigits: 2 });
-const dateFmt = (ms: number) => new Date(ms).toLocaleString('sq-AL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+const money = (n: number) => Number(n || 0).toLocaleString(getLocale(), { maximumFractionDigits: 2 });
+const dateFmt = (ms: number) => new Date(ms).toLocaleString(getLocale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 const statusColor: Record<string, string> = {
   WON: 'text-green-400', LOST: 'text-red-400', PENDING: 'text-brand-yellow',
@@ -19,6 +20,7 @@ interface AgentUsersPanelProps {
 // way to add Agent management on top of the existing sportsbook shell the
 // Agent already plays through unchanged.
 const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanceChanged }) => {
+  const { t } = useI18n();
   const [tab, setTab] = useState<'users' | 'monthly'>('users');
   const [me, setMe] = useState<User | null>(null);
   const [users, setUsers] = useState<api.AgentUserPerformance[]>([]);
@@ -54,7 +56,7 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
       setUsers(perf);
       if (onBalanceChangedRef.current) onBalanceChangedRef.current(meRes.agent.balance);
     } catch (e: any) {
-      setError(e.message || 'Ngarkimi deshtoi');
+      setError(e.message || t('Ngarkimi deshtoi'));
     } finally {
       setLoading(false);
     }
@@ -72,8 +74,8 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
     setExpanded(userId);
     if (!tickets[userId]) {
       try {
-        const t = await api.agentFetchUserTickets(userId);
-        setTickets((prev) => ({ ...prev, [userId]: t }));
+        const list = await api.agentFetchUserTickets(userId);
+        setTickets((prev) => ({ ...prev, [userId]: list }));
       } catch (e: any) {
         setError(e.message);
       }
@@ -89,7 +91,7 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
       setShowCreate(false);
       await load();
     } catch (err: any) {
-      setError(err.message || 'Krijimi deshtoi');
+      setError(err.message || t('Krijimi deshtoi'));
     }
   };
 
@@ -101,7 +103,7 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
       setAmountDraft((p) => ({ ...p, [userId]: '' }));
       await load();
     } catch (err: any) {
-      setError(err.message || 'Kredituar deshtoi');
+      setError(err.message || t('Kredituar deshtoi'));
     }
   };
 
@@ -113,17 +115,17 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
       setAmountDraft((p) => ({ ...p, [userId]: '' }));
       await load();
     } catch (err: any) {
-      setError(err.message || 'Terheqja deshtoi');
+      setError(err.message || t('Terheqja deshtoi'));
     }
   };
 
   const doDelete = async (userId: string, username: string) => {
-    if (!window.confirm(`Fshi userin @${username}? Kjo veprim s'kthehet mbrapa.`)) return;
+    if (!window.confirm(t("Fshi userin @{username}? Kjo veprim s'kthehet mbrapa.", { username }))) return;
     try {
       await api.agentDeleteUser(userId);
       await load();
     } catch (err: any) {
-      setError(err.message || 'Fshirja deshtoi');
+      setError(err.message || t('Fshirja deshtoi'));
     }
   };
 
@@ -140,19 +142,19 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
     <div className="p-3 md:p-4 max-w-[1200px] mx-auto">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="flex gap-1">
-          {(['users', 'monthly'] as const).map((t) => (
+          {(['users', 'monthly'] as const).map((tabKey) => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={'px-4 py-2 text-xs font-bold rounded uppercase tracking-wide ' + (tab === t ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-brand-textMuted hover:text-white border border-[#444]')}
+              key={tabKey}
+              onClick={() => setTab(tabKey)}
+              className={'px-4 py-2 text-xs font-bold rounded uppercase tracking-wide ' + (tab === tabKey ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-brand-textMuted hover:text-white border border-[#444]')}
             >
-              {t === 'users' ? 'Userat e Mi' : 'Raporti Mujor'}
+              {tabKey === 'users' ? t('Userat e Mi') : t('Raporti Mujor')}
             </button>
           ))}
         </div>
         {me && (
           <div className="text-xs text-brand-textMuted">
-            Balanca ime: <span className="text-brand-yellow font-bold text-sm">{money(me.balance)}</span>
+            {t('Balanca ime:')} <span className="text-brand-yellow font-bold text-sm">{money(me.balance)}</span>
           </div>
         )}
       </div>
@@ -167,15 +169,15 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
       {tab === 'users' && (
         <div className="bg-brand-panel border border-[#444] rounded">
           <div className="flex items-center justify-between px-4 py-3 border-b border-[#444]">
-            <h2 className="font-bold text-sm uppercase tracking-wide text-brand-textMuted">Userat e Mi ({users.length})</h2>
+            <h2 className="font-bold text-sm uppercase tracking-wide text-brand-textMuted">{t('Userat e Mi ({n})', { n: users.length })}</h2>
             <button onClick={() => setShowCreate((s) => !s)} className="text-xs px-3 py-1.5 rounded bg-brand-yellow text-black font-bold hover:brightness-95">
-              + User i ri
+              {t('+ User i ri')}
             </button>
           </div>
 
           {showCreate && (
             <form onSubmit={submitCreate} className="p-4 border-b border-[#444] grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
-              <label className="text-[10px] text-brand-textMuted uppercase flex flex-col gap-1">Emri
+              <label className="text-[10px] text-brand-textMuted uppercase flex flex-col gap-1">{t('Emri')}
                 <input value={newUser.name} onChange={(e) => setNewUser((p) => ({ ...p, name: e.target.value }))} className="input" />
               </label>
               <label className="text-[10px] text-brand-textMuted uppercase flex flex-col gap-1">Username
@@ -184,17 +186,17 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
               <label className="text-[10px] text-brand-textMuted uppercase flex flex-col gap-1">Password
                 <input type="password" value={newUser.password} onChange={(e) => setNewUser((p) => ({ ...p, password: e.target.value }))} className="input" />
               </label>
-              <label className="text-[10px] text-brand-textMuted uppercase flex flex-col gap-1">Balanca fillestare
+              <label className="text-[10px] text-brand-textMuted uppercase flex flex-col gap-1">{t('Balanca fillestare')}
                 <input type="number" value={newUser.initialBalance} onChange={(e) => setNewUser((p) => ({ ...p, initialBalance: Number(e.target.value) }))} className="input" />
               </label>
-              <button type="submit" className="text-xs px-3 py-2 rounded bg-green-700 hover:bg-green-600 font-bold h-fit">Krijo</button>
+              <button type="submit" className="text-xs px-3 py-2 rounded bg-green-700 hover:bg-green-600 font-bold h-fit">{t('Krijo')}</button>
             </form>
           )}
 
           {loading && users.length === 0 ? (
-            <div className="px-4 py-8 text-sm text-brand-textMuted text-center">Duke ngarkuar...</div>
+            <div className="px-4 py-8 text-sm text-brand-textMuted text-center">{t('Duke ngarkuar...')}</div>
           ) : users.length === 0 ? (
-            <div className="px-4 py-8 text-sm text-brand-textMuted text-center">Ende s'ke usera. Krijo te parin me buton siper.</div>
+            <div className="px-4 py-8 text-sm text-brand-textMuted text-center">{t("Ende s'ke usera. Krijo te parin me buton siper.")}</div>
           ) : (
             <div className="divide-y divide-[#333]">
               {users.map((u) => (
@@ -208,33 +210,33 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
 
                     <div className="flex items-center gap-3 text-xs">
                       <span className="text-brand-yellow font-bold">{money(u.balance)}</span>
-                      <span title="Kupona">Kupona: {u.tickets}</span>
-                      <span title="Xhiro">Xhiro: {money(u.turnover)}</span>
-                      <span className="text-green-400" title="Fitime">+{money(u.wins)}</span>
-                      <span className="text-red-400" title="Humbje">-{money(u.losses)}</span>
+                      <span title={t('Kupona')}>{t('Kupona: {n}', { n: u.tickets })}</span>
+                      <span title={t('Xhiro')}>{t('Xhiro: {n}', { n: money(u.turnover) })}</span>
+                      <span className="text-green-400" title={t('Fitime')}>+{money(u.wins)}</span>
+                      <span className="text-red-400" title={t('Humbje')}>-{money(u.losses)}</span>
                       {Number(u.pending) > 0 && <span className="text-brand-yellow" title="Pending">Pending: {money(u.pending)}</span>}
                     </div>
 
                     <div className="flex items-center gap-1">
                       <input
-                        type="number" placeholder="Shuma" value={amountDraft[u.id] || ''}
+                        type="number" placeholder={t('Shuma')} value={amountDraft[u.id] || ''}
                         onChange={(e) => setAmountDraft((p) => ({ ...p, [u.id]: e.target.value }))}
                         className="input w-20"
                       />
-                      <button onClick={() => doCredit(u.id)} className="text-[10px] px-2 py-1.5 rounded bg-green-700 hover:bg-green-600 font-bold">+ Krediton</button>
-                      <button onClick={() => doDebit(u.id)} className="text-[10px] px-2 py-1.5 rounded bg-orange-700 hover:bg-orange-600 font-bold">- Terheq</button>
+                      <button onClick={() => doCredit(u.id)} className="text-[10px] px-2 py-1.5 rounded bg-green-700 hover:bg-green-600 font-bold">{t('+ Krediton')}</button>
+                      <button onClick={() => doDebit(u.id)} className="text-[10px] px-2 py-1.5 rounded bg-orange-700 hover:bg-orange-600 font-bold">{t('- Terheq')}</button>
                       <button
                         onClick={() => toggleActive(u.id, u.is_active === false)}
                         className={'text-[10px] px-2 py-1.5 rounded font-bold ' + (u.is_active === false ? 'bg-green-800 hover:bg-green-700' : 'bg-[#444] hover:bg-[#555]')}
                       >
-                        {u.is_active === false ? 'Aktivizo' : 'Ç-aktivizo'}
+                        {u.is_active === false ? t('Aktivizo') : t('Ç-aktivizo')}
                       </button>
                       <button
                         onClick={() => doDelete(u.id, u.username)}
-                        title="Fshi (vetem nese balanca=0 dhe s'ka kupona)"
+                        title={t("Fshi (vetem nese balanca=0 dhe s'ka kupona)")}
                         className="text-[10px] px-2 py-1.5 rounded font-bold bg-red-900 hover:bg-red-800"
                       >
-                        Fshi
+                        {t('Fshi')}
                       </button>
                     </div>
                   </div>
@@ -242,19 +244,19 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
                   {expanded === u.id && (
                     <div className="bg-[#2a2a2a] px-4 py-3">
                       {!tickets[u.id] ? (
-                        <div className="text-xs text-brand-textMuted">Duke ngarkuar kuponat...</div>
+                        <div className="text-xs text-brand-textMuted">{t('Duke ngarkuar kuponat...')}</div>
                       ) : tickets[u.id].length === 0 ? (
-                        <div className="text-xs text-brand-textMuted">Ky user s'ka vendosur ende kupon.</div>
+                        <div className="text-xs text-brand-textMuted">{t("Ky user s'ka vendosur ende kupon.")}</div>
                       ) : (
                         <div className="space-y-2 max-h-[420px] overflow-y-auto">
-                          {tickets[u.id].map((t) => (
-                            <div key={t.id} className="border border-[#444] rounded p-2 bg-brand-panel">
+                          {tickets[u.id].map((tk) => (
+                            <div key={tk.id} className="border border-[#444] rounded p-2 bg-brand-panel">
                               <div className="flex justify-between text-xs mb-1">
-                                <span className="text-brand-textMuted">{dateFmt(t.createdAt)} - Stake: {money(t.stake)} - Kuota: {t.totalOdds}</span>
-                                <span className={'font-bold ' + (statusColor[t.status] || '')}>{t.status}</span>
+                                <span className="text-brand-textMuted">{t('{date} - Stake: {stake} - Kuota: {odds}', { date: dateFmt(tk.createdAt), stake: money(tk.stake), odds: tk.totalOdds })}</span>
+                                <span className={'font-bold ' + (statusColor[tk.status] || '')}>{tk.status}</span>
                               </div>
                               <div className="space-y-0.5">
-                                {t.selections.map((s, i) => (
+                                {tk.selections.map((s, i) => (
                                   <div key={i} className="flex justify-between text-[11px] text-brand-textMuted">
                                     <span>{s.matchHome} vs {s.matchAway} - {s.marketName}: <span className="text-white">{s.selectionName}</span> @{s.odds}</span>
                                     <span className={statusColor[s.status] || ''}>{s.status}</span>
@@ -277,32 +279,32 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
       {tab === 'monthly' && (
         <div className="bg-brand-panel border border-[#444] rounded p-4">
           <div className="flex items-center gap-2 mb-4">
-            <label className="text-xs text-brand-textMuted">Muaji:</label>
+            <label className="text-xs text-brand-textMuted">{t('Muaji:')}</label>
             <input type="month" value={monthInput} onChange={(e) => setMonthInput(e.target.value)} className="input w-40" />
           </div>
 
           {!monthly ? (
-            <div className="text-sm text-brand-textMuted">Duke ngarkuar...</div>
+            <div className="text-sm text-brand-textMuted">{t('Duke ngarkuar...')}</div>
           ) : (
             <>
-              <div className="text-xs text-brand-textMuted mb-2">Muaji: {monthly.month} - {monthly.totals.totalUsers} usera</div>
+              <div className="text-xs text-brand-textMuted mb-2">{t('Muaji: {month} - {n} usera', { month: monthly.month, n: monthly.totals.totalUsers })}</div>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
-                <StatBox label="Kupona" value={String(monthly.totals.totalTickets)} />
-                <StatBox label="Xhiro" value={money(monthly.totals.turnover)} />
-                <StatBox label="Fitime" value={money(monthly.totals.wins)} tone="pos" />
-                <StatBox label="Humbje" value={money(monthly.totals.losses)} tone="neg" />
-                <StatBox label="Neto" value={money(monthly.totals.netResult)} tone={monthly.totals.netResult >= 0 ? 'pos' : 'neg'} />
-                <StatBox label={`Komisioni im (${monthly.commissionRate}%)`} value={money(monthly.commissionOwed)} tone="pos" />
+                <StatBox label={t('Kupona')} value={String(monthly.totals.totalTickets)} />
+                <StatBox label={t('Xhiro')} value={money(monthly.totals.turnover)} />
+                <StatBox label={t('Fitime')} value={money(monthly.totals.wins)} tone="pos" />
+                <StatBox label={t('Humbje')} value={money(monthly.totals.losses)} tone="neg" />
+                <StatBox label={t('Neto')} value={money(monthly.totals.netResult)} tone={monthly.totals.netResult >= 0 ? 'pos' : 'neg'} />
+                <StatBox label={t('Komisioni im ({rate}%)', { rate: monthly.commissionRate })} value={money(monthly.commissionOwed)} tone="pos" />
               </div>
 
               <table className="w-full text-xs">
                 <thead>
                   <tr className="text-brand-textMuted text-left border-b border-[#444]">
                     <th className="py-1.5 pr-2">User</th>
-                    <th className="py-1.5 pr-2">Kupona</th>
-                    <th className="py-1.5 pr-2">Xhiro</th>
-                    <th className="py-1.5 pr-2">Fitime</th>
-                    <th className="py-1.5 pr-2">Humbje</th>
+                    <th className="py-1.5 pr-2">{t('Kupona')}</th>
+                    <th className="py-1.5 pr-2">{t('Xhiro')}</th>
+                    <th className="py-1.5 pr-2">{t('Fitime')}</th>
+                    <th className="py-1.5 pr-2">{t('Humbje')}</th>
                     <th className="py-1.5 pr-2">Pending</th>
                   </tr>
                 </thead>
@@ -318,7 +320,7 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
                     </tr>
                   ))}
                   {monthly.users.length === 0 && (
-                    <tr><td colSpan={6} className="py-4 text-center text-brand-textMuted">S'ka te dhena per kete muaj.</td></tr>
+                    <tr><td colSpan={6} className="py-4 text-center text-brand-textMuted">{t("S'ka te dhena per kete muaj.")}</td></tr>
                   )}
                 </tbody>
               </table>

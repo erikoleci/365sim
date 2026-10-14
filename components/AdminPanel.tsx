@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, UserRole, Bet, BetStatus } from '../types';
 import * as api from '../services/api';
+import { useI18n } from '../i18n';
 
 interface AdminPanelProps {
   users: User[];
@@ -13,6 +14,7 @@ interface AdminPanelProps {
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet }) => {
+  const { t, locale } = useI18n();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'tickets' | 'audit'>('dashboard');
   const [auditEntries, setAuditEntries] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -53,7 +55,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
     if (newUser.name && newUser.username && newUser.password) {
       onCreateUser(newUser);
       setNewUser({ name: '', username: '', password: '', balance: 0, role: 'USER' });
-      alert(newUser.role === 'AGENT' ? 'Agjenti u krijua me sukses' : 'User u krijua me sukses');
+      alert(newUser.role === 'AGENT' ? t('Agjenti u krijua me sukses') : t('User u krijua me sukses'));
     }
   };
 
@@ -261,11 +263,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                     value={newUser.balance} onChange={e => setNewUser({...newUser, balance: parseFloat(e.target.value) || 0})} />
                 </div>
                 <div>
-                  <label className="text-xs text-brand-textMuted block mb-1">Lloji</label>
+                  <label className="text-xs text-brand-textMuted block mb-1">{t('Lloji')}</label>
                   <select className="w-full bg-brand-panel border border-brand-divider rounded p-2 text-white text-sm"
                     value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as 'USER' | 'AGENT'})}>
                     <option value="USER">User</option>
-                    <option value="AGENT">Agjent</option>
+                    <option value="AGENT">{t('Agjent')}</option>
                   </select>
                 </div>
                 <button type="submit" className="bg-brand-header hover:bg-brand-headerDark text-white font-bold py-2 px-4 rounded text-sm transition-colors">
@@ -464,7 +466,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                   <tbody>
                     {auditEntries.map((e) => (
                       <tr key={e.id} className="border-b border-brand-divider/50">
-                        <td className="p-2 whitespace-nowrap text-brand-textMuted">{new Date(Number(e.created_at)).toLocaleString('sq-AL', { timeZone: 'Europe/Tirane' })}</td>
+                        <td className="p-2 whitespace-nowrap text-brand-textMuted">{new Date(Number(e.created_at)).toLocaleString(locale, { timeZone: 'Europe/Tirane' })}</td>
                         <td className="p-2 font-bold text-white">{e.actor_username}</td>
                         <td className="p-2"><span className="bg-brand-header px-2 py-0.5 rounded text-[10px] font-bold">{e.action}</span></td>
                         <td className="p-2 text-brand-textMuted">{e.target || '—'}</td>

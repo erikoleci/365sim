@@ -2,6 +2,7 @@ import React from 'react';
 import { Match, MatchStatus } from '../types';
 import { formatMatchTime, formatMatchDayMonth, isSameAlbaniaDay, albaniaTodayKey } from '../utils/albaniaTime';
 import { isHalftime, liveMinuteFallback, isLiveClockStale, formatScore } from '../utils/liveStatus';
+import { useI18n } from '../i18n';
 
 interface MatchRowProps {
   match: Match;
@@ -172,13 +173,16 @@ export function formatLiveClock(clock: { minute: number; second: number } | null
   return `${clock.minute}:${String(clock.second).padStart(2, '0')}`;
 }
 
-const StarButton: React.FC<{ active: boolean; onClick: (e: React.MouseEvent) => void }> = ({ active, onClick }) => (
-  <button onClick={onClick} className="shrink-0 mr-1.5 leading-none" title={active ? 'Hiq nga të preferuarat' : 'Shto te të preferuarat'}>
+const StarButton: React.FC<{ active: boolean; onClick: (e: React.MouseEvent) => void }> = ({ active, onClick }) => {
+  const { t } = useI18n();
+  return (
+  <button onClick={onClick} className="shrink-0 mr-1.5 leading-none" title={active ? t('Hiq nga të preferuarat') : t('Shto te të preferuarat')}>
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className={`w-3.5 h-3.5 ${active ? 'fill-brand-yellow' : 'fill-none stroke-brand-textMuted'}`} strokeWidth={1.5}>
       <path d="M10 1.5l2.6 5.27 5.82.85-4.21 4.1.99 5.8L10 14.9l-5.2 2.62.99-5.8-4.21-4.1 5.82-.85L10 1.5z" />
     </svg>
   </button>
-);
+  );
+};
 
 // Real crest when the provider gave us one; otherwise a plain initials
 // tile — never a generic avatar/stock photo standing in for a team.
@@ -206,6 +210,7 @@ export function getMatchWinnerMarket(match: Match) {
 }
 
 const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, isAdmin, onSettleMatch, isSimulating, selectedIds, favoriteTeams, onToggleFavoriteTeam }) => {
+  const { t } = useI18n();
   const isFinished = match.status === MatchStatus.FINISHED;
   const isLive = match.status === MatchStatus.LIVE;
   const matchWinnerMarket = getMatchWinnerMarket(match);
@@ -233,8 +238,8 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
     }
     if (changed) {
       setOddsFlash(nextFlash);
-      const t = setTimeout(() => setOddsFlash(new Map()), 2500);
-      return () => clearTimeout(t);
+      const flashTimer = setTimeout(() => setOddsFlash(new Map()), 2500);
+      return () => clearTimeout(flashTimer);
     }
   }, [match.markets]);
 
@@ -257,9 +262,9 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
         <div className="text-xs text-brand-textMuted w-12 text-center flex flex-col items-center justify-center shrink-0">
            {isLive ? (
                <div className={`font-bold leading-tight ${isHalftime(match) ? 'text-brand-yellow' : 'text-brand-accent animate-pulse'}`}>
-                   {isHalftime(match) ? 'Pushim' : (liveClock ? formatLiveClock(liveClock) : liveMinuteFallback(match))}
-                   {isLiveClockStale(match) && <span title="Pa përditësim nga provider-i" className="ml-1 text-amber-400">●</span>}
-                   {liveClock && !isHalftime(match) && <div className="text-[9px] font-semibold text-brand-yellow normal-case leading-none mt-0.5">{liveClock.half}</div>}
+                   {isHalftime(match) ? t('Pushim') : (liveClock ? formatLiveClock(liveClock) : liveMinuteFallback(match))}
+                   {isLiveClockStale(match) && <span title={t('Pa përditësim nga provider-i')} className="ml-1 text-amber-400">●</span>}
+                   {liveClock && !isHalftime(match) && <div className="text-[9px] font-semibold text-brand-yellow normal-case leading-none mt-0.5">{t(liveClock.half)}</div>}
                </div>
            ) : (
                <>
@@ -317,14 +322,14 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
             <button 
                 onClick={(e) => {
                     e.stopPropagation();
-                    const homeStr = window.prompt(`Gola ${match.homeTeam} (shtëpi):`);
+                    const homeStr = window.prompt(t('Gola {team} (shtëpi):', { team: match.homeTeam }));
                     if (homeStr === null) return;
-                    const awayStr = window.prompt(`Gola ${match.awayTeam} (mysafir):`);
+                    const awayStr = window.prompt(t('Gola {team} (mysafir):', { team: match.awayTeam }));
                     if (awayStr === null) return;
                     const homeScore = parseInt(homeStr, 10);
                     const awayScore = parseInt(awayStr, 10);
                     if (Number.isNaN(homeScore) || Number.isNaN(awayScore) || homeScore < 0 || awayScore < 0) {
-                        window.alert('Rezultat i pavlefshëm.');
+                        window.alert(t('Rezultat i pavlefshëm.'));
                         return;
                     }
                     onSettleMatch(match, homeScore, awayScore);
@@ -347,7 +352,7 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
                 <div
                   key={opt.id}
                   className="flex-1 flex flex-col items-center justify-center opacity-40 cursor-not-allowed select-none"
-                  title="Tregu është pezulluar përkohësisht"
+                  title={t('Tregu është pezulluar përkohësisht')}
                 >
                   <span className="text-brand-textMuted text-[10px] font-normal leading-none mb-0.5">{opt.id === 'DRAW' ? 'X' : opt.id === 'HOME' ? '1' : opt.id === 'AWAY' ? '2' : ''}</span>
                   <span className="leading-none text-[10px]">🔒</span>

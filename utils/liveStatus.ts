@@ -1,4 +1,5 @@
 import { Match } from '../types';
+import { tr } from '../i18n';
 
 // Turns whatever the live-scores provider sent us (a raw status code like
 // "1H"/"HT"/"2H"/"FT"/"ET"/"PEN", or just a minute number) into a short
@@ -9,22 +10,22 @@ export function formatLiveStatus(match: Pick<Match, 'currentMinute' | 'liveStatu
   const raw = (match.liveStatus || '').toString().toUpperCase().trim();
 
   if (raw === 'HT' || raw === 'HALFTIME' || raw === 'HALF_TIME' || raw === 'PAUSED') {
-    return 'Pushim (Pjesa e Parë ka Mbaruar)';
+    return tr('Pushim (Pjesa e Parë ka Mbaruar)');
   }
   if (raw === 'FT' || raw === 'AET' || raw === 'ENDED' || raw === 'FINISHED') {
-    return 'Ka Mbaruar';
+    return tr('Ka Mbaruar');
   }
   if (raw === 'ET' || raw === 'EXTRA_TIME') {
-    return 'Vazhdime';
+    return tr('Vazhdime');
   }
   if (raw === 'PEN' || raw === 'PENALTIES') {
-    return 'Penallti';
+    return tr('Penallti');
   }
   if (raw === '1H' || raw === 'FIRST_HALF') {
-    return match.currentMinute ? `${approx}${match.currentMinute}' (Pjesa 1)` : 'Pjesa e Parë';
+    return match.currentMinute ? `${approx}${match.currentMinute}' (${tr('Pjesa 1')})` : tr('Pjesa e Parë');
   }
   if (raw === '2H' || raw === 'SECOND_HALF') {
-    return match.currentMinute ? `${approx}${match.currentMinute}' (Pjesa 2)` : 'Pjesa e Dytë';
+    return match.currentMinute ? `${approx}${match.currentMinute}' (${tr('Pjesa 2')})` : tr('Pjesa e Dytë');
   }
   if (match.currentMinute) {
     return `${approx}${match.currentMinute}'`;

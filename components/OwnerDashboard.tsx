@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { User, Bet } from '../types';
 import * as api from '../services/api';
 import AdminPanel from './AdminPanel';
+import { useI18n, getLocale } from '../i18n';
 
 interface OwnerDashboardProps {
   currentUser: User;
@@ -15,7 +16,7 @@ interface OwnerDashboardProps {
   onCancelBet: (betId: string, origin: 'USER' | 'ADMIN') => void;
 }
 
-const money = (n: number) => Number(n || 0).toLocaleString('sq-AL', { maximumFractionDigits: 2 });
+const money = (n: number) => Number(n || 0).toLocaleString(getLocale(), { maximumFractionDigits: 2 });
 
 // Owner/Admin never places bets or plays casino — this is a standalone,
 // read-focused page: aggregate reports first, with the existing full
@@ -25,6 +26,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   currentUser, onLogout, users, allBets,
   onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet,
 }) => {
+  const { t } = useI18n();
   const [tab, setTab] = useState<'reports' | 'monthly' | 'manage'>('reports');
   const [overview, setOverview] = useState<api.AdminOverview | null>(null);
   const [agents, setAgents] = useState<User[]>([]);
@@ -83,7 +85,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
       setShowCreateAgent(false);
       await load();
     } catch (err: any) {
-      alert(err.message || 'Krijimi i agjentit deshtoi');
+      alert(err.message || t('Krijimi i agjentit deshtoi'));
     }
   };
 
@@ -97,7 +99,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
       setAgentAmount((p) => ({ ...p, [agentId]: '' }));
       await load();
     } catch (err: any) {
-      alert(err.message || 'Veprimi deshtoi');
+      alert(err.message || t('Veprimi deshtoi'));
     } finally {
       setAgentActionBusy(null);
     }
@@ -107,7 +109,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
     const raw = agentCommissionInput[agentId];
     const rate = Number(raw);
     if (raw === undefined || raw === '' || Number.isNaN(rate) || rate < 0 || rate > 100) {
-      alert('Komisioni duhet te jete nje numer 0-100');
+      alert(t('Komisioni duhet te jete nje numer 0-100'));
       return;
     }
     setAgentActionBusy(agentId);
@@ -115,7 +117,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
       await api.adminSetAgentCommission(agentId, rate);
       await load();
     } catch (err: any) {
-      alert(err.message || 'Ndryshimi i komisionit deshtoi');
+      alert(err.message || t('Ndryshimi i komisionit deshtoi'));
     } finally {
       setAgentActionBusy(null);
     }
@@ -129,18 +131,18 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
           <span className="text-xs text-brand-textMuted hidden sm:inline">{currentUser.name}</span>
         </div>
         <button onClick={onLogout} className="text-xs px-3 py-1.5 rounded bg-brand-panel hover:bg-[#444] border border-[#444]">
-          Dil
+          {t('Dil')}
         </button>
       </header>
 
       <nav className="flex gap-1 px-4 pt-3 border-b border-[#333]">
-        {(['reports', 'monthly', 'manage'] as const).map((t) => (
+        {(['reports', 'monthly', 'manage'] as const).map((tabKey) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-bold rounded-t uppercase tracking-wide ${tab === t ? 'bg-brand-panel text-brand-yellow border border-b-0 border-[#444]' : 'text-brand-textMuted hover:text-white'}`}
+            key={tabKey}
+            onClick={() => setTab(tabKey)}
+            className={`px-4 py-2 text-sm font-bold rounded-t uppercase tracking-wide ${tab === tabKey ? 'bg-brand-panel text-brand-yellow border border-b-0 border-[#444]' : 'text-brand-textMuted hover:text-white'}`}
           >
-            {t === 'reports' ? 'Raporte' : t === 'monthly' ? 'Raporti Mujor' : 'Menaxho'}
+            {tabKey === 'reports' ? t('Raporte') : tabKey === 'monthly' ? t('Raporti Mujor') : t('Menaxho')}
           </button>
         ))}
       </nav>
@@ -149,43 +151,43 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
         {tab === 'reports' && (
           <div className="space-y-6">
             {loading && !overview ? (
-              <div className="text-brand-textMuted text-sm py-10 text-center">Duke ngarkuar...</div>
+              <div className="text-brand-textMuted text-sm py-10 text-center">{t('Duke ngarkuar...')}</div>
             ) : overview ? (
               <>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <KpiCard label="Agjente (aktive)" value={overview.agents.total + ' (' + overview.agents.active + ')'} />
-                  <KpiCard label="Balanca e Agjenteve" value={money(overview.agents.totalBalance)} />
-                  <KpiCard label="Usera (aktive)" value={overview.users.total + ' (' + overview.users.active + ')'} />
-                  <KpiCard label="Balanca e Userave" value={money(overview.users.totalBalance)} />
-                  <KpiCard label="Kupona gjithsej" value={String(overview.tickets.total)} />
-                  <KpiCard label="Xhiro (Turnover)" value={money(overview.tickets.turnover)} />
+                  <KpiCard label={t('Agjente (aktive)')} value={overview.agents.total + ' (' + overview.agents.active + ')'} />
+                  <KpiCard label={t('Balanca e Agjenteve')} value={money(overview.agents.totalBalance)} />
+                  <KpiCard label={t('Usera (aktive)')} value={overview.users.total + ' (' + overview.users.active + ')'} />
+                  <KpiCard label={t('Balanca e Userave')} value={money(overview.users.totalBalance)} />
+                  <KpiCard label={t('Kupona gjithsej')} value={String(overview.tickets.total)} />
+                  <KpiCard label={t('Xhiro (Turnover)')} value={money(overview.tickets.turnover)} />
                   <KpiCard label="Pending" value={overview.tickets.pendingCount + ' (' + money(overview.tickets.pending) + ')'} />
-                  <KpiCard label="Rezultati Neto" value={money(overview.netResult)} positive={overview.netResult >= 0} />
+                  <KpiCard label={t('Rezultati Neto')} value={money(overview.netResult)} positive={overview.netResult >= 0} />
                 </div>
 
                 <div className="bg-brand-panel border border-[#444] rounded">
                   <div className="flex items-center justify-between px-4 py-3 border-b border-[#444]">
-                    <h2 className="font-bold text-sm uppercase tracking-wide text-brand-textMuted">Agjentet</h2>
+                    <h2 className="font-bold text-sm uppercase tracking-wide text-brand-textMuted">{t('Agjentet')}</h2>
                     <button
                       onClick={() => setShowCreateAgent((s) => !s)}
                       className="text-xs px-3 py-1.5 rounded bg-brand-yellow text-black font-bold hover:brightness-95"
                     >
-                      + Agjent i ri
+                      {t('+ Agjent i ri')}
                     </button>
                   </div>
 
                   {showCreateAgent && (
                     <form onSubmit={submitCreateAgent} className="p-4 border-b border-[#444] grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
-                      <Field label="Emri"><input value={newAgent.name} onChange={(e) => setNewAgent((p) => ({ ...p, name: e.target.value }))} className="input" /></Field>
+                      <Field label={t('Emri')}><input value={newAgent.name} onChange={(e) => setNewAgent((p) => ({ ...p, name: e.target.value }))} className="input" /></Field>
                       <Field label="Username"><input value={newAgent.username} onChange={(e) => setNewAgent((p) => ({ ...p, username: e.target.value }))} className="input" /></Field>
                       <Field label="Password"><input type="password" value={newAgent.password} onChange={(e) => setNewAgent((p) => ({ ...p, password: e.target.value }))} className="input" /></Field>
-                      <Field label="Balanca fillestare"><input type="number" value={newAgent.balance} onChange={(e) => setNewAgent((p) => ({ ...p, balance: Number(e.target.value) }))} className="input" /></Field>
-                      <button type="submit" className="text-xs px-3 py-2 rounded bg-green-700 hover:bg-green-600 font-bold h-fit">Krijo</button>
+                      <Field label={t('Balanca fillestare')}><input type="number" value={newAgent.balance} onChange={(e) => setNewAgent((p) => ({ ...p, balance: Number(e.target.value) }))} className="input" /></Field>
+                      <button type="submit" className="text-xs px-3 py-2 rounded bg-green-700 hover:bg-green-600 font-bold h-fit">{t('Krijo')}</button>
                     </form>
                   )}
 
                   <div className="divide-y divide-[#333]">
-                    {agents.length === 0 && <div className="px-4 py-6 text-sm text-brand-textMuted">Ende s'ka agjente.</div>}
+                    {agents.length === 0 && <div className="px-4 py-6 text-sm text-brand-textMuted">{t("Ende s'ka agjente.")}</div>}
                     {agents.map((a) => (
                       <div key={a.id}>
                         <div className="w-full flex items-center justify-between px-4 py-3 hover:bg-[#333]">
@@ -196,20 +198,20 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                           </button>
                           <div className="flex items-center gap-2 text-sm" onClick={(e) => e.stopPropagation()}>
                             <input
-                              type="number" placeholder="Shuma" value={agentAmount[a.id] || ''}
+                              type="number" placeholder={t('Shuma')} value={agentAmount[a.id] || ''}
                               onChange={(e) => setAgentAmount((p) => ({ ...p, [a.id]: e.target.value }))}
                               className="input !w-24 text-xs"
                             />
                             <button
                               disabled={agentActionBusy === a.id}
                               onClick={() => fundAgent(a.id, 'credit')}
-                              title="Shto fonde nga balanca e Owner-it"
+                              title={t('Shto fonde nga balanca e Owner-it')}
                               className="text-xs px-2 py-1.5 rounded bg-green-700 hover:bg-green-600 font-bold disabled:opacity-50"
                             >+</button>
                             <button
                               disabled={agentActionBusy === a.id}
                               onClick={() => fundAgent(a.id, 'debit')}
-                              title="Terhiq fonde te balanca e Owner-it"
+                              title={t('Terhiq fonde te balanca e Owner-it')}
                               className="text-xs px-2 py-1.5 rounded bg-red-800 hover:bg-red-700 font-bold disabled:opacity-50"
                             >−</button>
                             <span className="text-brand-yellow font-bold w-20 text-right">{money(a.balance)}</span>
@@ -219,7 +221,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                         {expandedAgent === a.id && (
                           <div className="bg-[#2a2a2a] px-4 py-3">
                             <div className="flex items-center gap-2 text-xs mb-3 pb-3 border-b border-[#444]">
-                              <span className="text-brand-textMuted">Komisioni (% e rezultatit neto te agjentit):</span>
+                              <span className="text-brand-textMuted">{t('Komisioni (% e rezultatit neto te agjentit):')}</span>
                               <input
                                 type="number" min={0} max={100} step="0.1"
                                 placeholder={String(a.commissionRate ?? 0)}
@@ -232,23 +234,23 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                                 disabled={agentActionBusy === a.id}
                                 onClick={() => saveAgentCommission(a.id)}
                                 className="px-2 py-1 rounded bg-brand-yellow text-black font-bold disabled:opacity-50"
-                              >Ruaj</button>
-                              <span className="text-brand-textMuted ml-2">Aktual: {a.commissionRate ?? 0}%</span>
+                              >{t('Ruaj')}</button>
+                              <span className="text-brand-textMuted ml-2">{t('Aktual: {rate}%', { rate: a.commissionRate ?? 0 })}</span>
                             </div>
                             {!agentDetail[a.id] ? (
-                              <div className="text-xs text-brand-textMuted">Duke ngarkuar userat...</div>
+                              <div className="text-xs text-brand-textMuted">{t('Duke ngarkuar userat...')}</div>
                             ) : agentDetail[a.id].length === 0 ? (
-                              <div className="text-xs text-brand-textMuted">Ky agjent s'ka usera ende.</div>
+                              <div className="text-xs text-brand-textMuted">{t("Ky agjent s'ka usera ende.")}</div>
                             ) : (
                               <table className="w-full text-xs">
                                 <thead>
                                   <tr className="text-brand-textMuted text-left border-b border-[#444]">
                                     <th className="py-1.5 pr-2">User</th>
                                     <th className="py-1.5 pr-2">Balance</th>
-                                    <th className="py-1.5 pr-2">Kupona</th>
-                                    <th className="py-1.5 pr-2">Xhiro</th>
-                                    <th className="py-1.5 pr-2">Fitime</th>
-                                    <th className="py-1.5 pr-2">Humbje</th>
+                                    <th className="py-1.5 pr-2">{t('Kupona')}</th>
+                                    <th className="py-1.5 pr-2">{t('Xhiro')}</th>
+                                    <th className="py-1.5 pr-2">{t('Fitime')}</th>
+                                    <th className="py-1.5 pr-2">{t('Humbje')}</th>
                                     <th className="py-1.5 pr-2">Pending</th>
                                   </tr>
                                 </thead>
@@ -275,7 +277,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                 </div>
               </>
             ) : (
-              <div className="text-red-400 text-sm">Ngarkimi deshtoi.</div>
+              <div className="text-red-400 text-sm">{t('Ngarkimi deshtoi.')}</div>
             )}
           </div>
         )}
@@ -283,34 +285,34 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
         {tab === 'monthly' && (
           <div className="bg-brand-panel border border-[#444] rounded p-4">
             <div className="flex items-center gap-2 mb-4">
-              <label className="text-xs text-brand-textMuted">Muaji:</label>
+              <label className="text-xs text-brand-textMuted">{t('Muaji:')}</label>
               <input type="month" value={monthInput} onChange={(e) => setMonthInput(e.target.value)} className="input w-40" />
             </div>
             {!monthly ? (
-              <div className="text-sm text-brand-textMuted">Duke ngarkuar...</div>
+              <div className="text-sm text-brand-textMuted">{t('Duke ngarkuar...')}</div>
             ) : (
               <>
                 <div className="text-xs text-brand-textMuted mb-2">
-                  Muaji: {monthly.month} - {monthly.totals.totalAgents} agjente, {monthly.totals.totalUsers} usera
+                  {t('Muaji: {month} - {agents} agjente, {users} usera', { month: monthly.month, agents: monthly.totals.totalAgents, users: monthly.totals.totalUsers })}
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
-                  <KpiCard label="Kupona" value={String(monthly.totals.totalTickets)} />
-                  <KpiCard label="Xhiro" value={money(monthly.totals.turnover)} />
-                  <KpiCard label="Fitime" value={money(monthly.totals.wins)} positive />
-                  <KpiCard label="Humbje" value={money(monthly.totals.losses)} positive={false} />
-                  <KpiCard label="Neto" value={money(monthly.totals.netResult)} positive={monthly.totals.netResult >= 0} />
+                  <KpiCard label={t('Kupona')} value={String(monthly.totals.totalTickets)} />
+                  <KpiCard label={t('Xhiro')} value={money(monthly.totals.turnover)} />
+                  <KpiCard label={t('Fitime')} value={money(monthly.totals.wins)} positive />
+                  <KpiCard label={t('Humbje')} value={money(monthly.totals.losses)} positive={false} />
+                  <KpiCard label={t('Neto')} value={money(monthly.totals.netResult)} positive={monthly.totals.netResult >= 0} />
                 </div>
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="text-brand-textMuted text-left border-b border-[#444]">
-                      <th className="py-1.5 pr-2">Agjenti</th>
-                      <th className="py-1.5 pr-2">Usera</th>
-                      <th className="py-1.5 pr-2">Kupona</th>
-                      <th className="py-1.5 pr-2">Xhiro</th>
-                      <th className="py-1.5 pr-2">Fitime</th>
-                      <th className="py-1.5 pr-2">Humbje</th>
+                      <th className="py-1.5 pr-2">{t('Agjenti')}</th>
+                      <th className="py-1.5 pr-2">{t('Usera')}</th>
+                      <th className="py-1.5 pr-2">{t('Kupona')}</th>
+                      <th className="py-1.5 pr-2">{t('Xhiro')}</th>
+                      <th className="py-1.5 pr-2">{t('Fitime')}</th>
+                      <th className="py-1.5 pr-2">{t('Humbje')}</th>
                       <th className="py-1.5 pr-2">Pending</th>
-                      <th className="py-1.5 pr-2">Komision</th>
+                      <th className="py-1.5 pr-2">{t('Komision')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -323,13 +325,13 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                         <td className="py-1.5 pr-2 text-green-400">{money(a.wins)}</td>
                         <td className="py-1.5 pr-2 text-red-400">{money(a.losses)}</td>
                         <td className="py-1.5 pr-2">{money(a.pending)}</td>
-                        <td className="py-1.5 pr-2 text-brand-yellow" title={a.commissionRate + '% e rezultatit neto'}>
+                        <td className="py-1.5 pr-2 text-brand-yellow" title={t('{rate}% e rezultatit neto', { rate: a.commissionRate })}>
                           {money(a.commissionOwed)}
                         </td>
                       </tr>
                     ))}
                     {monthly.agents.length === 0 && (
-                      <tr><td colSpan={8} className="py-4 text-center text-brand-textMuted">S'ka te dhena per kete muaj.</td></tr>
+                      <tr><td colSpan={8} className="py-4 text-center text-brand-textMuted">{t("S'ka te dhena per kete muaj.")}</td></tr>
                     )}
                   </tbody>
                 </table>

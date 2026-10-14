@@ -3,6 +3,7 @@ import { Match, MatchStatus } from '../types';
 import { formatMatchTime, formatMatchDayMonth, isSameAlbaniaDay, albaniaTodayKey } from '../utils/albaniaTime';
 import { getMatchWinnerMarket, useTickingClock, formatLiveClock } from './MatchCard';
 import { isHalftime, liveMinuteFallback } from '../utils/liveStatus';
+import { useI18n } from '../i18n';
 
 interface FeaturedMatchCardProps {
   match: Match;
@@ -16,6 +17,7 @@ interface FeaturedMatchCardProps {
 // The full grouped list (Country -> League -> date -> MatchRow) stays the
 // primary browsing surface; this is just a quick-glance strip above it.
 const FeaturedMatchCard: React.FC<FeaturedMatchCardProps> = ({ match, onBetClick, onOpenDetail, selectedIds }) => {
+  const { t } = useI18n();
   const isFinished = match.status === MatchStatus.FINISHED;
   const isLive = match.status === MatchStatus.LIVE;
   const matchWinnerMarket = getMatchWinnerMarket(match);
@@ -38,7 +40,7 @@ const FeaturedMatchCard: React.FC<FeaturedMatchCardProps> = ({ match, onBetClick
         <div className="flex items-center justify-between text-[10px] text-brand-textMuted mb-1.5">
           <span className={isLive ? 'text-brand-accent font-bold animate-pulse' : ''}>
             {isLive
-              ? (isHalftime(match) ? 'Pushim' : liveClock ? formatLiveClock(liveClock) : liveMinuteFallback(match))
+              ? (isHalftime(match) ? t('Pushim') : liveClock ? formatLiveClock(liveClock) : liveMinuteFallback(match))
               : isToday ? formatMatchTime(match.startTime) : formatMatchDayMonth(match.startTime)}
           </span>
           <span className="opacity-60 hidden sm:inline">{shortId}</span>
@@ -56,7 +58,7 @@ const FeaturedMatchCard: React.FC<FeaturedMatchCardProps> = ({ match, onBetClick
             // entirely rather than leave a dead cell in the row.
             if (!opt.suspended && (!opt.odds || opt.odds <= 0)) return null;
             return opt.suspended ? (
-              <div key={opt.id} className="flex-1 flex items-center justify-center min-h-[36px] rounded text-[11px] opacity-40" title="Tregu është pezulluar përkohësisht">🔒</div>
+              <div key={opt.id} className="flex-1 flex items-center justify-center min-h-[36px] rounded text-[11px] opacity-40" title={t('Tregu është pezulluar përkohësisht')}>🔒</div>
             ) : (
               <button
                 key={opt.id}

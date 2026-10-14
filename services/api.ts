@@ -1,4 +1,5 @@
 import { User, Match, Bet, BetSelectionItem } from '../types';
+import { tr } from '../i18n';
 
 const TOKEN_KEY = 'betsim_token';
 
@@ -79,19 +80,19 @@ async function request<T>(path: string, options: RequestInit = {}, opts: { retry
         await new Promise((r) => setTimeout(r, retryDelayMs));
         continue;
       }
-      throw new Error("S'arritëm të lidhemi me serverin. Kontrollo internetin dhe provo përsëri.");
+      throw new Error(tr("S'arritëm të lidhemi me serverin. Kontrollo internetin dhe provo përsëri."));
     }
     const contentType = resp.headers.get('content-type') || '';
     const body = contentType.includes('application/json') ? await resp.json() : null;
     if (!resp.ok) {
-      const message = body?.error || `Request failed (${resp.status})`;
+      const message = body?.error ? tr(String(body.error)) : `Request failed (${resp.status})`;
       throw new ApiError(message, body?.code, body);
     }
     return body as T;
   }
   // Unreachable in practice (the loop above always returns or throws),
   // kept only so TypeScript sees every path returning/throwing.
-  throw new Error("S'arritëm të lidhemi me serverin. Kontrollo internetin dhe provo përsëri.");
+  throw new Error(tr("S'arritëm të lidhemi me serverin. Kontrollo internetin dhe provo përsëri."));
 }
 
 // --- Auth ---

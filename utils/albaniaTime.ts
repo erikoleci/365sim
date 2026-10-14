@@ -2,12 +2,14 @@
 // local time (Europe/Tirane) — not whatever timezone the visitor's device
 // happens to be set to. Using Intl with an explicit timeZone avoids relying
 // on the browser's default, which is what was causing times to look wrong.
+// Only the *formatting* locale follows the selected UI language; the time zone does not.
+import { getLocale } from '../i18n';
 
 const TZ = 'Europe/Tirane';
 
 // "HH:MM" for a match's kickoff time, in Albania time.
 export function formatMatchTime(iso: string): string {
-  return new Intl.DateTimeFormat('sq-AL', {
+  return new Intl.DateTimeFormat(getLocale(), {
     timeZone: TZ,
     hour: '2-digit',
     minute: '2-digit',
@@ -17,7 +19,7 @@ export function formatMatchTime(iso: string): string {
 
 // "D/M" for a match's kickoff date, in Albania time.
 export function formatMatchDayMonth(iso: string): string {
-  return new Intl.DateTimeFormat('sq-AL', {
+  return new Intl.DateTimeFormat(getLocale(), {
     timeZone: TZ,
     day: 'numeric',
     month: 'numeric',

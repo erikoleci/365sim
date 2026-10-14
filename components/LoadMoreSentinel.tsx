@@ -1,4 +1,5 @@
 import React from 'react';
+import { useI18n } from '../i18n';
 
 // Shown under a long list that is rendered in slices. When it scrolls into view
 // (a little before the user reaches the bottom) it asks for the next slice, so the
@@ -6,6 +7,7 @@ import React from 'react';
 // freeze when switching from "Live In-Play" to the full football list. The button
 // is the fallback if IntersectionObserver is unavailable.
 const LoadMoreSentinel: React.FC<{ remaining: number; onMore: () => void }> = ({ remaining, onMore }) => {
+  const { t } = useI18n();
   const ref = React.useRef<HTMLDivElement | null>(null);
   const onMoreRef = React.useRef(onMore);
   onMoreRef.current = onMore;
@@ -27,7 +29,7 @@ const LoadMoreSentinel: React.FC<{ remaining: number; onMore: () => void }> = ({
         onClick={onMore}
         className="text-xs font-bold uppercase tracking-wider text-brand-yellow bg-brand-panel border border-brand-divider rounded-full px-5 py-2 hover:bg-[#444] transition-colors"
       >
-        Shfaq më shumë ({remaining})
+        {t('Shfaq më shumë')} ({remaining})
       </button>
     </div>
   );
