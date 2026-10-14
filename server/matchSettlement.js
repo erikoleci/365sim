@@ -28,6 +28,24 @@ function splitPeriod(name) {
   return { period: null, base: name };
 }
 
+const HTFT_NAMES = new Set(['pushim/fund', 'pushimi/fundi', 'pushim / fund', 'pushim fund', 'ht/ft', 'ht ft', 'pjesa e pare/finale', 'pjesa e pare/fund']);
+
+// "Rezultat Final & Totali" + "1 & Lart 2.5"  ->  two single legs. Only when market
+// and selection split into the same number (2-3) of parts, otherwise not a combo.
+function splitCombo(leg) {
+  const marketParts = String(leg.market_name || '').split(/\s*&\s*/);
+  const selection = String(leg.selection_name || leg.selection_id || '');
+  const selectionParts = selection.split(/\s*&\s*/);
+  if (marketParts.length < 2 || marketParts.length > 3 || marketParts.length !== selectionParts.length) return null;
+  return marketParts.map((m, i) => ({
+    ...leg,
+    market_id: '',
+    market_name: m.trim(),
+    selection_id: selectionParts[i].trim(),
+    selection_name: selectionParts[i].trim(),
+  }));
+}
+
 // Pure decision logic for a single bet leg given the final match result.
 // Kept separate from settleMatch (which is DB-coupled) so it can be unit
 // tested without a database. Returns 'WON' | 'LOST' | null (null = leave
@@ -52,7 +70,7 @@ function norm(str) {
 // Half-time / period markets, combos ("&") and quarter-handicaps are never
 // auto-settled from the final score: they stay PENDING for manual review
 // instead of being settled wrongly.
-const TOTAL_GOALS_PREFIXES = ['numri i golave ne ndeshje', 'numri i golave', 'totali i golave', 'total goals', 'golat ne ndeshje'];
+const TOTAL_GOALS_PREFIXES = ['numri i golave ne ndeshje', 'numri i golave', 'totali i golave', 'total goals', 'golat ne ndeshje', 'totali', 'total'];
 const H2H_NAMES = new Set(['rezultat final', 'rezultati final', '1x2', 'rezultati i ndeshjes', 'fituesi i ndeshjes']);
 const BTTS_NAMES = new Set(['gol/jogol', 'gol-jogol', 'gol / jogol', 'te dy skuadrat shenojne', 'both teams to score']);
 const DOUBLE_CHANCE_NAMES = new Set(['dopio shans', 'double chance', 'shans i dyfishte']);
@@ -134,6 +152,26 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
   // ---- name-based (also covers canonical keys with unusual option text) ----
   const marketName = norm(leg.market_name);
   if (!marketName) return null;
+
+  // ---- combination markets: "Rezultat Final & Totali" -> "1 & Lart 2.5" ----
+  // Every part must win. One part that LOSES decides the whole bet at once, even
+  // if another part is not understood; otherwise all parts must be understood and
+  // won. A refunded (VOID) part is left for manual review: its payout rule differs.
+  const combo = splitCombo(leg);
+  if (combo) {
+    const outcomes = combo.map((sub) => determineLegOutcome(sub, { winner, totalGoals, bothScored, homeScore, awayScore, htHome, htAway }));
+    if (outcomes.includes('LOST')) return 'LOST';
+    if (outcomes.every((o) => o === 'WON')) return 'WON';
+    return null;
+  }
+
+  // ---- half-time / full-time double: "Pushim/Fund" -> "1/2" ----
+  if (HTFT_NAMES.has(marketName)) {
+    const m = String(leg.selection_name || leg.selection_id).trim().toLowerCase().match(/^([12x])\s*[\/-]\s*([12x])$/);
+    if (!m || !hasScore || !Number.isFinite(htHome) || !Number.isFinite(htAway)) return null;
+    const sign = (h, a) => (h > a ? '1' : a > h ? '2' : 'x');
+    return sign(htHome, htAway) === m[1] && sign(homeScore, awayScore) === m[2] ? 'WON' : 'LOST';
+  }
 
   const { period, base } = splitPeriod(marketName);
   if (period) {
@@ -356,6 +394,25 @@ export async function settleMatch(matchId, homeScore, awayScore, { force = false
 // to run again) before the market type was understood, or a leg was missed.
 // Idempotent: recomputeBetStatus locks the bet row and only pays on the
 // transition into WON, so running it repeatedly never double-pays.
+// A pending ticket is decided by its legs when it has a LOST leg, or no leg left PENDING.
+export function ticketIsDecided(legStatuses) {
+  return legStatuses.length > 0 && (legStatuses.includes('LOST') || !legStatuses.includes('PENDING'));
+}
+
+export async function findDecidedPendingTickets(client) {
+  const { rows } = await client.query(
+    `SELECT bs.bet_id, bs.status
+       FROM bet_selections bs JOIN bets b ON b.id = bs.bet_id
+      WHERE b.status = 'PENDING'`
+  );
+  const byBet = new Map();
+  for (const r of rows) {
+    if (!byBet.has(r.bet_id)) byBet.set(r.bet_id, []);
+    byBet.get(r.bet_id).push(r.status);
+  }
+  return Array.from(byBet.entries()).filter(([, st]) => ticketIsDecided(st)).map(([id]) => id);
+}
+
 export async function settleStuckBets() {
   // Step 0: matches that were closed (FINISHED) WITHOUT being settled, so they have
   // no stored final score. Their last live score + clock is the best final score we
@@ -396,12 +453,11 @@ export async function settleStuckBets() {
           AND m.status = 'FINISHED'
           AND m.result_home IS NOT NULL AND m.result_away IS NOT NULL`
     );
-    const { rows: undecided } = await client.query(
-      `SELECT b.id FROM bets b
-        WHERE b.status = 'PENDING'
-          AND EXISTS (SELECT 1 FROM bet_selections x WHERE x.bet_id = b.id)
-          AND NOT EXISTS (SELECT 1 FROM bet_selections x WHERE x.bet_id = b.id AND x.status = 'PENDING')`
-    );
+    // Tickets whose legs already decide them but whose own status is still PENDING:
+    // every leg decided, OR at least one leg LOST (an accumulator is lost the moment
+    // one leg loses, whatever its other legs are doing). Without the LOST case a
+    // ticket whose recompute was missed once stayed open for good.
+    const undecided = (await findDecidedPendingTickets(client)).map((id) => ({ id }));
 
     const affectedBetIds = new Set(undecided.map((r) => r.id));
     let settledLegs = 0;

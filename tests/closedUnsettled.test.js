@@ -53,7 +53,7 @@ function client() {
             .map((l) => ({ ...l, ...db.matches.get(l.match_id) })),
         };
       }
-      if (s.startsWith('SELECT b.id FROM bets b')) return { rows: [] };
+      if (s.startsWith('SELECT bs.bet_id, bs.status FROM bet_selections bs JOIN bets b')) return { rows: [] };
       throw new Error('unmocked query: ' + s);
     },
   };

@@ -133,10 +133,12 @@ describe('determineLegOutcome — every other final-score market', () => {
     expect(determineLegOutcome(L('Handikap', 'Apollon Kalamarias (+1)'), R(1, 1))).toBe('WON');
     expect(determineLegOutcome(L('Handikap', 'Zakynthos (-0.25)'), R(1, 0))).toBeNull();
   });
-  it('never auto-settles half-time, period or combo markets', () => {
+  it('never auto-settles half-time / period markets without a half-time score', () => {
     expect(determineLegOutcome(L('Rezultati Pjesa e Parë', '1'), R(2, 0))).toBeNull();
     expect(determineLegOutcome(L('Dopio Shans Pjesa e Dytë', '1X'), R(2, 0))).toBeNull();
-    expect(determineLegOutcome(L('Rezultat Final & Totali', '1 & Lart 2.5'), R(3, 0))).toBeNull();
+  });
+  it('combination markets are settled part by part (see ticketOutcomes.test.js)', () => {
+    expect(determineLegOutcome(L('Rezultat Final & Totali', '1 & Lart 2.5'), R(3, 0))).toBe('WON');
   });
 });
 
@@ -176,11 +178,14 @@ describe('determineLegOutcome — first / second half markets (need the half-tim
     expect(determineLegOutcome(L('Rezultati Pjesa e Parë', 'X'), noHt)).toBeNull();
     expect(determineLegOutcome(L('Rezultati Pjesa e Dytë', '1'), noHt)).toBeNull();
   });
-  it('HT/FT doubles, combos and unknown half markets stay pending', () => {
-    expect(determineLegOutcome(L('Pushim/Fund', 'X/1'), R)).toBeNull();
+  it('HT/FT doubles use the half-time score; unknown half markets stay pending', () => {
+    expect(determineLegOutcome(L('Pushim/Fund', 'X/1'), R)).toBe('WON'); // HT 1-1, FT 3-1
+    expect(determineLegOutcome(L('Pushim/Fund', '1/1'), R)).toBe('LOST');
     expect(determineLegOutcome(L('Rezultati Pjesa e Parë / Rezultati Final', 'X/1'), R)).toBeNull();
     expect(determineLegOutcome(L('Pjesa me Shumë Gola', 'E dyta'), R)).toBeNull();
-    expect(determineLegOutcome(L('Rezultati Pjesa e Parë & Totali', '1 & Lart 0.5'), R)).toBeNull();
+  });
+  it('a combo with a first-half part loses when that part loses', () => {
+    expect(determineLegOutcome(L('Rezultati Pjesa e Parë & Totali', '1 & Lart 0.5'), R)).toBe('LOST'); // HT was 1-1
   });
   it('inconsistent data (HT score above the final score) is never settled', () => {
     expect(determineLegOutcome(L('Rezultati Pjesa e Dytë', '1'), { ...R, homeScore: 0, awayScore: 0 })).toBeNull();
