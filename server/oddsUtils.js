@@ -9,6 +9,8 @@
 // and must never change. Only the human-facing `name` fields are
 // translated to Albanian. Never parse business logic out of `name`.
 
+import { isPastFirstHalf, marketPeriod } from './marketPeriods.js';
+
 export const MARKET_LABELS = {
   h2h: { name: '1X2 - Fituesi', category: 'main' },
   totals: { name: 'Totali i Golave', category: 'goals' },
@@ -271,6 +273,17 @@ export function mapEventToMatch(row) {
     ? estimateLiveMinute(row.start_time, row.live_status)
     : undefined;
 
+  // First-half markets are locked once the first half is over: the options are
+  // flagged suspended (the UI already renders those as locked) and the market
+  // says why. The bet route enforces the same rule server-side, this is only so
+  // the board never shows them as bettable.
+  const pastFirstHalf = isPastFirstHalf(row);
+  const openMarkets = pastFirstHalf
+    ? markets.map((m) => (marketPeriod(m.name) === 'H1'
+        ? { ...m, suspended: true, closedReason: 'FIRST_HALF_OVER', options: m.options.map((o) => ({ ...o, suspended: true })) }
+        : m))
+    : markets;
+
   return {
     id: row.id,
     league: row.league,
@@ -286,7 +299,7 @@ export function mapEventToMatch(row) {
     awayTeamLogo: ev.away_team_logo || undefined,
     startTime: row.start_time,
     status,
-    markets,
+    markets: openMarkets,
     bookmakerCount: (ev.bookmakers || []).length,
     liveHomeScore: row.live_home_score ?? undefined,
     liveAwayScore: row.live_away_score ?? undefined,
@@ -333,9 +346,16 @@ function sortOptions(marketKey, options) {
 // against a raw cached event row. Returns null if not found (e.g. market
 // closed, odds moved off the board, bad client data).
 export function resolveCurrentOdds(row, marketId, selectionId) {
+  const found = resolveCurrentSelection(row, marketId, selectionId);
+  return found ? found.odds : null;
+}
+
+// Same lookup, but also returns the SERVER-side market name (the client-sent one
+// is untrusted) so period rules can be applied to the market being bet on.
+export function resolveCurrentSelection(row, marketId, selectionId) {
   const match = mapEventToMatch(row);
   const market = match.markets.find((m) => m.id === marketId);
   if (!market) return null;
   const option = market.options.find((o) => o.id === selectionId);
-  return option ? option.odds : null;
+  return option ? { odds: option.odds, marketName: market.name } : null;
 }

@@ -2,7 +2,8 @@ import express from 'express';
 import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
-import { resolveCurrentOdds, mapEventToMatch, isStaleLive } from '../oddsUtils.js';
+import { resolveCurrentSelection, mapEventToMatch, isStaleLive } from '../oddsUtils.js';
+import { getMarketClosedReason } from '../marketPeriods.js';
 import { findConflictingSelection, validateStakeAmount, getCancelBlockReason, isLiveEventLocked } from '../betValidation.js';
 import { getLiveDetailAgeMs, isLiveDetailStale } from '../liveDetailPlan.js';
 import { wrap } from '../asyncHandler.js';
@@ -161,7 +162,11 @@ router.post('/', wrap(async (req, res) => {
       return res.status(400).json({ error: `Match ${sel.matchId} not found or no longer available` });
     }
     if (matchRow.status === 'FINISHED' || isStaleLive(matchRow.start_time, matchRow.status)) {
-      return res.status(400).json({ error: `Match ${matchRow.home_team} vs ${matchRow.away_team} has already finished — betting is closed.` });
+      return res.status(400).json({
+        error: `Match ${matchRow.home_team} vs ${matchRow.away_team} has already finished — betting is closed.`,
+        code: 'MATCH_FINISHED',
+        closed: [{ matchId: sel.matchId, marketId: sel.marketId, selectionId: sel.selectionId }],
+      });
     }
     if (LIVE_EVENT_LOCK_MS > 0 && (matchRow.status === 'LIVE' || matchRow.live_status != null)) {
       const { rows: evRows } = await pool.query(
@@ -188,10 +193,24 @@ router.post('/', wrap(async (req, res) => {
         });
       }
     }
-    let currentOdds = resolveCurrentOdds(matchRow, sel.marketId, sel.selectionId);
-    if (currentOdds === null) {
+    const current = resolveCurrentSelection(matchRow, sel.marketId, sel.selectionId);
+    if (current === null) {
       return res.status(400).json({ error: `Selection ${sel.selectionId} in market ${sel.marketId} not found in current odds — it may have closed or moved` });
     }
+    // Period rule, enforced here (not just by locking the button): a first-half
+    // market takes no bets once the first half is over, even if a stale client
+    // or a cached price still offers it.
+    const closedReason = getMarketClosedReason(matchRow, current.marketName);
+    if (closedReason) {
+      console.log('[bets] rejected bet on closed market: match=' + matchRow.id + ' market=' + sel.marketId + ' reason=' + closedReason + ' user=' + req.user.id);
+      return res.status(409).json({
+        error: `Betting on "${current.marketName}" is closed — ${closedReason === 'FIRST_HALF_OVER' ? 'the first half is over' : 'the match has finished'}.`,
+        code: 'MARKET_CLOSED',
+        reason: closedReason,
+        closed: [{ matchId: sel.matchId, marketId: sel.marketId, selectionId: sel.selectionId }],
+      });
+    }
+    let currentOdds = current.odds;
     // A price this low is never a genuine quote — it's the provider's
     // "market suspended" placeholder (see isSuspendedPrice in oddsUtils.js).
     // Betting must be rejected here even if a stale client somehow still

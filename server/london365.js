@@ -61,7 +61,7 @@ import pool, { getKV, setKV } from './db.js';
 import { diffOddsChanges } from './oddsUtils.js';
 import { pushOddsChanged, pushGoal, pushGoalDisallowed, pushMatchEnded, getWatchedMatchIds } from './ws.js';
 import { selectDetailTargets, markDetailFetched, pruneDetailAt } from './liveDetailPlan.js';
-import { settleMatch } from './matchSettlement.js';
+import { settleMatch, canSettleFromLiveScore } from './matchSettlement.js';
 // Deferred/lazy-safe: these two only import each other's functions for use
 // inside function bodies (never at module top-level), so the cycle
 // (london365.js <-> london365GameDetails.js, and via london365Socket.js)
@@ -2264,6 +2264,13 @@ async function syncLondon365LiveOnce() {
         console.warn('[london365] ' + row.id + ' left the live feed without ever having a score/clock -- closed WITHOUT settling bets (settle manually if any are pending)');
         continue;
       }
+      // Missing from the live list is not proof that it is over (a provider hiccup
+      // drops games for a cycle or two): never settle on the score of a match whose
+      // clock has not reached the end. It stays LIVE and is looked at again next cycle.
+      if (!canSettleFromLiveScore(row)) {
+        bump('endDetection.deferred_not_over');
+        continue;
+      }
       const home = row.live_home_score ?? 0;
       const away = row.live_away_score ?? 0;
       await pool.query("UPDATE matches_cache SET live_status = 'ended' WHERE id = $1", [row.id]);
@@ -2373,7 +2380,7 @@ export async function markLondon365GameEnded(gameId) {
   if (!isTrackedGame(id)) return 0; // never imported: nothing to end (was a SELECT + UPDATE per message)
   return withDbLock(id, async () => {
     const { rows } = await pool.query(
-      'SELECT live_home_score, live_away_score, live_minute FROM matches_cache WHERE id = $1', [id]
+      'SELECT live_home_score, live_away_score, live_minute, start_time FROM matches_cache WHERE id = $1', [id]
     );
     const res = await pool.query(
       `UPDATE matches_cache SET status = 'FINISHED', live_status = 'ended' WHERE id = $1 AND status = 'LIVE'`,
@@ -2387,21 +2394,20 @@ export async function markLondon365GameEnded(gameId) {
       noteMatchStatus(id, 'FINISHED');
       forgetLiveRow(id);
       clearGoalAnnounced(id);
-      // BUG FIX: this path used to flip the match to FINISHED and stop there. The
-      // match then left the status = 'LIVE' query that end-detection settles from,
-      // and it had no result_home/result_away, which settleStuckBets() requires --
-      // so every ticket on it stayed "HAPUR" until the 24h overdue sweep VOIDed it
-      // (refund instead of WON/LOST). Settle it right here, the same way the
-      // end-detection path does, with the same "real score + clock" guard.
-      if (hasRealLiveResult(row)) {
+      // Betting is closed (FINISHED) the moment the feed drops the game. The
+      // result and the settlement used to be skipped here, which left every
+      // ticket open until the overdue sweep refunded it. Settle now when the
+      // provider's own score + clock say the match is over; otherwise leave the
+      // tickets PENDING -- recoverFinishedWithoutResult() retries on every sweep.
+      if (canSettleFromLiveScore(row)) {
         try {
           await settleMatch(id, Number(row.live_home_score), Number(row.live_away_score));
-          console.log('[london365] auto-settled ' + id + ' ' + row.live_home_score + '-' + row.live_away_score + ' (socket end)');
+          console.log('[london365] socket end: settled ' + id + ' ' + row.live_home_score + '-' + row.live_away_score);
         } catch (err) {
-          console.error('[london365] socket-end settle ' + id + ' failed:', err.message);
+          console.error('[london365] socket end: settle ' + id + ' failed (the sweep will retry):', err.message);
         }
       } else {
-        console.warn('[london365] ' + id + ' ended via socket without a real score/clock -- NOT settled (settle manually if any bets are pending)');
+        console.warn('[london365] socket end: ' + id + ' closed but its result is not reliable yet (score/clock missing or match not over) -- bets stay PENDING for the recovery sweep');
       }
     }
     return res ? res.rowCount : 0;

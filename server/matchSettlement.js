@@ -1,4 +1,5 @@
 import pool from './db.js';
+import { FIRST_HALF_RE, SECOND_HALF_RE, minuteOf } from './marketPeriods.js';
 
 // ---- first / second half markets ------------------------------------------
 // "Rezultati Pjesa e Parë", "Numri i Golave në Pjesën e Dytë", "1X2 1st Half" ...
@@ -7,8 +8,7 @@ import pool from './db.js';
 // manual review (HT/FT doubles, "which half has more goals" etc. never match).
 // First half uses the stored half-time score (matches_cache.ht_home/ht_away,
 // captured at the whistle); second half is final score minus half-time score.
-const FIRST_HALF_RE = /(?:\bne\s+)?(?:\bpjes(?:a|en|e)\s+(?:e\s+)?(?:pare|1)\b|\b1\.?\s*pjes(?:a|en|e)\b|\b(?:1st|first)\s+half\b|\bne\s+pushim\b)/;
-const SECOND_HALF_RE = /(?:\bne\s+)?(?:\bpjes(?:a|en|e)\s+(?:e\s+)?(?:dyte|2)\b|\b2\.?\s*pjes(?:a|en|e)\b|\b(?:2nd|second)\s+half\b)/;
+// (FIRST_HALF_RE / SECOND_HALF_RE live in marketPeriods.js, shared with the betting rules.)
 // Names that only make sense WITH a period phrase around them.
 const PERIOD_BASE_ALIASES = {
   rezultati: 'rezultati final',
@@ -321,7 +321,7 @@ export async function settleMatch(matchId, homeScore, awayScore, { force = false
         });
 
         if (outcome) {
-          await client.query('UPDATE bet_selections SET status = $1 WHERE id = $2', [outcome, leg.id]);
+          await client.query(`UPDATE bet_selections SET status = $1 WHERE id = $2 AND status = 'PENDING'`, [outcome, leg.id]);
           autoSettledCount++;
         } else {
           leftPendingCount++;
@@ -421,7 +421,7 @@ export async function settleStuckBets() {
           htAway: leg.ht_away == null ? undefined : Number(leg.ht_away),
         });
         if (!outcome) { noteUnrecognizedMarket(leg); continue; }
-        await client.query('UPDATE bet_selections SET status = $1 WHERE id = $2', [outcome, leg.id]);
+        await client.query(`UPDATE bet_selections SET status = $1 WHERE id = $2 AND status = 'PENDING'`, [outcome, leg.id]);
         affectedBetIds.add(leg.bet_id);
         settledLegs++;
       }
@@ -435,6 +435,60 @@ export async function settleStuckBets() {
   } finally {
     client.release();
   }
+}
+
+// ---- recovery of matches closed without a stored result -----------------------
+// The live socket can close a match (status FINISHED) without anything writing its
+// result, and every other pass only settles matches that HAVE result_home/away --
+// so those tickets sat open until the overdue sweep refunded them (a win became a
+// refund). A score the provider really reported (score AND clock) is enough to
+// settle once the match is plausibly over: its clock reached the end of normal
+// time, or enough wall-clock time has passed since kickoff for it to be over.
+// Anything weaker stays PENDING; nothing is settled on an invented or early score.
+export const SETTLE_MIN_ELAPSED_MS = 105 * 60 * 1000;
+const SETTLE_MIN_CLOCK_MINUTE = 88;
+
+export function canSettleFromLiveScore(row, now = Date.now()) {
+  if (!row) return false;
+  const hasScore = row.live_home_score != null && row.live_away_score != null
+    && Number.isInteger(Number(row.live_home_score)) && Number.isInteger(Number(row.live_away_score));
+  const hasClock = row.live_minute != null && String(row.live_minute).trim() !== '';
+  if (!hasScore || !hasClock) return false;
+  const minute = minuteOf(row.live_minute);
+  if (minute != null && minute >= SETTLE_MIN_CLOCK_MINUTE) return true;
+  const kickoff = Date.parse(row.start_time);
+  return Number.isFinite(kickoff) && now - kickoff >= SETTLE_MIN_ELAPSED_MS;
+}
+
+// Idempotent: a match that gets settled now has a result, so it is no longer a
+// candidate; settleMatch itself refuses an already-settled match, and payouts are
+// guarded per bet row (recomputeBetStatus). Safe to run on every sweep and at boot.
+export async function recoverFinishedWithoutResult({ now = Date.now() } = {}) {
+  const { rows } = await pool.query(
+    `SELECT m.id, m.start_time, m.live_home_score, m.live_away_score, m.live_minute
+       FROM matches_cache m
+      WHERE m.status = 'FINISHED'
+        AND m.result_home IS NULL AND m.result_away IS NULL
+        AND m.live_home_score IS NOT NULL AND m.live_away_score IS NOT NULL
+        AND EXISTS (SELECT 1 FROM bet_selections bs WHERE bs.match_id = m.id AND bs.status = 'PENDING')`
+  );
+  let settledMatches = 0;
+  let notYetReliable = 0;
+  let failed = 0;
+  for (const row of rows) {
+    if (!canSettleFromLiveScore(row, now)) { notYetReliable++; continue; }
+    try {
+      const result = await settleMatch(row.id, Number(row.live_home_score), Number(row.live_away_score));
+      if (result) {
+        settledMatches++;
+        console.log('[settle] recovered ' + row.id + ' ' + row.live_home_score + '-' + row.live_away_score + ' ' + JSON.stringify(result));
+      }
+    } catch (err) {
+      failed++;
+      console.error('[settle] recovery of ' + row.id + ' failed (will retry next sweep):', err.message);
+    }
+  }
+  return { recoverCandidates: rows.length, recoveredMatches: settledMatches, recoverNotYetReliable: notYetReliable, recoverFailed: failed };
 }
 
 // ---- closure guarantee ------------------------------------------------------
