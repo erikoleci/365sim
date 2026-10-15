@@ -24,6 +24,26 @@ export function normMarketText(str) {
 export const FIRST_HALF_RE = /(?:\bne\s+)?(?:\bpjes(?:a|en|es|e)\s+(?:s?e\s+)?(?:pare|1|i)\b|\b1\.?\s*pjes(?:a|en|es|e)\b|\b(?:1st|first)\s+half\b|\bne\s+pushim\b)/;
 export const SECOND_HALF_RE = /(?:\bne\s+)?(?:\bpjes(?:a|en|es|e)\s+(?:s?e\s+)?(?:dyte|2|ii)\b|\b2\.?\s*pjes(?:a|en|es|e)\b|\b(?:2nd|second)\s+half\b)/;
 
+// Names that only make sense WITH a period phrase around them ("Rezultati Pjesa I").
+export const PERIOD_BASE_ALIASES = {
+  rezultati: 'rezultati final',
+  fituesi: 'rezultati final',
+  golat: 'numri i golave',
+  'mbi/nen': 'numri i golave',
+  'lart/poshte': 'numri i golave',
+};
+
+// Cut the period phrase out of a NORMALISED market name: { period, base }.
+export function splitPeriod(name) {
+  for (const [re, period] of [[FIRST_HALF_RE, 'H1'], [SECOND_HALF_RE, 'H2']]) {
+    if (re.test(name)) {
+      const base = name.replace(re, ' ').replace(/[-:()]/g, ' ').replace(/\s+/g, ' ').trim();
+      return { period, base };
+    }
+  }
+  return { period: null, base: name };
+}
+
 // 'H1' | 'H2' | null. A name that mentions both halves ("1st half / 2nd half")
 // is ambiguous and returns null rather than being closed by guess.
 export function marketPeriod(marketName) {

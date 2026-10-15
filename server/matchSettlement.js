@@ -1,5 +1,8 @@
 import pool from './db.js';
-import { FIRST_HALF_RE, SECOND_HALF_RE, minuteOf } from './marketPeriods.js';
+import { minuteOf, splitPeriod, PERIOD_BASE_ALIASES } from './marketPeriods.js';
+import {
+  TOTAL_GOALS_PREFIXES, H2H_NAMES, BTTS_NAMES, DOUBLE_CHANCE_NAMES, CORRECT_SCORE_NAMES, HANDICAP_NAMES, parseOverUnder,
+} from './marketRules.js';
 
 // ---- first / second half markets ------------------------------------------
 // "Rezultati Pjesa e Parë", "Numri i Golave në Pjesën e Dytë", "1X2 1st Half" ...
@@ -8,25 +11,8 @@ import { FIRST_HALF_RE, SECOND_HALF_RE, minuteOf } from './marketPeriods.js';
 // manual review (HT/FT doubles, "which half has more goals" etc. never match).
 // First half uses the stored half-time score (matches_cache.ht_home/ht_away,
 // captured at the whistle); second half is final score minus half-time score.
-// (FIRST_HALF_RE / SECOND_HALF_RE live in marketPeriods.js, shared with the betting rules.)
-// Names that only make sense WITH a period phrase around them.
-const PERIOD_BASE_ALIASES = {
-  rezultati: 'rezultati final',
-  fituesi: 'rezultati final',
-  golat: 'numri i golave',
-  'mbi/nen': 'numri i golave',
-  'lart/poshte': 'numri i golave',
-};
-
-function splitPeriod(name) {
-  for (const [re, period] of [[FIRST_HALF_RE, 'H1'], [SECOND_HALF_RE, 'H2']]) {
-    if (re.test(name)) {
-      const base = name.replace(re, ' ').replace(/[-:()]/g, ' ').replace(/\s+/g, ' ').trim();
-      return { period, base };
-    }
-  }
-  return { period: null, base: name };
-}
+// (period phrases, name sets and Over/Under parsing live in marketPeriods.js / marketRules.js,
+// shared with the betting rules so both sides always agree on what a market is.)
 
 const HTFT_NAMES = new Set(['pushim/fund', 'pushimi/fundi', 'pushim / fund', 'pushim fund', 'ht/ft', 'ht ft', 'pjesa e pare/finale', 'pjesa e pare/fund']);
 
@@ -70,22 +56,8 @@ function norm(str) {
 // Half-time / period markets, combos ("&") and quarter-handicaps are never
 // auto-settled from the final score: they stay PENDING for manual review
 // instead of being settled wrongly.
-const TOTAL_GOALS_PREFIXES = ['numri i golave ne ndeshje', 'numri i golave', 'totali i golave', 'total goals', 'golat ne ndeshje', 'totali', 'total'];
-const H2H_NAMES = new Set(['rezultat final', 'rezultati final', '1x2', 'rezultati i ndeshjes', 'fituesi i ndeshjes']);
-const BTTS_NAMES = new Set(['gol/jogol', 'gol-jogol', 'gol / jogol', 'te dy skuadrat shenojne', 'both teams to score']);
-const DOUBLE_CHANCE_NAMES = new Set(['dopio shans', 'double chance', 'shans i dyfishte']);
-const CORRECT_SCORE_NAMES = new Set(['rezultati i sakte', 'rezultati ekzakt', 'correct score']);
-const HANDICAP_NAMES = new Set(['handikap', 'hendikep', 'handicap', 'handikap ne ndeshje', 'hendikep ne ndeshje']);
 const PERIOD_OR_COMBO = /(pjes|pjese|half|1st|2nd|\bht\b|\bft\b|&| dhe |\+|minut|kend|korner|karton|faull|corner|card)/;
 
-// Parses "Lart 1.5" / "Mbi 2,5" / "Over-2.5" / "Poshtë 3.5" / "Under 0.5".
-function parseOverUnder(text) {
-  const m = norm(text).match(/^(lart|mbi|over|poshte|nen|under)[\s-]*([0-9]+(?:[.,][0-9]+)?)$/);
-  if (!m) return null;
-  const side = m[1] === 'lart' || m[1] === 'mbi' || m[1] === 'over' ? 'Over' : 'Under';
-  const point = parseFloat(m[2].replace(',', '.'));
-  return Number.isNaN(point) ? null : { side, point };
-}
 
 // Whole-number line landing exactly on the total is a push -> stake refunded.
 function overUnderOutcome(side, point, goals) {

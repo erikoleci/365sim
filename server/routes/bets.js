@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { resolveCurrentSelection, mapEventToMatch, isStaleLive } from '../oddsUtils.js';
-import { getMarketClosedReason } from '../marketPeriods.js';
+import { getBetBlockReason, describeBlockReason } from '../marketRules.js';
 import { findConflictingSelection, validateStakeAmount, getCancelBlockReason, isLiveEventLocked } from '../betValidation.js';
 import { getLiveDetailAgeMs, isLiveDetailStale } from '../liveDetailPlan.js';
 import { wrap } from '../asyncHandler.js';
@@ -12,6 +12,7 @@ import { noteBetOnMatches } from '../oddsHistoryPolicy.js';
 // After a goal / red card on a LIVE match, bets on it are refused for this long so
 // nobody can bet on prices that have not caught up with what just happened. 0 = off.
 const LIVE_EVENT_LOCK_MS = Math.max(0, Number(process.env.LIVE_BET_EVENT_LOCK_MS ?? 30000));
+const LIVE_BET_DELAY_MS = Math.max(0, Number(process.env.LIVE_BET_DELAY_MS ?? 5000));
 
 // Markets other than 1X2 on a LIVE match come from the budgeted full-market refresh
 // (liveDetailPlan.js). If that refresh is older than this, the prices may be stale
@@ -137,7 +138,10 @@ router.post('/', wrap(async (req, res) => {
   // Re-verify each selection's odds against the current cache instead of
   // trusting the client, and reject if odds moved unfavorably beyond
   // tolerance (odds protection) instead of silently booking a worse price.
+  const fail = (status, body) => ({ fail: { status, body } });
+  const verifySelections = async () => {
   let totalOdds = 1;
+  let inPlay = false;
   const verifiedSelections = [];
   // Collected across ALL selections instead of returning on the first one
   // found (the previous behavior): for an accumulator, if 2-3 prices moved
@@ -159,10 +163,10 @@ router.post('/', wrap(async (req, res) => {
     const { rows: matchRows } = await pool.query('SELECT * FROM matches_cache WHERE id = $1', [sel.matchId]);
     const matchRow = matchRows[0];
     if (!matchRow) {
-      return res.status(400).json({ error: `Match ${sel.matchId} not found or no longer available` });
+      return fail(400, { error: `Match ${sel.matchId} not found or no longer available` });
     }
     if (matchRow.status === 'FINISHED' || isStaleLive(matchRow.start_time, matchRow.status)) {
-      return res.status(400).json({
+      return fail(400, {
         error: `Match ${matchRow.home_team} vs ${matchRow.away_team} has already finished — betting is closed.`,
         code: 'MATCH_FINISHED',
         closed: [{ matchId: sel.matchId, marketId: sel.marketId, selectionId: sel.selectionId }],
@@ -174,7 +178,7 @@ router.post('/', wrap(async (req, res) => {
         [matchRow.id]
       );
       if (isLiveEventLocked(matchRow, evRows[0]?.last_at, { lockMs: LIVE_EVENT_LOCK_MS })) {
-        return res.status(409).json({
+        return fail(409, {
           error: `Betting on ${matchRow.home_team} vs ${matchRow.away_team} is paused for a few seconds after a goal or red card — odds are updating.`,
           code: 'LIVE_EVENT_LOCK',
         });
@@ -187,7 +191,7 @@ router.post('/', wrap(async (req, res) => {
         uptimeMs: process.uptime() * 1000,
       });
       if (stale) {
-        return res.status(409).json({
+        return fail(409, {
           error: `Odds for ${matchRow.home_team} vs ${matchRow.away_team} are being refreshed — please try again in a moment.`,
           code: 'LIVE_ODDS_STALE',
         });
@@ -195,16 +199,23 @@ router.post('/', wrap(async (req, res) => {
     }
     const current = resolveCurrentSelection(matchRow, sel.marketId, sel.selectionId);
     if (current === null) {
-      return res.status(400).json({ error: `Selection ${sel.selectionId} in market ${sel.marketId} not found in current odds — it may have closed or moved` });
+      return fail(400, { error: `Selection ${sel.selectionId} in market ${sel.marketId} not found in current odds — it may have closed or moved` });
     }
     // Period rule, enforced here (not just by locking the button): a first-half
     // market takes no bets once the first half is over, even if a stale client
     // or a cached price still offers it.
-    const closedReason = getMarketClosedReason(matchRow, current.marketName);
+    // Same rule for EVERY market type (marketRules.js): decided outcomes and markets we
+    // cannot verify against live data are refused while the match is in play.
+    const closedReason = getBetBlockReason(
+      matchRow,
+      { id: sel.marketId, name: current.marketName },
+      { id: sel.selectionId, name: current.selectionName || sel.selectionName }
+    );
+    if (matchRow.status === 'LIVE' || matchRow.live_status != null) inPlay = true;
     if (closedReason) {
-      console.log('[bets] rejected bet on closed market: match=' + matchRow.id + ' market=' + sel.marketId + ' reason=' + closedReason + ' user=' + req.user.id);
-      return res.status(409).json({
-        error: `Betting on "${current.marketName}" is closed — ${closedReason === 'FIRST_HALF_OVER' ? 'the first half is over' : 'the match has finished'}.`,
+      console.log('[bets] rejected bet: match=' + matchRow.id + ' market=' + sel.marketId + ' selection=' + sel.selectionId + ' reason=' + closedReason + ' user=' + req.user.id);
+      return fail(409, {
+        error: `Betting on "${current.marketName}" is closed — ${describeBlockReason(closedReason)}.`,
         code: 'MARKET_CLOSED',
         reason: closedReason,
         closed: [{ matchId: sel.matchId, marketId: sel.marketId, selectionId: sel.selectionId }],
@@ -219,14 +230,14 @@ router.post('/', wrap(async (req, res) => {
     // market can't be "re-offered" at a new price — there is no price right
     // now — so this still fails the whole ticket immediately.
     if (currentOdds <= 1.01) {
-      return res.status(409).json({
+      return fail(409, {
         error: `Betting on ${sel.selectionName} is temporarily suspended — please try again in a moment.`,
         code: 'SELECTION_SUSPENDED',
       });
     }
     if (boostRequested) {
       if (!isBoostEligible(matchRow, sel)) {
-        return res.status(400).json({ error: 'This selection is not eligible for the odds boost.' });
+        return fail(400, { error: 'This selection is not eligible for the odds boost.' });
       }
       currentOdds = Number((currentOdds * BOOST_MULTIPLIER).toFixed(2));
     }
@@ -245,7 +256,7 @@ router.post('/', wrap(async (req, res) => {
   }
 
   if (oddsChanges.length > 0) {
-    return res.status(409).json({
+    return fail(409, {
       error: oddsChanges.length === 1
         ? `Odds for ${oddsChanges[0].selectionName} changed (was ${oddsChanges[0].oldOdds}, now ${oddsChanges[0].newOdds}).`
         : `Odds changed on ${oddsChanges.length} selections in your ticket.`,
@@ -255,6 +266,21 @@ router.post('/', wrap(async (req, res) => {
       newOdds: oddsChanges[0].newOdds,
     });
   }
+
+  return { totalOdds, verifiedSelections, inPlay };
+  };
+
+  let verified = await verifySelections();
+  if (verified.fail) return res.status(verified.fail.status).json(verified.fail.body);
+  // Live bet delay: when any leg is in play, hold the ticket for a few seconds and
+  // verify everything again against the freshest data, so a goal/card/half-time that
+  // happened while the player was clicking cannot slip through.
+  if (verified.inPlay && LIVE_BET_DELAY_MS > 0) {
+    await new Promise((r) => setTimeout(r, LIVE_BET_DELAY_MS));
+    verified = await verifySelections();
+    if (verified.fail) return res.status(verified.fail.status).json(verified.fail.body);
+  }
+  const { totalOdds, verifiedSelections } = verified;
 
   const betId = randomUUID();
   const potentialReturn = Number((stake * totalOdds).toFixed(2));

@@ -9,7 +9,7 @@
 // and must never change. Only the human-facing `name` fields are
 // translated to Albanian. Never parse business logic out of `name`.
 
-import { isPastFirstHalf, marketPeriod } from './marketPeriods.js';
+import { getBetBlockReason } from './marketRules.js';
 
 export const MARKET_LABELS = {
   h2h: { name: '1X2 - Fituesi', category: 'main' },
@@ -273,15 +273,24 @@ export function mapEventToMatch(row) {
     ? estimateLiveMinute(row.start_time, row.live_status)
     : undefined;
 
-  // First-half markets are locked once the first half is over: the options are
-  // flagged suspended (the UI already renders those as locked) and the market
-  // says why. The bet route enforces the same rule server-side, this is only so
-  // the board never shows them as bettable.
-  const pastFirstHalf = isPastFirstHalf(row);
-  const openMarkets = pastFirstHalf
-    ? markets.map((m) => (marketPeriod(m.name) === 'H1'
-        ? { ...m, suspended: true, closedReason: 'FIRST_HALF_OVER', options: m.options.map((o) => ({ ...o, suspended: true })) }
-        : m))
+  // While the match is in play, every option is run through the SAME verification the
+  // bet route enforces (marketRules.getBetBlockReason): closed first-half markets,
+  // outcomes the live score already decides, markets we cannot verify live. Blocked
+  // options are flagged suspended (the UI renders those as locked) and the market
+  // carries the reason. This is only so the board never offers them as bettable --
+  // the server-side check at placement is what actually protects.
+  const openMarkets = status === 'LIVE'
+    ? markets.map((m) => {
+        const reasons = m.options.map((o) => getBetBlockReason(row, { id: m.id, name: m.name }, { id: o.id, name: o.name }));
+        if (!reasons.some(Boolean)) return m;
+        const allBlocked = reasons.every(Boolean);
+        return {
+          ...m,
+          suspended: m.suspended || allBlocked,
+          closedReason: allBlocked ? reasons[0] : undefined,
+          options: m.options.map((o, i) => (reasons[i] ? { ...o, suspended: true } : o)),
+        };
+      })
     : markets;
 
   return {
@@ -357,5 +366,5 @@ export function resolveCurrentSelection(row, marketId, selectionId) {
   const market = match.markets.find((m) => m.id === marketId);
   if (!market) return null;
   const option = market.options.find((o) => o.id === selectionId);
-  return option ? { odds: option.odds, marketName: market.name } : null;
+  return option ? { odds: option.odds, marketName: market.name, selectionName: option.name } : null;
 }
