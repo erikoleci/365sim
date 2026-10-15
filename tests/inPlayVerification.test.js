@@ -70,3 +70,31 @@ describe('getBetBlockReason in play', () => {
     expect(block(live({ status: 'FINISHED' }), 'Rezultat Final', '1')).toBe('MATCH_FINISHED');
   });
 });
+
+import { determineLegOutcome } from '../server/matchSettlement.js';
+describe('corners / cards settle automatically from the final counters', () => {
+  const base = { winner: 'HOME', totalGoals: 2, bothScored: false, homeScore: 2, awayScore: 0 };
+  const stats = { cornersHome: 7, cornersAway: 4, cardsHome: 2, cardsAway: 3 };
+  const leg = (market_name, selection_name) => ({ market_id: 'x_m1', market_name, selection_id: selection_name, selection_name, match_home: 'Viking', match_away: 'Bayern' });
+  const o = (l, s = stats) => determineLegOutcome(l, { ...base, stats: s });
+  it('over/under corners and cards', () => {
+    expect(o(leg('Shuma e korneve', 'Lart 10.5'))).toBe('WON');
+    expect(o(leg('Shuma e korneve', 'Poshtë 10.5'))).toBe('LOST');
+    expect(o(leg('Totali i kartonave', 'Lart 4.5'))).toBe('WON');
+    expect(o(leg('Shuma e korneve', 'Lart 11'))).toBe('VOID');
+  });
+  it('"5+" and "3-5" corner labels', () => {
+    expect(o(leg('Shuma e korneve P1+P2', '11+'))).toBe('WON');
+    expect(o(leg('Shuma e korneve P1+P2', '12+'))).toBe('LOST');
+    expect(o(leg('Shuma e korneve', '9-12'))).toBe('WON');
+  });
+  it('team corners use that team only', () => {
+    expect(o(leg('Kornera Viking', 'Lart 6.5'))).toBe('WON');
+    expect(o(leg('Kornera Bayern', 'Lart 6.5'))).toBe('LOST');
+  });
+  it('stays pending without counters or with an unknown label', () => {
+    expect(o(leg('Shuma e korneve', 'Lart 10.5'), null)).toBeNull();
+    expect(o(leg('Shuma e korneve P1+P2', '5+|6+'))).toBeNull();
+    expect(o(leg('Karton i kuq', 'Po'))).toBeNull();
+  });
+});

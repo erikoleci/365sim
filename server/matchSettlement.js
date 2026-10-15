@@ -32,6 +32,21 @@ function splitCombo(leg) {
   }));
 }
 
+const STATS_MARKET = /korn|corner|karton|\bcards?\b|booking/;
+const legNeedsStats = (leg) => STATS_MARKET.test(norm(leg.market_name));
+
+// Final corner / card counters of a match, or undefined if there are none (or the
+// lookup fails -- the leg then simply stays PENDING).
+async function loadMatchStats(client, matchId) {
+  try {
+    const { rows } = await client.query(
+      'SELECT corners_home, corners_away, cards_home, cards_away FROM live_statistics WHERE match_id = $1', [matchId]);
+    const r = rows[0];
+    if (!r) return undefined;
+    return { cornersHome: r.corners_home, cornersAway: r.corners_away, cardsHome: r.cards_home, cardsAway: r.cards_away };
+  } catch { return undefined; }
+}
+
 // Pure decision logic for a single bet leg given the final match result.
 // Kept separate from settleMatch (which is DB-coupled) so it can be unit
 // tested without a database. Returns 'WON' | 'LOST' | null (null = leave
@@ -104,7 +119,36 @@ function parseHandicap(leg) {
 // Kept separate from settleMatch (which is DB-coupled) so it can be unit
 // tested without a database. Returns 'WON' | 'LOST' | 'VOID' (stake
 // refunded, e.g. a push) | null (null = leave PENDING for manual review).
-export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeScore, awayScore, htHome, htAway }) {
+// Corners / cards come from live_statistics (cumulative counters the live feed keeps
+// current until the whistle). `stats` is { cornersHome, cornersAway, cardsHome, cardsAway }
+// or undefined when we have no counters for the match -- then the leg stays PENDING.
+// cards = yellow + red per team (how the feed counts them); booking-points, "red card"
+// and first-half corner/card markets are NOT decided here (no data), they stay PENDING.
+function statsOutcome(leg, marketName, stats, { home, away }) {
+  const isCorners = /korn|corner/.test(marketName);
+  const isCards = /karton|\bcards?\b|booking/.test(marketName);
+  if (!isCorners && !isCards) return undefined; // not a stats market
+  if (!stats) return null;
+  if (/pike|points|\bkuq\b|\bred\b|\bverdh|\bhandikap|\bhandicap|\bpare\b|\bdyte\b|\bfillim|\bfirst\b|\bpushim|\bnjeri\b/.test(marketName.replace(/p1\s*\+\s*p2/g, ''))) return null;
+  const h = Number(isCorners ? stats.cornersHome : stats.cardsHome);
+  const a = Number(isCorners ? stats.cornersAway : stats.cardsAway);
+  if (!Number.isFinite(h) || !Number.isFinite(a)) return null;
+  let total = h + a;
+  const rest = marketName.replace(/p1\s*\+\s*p2/g, '');
+  if (home && rest.includes(norm(home))) total = h;
+  else if (away && rest.includes(norm(away))) total = a;
+  else if (/\b(skuadra|team)\b|\b1\b|\b2\b/.test(rest) && !/\b(shuma|totali|total)\b/.test(rest)) return null; // team market we cannot attribute
+  const text = norm(leg.selection_name || leg.selection_id);
+  const ou = parseOverUnder(leg.selection_id) || parseOverUnder(leg.selection_name);
+  if (ou) return overUnderOutcome(ou.side, ou.point, total);
+  let m = text.match(/^(\d+)\s*\+$/); // "5+" = at least 5
+  if (m) return total >= Number(m[1]) ? 'WON' : 'LOST';
+  m = text.match(/^(\d+)\s*[-\u2013]\s*(\d+)$/); // "3-5"
+  if (m) return total >= Number(m[1]) && total <= Number(m[2]) ? 'WON' : 'LOST';
+  return null; // any other label (e.g. "5+|6+") has no agreed meaning: manual
+}
+
+export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeScore, awayScore, htHome, htAway, stats }) {
   const marketId = String(leg.market_id ?? '');
   const hasScore = Number.isFinite(homeScore) && Number.isFinite(awayScore);
 
@@ -158,6 +202,8 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
       { winner: h > a ? 'HOME' : a > h ? 'AWAY' : 'DRAW', totalGoals: h + a, bothScored: h > 0 && a > 0, homeScore: h, awayScore: a }
     );
   }
+  const so = statsOutcome(leg, marketName, stats, { home: leg.match_home && norm(leg.match_home), away: leg.match_away && norm(leg.match_away) });
+  if (so !== undefined) return so;
   if (PERIOD_OR_COMBO.test(marketName)) return null;
 
   if (H2H_NAMES.has(marketName)) {
@@ -320,12 +366,14 @@ export async function settleMatch(matchId, homeScore, awayScore, { force = false
     let autoSettledCount = 0;
     let leftPendingCount = 0;
 
+    const stats = legs.some(legNeedsStats) ? await loadMatchStats(client, matchId) : undefined;
+
     await client.query('BEGIN');
     try {
       for (const leg of legs) {
         affectedBetIds.add(leg.bet_id);
         const outcome = determineLegOutcome(leg, {
-          winner, totalGoals, bothScored, homeScore, awayScore,
+          winner, totalGoals, bothScored, homeScore, awayScore, stats,
           htHome: match.ht_home == null ? undefined : Number(match.ht_home),
           htAway: match.ht_away == null ? undefined : Number(match.ht_away),
         });
@@ -433,6 +481,10 @@ export async function settleStuckBets() {
 
     const affectedBetIds = new Set(undecided.map((r) => r.id));
     let settledLegs = 0;
+    const statsByMatch = new Map();
+    for (const leg of legs) {
+      if (legNeedsStats(leg) && !statsByMatch.has(leg.match_id)) statsByMatch.set(leg.match_id, await loadMatchStats(client, leg.match_id));
+    }
 
     await client.query('BEGIN');
     try {
@@ -440,6 +492,7 @@ export async function settleStuckBets() {
         const home = Number(leg.result_home);
         const away = Number(leg.result_away);
         const outcome = determineLegOutcome(leg, {
+          stats: statsByMatch.get(leg.match_id),
           winner: home > away ? 'HOME' : away > home ? 'AWAY' : 'DRAW',
           totalGoals: home + away,
           bothScored: home > 0 && away > 0,
