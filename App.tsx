@@ -1,1312 +1,150 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef, startTransition } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, startTransition } from 'react';
 import Navbar from './components/Navbar';
-import MatchRow from './components/MatchCard';
 import MatchDetail from './components/MatchDetail';
-import BetSlip from './components/BetSlip';
 import OwnerDashboard from './components/OwnerDashboard';
 import AgentUsersPanel from './components/AgentUsersPanel';
-import { withBalance } from './utils/withBalance';
 import Login from './components/Login';
 import CasinoHub from './components/CasinoHub';
-import { User, Match, Bet, UserRole, BetSelectionItem, MatchStatus } from './types';
+import BetSlipPanels from './components/sportsbook/BetSlipPanels';
+import SportsbookHome from './components/sportsbook/SportsbookHome';
+import SportsSidebar from './components/sportsbook/SportsSidebar';
+import { MatchRowActions } from './components/sportsbook/types';
+import { User, UserRole } from './types';
 import * as api from './services/api';
-import { albaniaDateKey, albaniaTodayKey, isSameAlbaniaDay } from './utils/albaniaTime';
-import { recentResults, groupResultsByLeague } from './utils/results';
-import { navKey, planNav, type Nav } from './utils/navHistory';
-import { isStaleLiveMatch, MAX_LIVE_AGE_MS, isMessageForMatch, isGhostLiveMatch } from './utils/liveStatus';
-import * as leagueGrouping from './utils/leagueGrouping';
-import FeaturedMatchCard from './components/FeaturedMatchCard';
-import LoadMoreSentinel from './components/LoadMoreSentinel';
-import { useI18n } from './i18n';
+import { withBalance } from './utils/withBalance';
+import { ALL_LEAGUES } from './utils/leagueFilters';
+import { useAuth } from './hooks/useAuth';
+import { useFavorites } from './hooks/useFavorites';
+import { useMatchesFeed } from './hooks/useMatchesFeed';
+import { useMatchDetail } from './hooks/useMatchDetail';
+import { useLiveSocket } from './hooks/useLiveSocket';
+import { useScreenNav } from './hooks/useScreenNav';
+import { useSportsbookViews } from './hooks/useSportsbookViews';
+import { useBetSlip } from './hooks/useBetSlip';
+import { useMyBets } from './hooks/useMyBets';
+import { useAdminActions } from './hooks/useAdminActions';
+import { useDismissOnOutsideClick } from './hooks/useDismissOnOutsideClick';
 
-const SQ_DAY_NAMES = ['Die', 'Hën', 'Mar', 'Mër', 'Enj', 'Pre', 'Sht'];
-const SQ_MONTH_NAMES = ['Jan', 'Shk', 'Mar', 'Pri', 'Maj', 'Qer', 'Kor', 'Gus', 'Sht', 'Tet', 'Nën', 'Dhj'];
-// "Die 5 Jan" in Albanian; in English the weekday/month come from Intl (the
-// Albanian arrays can't be run through t(): 'Mar' is both a day and a month).
-const formatDayLabel = (d: Date, lang: string): string => {
-  if (lang === 'en') {
-    const wd = new Intl.DateTimeFormat('en-GB', { weekday: 'short' }).format(d);
-    const mo = new Intl.DateTimeFormat('en-GB', { month: 'short' }).format(d);
-    return `${wd} ${d.getDate()} ${mo}`;
-  }
-  return `${SQ_DAY_NAMES[d.getDay()]} ${d.getDate()} ${SQ_MONTH_NAMES[d.getMonth()]}`;
-};
+const ROW_SLICE = 60; // match rows drawn per step of the "load more" list
 
+const FullScreenSpinner: React.FC = () => (
+  <div className="min-h-screen bg-brand-bg flex items-center justify-center">
+    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-brand-yellow"></div>
+  </div>
+);
+
+/**
+ * App shell: decides what to show (login, owner dashboard, or the sportsbook/casino) and wires the
+ * hooks together. The state and behaviour live in hooks/, the screens in components/.
+ */
 const App: React.FC = () => {
-  const { t, lang } = useI18n();
-  // --- Auth State ---
-  // Same idea as the matches cache below: seed from the last known user so
-  // a refresh shows the app instantly instead of a full-screen spinner
-  // gating EVERYTHING (including already-cached matches) behind a fresh
-  // network round-trip to /auth/me. The real verification still runs in
-  // the effect below and will log the person out if the token turns out
-  // to be expired/invalid — this only skips the WAIT when we already have
-  // a very-likely-valid session.
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    try { return JSON.parse(localStorage.getItem('cachedUser') || 'null'); } catch { return null; }
-  });
-  const [authChecked, setAuthChecked] = useState(() => {
-    try { return !!api.getToken() && !!localStorage.getItem('cachedUser'); } catch { return false; }
-  });
-
-  // --- Data State (from backend; matches/leagueNames seed from a
-  // localStorage snapshot of the last successful fetch so returning
-  // users see their matches instantly instead of the loading spinner
-  // — the background refresh below then replaces this with live data) ---
-  const [allMatches, setMatches] = useState<Match[]>(() => {
-    try { return (JSON.parse(localStorage.getItem('cachedMatches') || '[]') as Match[]).filter((m) => !isStaleLiveMatch(m)); } catch { return []; }
-  });
-  // What every list/section shows: LIVE rows without a real provider clock are hidden (see
-  // isGhostLiveMatch). Derived, so a hidden row appears the moment a live tick brings its clock.
-  const matches = useMemo(() => allMatches.filter((m) => !isGhostLiveMatch(m)), [allMatches]);
-  // League key -> the name EXACTLY as LondonPro365's own API returns it
-  // (untouched — no re-slugging/re-titlecasing). Populated from every
-  // /matches response; leagueLabel() below prefers this over any derived
-  // fallback.
-  const [leagueNames, setLeagueNames] = useState<Record<string, string>>(() => {
-    try { return JSON.parse(localStorage.getItem('cachedLeagueNames') || '{}'); } catch { return {}; }
-  });
-  // Same idea as leagueNames, but carrying the provider's real numeric
-  // league/country IDs alongside the name -- kept as its own cached state
-  // (not merged into leagueNames) so existing code that reads leagueNames
-  // as Record<string,string> is untouched. Not yet driving any filtering
-  // UI itself; this is the data layer other features (admin lookups,
-  // exact-ID filtering) can build on without another round-trip.
-  const [leagueMeta, setLeagueMeta] = useState<Record<string, api.LeagueMeta>>(() => {
-    try { return JSON.parse(localStorage.getItem('cachedLeagueMeta') || '{}'); } catch { return {}; }
-  });
-  const [myBets, setMyBets] = useState<Bet[]>([]);
-  const [adminUsers, setAdminUsers] = useState<User[]>([]);
-  const [adminAllBets, setAdminAllBets] = useState<any[]>([]);
-  const [favorites, setFavorites] = useState<api.Favorite[]>([]);
-
-  // --- UI State ---
-  const [simulatingMatchId, setSimulatingMatchId] = useState<string | null>(null);
-  const [showAdmin, setShowAdmin] = useState(false);
-  // Home stays light and shows ONLY upcoming matches — live matches are
-  // fetched/rendered only once the person actively presses "Live", not
-  // mixed into the home feed by default.
-  const [showLiveOnly, setShowLiveOnly] = useState(false);
-  // "Rezultate": finished matches of the last 48 hours.
-  const [showResults, setShowResults] = useState(false);
-  const [detailMatchId, setDetailMatchId] = useState<string | null>(null);
-  // GET /api/matches (the list) now only returns the 1X2/"h2h" market per
-  // match to keep that payload small/fast (see server/routes/matches.js).
-  // Opening a match's detail view needs ALL of its markets, so this holds
-  // the one full match object fetched on demand via GET /api/matches/:id
-  // (which is unchanged and still returns everything) when detailMatchId
-  // is set. Kept separate from `matches` so the list's live score/status
-  // WebSocket patches (below) keep working exactly as before.
-  const [detailMatchFull, setDetailMatchFull] = useState<Match | null>(null);
-  // Persisted like `matches`/`leagueNames` above: without this, every page
-  // refresh reset the view to 'All Top Football' even though the cached
-  // matches were already there, so the league someone actually wanted only
-  // appeared after they clicked it again by hand.
-  const [currentLeague, setCurrentLeagueState] = useState(() => {
-    try { return localStorage.getItem('currentLeague') || 'All Top Football'; } catch { return 'All Top Football'; }
-  });
-  const setCurrentLeague = useCallback((league: string) => {
-    setCurrentLeagueState(league);
-    try { localStorage.setItem('currentLeague', league); } catch {}
-  }, []);
-  const [selectedDate, setSelectedDate] = useState('ALL'); // 'ALL' or 'YYYY-MM-DD' (local date)
-  // Which top tab ("Home" / "Soccer") was chosen last; "Live In-Play" is showLiveOnly.
-  const [navTab, setNavTab] = useState<'home' | 'soccer'>('home');
-  // The full football list is drawn in slices (rows, not countries) so that switching
-  // views never builds hundreds of match rows in one go.
-  const ROW_SLICE = 60;
-  const [rowBudget, setRowBudget] = useState(ROW_SLICE);
-  const [isLoading, setIsLoading] = useState(false);
-  // Tracks whether we've EVER successfully loaded matches, across the whole
-  // component lifetime — not derived from the current matches array. Using
-  // matches.length===0 as the "first load" signal meant a single empty/slow
-  // background refresh (a transient backend hiccup, a purge job momentarily
-  // clearing rows) got misread as "first load" and re-showed the full-screen
-  // spinner, wiping out matches that were already visible on screen. This
-  // ref makes "have we loaded before" independent of what the last fetch
-  // happened to return.
-  const hasLoadedMatchesOnceRef = useRef(matches.length > 0);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  // Auto-retry with backoff after a failed loadMatches -- without this, a
-  // failure just sits there until the next scheduled poll (every 5 min,
-  // see below) or the person notices and taps "Provo Përsëri" themselves.
-  // A transient backend blip (a crash-restart cycle, a DB timeout cascade)
-  // should heal itself in seconds, not minutes, with nobody watching.
-  const retryAttemptRef = useRef(0);
-  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { currentUser, setCurrentUser, authChecked } = useAuth();
   const [currentView, setCurrentView] = useState<'sports' | 'casino'>('sports');
+  const [showAdmin, setShowAdmin] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [searchHistory, setSearchHistory] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem('searchHistory') || '[]'); } catch { return []; }
-  });
-  const [isMobileSlipOpen, setIsMobileSlipOpen] = useState(false);
-  const [isLeagueMenuOpen, setIsLeagueMenuOpen] = useState(false);
-  const [selections, setSelections] = useState<BetSelectionItem[]>([]);
-  const [betError, setBetError] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState('ALL'); // 'ALL' or 'YYYY-MM-DD' (Albania's calendar)
+  const [navTab, setNavTab] = useState<'home' | 'soccer'>('home'); // which top tab was chosen last
+  const [rowBudget, setRowBudget] = useState(ROW_SLICE);
 
-  // --- Restore session on load (JWT in localStorage, verified against backend) ---
-  useEffect(() => {
-    (async () => {
-      const user = await api.fetchCurrentUser();
-      setCurrentUser(user);
-      setAuthChecked(true);
-    })();
-  }, []);
+  const nav = useScreenNav();
+  const sportsEnabled = !!currentUser && currentView === 'sports';
 
-  // Keep the optimistic cache above in sync with whatever currentUser
-  // actually is (login, logout, balance updates, or the background
-  // verification above correcting/clearing a stale session).
-  useEffect(() => {
-    try {
-      if (currentUser) localStorage.setItem('cachedUser', JSON.stringify(currentUser));
-      else localStorage.removeItem('cachedUser');
-    } catch {}
-  }, [currentUser]);
+  const feed = useMatchesFeed(sportsEnabled, currentUser?.id ?? null);
+  const { detailMatch, setDetailMatchFull } = useMatchDetail(nav.detailMatchId, feed.matches);
+  useLiveSocket({ enabled: sportsEnabled, setMatches: feed.setMatches, setDetailMatchFull, reloadMatches: feed.loadMatches });
 
-  useEffect(() => {
-    if (!currentUser) { setFavorites([]); return; }
-    (async () => {
-      try {
-        const { favorites: f } = await api.getFavorites();
-        setFavorites(f);
-      } catch (e) {
-        console.error('Failed to load favorites', e);
-      }
-    })();
-  }, [currentUser]);
+  const { favoriteTeams, favoriteLeagues, toggleFavorite } = useFavorites(currentUser);
+  const { myBets, loadMyBets, reset: resetMyBets } = useMyBets(currentUser);
 
-  const favoriteTeams = useMemo(() => new Set(favorites.filter(f => f.type === 'TEAM').map(f => f.value)), [favorites]);
-  const favoriteLeagues = useMemo(() => new Set(favorites.filter(f => f.type === 'LEAGUE').map(f => f.value)), [favorites]);
-
-  const toggleFavorite = useCallback(async (type: 'TEAM' | 'LEAGUE', value: string) => {
-    // Optimistic: flip the star and update the count immediately on click —
-    // don't make the user wait a full round-trip to see it react. Reconcile
-    // with the server's response right after, and roll back to the exact
-    // previous state if the request fails, instead of leaving the UI out of
-    // sync with a silent console.error as the only trace.
-    let previous: api.Favorite[] = [];
-    setFavorites((current) => {
-      previous = current;
-      const alreadyFavorited = current.some((f) => f.type === type && f.value === value);
-      return alreadyFavorited
-        ? current.filter((f) => !(f.type === type && f.value === value))
-        : [...current, { type, value }];
-    });
-    try {
-      const { favorites: f } = await api.toggleFavorite(type, value);
-      setFavorites(f);
-    } catch (e) {
-      console.error('Failed to toggle favorite', e);
-      setFavorites(previous);
-    }
-  }, []);
-
-  // --- Load matches from the real backend ---
-  // Fetch the FULL set (no league filter) so the LIVE section can show live
-  // matches from any league, and the league sidebar has the complete list.
-  // All filtering (live / league / search) happens client-side below.
-  const loadMatches = useCallback(async () => {
-    if (!currentUser || currentView !== 'sports') return;
-    setIsLoading((prev) => (hasLoadedMatchesOnceRef.current ? prev : true));
-    try {
-      const { matches: freshAll, leagueNames: freshLeagueNames, leagueMeta: freshLeagueMeta } = await api.fetchMatches();
-      // Drop matches the feed abandoned (still "LIVE" hours after kickoff) so they never sit in the lists.
-      const fresh = freshAll.filter((m) => !isStaleLiveMatch(m));
-      setMatches(fresh);
-      try { localStorage.setItem('cachedMatches', JSON.stringify(fresh)); } catch {}
-      if (freshLeagueNames) {
-        setLeagueNames((prev) => {
-          const next = { ...prev, ...freshLeagueNames };
-          try { localStorage.setItem('cachedLeagueNames', JSON.stringify(next)); } catch {}
-          return next;
-        });
-      }
-      if (freshLeagueMeta) {
-        setLeagueMeta((prev) => {
-          const next = { ...prev, ...freshLeagueMeta };
-          try { localStorage.setItem('cachedLeagueMeta', JSON.stringify(next)); } catch {}
-          return next;
-        });
-      }
-      setLoadError(null);
-      hasLoadedMatchesOnceRef.current = true;
-      retryAttemptRef.current = 0;
-      if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
-    } catch (e) {
-      console.error('Failed to load matches', e);
-      // Stored as the Albanian source text and translated where it is rendered (t(loadError)), so it follows the language switch.
-      setLoadError('S\'arritëm të lidhemi me serverin. Kontrollo internetin dhe provo përsëri.');
-      // Backoff: 10s, 20s, 40s, capped at 60s -- fast enough to ride out a
-      // crash-restart cycle or a DB timeout cascade unattended, capped so
-      // a genuinely long outage doesn't hammer the server every few
-      // seconds forever.
-      const attempt = retryAttemptRef.current;
-      const delayMs = Math.min(10000 * 2 ** attempt, 60000);
-      retryAttemptRef.current = attempt + 1;
-      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-      retryTimerRef.current = setTimeout(() => { loadMatchesRef.current(); }, delayMs);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentUser, currentView]);
-
-  // The retry timeout above schedules a call to the NEXT loadMatches it
-  // gets (via this ref) rather than closing over the one from this render,
-  // since useCallback's identity can change between when the timer is set
-  // and when it fires.
-  const loadMatchesRef = useRef(loadMatches);
-  useEffect(() => { loadMatchesRef.current = loadMatches; }, [loadMatches]);
-
-  useEffect(() => {
-    return () => { if (retryTimerRef.current) clearTimeout(retryTimerRef.current); };
-  }, []);
-
-
-  useEffect(() => {
-    loadMatches();
-    // Was 60s. WebSocket (below) already pushes odds/score/live-tick
-    // updates in real time, so this REST re-fetch of the *entire* matches
-    // list is now only a slow safety net for the rare missed/dropped
-    // socket message — not the primary update path. Every client re-
-    // downloading the full match list every 60s was the single biggest
-    // driver of Render's 5GB/month bandwidth cap, multiplied by however
-    // many people had the page open.
-    const interval = setInterval(loadMatches, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, currentView]);
-
-  // Applies an ODDS_CHANGED payload's per-selection price updates to one
-  // match's markets array, returning the SAME array reference if nothing
-  // in it was actually touched (so callers can skip re-rendering that
-  // match). Shared by the list (`matches`, h2h-only) and, below, whichever
-  // match's full markets are currently loaded for the open detail view —
-  // both need the identical patch, just against different state.
-  const patchMarketsOdds = useCallback((markets: Match['markets'], changes: { marketId: string; selectionId: string; newOdds?: number }[]) => {
-    let touched = false;
-    const next = markets.map((mk) => {
-      const relevant = changes.filter((c) => c.marketId === mk.id);
-      if (!relevant.length) return mk;
-      let mkTouched = false;
-      const options = mk.options.map((opt) => {
-        const c = relevant.find((c) => c.selectionId === opt.id);
-        if (!c || typeof c.newOdds !== 'number') return opt;
-        mkTouched = true;
-        return { ...opt, odds: c.newOdds };
-      });
-      if (mkTouched) touched = true;
-      return mkTouched ? { ...mk, options } : mk;
-    });
-    return touched ? next : markets;
-  }, []);
-
-  // --- Real-time source events (WebSocket) ---
-  // Auto-reconnects with exponential backoff on drop instead of going
-  // permanently silent — the 30s poll above is only a slow fallback, not
-  // a substitute for live updates.
-  useEffect(() => {
-    if (!currentUser || currentView !== 'sports') return;
-    let socket: WebSocket | null = null;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    let attempt = 0;
-    let cancelled = false;
-
-    // LIVE_TICKs are buffered and applied in ONE setMatches per 250ms. With ~80 live
-    // matches each ticking, applying every message separately re-mapped the whole
-    // match list dozens of times a second (UI stalls, the list "waiting"). The
-    // buffer keeps only the newest value per field per match, so nothing is lost.
-    type TickAcc = { homeScore?: number; awayScore?: number; minute?: string; minuteUpdatedAt?: number; action?: Match['liveAction']; hasAction?: boolean; liveStatus?: string };
-    const tickBuffer = new Map<string, TickAcc>();
-    let tickTimer: ReturnType<typeof setTimeout> | null = null;
-    const flushTicks = () => {
-      if (tickTimer) { clearTimeout(tickTimer); tickTimer = null; }
-      if (tickBuffer.size === 0) return;
-      const batch = new Map(tickBuffer);
-      tickBuffer.clear();
-      setMatches((current) => current.map((m) => {
-        const t = batch.get(m.id) ?? (m.liveSourceId ? batch.get(m.liveSourceId) : undefined);
-        if (!t) return m;
-        return {
-          ...m,
-          liveHomeScore: t.homeScore ?? m.liveHomeScore,
-          liveAwayScore: t.awayScore ?? m.liveAwayScore,
-          currentMinute: t.minute ?? m.currentMinute,
-          currentMinuteUpdatedAt: t.minute != null ? (t.minuteUpdatedAt ?? Date.now()) : m.currentMinuteUpdatedAt,
-          liveAction: t.hasAction ? t.action : m.liveAction,
-          // HT / 1H / 2H from the socket tick: the clock stops at half time and runs
-          // again the moment the second half starts, without waiting for the list refresh.
-          liveStatus: t.liveStatus !== undefined ? t.liveStatus : m.liveStatus,
-        };
-      }));
-    };
-
-    // Folds one tick into the buffer (newest value per field per match wins).
-    const queueTick = (msg: any) => {
-      const acc = tickBuffer.get(msg.matchId) || {};
-      if (msg.homeScore != null) acc.homeScore = msg.homeScore;
-      if (msg.awayScore != null) acc.awayScore = msg.awayScore;
-      if (msg.minute != null) { acc.minute = msg.minute; acc.minuteUpdatedAt = msg.minuteUpdatedAt ?? Date.now(); }
-      if (msg.action !== undefined) { acc.action = msg.action; acc.hasAction = true; }
-      if (msg.liveStatus !== undefined) acc.liveStatus = msg.liveStatus;
-      tickBuffer.set(msg.matchId, acc);
-      if (!tickTimer) tickTimer = setTimeout(flushTicks, 250);
-    };
-
-    const connect = () => {
-      socket = new WebSocket(api.getWsUrl());
-      socket.onopen = () => {
-        attempt = 0;
-        const token = api.getToken();
-        if (token) socket!.send(JSON.stringify({ type: 'auth', token }));
-        socket!.send(JSON.stringify({ type: 'subscribe', topic: 'live' }));
-        socket!.send(JSON.stringify({ type: 'subscribe', topic: 'odds' }));
-      };
-      socket.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          // One frame carrying the newest tick of many matches (server-side coalescing).
-          if (msg.type === 'LIVE_TICKS' && Array.isArray(msg.ticks)) {
-            for (const t of msg.ticks) if (t && t.matchId) queueTick(t);
-            return;
-          }
-          if (!msg.matchId) return;
-          // Buffered ticks are older than this message: apply them first so a stale
-          // tick can never overwrite what this message is about to set.
-          if (msg.type !== 'LIVE_TICK') flushTicks();
-          if (msg.type === 'GOAL') {
-            setMatches((current) => current.map((m) => isMessageForMatch(m, msg.matchId) ? {
-              ...m,
-              status: MatchStatus.LIVE,
-              isLive: true,
-              liveHomeScore: msg.homeScore ?? m.liveHomeScore,
-              liveAwayScore: msg.awayScore ?? m.liveAwayScore,
-              currentMinute: msg.minute ?? m.currentMinute,
-              currentMinuteUpdatedAt: msg.minute != null ? (msg.minuteUpdatedAt ?? Date.now()) : m.currentMinuteUpdatedAt,
-            } : m));
-          } else if (msg.type === 'GOAL_DISALLOWED') {
-            // A goal that was already shown got retracted (VAR overturn /
-            // provider correction) — apply the corrected (lower) score the
-            // same way GOAL applies a new one, just without implying anyone
-            // scored. Without this, the frontend had no way to walk a goal
-            // back at all: the old code treated every score change as a new
-            // goal, so a disallowed goal showed up as a fabricated goal for
-            // the WRONG team (see server/london365.js recordGoalIfChanged).
-            setMatches((current) => current.map((m) => isMessageForMatch(m, msg.matchId) ? {
-              ...m,
-              liveHomeScore: msg.homeScore ?? m.liveHomeScore,
-              liveAwayScore: msg.awayScore ?? m.liveAwayScore,
-              currentMinute: msg.minute ?? m.currentMinute,
-              currentMinuteUpdatedAt: msg.minute != null ? (msg.minuteUpdatedAt ?? Date.now()) : m.currentMinuteUpdatedAt,
-            } : m));
-          } else if (msg.type === 'LIVE_TICK') {
-            queueTick(msg);
-          } else if (msg.type === 'CARD') {
-            // A card changes nothing the LIST carries (score, minute, h2h
-            // odds), so re-downloading and re-computing the whole /api/matches
-            // list -- for every connected client, on every card in every
-            // live match -- only defeated the server's 8s response cache and
-            // hit the database. The open match detail view still refreshes
-            // its own events on CARD (see MatchDetail.tsx).
-          } else if (msg.type === 'LIVE_EVENT') {
-            loadMatches();
-          } else if (msg.type === 'MATCH_STARTED') {
-            setMatches((current) => current.map((m) => isMessageForMatch(m, msg.matchId) ? { ...m, status: MatchStatus.LIVE, isLive: true } : m));
-            loadMatches();
-          } else if (msg.type === 'MATCH_ENDED') {
-            // Without this, a match that just finished stayed in the "Live"
-            // list — frozen at its last score — until the next slow REST
-            // poll (widened to 5 min for bandwidth) caught up. Apply the
-            // final score and flip status immediately so it drops out of
-            // any Live-only view right away instead of minutes later.
-            setMatches((current) => current.map((m) => isMessageForMatch(m, msg.matchId) ? {
-              ...m,
-              status: MatchStatus.FINISHED,
-              isLive: false,
-              liveHomeScore: msg.homeScore ?? m.liveHomeScore,
-              liveAwayScore: msg.awayScore ?? m.liveAwayScore,
-            } : m));
-          } else if (msg.type === 'ODDS_CHANGED') {
-            // Was calling loadMatches() here -- a FULL /api/matches reload
-            // on every single price move, anywhere in the whole list. Odds
-            // move constantly (many matches, many markets, every few
-            // seconds), so this was firing very often, and worse: a fresh
-            // JSON response replaces EVERY match object with a new
-            // reference, defeating React.memo on MatchRow for the ENTIRE
-            // list (not just the one match whose price moved) — every row
-            // re-rendered on every price tick anywhere. On a phone with a
-            // long visible list this is exactly the kind of thing that
-            // shows up as scroll jank / the whole screen feeling laggy.
-            // msg.changes carries {marketId, selectionId, newOdds} per
-            // outcome that actually moved (see diffOddsChanges), and those
-            // ids are built the identical way on both sides
-            // (`${matchId}-${marketKey}` / outcomeId) — so we can patch
-            // just the affected option's price in place instead.
-            const changes: { marketId: string; selectionId: string; newOdds?: number }[] = Array.isArray(msg.changes) ? msg.changes : [];
-            if (changes.length) {
-              setMatches((current) => current.map((m) => {
-                if (m.id !== msg.matchId) return m;
-                const markets = patchMarketsOdds(m.markets, changes);
-                return markets === m.markets ? m : { ...m, markets };
-              }));
-              // The list above only ever carries the h2h market, so this
-              // patch will only actually change something there when the
-              // move was in h2h. Mirror the same patch onto the full
-              // markets fetched for whichever match's detail view is
-              // currently open (see detailMatchFull above) so odds moving
-              // in OTHER markets (correct score, handicaps, etc.) still
-              // update live while someone's looking at that match, exactly
-              // like before this match's full markets lived in `matches`.
-              setDetailMatchFull((current) => {
-                if (!current || current.id !== msg.matchId) return current;
-                const markets = patchMarketsOdds(current.markets, changes);
-                return markets === current.markets ? current : { ...current, markets };
-              });
-            }
-          }
-        } catch { /* ignore malformed socket messages */ }
-      };
-      socket.onclose = () => {
-        if (cancelled) return;
-        // Exponential backoff: 1s, 2s, 4s, 8s... capped at 30s.
-        const delay = Math.min(30000, 1000 * 2 ** attempt);
-        attempt += 1;
-        retryTimer = setTimeout(connect, delay);
-      };
-      socket.onerror = () => socket?.close();
-    };
-
-    connect();
-    return () => {
-      cancelled = true;
-      if (retryTimer) clearTimeout(retryTimer);
-      if (tickTimer) clearTimeout(tickTimer);
-      socket?.close();
-    };
-  }, [currentUser, currentView, loadMatches]);
-
-  // --- Load my bets ---
-  const loadMyBets = useCallback(async () => {
-    if (!currentUser) return;
-    try {
-      const bets = await api.fetchMyBets();
-      setMyBets(bets);
-    } catch (e) {
-      console.error('Failed to load bets', e);
-    }
-  }, [currentUser]);
-
-  useEffect(() => { loadMyBets(); }, [loadMyBets]);
-
-  // --- Load admin data when panel is open ---
-  const loadAdminData = useCallback(async () => {
-    if (!currentUser || currentUser.role !== UserRole.ADMIN) return;
-    try {
-      const [users, bets] = await Promise.all([api.adminFetchUsers(), api.adminFetchAllBets()]);
-      setAdminUsers(users);
-      setAdminAllBets(bets);
-    } catch (e) {
-      console.error('Failed to load admin data', e);
-    }
-  }, [currentUser]);
-
-  // Owner/Admin data loads as soon as they log in (not gated on the old
-  // showAdmin overlay toggle anymore) so the new standalone OwnerDashboard
-  // page below has data immediately, with no play-first flash.
-  useEffect(() => { if (showAdmin || currentUser?.role === UserRole.ADMIN) loadAdminData(); }, [showAdmin, currentUser, loadAdminData]);
-
-  // Admin Panel: close on click-outside. adminPanelRef wraps only the
-  // <main> content area where AdminPanel renders, so a click on the Admin
-  // button itself, the navbar, or the sidebars doesn't get double-handled —
-  // it's excluded via the ref check plus a dedicated data attribute on the
-  // Admin toggle button (which has its own onClick that would otherwise
-  // immediately reopen what this just closed).
-  const adminPanelRef = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    if (!showAdmin) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (adminPanelRef.current && !adminPanelRef.current.contains(target) && !target.closest('[data-admin-toggle]')) {
-        setShowAdmin(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showAdmin]);
-
-  // --- Date picker helpers (bet365-style: Sot / Nesër / next few days) ---
-  // Always compare using Albania's calendar date (Europe/Tirane), not the
-  // visitor's device timezone, so "today" is correct for the target audience.
-  const dateOptions = useMemo(() => {
-    const opts: { value: string; label: string }[] = [{ value: 'ALL', label: t('Të gjitha') }];
-    for (let i = 0; i < 7; i++) {
-      const value = albaniaTodayKey(i);
-      const d = new Date(value + 'T12:00:00'); // noon avoids any DST-edge day-shift when re-deriving weekday/day/month
-      const label = i === 0 ? t('Sot') : i === 1 ? t('Nesër') : formatDayLabel(d, lang);
-      opts.push({ value, label });
-    }
-    return opts;
-  }, [t, lang]);
-
-  // Etiketa e një date-kalendarike (YYYY-MM-DD, sipas kohës së Shqipërisë)
-  // e përdorur si ndarës brenda çdo lige, kështu që kur një ligë nuk ka
-  // ndeshje sot, ndeshjet e ditëve të tjera shfaqen me datën e tyre.
-  const dateKeyLabel = (key: string): string => {
-    if (key === albaniaTodayKey(0)) return t('Sot');
-    if (key === albaniaTodayKey(1)) return t('Nesër');
-    const d = new Date(key + 'T12:00:00');
-    if (Number.isNaN(d.getTime())) return key;
-    return formatDayLabel(d, lang);
-  };
-  const groupMatchesByDate = (list: Match[]): [string, Match[]][] => {
-    const byDate = new Map<string, Match[]>();
-    for (const m of list) {
-      const key = albaniaDateKey(m.startTime);
-      if (!byDate.has(key)) byDate.set(key, []);
-      byDate.get(key)!.push(m);
-    }
-    return Array.from(byDate.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  };
-
-  // --- Filtering ---
-  // Search applies everywhere. LIVE is always its own section at the top
-  // (like a real bookmaker site), not a toggle that hides everything else.
-  const searchFiltered = matches.filter((m) => {
-    const q = searchQuery.toLowerCase();
-    return m.homeTeam.toLowerCase().includes(q) || m.awayTeam.toLowerCase().includes(q) || m.league.toLowerCase().includes(q);
+  const slip = useBetSlip({
+    currentUser,
+    setCurrentUser,
+    onPlaced: useCallback(async () => { nav.setIsMobileSlipOpen(false); await loadMyBets(); }, [nav.setIsMobileSlipOpen, loadMyBets]),
   });
 
-  const commitSearchHistory = useCallback((term: string) => {
-    const trimmed = term.trim();
-    if (!trimmed) return;
-    setSearchHistory((prev) => {
-      const next = [trimmed, ...prev.filter((t) => t.toLowerCase() !== trimmed.toLowerCase())].slice(0, 8);
-      try { localStorage.setItem('searchHistory', JSON.stringify(next)); } catch {}
-      return next;
-    });
-  }, []);
+  const applyBalance = useCallback((balance: number) => setCurrentUser((u) => withBalance(u, balance)), [setCurrentUser]);
+  const admin = useAdminActions({
+    currentUser,
+    setCurrentUser,
+    panelOpen: showAdmin,
+    reloadMatches: feed.loadMatches,
+    reloadMyBets: loadMyBets,
+    applyBalance,
+  });
 
-  const STALE_LIVE_MS = MAX_LIVE_AGE_MS; // same limit as the server: a match still "LIVE" this long after kickoff is stuck
-  const liveMatches = searchFiltered
-    .filter((m) => m.status === MatchStatus.LIVE && (Date.now() - new Date(m.startTime).getTime()) < STALE_LIVE_MS)
-    .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
-  // `upcomingMatches` llogaritet më poshtë (pas leagueCountry/filtrave të
-  // shtetit), sepse filtri i shtetit ka nevojë për leagueCountry() dhe sepse
-  // duhet edhe lista PA filtrin e datës, për fallback-un "nuk ka ndeshje sot".
+  const views = useSportsbookViews({
+    matches: feed.matches,
+    leagueNames: feed.leagueNames,
+    searchQuery,
+    currentLeague: nav.currentLeague,
+    selectedDate,
+    rowBudget,
+    favoriteTeams,
+    favoriteLeagues,
+  });
 
-  // Raw sport_keys (e.g. "soccer_brazil_campeonato") are what we store/compare
-  // internally, but users should see readable names. This maps known keys to
-  // Albanian display labels; anything unmapped falls back to a prettified
-  // version of the key so a new/unexpected league never shows the raw slug.
-  const LEAGUE_LABELS: Record<string, string> = {
-    'soccer_epl': 'Premier League',
-    'soccer_spain_la_liga': 'La Liga',
-    'soccer_italy_serie_a': 'Serie A',
-    'soccer_germany_bundesliga': 'Bundesliga',
-    'soccer_france_ligue_one': 'Ligue 1',
-    'soccer_uefa_champs_league': 'UEFA Champions League',
-    'soccer_uefa_champs_league_qualification': 'UEFA Champions League - Kualifikuese',
-    'soccer_uefa_europa_league': 'UEFA Europa League',
-    'soccer_uefa_europa_conference_league': 'UEFA Conference League',
-    'soccer_fifa_world_cup': 'Kampionati Botëror',
-    'soccer_fifa_world_cup_qualifiers_europe': 'Kualifikueset Botërore - Evropa',
-    'soccer_usa_mls': 'MLS',
-    'soccer_brazil_campeonato': 'Serie A',
-    'oddsapiio_albania_superiore': 'Kategoria Superiore',
-  };
-  const leagueLabel = (key: string) =>
-    key === 'All Top Football'
-      ? 'Të Gjitha Kampionatet'
-      : leagueNames[key] || LEAGUE_LABELS[key] ||
-        // Only reached when we have no raw name for this key at all (e.g. a
-        // league not seen since the last server restart). Strip
-        // "<provider>_<country>__" so the row doesn't redundantly repeat
-        // the country name that's already shown in the group header above it
-        // (e.g. "l365_brazil__amazonense_serie_b" -> "Amazonense Serie B",
-        // not "Brazil Amazonense Serie B").
-        key.replace(/^(soccer|l365)_[a-z0-9-]+__/, '').replace(/^(soccer|l365)_/, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/\b\w/g, (c) => c.toUpperCase());
+  // A new filter starts the list from its first slice again.
+  useEffect(() => { setRowBudget(ROW_SLICE); }, [nav.currentLeague, selectedDate, nav.showLiveOnly, searchQuery]);
 
-  // Display text for a league: leagueLabel() stays the Albanian internal label
-  // (used for ranking/sorting); only what is SHOWN goes through t().
-  const leagueText = (key: string) => t(leagueLabel(key));
-
-  // Within a country, most people only care about the flagship top-flight
-  // league (and, for "Ndërkombëtare", the big UEFA competitions) — everything
-  // else (development leagues, reserve/U19 sides, obscure cups) is noise
-  // they'd rather find themselves by opening the country/league picker. So
-  // the flagship leagues sort first; everything else falls back to
-  // alphabetical, exactly as before.
-  const FLAGSHIP_LEAGUE_NAMES = [
-    'premier league', 'laliga', 'la liga', 'serie a', 'bundesliga', 'ligue 1',
-    'primeira liga', 'eredivisie', 'jupiler pro league', 'super lig',
-    'uefa champions league', 'champions league',
-    'uefa europa league', 'europa league',
-    'uefa europa conference league', 'conference league',
-    'uefa nations league',
-  ];
-  const leagueImportanceRank = (key: string) => {
-    const label = leagueLabel(key).toLowerCase();
-    const idx = FLAGSHIP_LEAGUE_NAMES.findIndex((name) => label === name || label.includes(name));
-    return idx === -1 ? 999 : idx;
-  };
-  const byLeagueImportance = (a: string, b: string) => {
-    const ra = leagueImportanceRank(a), rb = leagueImportanceRank(b);
-    return ra !== rb ? ra - rb : leagueLabel(a).localeCompare(leagueLabel(b));
-  };
-
-  // Autocomplete suggestions — split into teams / leagues / direct match
-  // hits so the dropdown can show each kind separately, instant (no
-  // network call, just filtering data already loaded).
-  const searchSuggestions = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return { teams: [] as string[], leagues: [] as string[], matches: [] as Match[] };
-
-    const teamSet = new Set<string>();
-    matches.forEach((m) => {
-      if (m.homeTeam.toLowerCase().includes(q)) teamSet.add(m.homeTeam);
-      if (m.awayTeam.toLowerCase().includes(q)) teamSet.add(m.awayTeam);
-    });
-    const leagueSet = new Set<string>();
-    matches.forEach((m) => {
-      if (leagueLabel(m.league).toLowerCase().includes(q) || leagueText(m.league).toLowerCase().includes(q)) leagueSet.add(m.league);
-    });
-    const directMatches = matches.filter((m) => m.homeTeam.toLowerCase().includes(q) || m.awayTeam.toLowerCase().includes(q)).slice(0, 5);
-
-    return { teams: Array.from(teamSet).slice(0, 5), leagues: Array.from(leagueSet).slice(0, 5), matches: directMatches };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, matches, t]);
-
-  // Sport keys generally follow "<provider>_<country>_<league>" (e.g.
-  // "soccer_spain_la_liga"). We use that country token to group leagues by
-  // country in the sidebar, so browsing e.g. Spain shows only Spain's
-  // leagues underneath it — with continental/international competitions
-  // (Champions League, Europa League, World Cup, qualifiers, etc.) pulled
-  // into their own "Ndërkombëtare" group instead of being mixed into
-  // whichever country happens to sort next to them.
-  // League/country grouping (pure logic) now lives in utils/leagueGrouping.ts
-  // -- see that file for why it was extracted. Re-bound to the same local
-  // names so nothing below this point needs to change.
-  const { leagueCountry, countryFlag } = leagueGrouping;
-
-  // Filtri "shtet": kur shtypet Spanja, currentLeague bëhet "COUNTRY:Spanja"
-  // dhe faqja shfaq TË GJITHA ligat e Spanjës (të grupuara ligë-për-ligë),
-  // në vend që të kërkohet të zgjedhet një ligë e vetme.
-  const COUNTRY_FILTER_PREFIX = 'COUNTRY:';
-  const countryFilterKey = (country: string) => `${COUNTRY_FILTER_PREFIX}${country}`;
-  const isCountryFilter = (key: string) => key.startsWith(COUNTRY_FILTER_PREFIX);
-  const countryFromFilter = (key: string) => key.slice(COUNTRY_FILTER_PREFIX.length);
-
-  // Ndeshjet e ardhshme, brenda zgjedhjes aktuale (të gjitha / të
-  // preferuarat / shtet / ligë), PA filtrin e datës. LIVE përfshihet VETËM
-  // kur ka një filtër specifik vendi/lige (jo te "Të gjitha" e përgjithshme,
-  // e as te "Favoritet") — sepse "Të gjitha" këtu do të thotë "të gjitha ato
-  // që do të vijnë", ndërsa live ka tab-in e vet ("Live In-Play"). Por nëse
-  // hap Francën ndërkohë që PSG-Monaco është live, s'ka kuptim ta fshehim —
-  // ndeshja ekziston, është pjesë e vetë ligës/vendit që zgjodhe.
-  const includeLiveInScope = isCountryFilter(currentLeague) ||
-    (currentLeague !== 'All Top Football' && currentLeague !== 'FAVORITES');
-  const scopedUpcoming = useMemo(() => searchFiltered
-    .filter((m) => m.status === MatchStatus.UPCOMING || (includeLiveInScope && m.status === MatchStatus.LIVE))
-    .filter((m) => {
-      if (currentLeague === 'All Top Football') return true;
-      if (currentLeague === 'FAVORITES') return favoriteTeams.has(m.homeTeam) || favoriteTeams.has(m.awayTeam) || favoriteLeagues.has(m.league);
-      if (isCountryFilter(currentLeague)) return leagueCountry(m.league) === countryFromFilter(currentLeague);
-      return m.league === currentLeague;
-    })
-    // LIVE në krye (siç e bën London365 — ndeshja që po luhet tani është
-    // gjithmonë prioritet), pastaj UPCOMING sipas orarit të fillimit.
-    .sort((a, b) => {
-      if (a.status !== b.status) return a.status === MatchStatus.LIVE ? -1 : 1;
-      return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [matches, searchQuery, currentLeague, favoriteTeams, favoriteLeagues, includeLiveInScope]);
-
-  const dateScopedUpcoming = useMemo(
-    () => scopedUpcoming.filter((m) => selectedDate === 'ALL' || albaniaDateKey(m.startTime) === selectedDate),
-    [scopedUpcoming, selectedDate],
-  );
-
-  // Kur ligë/shteti i zgjedhur nuk ka ndeshje për datën e zgjedhur, por ka
-  // ndeshje në ditët e tjera, shfaqim TË GJITHA ndeshjet e ardhshme me datën
-  // e tyre — në vend që faqja të dalë bosh (p.sh. La Liga pa ndeshje sot).
-  const dateFallbackActive = selectedDate !== 'ALL' && dateScopedUpcoming.length === 0 && scopedUpcoming.length > 0;
-  const upcomingMatches = dateFallbackActive ? scopedUpcoming : dateScopedUpcoming;
-
-  const detailMatchListEntry = matches.find((m) => m.id === detailMatchId);
-  // Base fields (score/status/minute) always come from `matches` so the
-  // usual WebSocket live-update patches above keep applying while the
-  // detail view is open; `markets` is swapped in from the full fetch below
-  // once it lands (until then this still shows the h2h market the list
-  // already had, so the view isn't empty while loading).
-  const detailMatch = detailMatchListEntry
-    ? (detailMatchFull && detailMatchFull.id === detailMatchId
-        ? { ...detailMatchListEntry, markets: detailMatchFull.markets }
-        : detailMatchListEntry)
-    : undefined;
-
-  // Fetch full markets for whichever match is opened. The list only ever
-  // carries the h2h market (see server/routes/matches.js), so opening a
-  // match's detail (all ~100 markets) needs its own request.
-  useEffect(() => {
-    if (!detailMatchId) { setDetailMatchFull(null); return; }
-    let cancelled = false;
-    setDetailMatchFull(null); // don't show the PREVIOUS match's full markets while this one loads
-    api.fetchMatchById(detailMatchId)
-      .then((full) => { if (!cancelled) setDetailMatchFull(full); })
-      .catch((e) => console.error('Failed to load match detail', e));
-    return () => { cancelled = true; };
-  }, [detailMatchId]);
-  // "Ndeshjet Kryesore" -- a quick-glance horizontal strip above the full
-  // grouped list, live matches first then the soonest upcoming ones across
-  // ALL leagues/countries (not scoped to whatever league/country is
-  // currently selected -- this is meant as a homepage highlight reel, same
-  // idea as the reference site's featured row).
-  // Quick "<Country> <League>" row (reference: "England Premier League")
-  // above the general featured strip — whichever league we find that's
-  // Premier League/England; simply omitted if that league isn't currently
-  // populated (season gap, provider hiccup) rather than showing an empty
-  // card row.
-  const topLeagueMatches = useMemo(() => {
-    const key = matches.map((m) => m.league).find((k) => leagueCountry(k) === 'Anglia' && /premier league/i.test(leagueLabel(k)));
-    if (!key) return { key: null as string | null, label: '', list: [] as Match[] };
-    const list = matches
-      .filter((m) => m.league === key && (m.status === MatchStatus.UPCOMING || m.status === MatchStatus.LIVE))
-      .sort((a, b) => {
-        if (a.status !== b.status) return a.status === MatchStatus.LIVE ? -1 : 1;
-        return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
-      })
-      .slice(0, 10);
-    return { key, label: `${leagueCountry(key)} ${leagueLabel(key)}`, list };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [matches]);
-
-  // Upcoming only — LIVE matches used to be mixed in here too, as the very
-  // first row on the homepage, but that row had no clear country/league
-  // grouping (just a mixed horizontal carousel) and duplicated the
-  // dedicated, properly-labeled "Live Tani" section/tab below. LIVE matches
-  // now live ONLY there.
-  const featuredMatches = useMemo(() => matches
-    .filter((m) => m.status === MatchStatus.UPCOMING)
-    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-    .slice(0, 12),
-    [matches]);
-
-  const [isTodaySectionOpen, setIsTodaySectionOpen] = useState(false);
-  const todayMatches = useMemo(
-    () => matches
-      .filter((m) => (m.status === MatchStatus.UPCOMING || m.status === MatchStatus.LIVE) && isSameAlbaniaDay(m.startTime, albaniaTodayKey()))
-      .sort((a, b) => {
-        if (a.status !== b.status) return a.status === MatchStatus.LIVE ? -1 : 1;
-        return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
-      }),
-    [matches],
-  );
-
-  const matchesByCountry = useMemo(() => {
-    const byCountry: Record<string, Record<string, Match[]>> = {};
-    const selectedCountry = isCountryFilter(currentLeague) ? countryFromFilter(currentLeague) : null;
-    for (const match of upcomingMatches) {
-      const country = leagueCountry(match.league);
-      if (selectedCountry && country !== selectedCountry) continue;
-      if (!byCountry[country]) byCountry[country] = {};
-      if (!byCountry[country][match.league]) byCountry[country][match.league] = [];
-      byCountry[country][match.league].push(match);
-    }
-    const PRIORITY_COUNTRIES = ['Anglia', 'Spanja', 'Italia', 'Gjermania', 'Franca', 'Portugali', 'Holandë', 'Belgjikë'];
-    const countryNames = Object.keys(byCountry).sort((a, b) => {
-      if (a === 'Të tjera') return 1;
-      if (b === 'Të tjera') return -1;
-      if (a === 'Ndërkombëtare') return 1;
-      if (b === 'Ndërkombëtare') return -1;
-      const pa = PRIORITY_COUNTRIES.indexOf(a);
-      const pb = PRIORITY_COUNTRIES.indexOf(b);
-      if (pa !== -1 || pb !== -1) return (pa === -1 ? 999 : pa) - (pb === -1 ? 999 : pb);
-      return a.localeCompare(b);
-    });
-    return countryNames.map((country) => [
-      country,
-      Object.keys(byCountry[country])
-        .sort(byLeagueImportance)
-        .map((league) => [league, byCountry[country][league]] as [string, Match[]]),
-    ] as [string, [string, Match[]][]]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [upcomingMatches, currentLeague]);
-  // Slice of matchesByCountry that is actually drawn (see rowBudget above).
-  const { visibleGroups, hiddenRows } = useMemo(() => {
-    const out: typeof matchesByCountry = [];
-    let rows = 0;
-    let total = 0;
-    for (const g of matchesByCountry) total += g[1].reduce((n, l) => n + l[1].length, 0);
-    for (const g of matchesByCountry) {
-      if (out.length && rows >= rowBudget) break;
-      out.push(g);
-      rows += g[1].reduce((n, l) => n + l[1].length, 0);
-    }
-    return { visibleGroups: out, hiddenRows: Math.max(0, total - rows) };
-  }, [matchesByCountry, rowBudget]);
-  useEffect(() => { setRowBudget(ROW_SLICE); }, [currentLeague, selectedDate, showLiveOnly, searchQuery]);
-
-
-  // Same country -> league grouping as matchesByCountry above, but for the
-  // dedicated "Live Tani" section specifically. Previously that section was
-  // a flat list of MatchRow cards with no visible country/competition
-  // grouping at all -- a person watching several live matches had no way to
-  // tell which league a given row belonged to without opening it. Always
-  // shows every live match (no country/league filter), since the point of
-  // "Live Tani" is to see everything live at once.
-  const liveMatchesByCountry = useMemo(() => {
-    const byCountry: Record<string, Record<string, Match[]>> = {};
-    for (const match of liveMatches) {
-      const country = leagueCountry(match.league);
-      if (!byCountry[country]) byCountry[country] = {};
-      if (!byCountry[country][match.league]) byCountry[country][match.league] = [];
-      byCountry[country][match.league].push(match);
-    }
-    const PRIORITY_COUNTRIES = ['Anglia', 'Spanja', 'Italia', 'Gjermania', 'Franca', 'Portugali', 'Holandë', 'Belgjikë'];
-    const countryNames = Object.keys(byCountry).sort((a, b) => {
-      if (a === 'Të tjera') return 1;
-      if (b === 'Të tjera') return -1;
-      if (a === 'Ndërkombëtare') return 1;
-      if (b === 'Ndërkombëtare') return -1;
-      const pa = PRIORITY_COUNTRIES.indexOf(a);
-      const pb = PRIORITY_COUNTRIES.indexOf(b);
-      if (pa !== -1 || pb !== -1) return (pa === -1 ? 999 : pa) - (pb === -1 ? 999 : pb);
-      return a.localeCompare(b);
-    });
-    return countryNames.map((country) => [
-      country,
-      Object.keys(byCountry[country])
-        .sort(byLeagueImportance)
-        .map((league) => [league, byCountry[country][league]] as [string, Match[]]),
-    ] as [string, [string, Match[]][]]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveMatches]);
-
-  // One section per LEAGUE for "Live Tani" (Champions League, Europa League,
-  // La Liga, ...), each with its own title, instead of country headers with
-  // small league sub-labels. European cups first, then the existing order.
-  const liveLeagueSections = useMemo(() => {
-    const isEuropeanCup = (league: string) => /champions|europa|conference/i.test(leagueLabel(league));
-    return liveMatchesByCountry
-      .flatMap(([country, leagues]) => leagues.map(([league, leagueMatches]) => ({ country, league, matches: leagueMatches })))
-      .sort((a, b) => Number(isEuropeanCup(b.league)) - Number(isEuropeanCup(a.league)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveMatchesByCountry]);
-
-  // Rezultate: finished within 48h, newest first, grouped by league (see utils/results.ts).
-  const resultsList = useMemo(() => recentResults(matches, searchQuery), [matches, searchQuery]);
-  const resultsSections = useMemo(() => groupResultsByLeague(resultsList), [resultsList]);
-  const goResults = () => {
-    setDetailMatchId(null);
-    setShowLiveOnly(false);
-    setCurrentLeague('All Top Football');
-    setShowResults(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-  // Drilling into a league/country leaves the results view.
-  useEffect(() => { if (currentLeague !== 'All Top Football') setShowResults(false); }, [currentLeague]);
-
-  // ---- Phone back button / swipe-back: one browser-history entry per screen (see utils/navHistory).
-  const navStackRef = useRef<Nav[]>([]);
-  const navIdxRef = useRef(0);
-  const currentNav: Nav = { detailMatchId, isMobileSlipOpen, showLiveOnly, showResults, currentLeague };
-  const currentNavRef = useRef(currentNav);
-  currentNavRef.current = currentNav;
-  const currentNavKey = navKey(currentNav);
-  useEffect(() => {
-    navStackRef.current = [currentNavRef.current];
-    navIdxRef.current = 0;
-    // the entry we are on after a reload must describe the (reset) screen, not a stale one
-    window.history.replaceState({ nav: currentNavRef.current, idx: 0 }, '');
-    const onPop = (e: PopStateEvent) => {
-      const idx = typeof e.state?.idx === 'number' ? e.state.idx : 0;
-      const nav: Nav | undefined = navStackRef.current[idx] ?? e.state?.nav;
-      navIdxRef.current = Math.max(0, Math.min(idx, navStackRef.current.length - 1));
-      if (!nav || navKey(nav) === navKey(currentNavRef.current)) return;
-      setDetailMatchId(nav.detailMatchId);
-      setIsMobileSlipOpen(nav.isMobileSlipOpen);
-      setShowLiveOnly(nav.showLiveOnly);
-      setShowResults(nav.showResults);
-      setCurrentLeague(nav.currentLeague);
-    };
-    window.addEventListener('popstate', onPop);
-    return () => window.removeEventListener('popstate', onPop);
-  }, []);
-  useEffect(() => {
-    const plan = planNav(navStackRef.current, navIdxRef.current, currentNavRef.current);
-    if (plan.type === 'none') return;
-    if (plan.type === 'back') { window.history.back(); return; }
-    navStackRef.current = plan.stack;
-    navIdxRef.current = plan.idx;
-    window.history.pushState({ nav: currentNavRef.current, idx: plan.idx }, '');
-  }, [currentNavKey]);
-  // The phone-style "back" used by the on-screen buttons: it walks the same history.
-  const goBackScreen = useCallback(() => {
-    if (navIdxRef.current > 0) window.history.back();
-    else { setDetailMatchId(null); setIsMobileSlipOpen(false); }
-  }, []);
-
-  const dynamicLeagues = useMemo(() => {
-    const fetchedLeagues = Array.from(new Set(matches.map((m) => m.league)));
-    return Array.from(new Set(['All Top Football', ...fetchedLeagues])).sort();
-  }, [matches]);
-
-  const leaguesByCountry = useMemo(() => {
-    const groups: Record<string, string[]> = {};
-    dynamicLeagues.filter((l) => l !== 'All Top Football').forEach((league) => {
-      const country = leagueCountry(league);
-      if (!groups[country]) groups[country] = [];
-      groups[country].push(league);
-    });
-    Object.values(groups).forEach((arr) => arr.sort(byLeagueImportance));
-    // Biggest European leagues first (what most people are looking for),
-    // then every other country alphabetically, then continental/
-    // international competitions (Champions League, World Cup, etc.) at
-    // the very end — they're a different kind of thing than a country.
-    const PRIORITY_COUNTRIES = ['Anglia', 'Spanja', 'Italia', 'Gjermania', 'Franca', 'Portugali', 'Holandë', 'Belgjikë'];
-    const countryNames = Object.keys(groups).sort((a, b) => {
-      if (a === 'Të tjera') return 1;
-      if (b === 'Të tjera') return -1;
-      if (a === 'Ndërkombëtare') return 1;
-      if (b === 'Ndërkombëtare') return -1;
-      const pa = PRIORITY_COUNTRIES.indexOf(a);
-      const pb = PRIORITY_COUNTRIES.indexOf(b);
-      if (pa !== -1 || pb !== -1) return (pa === -1 ? 999 : pa) - (pb === -1 ? 999 : pb);
-      return a.localeCompare(b);
-    });
-    return countryNames.map((name) => [name, groups[name]] as [string, string[]]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dynamicLeagues]);
-
-  // Which country group is expanded in the sidebar. Kept in sync with
-  // whatever league is currently selected (so picking a league from the
-  // mobile chip strip, or resetting via "Home", opens/closes the right
-  // group), while still letting the user freely open other groups to browse.
-  const [expandedCountry, setExpandedCountry] = useState<string | null>(null);
-  useEffect(() => {
-    if (currentLeague === 'All Top Football' || currentLeague === 'FAVORITES') { setExpandedCountry(null); return; }
-    if (isCountryFilter(currentLeague)) { setExpandedCountry(countryFromFilter(currentLeague)); return; }
-    setExpandedCountry(leagueCountry(currentLeague));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentLeague]);
-
-  const uniqueId = (matchId: string, marketId: string, selId: string) => `${matchId}-${marketId}-${selId}`;
-  const selectedIds = useMemo(() => selections.map((s) => uniqueId(s.matchId, s.marketId, s.selectionId)), [selections]);
-
-  // --- Auth handlers ---
-  const handleAuthenticated = (user: User) => setCurrentUser(user);
+  // The agent panel closes on a click outside <main> (the admin toggle button is exempt).
+  const mainRef = useRef<HTMLElement | null>(null);
+  useDismissOnOutsideClick(showAdmin, mainRef, useCallback(() => setShowAdmin(false), []), '[data-admin-toggle]');
 
   const handleLogout = () => {
     api.logout();
     setCurrentUser(null);
-    setSelections([]);
+    slip.reset();
+    resetMyBets();
+    admin.reset();
+    feed.reset();
+    nav.resetForLogout();
     setShowAdmin(false);
-    setDetailMatchId(null);
     setCurrentView('sports');
-    setMatches([]);
-    setMyBets([]);
-    hasLoadedMatchesOnceRef.current = false;
   };
 
-  // --- Admin: user management (all calls hit the real backend now) ---
-  // Admin picks the role at creation time (USER vs AGENT) -- routed to the
-  // matching backend endpoint, since they're separate tables/permissions
-  // server-side, not just a field on one shared insert.
-  const handleCreateUser = async (newUser: { name: string; username: string; password: string; balance: number; role: 'USER' | 'AGENT' }) => {
-    try {
-      const { role, ...rest } = newUser;
-      if (role === 'AGENT') await api.adminCreateAgent(rest);
-      else await api.adminCreateUser(rest);
-      await loadAdminData();
-    } catch (e: any) {
-      alert(e.message || 'Failed to create user');
-    }
-  };
+  const onToggleFavoriteTeam = useCallback((team: string) => toggleFavorite('TEAM', team), [toggleFavorite]);
+  const openMatchById = nav.openMatch;
+  const rowActions: MatchRowActions = useMemo(() => ({
+    onBetClick: slip.toggleSelection,
+    onOpenDetail: (match) => openMatchById(match.id),
+    isAdmin: currentUser?.role === UserRole.ADMIN,
+    onSettleMatch: admin.settleMatch,
+    simulatingMatchId: admin.simulatingMatchId,
+    selectedIds: slip.selectedIds,
+    favoriteTeams,
+    onToggleFavoriteTeam,
+  }), [slip.toggleSelection, slip.selectedIds, openMatchById, currentUser?.role, admin.settleMatch, admin.simulatingMatchId, favoriteTeams, onToggleFavoriteTeam]);
 
-  // Safe delete first (refuses with USER_HAS_HISTORY if the user has bets/
-  // transactions/casino rounds/sub-users). On that specific refusal, offer
-  // the admin a force-delete that wipes everything -- confirmed explicitly
-  // since it's irreversible and destroys financial history.
-  const handleDeleteUser = async (userId: string) => {
-    try {
-      await api.adminDeleteUser(userId);
-      await loadAdminData();
-    } catch (e: any) {
-      if (e?.code === 'USER_HAS_HISTORY') {
-        const confirmed = window.confirm(
-          (e.message || t('Ky user ka histori.')) +
-          '\n\n' + t('A doni ta fshini PLOTËSISHT këtë user, duke përfshirë të gjitha kuponat, transaksionet dhe historikun financiar? Ky veprim s\'kthehet mbrapa.')
-        );
-        if (confirmed) {
-          try {
-            await api.adminForceDeleteUser(userId);
-            await loadAdminData();
-          } catch (e2: any) {
-            alert(e2.message || 'Failed to force-delete user');
-          }
-        }
-        return;
-      }
-      alert(e.message || 'Failed to delete user');
-    }
-  };
+  if (!authChecked) return <FullScreenSpinner />;
+  if (!currentUser) return <Login onAuthenticated={(user: User) => setCurrentUser(user)} />;
 
-  const handleAddCredit = async (userId: string, amount: number) => {
-    try {
-      await api.adminAddCredit(userId, amount);
-      await loadAdminData();
-      if (currentUser?.id === userId) {
-        const refreshed = await api.fetchCurrentUser();
-        setCurrentUser(refreshed);
-      }
-    } catch (e: any) {
-      alert(e.message || 'Failed to add credit');
-    }
-  };
-
-  const handleResetPassword = async (userId: string, newPass: string) => {
-    try {
-      await api.adminResetPassword(userId, newPass);
-      alert('Password updated');
-    } catch (e: any) {
-      alert(e.message || 'Failed to reset password');
-    }
-  };
-
-  // --- Bet slip ---
-  const handleToggleSelection = useCallback((match: Match, marketId: string, selectionId: string, boosted?: boolean) => {
-    if (!currentUser) return;
-    const market = match.markets.find((m) => m.id === marketId);
-    const option = market?.options.find((o) => o.id === selectionId);
-    if (!market || !option) return;
-
-    const uId = uniqueId(match.id, marketId, selectionId);
-    setSelections((prev) => {
-      const exists = prev.some((s) => uniqueId(s.matchId, s.marketId, s.selectionId) === uId);
-      if (exists) return prev.filter((s) => uniqueId(s.matchId, s.marketId, s.selectionId) !== uId);
-      // Selections within the SAME market of the SAME match are mutually
-      // exclusive (e.g. picking "2" after "1" in the 1X2 market must drop
-      // "1" — they can never both win, so keeping both makes no sense).
-      const withoutSameMarket = prev.filter((s) => !(s.matchId === match.id && s.marketId === marketId));
-      return [...withoutSameMarket, {
-        matchId: match.id,
-        matchHome: match.homeTeam,
-        matchAway: match.awayTeam,
-        marketId: market.id,
-        marketName: market.name,
-        selectionId: option.id,
-        selectionName: option.name,
-        odds: boosted ? Number((option.odds * 1.12).toFixed(2)) : option.odds,
-        status: 'PENDING' as any,
-        boosted: !!boosted,
-      }];
-    });
-  }, [currentUser]);
-
-  const handlePlaceBet = useCallback(async (stake: number, type: 'SINGLE' | 'ACCUMULATOR') => {
-    if (!currentUser || selections.length === 0) return;
-    setBetError(null);
-    try {
-      const result = await api.placeBet(stake, type, selections);
-      setCurrentUser((prev) => (prev ? { ...prev, balance: result.balance } : prev));
-      setSelections([]);
-      setIsMobileSlipOpen(false);
-      await loadMyBets();
-    } catch (e: any) {
-      // Odds may have moved since the client last fetched them — the server
-      // re-verifies every price at placement time and rejects stale ones.
-      // ODDS_CHANGED specifically (as opposed to e.g. SELECTION_SUSPENDED or
-      // a plain network error) means the ticket is still placeable, just at
-      // different prices — update the affected selection(s) in place with
-      // previousOdds set, so the slip shows "was X, now Y" and a "Prano
-      // ndryshimet" action, instead of leaving the person to figure out
-      // which leg changed from a generic error string and re-add it by hand.
-      if (e instanceof api.ApiError && e.code === 'ODDS_CHANGED' && Array.isArray(e.body?.changes)) {
-        const changes = e.body.changes as { matchId: string; marketId: string; selectionId: string; newOdds: number }[];
-        setSelections((prev) => prev.map((sel) => {
-          const change = changes.find((c) => c.matchId === sel.matchId && c.marketId === sel.marketId && c.selectionId === sel.selectionId);
-          return change ? { ...sel, previousOdds: sel.odds, odds: change.newOdds } : sel;
-        }));
-        return;
-      }
-      // The market (or whole match) closed between picking and submitting: the
-      // server says exactly which selections are dead -- drop them from the slip
-      // so the person is not stuck resubmitting a ticket that can never be placed.
-      if (e instanceof api.ApiError && (e.code === 'MARKET_CLOSED' || e.code === 'MATCH_FINISHED') && Array.isArray(e.body?.closed)) {
-        const closed = e.body.closed as { matchId: string; marketId: string; selectionId: string }[];
-        setSelections((prev) => prev.filter((sel) => !closed.some((c) => c.matchId === sel.matchId && c.marketId === sel.marketId && c.selectionId === sel.selectionId)));
-      }
-      setBetError(e.message || 'Could not place bet');
-    }
-  }, [currentUser, selections, loadMyBets]);
-
-  const handleCancelBet = useCallback(async (betId: string, origin: 'USER' | 'ADMIN') => {
-    if (origin === 'ADMIN') {
-      if (!window.confirm('Admin delete this bet and adjust balance?')) return;
-      try {
-        await api.adminCancelBet(betId);
-        await loadAdminData();
-      } catch (e: any) {
-        alert(e.message || 'Failed to cancel bet');
-      }
-      return;
-    }
-    // Regular user cancelling their own still-pending ticket.
-    try {
-      const { balance } = await api.cancelMyBet(betId);
-      setCurrentUser((u) => (u ? { ...u, balance } : u));
-      await loadMyBets();
-    } catch (e: any) {
-      alert(e.message || t('Anulimi dështoi.'));
-    }
-  }, [loadAdminData, loadMyBets, t]);
-
-  const handleSettleMatch = useCallback(async (match: Match, homeScore: number, awayScore: number) => {
-    if (simulatingMatchId) return;
-    setSimulatingMatchId(match.id);
-    try {
-      const result = await api.adminSettleMatch(match.id, homeScore, awayScore);
-      if (result.leftPendingForManualReview > 0) {
-        alert(
-          t('{n} kupon(a) u zgjidhën automatikisht.', { n: result.autoSettledLegs }) + '\n' +
-          t('{n} kupon(a) mbetën PENDING (tregje si Double Chance/Handicap kërkojnë rishikim manual te "All Tickets").', { n: result.leftPendingForManualReview })
-        );
-      }
-      await Promise.all([loadMatches(), loadAdminData()]);
-    } catch (e: any) {
-      alert(e.message || 'Failed to settle match');
-    } finally {
-      setSimulatingMatchId(null);
-    }
-  }, [simulatingMatchId, loadMatches, loadAdminData, t]);
-
-  if (!authChecked) {
-    return (
-      <div className="min-h-screen bg-brand-bg flex items-center justify-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-brand-yellow"></div>
-      </div>
-    );
-  }
-
-  if (!currentUser) return <Login onAuthenticated={handleAuthenticated} />;
-
-  // Owner (ADMIN) gets a completely separate, simple, read-first page —
-  // never the sportsbook/casino shell below, so the Owner literally has no
-  // way to place a bet or play. Reports come first; management (existing
-  // AdminPanel: users/tickets/audit) is one tab away when needed.
+  // The owner (ADMIN) gets a separate, read-first page and never the sportsbook/casino shell, so
+  // the owner has no way to place a bet or play. Reports first; management is one tab away.
   if (currentUser.role === UserRole.ADMIN) {
     return (
       <OwnerDashboard
         currentUser={currentUser}
         onLogout={handleLogout}
-        users={adminUsers}
-        allBets={adminAllBets}
-        onCreateUser={handleCreateUser}
-        onDeleteUser={handleDeleteUser}
-        onAddCredit={handleAddCredit}
-        onResetPassword={handleResetPassword}
-        onCancelBet={handleCancelBet}
+        users={admin.adminUsers}
+        allBets={admin.adminAllBets}
+        onCreateUser={admin.createUser}
+        onDeleteUser={admin.deleteUser}
+        onAddCredit={admin.addCredit}
+        onResetPassword={admin.resetPassword}
+        onCancelBet={admin.cancelBet}
       />
     );
   }
 
-  // The Sportet menu body, shared by the permanent desktop column and the
-  // small-screen drawer so both always show exactly the same open list.
-  const leagueMenuList = (
-    <>
-                  <div className="w-full px-3 py-2.5 border-b border-brand-bg/10 flex items-center gap-2.5 bg-[#444] text-white font-bold">
-                    <span aria-hidden="true" className="text-base leading-none">⚽</span>
-                    <span className="uppercase tracking-wider">{t('Futboll')}</span>
-                    {liveMatches.length > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveMatches.length}</span>}
-                  </div>
-                    <div className="bg-[#2b2b2b] border-b border-[#444]">
-                      <button
-                        onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague('All Top Football'); setDetailMatchId(null); setIsLeagueMenuOpen(false); }}
-                        className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex items-center gap-2 uppercase tracking-wider transition-colors hover:bg-[#444] hover:text-white ${currentLeague === 'All Top Football' && !showLiveOnly ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}
-                      >
-                        <span>{t('Të gjitha ndeshjet')}</span>
-                      </button>
-<button onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague('FAVORITES'); setDetailMatchId(null); setIsLeagueMenuOpen(false); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors hover:bg-[#444] hover:text-white ${currentLeague === 'FAVORITES' ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
-                    <div className="flex items-center gap-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className="w-3.5 h-3.5 fill-brand-yellow"><path d="M10 1.5l2.6 5.27 5.82.85-4.21 4.1.99 5.8L10 14.9l-5.2 2.62.99-5.8-4.21-4.1 5.82-.85L10 1.5z" /></svg>
-                      <span className="uppercase tracking-wider">{t('Të Preferuarat')}</span>
-                    </div>
-                  </button>
-
-                  <button onClick={() => { setDetailMatchId(null); setIsLeagueMenuOpen(false); setShowLiveOnly(true); setShowResults(false); requestAnimationFrame(() => document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' })); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors ${showLiveOnly ? 'bg-[#444] text-white font-bold' : ''}`}>
-                    <div className="flex items-center gap-2">
-                      <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-accent opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-accent"></span>
-                      </span>
-                      <span className="uppercase tracking-wider">In-Play / Live</span>
-                      {liveMatches.length > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveMatches.length}</span>}
-                    </div>
-                  </button>
-                  <button onClick={() => { setIsLeagueMenuOpen(false); goResults(); }} className={`w-full text-left px-3 py-3 border-b border-brand-bg/10 flex justify-between items-center group transition-colors ${showResults ? 'bg-[#444] text-white font-bold' : ''}`}>
-                    <div className="flex items-center gap-2">
-                      <span className="uppercase tracking-wider">{t('Rezultate')}</span>
-                      {resultsList.length > 0 && <span className="text-[10px] bg-[#555] text-white px-1.5 rounded font-bold">{resultsList.length}</span>}
-                    </div>
-                  </button>
-
-                  <div className="flex flex-col text-xs text-brand-textMuted">
-                    {leaguesByCountry.map(([country, leagues]) => {
-                      const isOpen = expandedCountry === country;
-                      return (
-                        <div key={country}>
-                          <div className={`w-full flex items-stretch bg-[#333] border-b border-brand-bg/10 ${currentLeague === countryFilterKey(country) ? 'border-l-4 border-l-brand-yellow' : ''}`}>
-                            <button
-                              onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague(countryFilterKey(country)); setDetailMatchId(null); setIsLeagueMenuOpen(false); }}
-                              className={`flex-1 min-w-0 text-left px-3 py-2 hover:bg-[#3a3a3a] text-brand-text font-bold uppercase text-[10px] tracking-wider transition-colors ${currentLeague === countryFilterKey(country) ? 'text-white bg-[#444]' : ''}`}
-                            >
-                              <span className="flex items-center gap-1.5">
-                                <span aria-hidden="true">{countryFlag(country)}</span>
-                                <span className="truncate">{t(country)}</span>
-                                <span className="ml-auto text-[9px] text-brand-textMuted font-normal shrink-0">{leagues.length}</span>
-                              </span>
-                            </button>
-                            <button
-                              onClick={() => setExpandedCountry(isOpen ? null : country)}
-                              className="px-3 text-brand-textMuted hover:text-white hover:bg-[#3a3a3a] transition-colors"
-                              aria-label={isOpen ? t('Mbyll ligat e {country}', { country: t(country) }) : t('Hap ligat e {country}', { country: t(country) })}
-                            >
-                              {isOpen ? '▾' : '▸'}
-                            </button>
-                          </div>
-                          {isOpen && (
-                            <button onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague(countryFilterKey(country)); setDetailMatchId(null); setIsLeagueMenuOpen(false); }} className={`px-3 py-2 pl-6 w-full text-left text-[10px] uppercase tracking-wider hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 ${currentLeague === countryFilterKey(country) ? 'bg-[#444] text-white font-bold' : 'text-brand-yellow'}`}>
-                              {t('Të gjitha ligat ({n})', { n: leagues.length })}
-                            </button>
-                          )}
-                          {isOpen && leagues.map((league) => (
-                            <button key={league} onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague(league); setDetailMatchId(null); setIsLeagueMenuOpen(false); }} className={`px-3 py-2.5 pl-6 hover:bg-[#444] hover:text-white transition-colors border-b border-brand-bg/10 flex justify-between items-center group text-left w-full ${currentLeague === league ? 'bg-[#444] text-white font-bold border-l-4 border-l-brand-yellow' : ''}`}>
-                              <span className="truncate">{leagueText(league)}</span>
-                            </button>
-                          ))}
-                        </div>
-                      );
-                    })}
-                  </div>
-                    </div>
-                  {[
-                    ['🏀', 'Basketboll'], ['⚾', 'Bejsboll'], ['🏒', 'Hokej Akull'], ['🎾', 'Tenis'],
-                    ['🤾', 'Hendboll'], ['🏈', 'Futboll Amerikan'], ['🎱', 'Snooker'], ['🏓', 'Tenis Tavoline'],
-                    ['🏏', 'Kriket'], ['🎯', 'Darts'], ['🏐', 'Volejboll'],
-                  ].map(([icon, name]) => (
-                    <div
-                      key={name}
-                      className="w-full text-left px-3 py-2.5 border-b border-brand-bg/10 flex items-center gap-2.5 text-brand-textMuted/50 cursor-not-allowed select-none"
-                    >
-                      <span aria-hidden="true" className="text-base leading-none opacity-50">{icon}</span>
-                      <span className="uppercase tracking-wider">{t(name)}</span>
-                      <span className="ml-auto text-[9px] normal-case font-normal shrink-0">{t('Së shpejti')}</span>
-                    </div>
-                  ))}
-
-    </>
-  );
+  const goHome = () => {
+    startTransition(() => { setNavTab('home'); nav.goToOdds(); setSelectedDate('ALL'); });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  const goSoccer = () => {
+    startTransition(() => { setNavTab('soccer'); nav.goToOdds(); });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  const activeTab = nav.showLiveOnly ? 'live' : nav.showResults ? 'results' : nav.currentLeague === ALL_LEAGUES ? navTab : 'soccer';
 
   return (
     <div className="min-h-screen bg-brand-bg text-brand-text flex flex-col font-sans selection:bg-brand-header selection:text-white pb-16 md:pb-0">
@@ -1316,573 +154,106 @@ const App: React.FC = () => {
         onOpenAdmin={() => setShowAdmin(!showAdmin)}
         currentView={currentView}
         onNavigate={setCurrentView}
-        activeTab={showLiveOnly ? 'live' : showResults ? 'results' : currentLeague === 'All Top Football' ? navTab : 'soccer'}
-        onGoHome={() => { startTransition(() => { setNavTab('home'); setShowLiveOnly(false); setShowResults(false); setCurrentLeague('All Top Football'); setSelectedDate('ALL'); setDetailMatchId(null); }); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-        onGoLive={() => { setDetailMatchId(null); setShowLiveOnly(true); setShowResults(false); requestAnimationFrame(() => document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' })); }}
-        onGoSoccer={() => { startTransition(() => { setNavTab('soccer'); setShowLiveOnly(false); setShowResults(false); setCurrentLeague('All Top Football'); setDetailMatchId(null); }); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-        onGoResults={goResults}
-        resultsCount={resultsList.length}
-        liveCount={liveMatches.length}
+        activeTab={activeTab}
+        onGoHome={goHome}
+        onGoLive={nav.goToLive}
+        onGoSoccer={goSoccer}
+        onGoResults={nav.goToResults}
+        resultsCount={views.resultsList.length}
+        liveCount={views.liveMatches.length}
       />
 
       <div className="flex-1 flex w-full pt-4 px-2 lg:px-4 gap-2 relative">
-
         {currentView === 'sports' && (
-          <>
-            {/* Left menu, permanently open on large screens: Futboll (favorites,
-                live, countries/leagues) is shown directly, no dropdown to open. */}
-            <aside className="hidden lg:block w-60 xl:w-72 flex-shrink-0">
-              <div className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto custom-scrollbar bg-brand-panel rounded border border-[#444] shadow-sm">
-                <div className="bg-[#383838] px-3 py-3 text-xs font-bold text-brand-text border-b border-[#444] uppercase sticky top-0 z-10">
-                  <span>{t('Sportet')}</span>
-                </div>
-                {leagueMenuList}
-              </div>
-            </aside>
-
-            {/* Small screens have no room for a permanent column: same menu, but as a
-                drawer from the left (already expanded, no dropdown inside it). */}
-            <button
-              onClick={() => setIsLeagueMenuOpen(true)}
-              className="lg:hidden fixed left-2 top-[7.5rem] z-40 bg-brand-panel border border-[#444] rounded-full pl-2.5 pr-3.5 py-2.5 shadow-lg flex items-center gap-1.5"
-              aria-label={t('Hap Futboll dhe ligat')}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className="w-5 h-5 fill-brand-yellow"><path fillRule="evenodd" d="M3 5h14a1 1 0 100-2H3a1 1 0 000 2zm0 6h14a1 1 0 100-2H3a1 1 0 000 2zm0 6h14a1 1 0 100-2H3a1 1 0 000 2z" clipRule="evenodd" /></svg>
-              <span className="text-xs font-bold uppercase tracking-wider text-brand-text">{t('Futboll')}</span>
-            </button>
-
-            {isLeagueMenuOpen && (
-              <div className="fixed inset-0 z-50 flex lg:hidden" onClick={() => setIsLeagueMenuOpen(false)}>
-                <div className="w-72 max-w-[85vw] h-full bg-brand-panel overflow-y-auto custom-scrollbar shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                  <div className="bg-[#383838] px-3 py-3 text-xs font-bold text-brand-text border-b border-[#444] uppercase flex justify-between items-center sticky top-0 z-10">
-                    <span>{t('Sportet')}</span>
-                    <button onClick={() => setIsLeagueMenuOpen(false)} className="text-brand-textMuted hover:text-white text-lg leading-none px-1">✕</button>
-                  </div>
-                  {leagueMenuList}
-                </div>
-              </div>
-            )}
-          </>
+          <SportsSidebar
+            currentLeague={nav.currentLeague}
+            showLiveOnly={nav.showLiveOnly}
+            showResults={nav.showResults}
+            liveCount={views.liveMatches.length}
+            resultsCount={views.resultsList.length}
+            leaguesByCountry={views.leaguesByCountry}
+            leagueText={views.leagueText}
+            goToOdds={nav.goToOdds}
+            goToLeague={nav.goToLeague}
+            goToLive={nav.goToLive}
+            goToResults={nav.goToResults}
+          />
         )}
 
-        <main ref={adminPanelRef as React.RefObject<HTMLElement>} className="flex-1 min-w-0 mb-20 md:mb-0">
+        <main ref={mainRef} className="flex-1 min-w-0 mb-20 md:mb-0">
           {showAdmin && currentUser.role === UserRole.AGENT ? (
-            <AgentUsersPanel
-              currentUser={currentUser}
-              onBalanceChanged={(balance) => setCurrentUser((p) => withBalance(p, balance))}
-            />
+            <AgentUsersPanel currentUser={currentUser} onBalanceChanged={applyBalance} />
           ) : currentView === 'casino' ? (
-            <CasinoHub userBalance={currentUser.balance} onSetBalance={(balance) => setCurrentUser((p) => p ? { ...p, balance } : p)} />
+            <CasinoHub userBalance={currentUser.balance} onSetBalance={applyBalance} />
           ) : detailMatch ? (
             <MatchDetail
-              // Force a full remount when the viewed match changes (e.g.
-              // jumping straight from one match's detail to another via
-              // search, without closing first). Without this, React reuses
-              // the same MatchDetail/LivePitch instance and their ticking
-              // clocks keep counting up from the PREVIOUS match's minute
-              // instead of resetting to the new match's real one.
+              // A full remount when the viewed match changes: otherwise the ticking clocks of
+              // MatchDetail/LivePitch keep counting from the PREVIOUS match's minute.
               key={detailMatch.id}
               match={detailMatch}
-              leagueLabel={leagueText(detailMatch.league)}
-              onClose={goBackScreen}
-              onBetClick={handleToggleSelection}
-              selectedIds={selectedIds}
+              leagueLabel={views.leagueText(detailMatch.league)}
+              onClose={nav.goBack}
+              onBetClick={slip.toggleSelection}
+              selectedIds={slip.selectedIds}
             />
           ) : (
-            <div className="space-y-3 md:space-y-4">
-              {/* Sport icon strip — top-of-page quick switcher on the home
-                  view only (matches the reference: it's on the homepage,
-                  not repeated on every drilled-down page where the sidebar
-                  already covers the same job). Soccer active; the rest
-                  honestly disabled ("Së shpejti") since only soccer has
-                  real data right now. */}
-              {!showLiveOnly && !showResults && currentLeague === 'All Top Football' && (
-                <div className="flex gap-1 overflow-x-auto pb-1 no-scrollbar">
-                  <button className="shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded bg-[#333] border-b-2 border-brand-yellow text-white">
-                    <span className="text-lg leading-none" aria-hidden="true">⚽</span>
-                    <span className="text-[9px] uppercase tracking-wide">{t('Futboll')}</span>
-                  </button>
-                  {[
-                    ['🏀', 'Basketboll'], ['⚾', 'Bejsboll'], ['🏒', 'Hokej'], ['🎾', 'Tenis'],
-                    ['🤾', 'Hendboll'], ['🏈', 'Am. Futboll'], ['🎱', 'Snooker'], ['🏓', 'T. Tavoline'],
-                    ['🏏', 'Kriket'], ['🎯', 'Darts'], ['🏐', 'Volejboll'],
-                  ].map(([icon, name]) => (
-                    <div key={name} className="shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded text-brand-textMuted/40 cursor-not-allowed" title={t('Së shpejti')}>
-                      <span className="text-lg leading-none opacity-50" aria-hidden="true">{icon}</span>
-                      <span className="text-[9px] uppercase tracking-wide">{t(name)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Breadcrumb — "Soccer / <Country> - <League>" style header
-                  shown once the person has drilled into something specific,
-                  same idea as the reference site's context bar. Home/
-                  Favorites/root views stay breadcrumb-less on purpose. */}
-              {(showLiveOnly || showResults || (currentLeague !== 'All Top Football' && currentLeague !== 'FAVORITES')) && (
-                <div className="bg-[#2a2a2a] border border-brand-divider rounded px-3 py-2 text-xs text-brand-textMuted flex items-center justify-between gap-2">
-                  <span className="truncate">
-                    <span className="text-brand-text font-semibold">{t('Futboll')}</span>
-                    {showLiveOnly ? (
-                      <span> / <span className="text-brand-accent font-semibold">Live InPlay</span></span>
-                    ) : showResults ? (
-                      <span> / <span className="text-brand-text font-semibold">{t('Rezultate (48 orët e fundit)')}</span></span>
-                    ) : isCountryFilter(currentLeague) ? (
-                      <span> / <span className="text-brand-text font-semibold">{t(countryFromFilter(currentLeague))}</span></span>
-                    ) : (
-                      <span> / <span className="text-brand-text font-semibold">{t(leagueCountry(currentLeague))} - {leagueText(currentLeague)}</span></span>
-                    )}
-                  </span>
-                  <button
-                    onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague('All Top Football'); setDetailMatchId(null); }}
-                    className="shrink-0 text-[10px] uppercase tracking-wide text-brand-textMuted hover:text-white"
-                  >
-                    {t('← Kryefaqja')}
-                  </button>
-                </div>
-              )}
-
-              <div className="lg:hidden flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-                <button onClick={() => { setShowLiveOnly(true); setShowResults(false); requestAnimationFrame(() => document.getElementById('live-section')?.scrollIntoView({ behavior: 'smooth' })); }} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 ${showLiveOnly ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>
-                  <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse"></span>
-                  LIVE {liveMatches.length > 0 && `(${liveMatches.length})`}
-                </button>
-                <button onClick={goResults} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${showResults ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>{t('Rezultate').toUpperCase()} {resultsList.length > 0 && `(${resultsList.length})`}</button>
-                <button onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague('All Top Football'); }} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold ${currentLeague === 'All Top Football' ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>{t('Të Gjitha')}</button>
-                {leaguesByCountry.map(([country, leagues]) => (
-                  <button key={country} onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague(countryFilterKey(country)); setDetailMatchId(null); }} className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 ${currentLeague === countryFilterKey(country) ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-white'}`}>
-                    <span aria-hidden="true">{countryFlag(country)}</span>
-                    {t(country)}
-                    <span className={`text-[10px] font-normal ${currentLeague === countryFilterKey(country) ? 'text-black/60' : 'text-brand-textMuted'}`}>{leagues.length}</span>
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-                {dateOptions.map((opt) => (
-                  <button
-                    key={opt.value}
-                    onClick={() => setSelectedDate(opt.value)}
-                    className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
-                      selectedDate === opt.value
-                        ? 'bg-brand-yellow text-black border-brand-yellow'
-                        : 'bg-brand-panel text-white border-brand-divider hover:border-brand-yellow/50'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="relative">
-                <div className="bg-brand-panel p-3 rounded flex items-center gap-2 border border-brand-divider">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-brand-textMuted shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                  <input
-                    type="text"
-                    placeholder={t('Kërko skuadra, liga...')}
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onFocus={() => setIsSearchFocused(true)}
-                    onBlur={() => setTimeout(() => setIsSearchFocused(false), 150)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { commitSearchHistory(searchQuery); (e.target as HTMLInputElement).blur(); } }}
-                    className="bg-transparent text-white text-sm w-full outline-none placeholder-brand-textMuted"
-                  />
-                  {searchQuery && (
-                    <button onClick={() => setSearchQuery('')} className="text-brand-textMuted hover:text-white shrink-0">✕</button>
-                  )}
-                </div>
-
-                {isSearchFocused && (searchQuery.trim() ? (searchSuggestions.teams.length + searchSuggestions.leagues.length + searchSuggestions.matches.length > 0) : searchHistory.length > 0) && (
-                  <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-brand-panel border border-brand-divider rounded shadow-xl max-h-80 overflow-y-auto text-sm">
-                    {!searchQuery.trim() && searchHistory.length > 0 && (
-                      <>
-                        <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-brand-textMuted flex justify-between items-center">
-                          <span>{t('Kërkime të fundit')}</span>
-                          <button onMouseDown={(e) => { e.preventDefault(); setSearchHistory([]); localStorage.removeItem('searchHistory'); }} className="hover:text-white">{t('Pastro')}</button>
-                        </div>
-                        {searchHistory.map((term) => (
-                          <button key={term} onMouseDown={(e) => { e.preventDefault(); setSearchQuery(term); commitSearchHistory(term); setIsSearchFocused(false); }} className="w-full text-left px-3 py-2 text-brand-textMuted hover:bg-[#444] hover:text-white flex items-center gap-2">
-                            <span className="opacity-50">↺</span>{term}
-                          </button>
-                        ))}
-                      </>
-                    )}
-
-                    {searchQuery.trim() && searchSuggestions.teams.length > 0 && (
-                      <>
-                        <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-brand-textMuted">{t('Skuadra')}</div>
-                        {searchSuggestions.teams.map((team) => (
-                          <button key={team} onMouseDown={(e) => { e.preventDefault(); setSearchQuery(team); commitSearchHistory(team); setIsSearchFocused(false); }} className="w-full text-left px-3 py-2 text-white hover:bg-[#444] flex items-center justify-between">
-                            <span>{team}</span>
-                            {favoriteTeams.has(team) && <span className="text-brand-yellow text-xs">★</span>}
-                          </button>
-                        ))}
-                      </>
-                    )}
-
-                    {searchQuery.trim() && searchSuggestions.leagues.length > 0 && (
-                      <>
-                        <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-brand-textMuted">{t('Liga')}</div>
-                        {searchSuggestions.leagues.map((league) => (
-                          <button key={league} onMouseDown={(e) => { e.preventDefault(); setShowLiveOnly(false); setShowResults(false); setCurrentLeague(league); setSearchQuery(''); commitSearchHistory(leagueLabel(league)); setIsSearchFocused(false); }} className="w-full text-left px-3 py-2 text-white hover:bg-[#444]">
-                            {leagueText(league)}
-                          </button>
-                        ))}
-                      </>
-                    )}
-
-                    {searchQuery.trim() && searchSuggestions.matches.length > 0 && (
-                      <>
-                        <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-brand-textMuted">{t('Ndeshje')}</div>
-                        {searchSuggestions.matches.map((m) => (
-                          <button key={m.id} onMouseDown={(e) => { e.preventDefault(); commitSearchHistory(searchQuery); setDetailMatchId(m.id); setSearchQuery(''); setIsSearchFocused(false); }} className="w-full text-left px-3 py-2 text-white hover:bg-[#444]">
-                            {m.homeTeam} <span className="text-brand-textMuted">vs</span> {m.awayTeam}
-                          </button>
-                        ))}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {loadError ? (
-                <div className="flex flex-col justify-center items-center h-64 bg-brand-panel rounded border border-brand-divider gap-3">
-                  <div className="text-brand-textMuted text-sm text-center px-4">{t(loadError)}</div>
-                  <button onClick={() => loadMatches()} className="bg-brand-yellow hover:bg-yellow-400 text-brand-bg font-bold px-4 py-2 rounded text-sm">
-                    {t('Provo Përsëri')}
-                  </button>
-                </div>
-              ) : isLoading ? (
-                <div className="flex flex-col justify-center items-center h-64 bg-brand-panel rounded border border-brand-divider">
-                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-brand-yellow mb-4"></div>
-                  <div className="text-brand-textMuted text-xs animate-pulse">{t('Duke ngarkuar ndeshjet...')}</div>
-                </div>
-              ) : (
-                <>
-                  {/* REZULTATE — only rendered when the person pressed "Rezultate": matches that
-                      FINISHED within the last 48 hours, newest first, grouped by league. Real
-                      data only; an honest message when there is none. */}
-                  {showResults && (
-                    <div id="results-section" className="bg-brand-panel rounded overflow-hidden shadow-sm border border-[#444] scroll-mt-4">
-                      <div className="bg-[#2a2a2a] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex items-center gap-2 justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="uppercase tracking-wider">{t('Rezultate · 48 orët e fundit')}</span>
-                          {resultsList.length > 0 && <span className="text-[10px] bg-[#555] text-white px-1.5 rounded font-bold">{resultsList.length}</span>}
-                        </div>
-                        <button onClick={() => { setShowResults(false); }} className="text-[10px] text-brand-textMuted hover:text-white uppercase tracking-wide">
-                          {t('Kthehu te Kryefaqja ✕')}
-                        </button>
-                      </div>
-                      {resultsList.length === 0 ? (
-                        <div className="text-center text-brand-textMuted text-xs py-8 px-4">
-                          {searchQuery ? t('Nuk ka ndeshje të mbaruara në 48 orët e fundit për këtë kërkim.') : t('Nuk ka ndeshje të mbaruara në 48 orët e fundit.')}
-                        </div>
-                      ) : (
-                        resultsSections.map(({ league, matches: leagueMatches }) => (
-                          <div key={league}>
-                            <div className="bg-[#2a2a2a] px-3 py-2 text-[11px] font-bold text-white flex items-center gap-1.5 border-b border-[#333]">
-                              <span aria-hidden="true">{countryFlag(leagueCountry(league))}</span>
-                              <span className="uppercase tracking-wide">{leagueText(league)}</span>
-                              <span className="text-brand-textMuted font-normal">· {t(leagueCountry(league))}</span>
-                              <span className="ml-auto text-[10px] bg-[#555] text-white px-1.5 rounded font-bold">{leagueMatches.length}</span>
-                            </div>
-                            <div className="divide-y divide-brand-divider">
-                              {leagueMatches.map((match) => (
-                                <MatchRow
-                                  key={match.id}
-                                  match={match}
-                                  onBetClick={handleToggleSelection}
-                                  onOpenDetail={(m) => setDetailMatchId(m.id)}
-                                  isAdmin={currentUser.role === UserRole.ADMIN}
-                                  onSettleMatch={handleSettleMatch}
-                                  isSimulating={simulatingMatchId === match.id}
-                                  selectedIds={selectedIds}
-                                  favoriteTeams={favoriteTeams}
-                                  onToggleFavoriteTeam={(team) => toggleFavorite('TEAM', team)}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-
-                  {/* LIVE — only rendered when the person pressed "Live In-Play".
-                      Shown even if empty (real "no live matches" message, no
-                      fake data) since that's the whole point of the button. */}
-                  {showLiveOnly && (
-                    <div id="live-section" className="bg-brand-panel rounded overflow-hidden shadow-sm border border-brand-accent/30 scroll-mt-4">
-                      <div className="bg-[#2a1f1f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex items-center gap-2 justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-accent opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-accent"></span>
-                          </span>
-                          <span className="text-brand-accent uppercase tracking-wider">{t('Live Tani')}</span>
-                          {liveMatches.length > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{liveMatches.length}</span>}
-                        </div>
-                        <button onClick={() => { setShowLiveOnly(false); setShowResults(false); }} className="text-[10px] text-brand-textMuted hover:text-white uppercase tracking-wide">
-                          {t('Kthehu te Kryefaqja ✕')}
-                        </button>
-                      </div>
-                      {liveMatches.length === 0 ? (
-                        <div className="text-center text-brand-textMuted text-xs py-8 px-4">
-                          {t('Nuk ka asnjë ndeshje live aktualisht.')}
-                        </div>
-                      ) : (
-                        // Grouped shtet -> ligë -> ndeshje (jo listë e sheshtë),
-                        // njësoj si lista kryesore e ndeshjeve të ardhshme, që
-                        // të dallohet qartë cilit kampionat/shtet i përket çdo
-                        // ndeshje live.
-                        liveLeagueSections.map(({ country, league, matches: leagueMatches }) => (
-                          <div key={league}>
-                            <div className="bg-[#2a2a2a] px-3 py-2 text-[11px] font-bold text-white flex items-center gap-1.5 border-b border-[#333]">
-                              <span aria-hidden="true">{countryFlag(country)}</span>
-                              <span className="uppercase tracking-wide">{leagueText(league)}</span>
-                              <span className="text-brand-textMuted font-normal">· {t(country)}</span>
-                              <span className="ml-auto text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{leagueMatches.length}</span>
-                            </div>
-                            <div className="divide-y divide-brand-divider">
-                              {leagueMatches.map((match) => (
-                                <MatchRow
-                                  key={match.id}
-                                  match={match}
-                                  onBetClick={handleToggleSelection}
-                                  onOpenDetail={(m) => setDetailMatchId(m.id)}
-                                  isAdmin={currentUser.role === UserRole.ADMIN}
-                                  onSettleMatch={handleSettleMatch}
-                                  isSimulating={simulatingMatchId === match.id}
-                                  selectedIds={selectedIds}
-                                  favoriteTeams={favoriteTeams}
-                                  onToggleFavoriteTeam={(team) => toggleFavorite('TEAM', team)}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-
-                  {!showLiveOnly && !showResults && dateFallbackActive && (
-                    <div className="bg-[#3a3320] border border-brand-yellow/40 text-brand-yellow text-xs rounded px-3 py-2 flex items-center justify-between gap-2">
-                      <span>
-                        {t('Nuk ka ndeshje për datën e zgjedhur — po shfaqen ndeshjet e ardhshme, të ndara sipas datës.')}
-                      </span>
-                      <button onClick={() => setSelectedDate('ALL')} className="shrink-0 underline hover:text-white uppercase text-[10px] tracking-wide">
-                        {t('Të gjitha datat')}
-                      </button>
-                    </div>
-                  )}
-
-                  {!showLiveOnly && !showResults && currentLeague === 'All Top Football' && topLeagueMatches.list.length > 0 && (
-                    <div className="bg-brand-panel rounded overflow-hidden shadow-sm">
-                      <button
-                        onClick={() => { setShowLiveOnly(false); setShowResults(false); setCurrentLeague(topLeagueMatches.key!); setDetailMatchId(null); }}
-                        className="w-full bg-[#2f2f2f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] uppercase tracking-wider text-left hover:text-brand-yellow"
-                      >
-                        {t(leagueCountry(topLeagueMatches.key!))} {leagueText(topLeagueMatches.key!)}
-                      </button>
-                      <div className="flex gap-2 overflow-x-auto p-2.5 custom-scrollbar snap-x snap-mandatory">
-                        {topLeagueMatches.list.map((match) => (
-                          <FeaturedMatchCard
-                            key={match.id}
-                            match={match}
-                            onBetClick={handleToggleSelection}
-                            onOpenDetail={(m) => setDetailMatchId(m.id)}
-                            selectedIds={selectedIds}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* "Ndeshjet Kryesore" + "Ndeshjet Sot" -- only on the
-                      root/home view (not once a specific country/league is
-                      selected, and not on the dedicated Live tab), same
-                      placement as the reference site's homepage. */}
-                  {!showLiveOnly && !showResults && currentLeague === 'All Top Football' && featuredMatches.length > 0 && (
-                    <div className="bg-brand-panel rounded overflow-hidden shadow-sm">
-                      <div className="bg-[#2f2f2f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] uppercase tracking-wider">
-                        {t('Ndeshjet Kryesore')}
-                      </div>
-                      <div className="flex gap-2 overflow-x-auto p-2.5 custom-scrollbar snap-x snap-mandatory">
-                        {featuredMatches.map((match) => (
-                          <FeaturedMatchCard
-                            key={match.id}
-                            match={match}
-                            onBetClick={handleToggleSelection}
-                            onOpenDetail={(m) => setDetailMatchId(m.id)}
-                            selectedIds={selectedIds}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {!showLiveOnly && !showResults && currentLeague === 'All Top Football' && todayMatches.length > 0 && (
-                    <div className="bg-brand-panel rounded overflow-hidden shadow-sm">
-                      <button
-                        onClick={() => setIsTodaySectionOpen((o) => !o)}
-                        className="w-full bg-[#2f2f2f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] uppercase tracking-wider flex items-center justify-between"
-                      >
-                        <span>{t('Ndeshjet Sot ({n})', { n: todayMatches.length })}</span>
-                        <span className={`transition-transform ${isTodaySectionOpen ? '' : '-rotate-90'}`}>▾</span>
-                      </button>
-                      {isTodaySectionOpen && (
-                        <div className="divide-y divide-brand-divider">
-                          {todayMatches.map((match) => (
-                            <MatchRow
-                              key={match.id}
-                              match={match}
-                              onBetClick={handleToggleSelection}
-                              onOpenDetail={(m) => setDetailMatchId(m.id)}
-                              isAdmin={currentUser.role === UserRole.ADMIN}
-                              onSettleMatch={handleSettleMatch}
-                              isSimulating={simulatingMatchId === match.id}
-                              selectedIds={selectedIds}
-                              favoriteTeams={favoriteTeams}
-                              onToggleFavoriteTeam={(team) => toggleFavorite('TEAM', team)}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Upcoming — grouped like the London site: Shtet -> Ligue -> ndeshje */}
-                  {(showLiveOnly || showResults) ? null : matchesByCountry.length === 0 ? (
-                    <div className="flex flex-col justify-center items-center h-64 bg-brand-panel rounded border border-brand-divider text-center px-6">
-                      <div className="text-brand-textMuted text-sm mb-2">{t('Asnjë ndeshje e disponueshme.')}</div>
-                      <div className="text-brand-textMuted text-xs opacity-70">
-                        {selectedDate !== 'ALL'
-                          ? t('Nuk ka ndeshje të planifikuara për këtë datë në këtë kampionat. Provo "Të gjitha" ose një datë tjetër.')
-                          : t('Ky kampionat mund të jetë aktualisht pa ndeshje të planifikuara (pushim sezonal) — provo përsëri më vonë, ose zgjidh një kampionat tjetër nga lista.')}
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                    {visibleGroups.map(([country, leagues]: [string, [string, Match[]][]]) => (
-                      <div key={country} className="bg-brand-panel rounded overflow-hidden shadow-sm">
-                        <div className="bg-[#2f2f2f] px-3 py-2 text-xs font-bold text-white border-b border-[#444] flex items-center gap-2 uppercase tracking-wider">
-                          <span aria-hidden="true">{countryFlag(country)}</span>
-                          <span>{t(country)}</span>
-                          <span className="ml-auto text-[10px] text-brand-textMuted font-normal">{t('{n} ligë', { n: leagues.length })}</span>
-                        </div>
-                        {leagues.map(([league, leagueMatches]: [string, Match[]]) => (
-                          <div key={league} className="border-b border-brand-divider last:border-b-0">
-                            <div className="bg-[#383838] px-3 py-2 text-xs font-bold text-white flex items-center gap-2">
-                              <span className="w-1 h-3 rounded-full bg-brand-yellow"></span>
-                              <span>{leagueText(league)}</span>
-                              <span className="ml-auto text-[10px] text-brand-textMuted font-normal">{leagueMatches.length}</span>
-                            </div>
-                            {groupMatchesByDate(leagueMatches).map(([dateKey, dayMatches]) => (
-                              <div key={dateKey}>
-                                <div className="bg-[#2b2b2b] px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider flex items-center gap-2 border-b border-brand-bg/20">
-                                  <span className="text-brand-yellow">{dateKeyLabel(dateKey)}</span>
-                                  <span className="text-brand-textMuted font-normal normal-case">{t('{n} ndeshje', { n: dayMatches.length })}</span>
-                                </div>
-                                <div className="divide-y divide-brand-divider">
-                                  {dayMatches.map((match) => (
-                                    <MatchRow
-                                      key={match.id}
-                                      match={match}
-                                      onBetClick={handleToggleSelection}
-                                      onOpenDetail={(m) => setDetailMatchId(m.id)}
-                                      isAdmin={currentUser.role === UserRole.ADMIN}
-                                      onSettleMatch={handleSettleMatch}
-                                      isSimulating={simulatingMatchId === match.id}
-                                      selectedIds={selectedIds}
-                                      favoriteTeams={favoriteTeams}
-                                      onToggleFavoriteTeam={(team) => toggleFavorite('TEAM', team)}
-                                    />
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ))}
-                      </div>
-                    ))}
-                    {hiddenRows > 0 && <LoadMoreSentinel remaining={hiddenRows} onMore={() => setRowBudget((n) => n + ROW_SLICE)} />}
-                    </>
-                  )}
-                </>
-              )}
-            </div>
+            <SportsbookHome
+              currentLeague={nav.currentLeague}
+              showLiveOnly={nav.showLiveOnly}
+              showResults={nav.showResults}
+              closeLive={() => { nav.setShowLiveOnly(false); nav.setShowResults(false); }}
+              closeResults={() => nav.setShowResults(false)}
+              goToOdds={nav.goToOdds}
+              goToLeague={nav.goToLeague}
+              goToLive={nav.goToLive}
+              goToResults={nav.goToResults}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              selectedDate={selectedDate}
+              onSelectDate={setSelectedDate}
+              dateOptions={views.dateOptions}
+              isLoading={feed.isLoading}
+              loadError={feed.loadError}
+              onRetry={() => feed.loadMatches()}
+              favoriteTeams={favoriteTeams}
+              leaguesByCountry={views.leaguesByCountry}
+              liveMatches={views.liveMatches}
+              liveLeagueSections={views.liveLeagueSections}
+              resultsList={views.resultsList}
+              resultsSections={views.resultsSections}
+              topLeagueMatches={views.topLeagueMatches}
+              featuredMatches={views.featuredMatches}
+              todayMatches={views.todayMatches}
+              upcomingByCountry={views.upcomingByCountry}
+              visibleGroups={views.visibleGroups}
+              hiddenRows={views.hiddenRows}
+              dateFallbackActive={views.dateFallbackActive}
+              onLoadMore={() => setRowBudget((n) => n + ROW_SLICE)}
+              searchSuggestions={views.searchSuggestions}
+              leagueText={views.leagueText}
+              leagueLabel={views.leagueLabel}
+              actions={rowActions}
+              openMatchById={openMatchById}
+            />
           )}
         </main>
 
         {currentView === 'sports' && (
-          <aside className="w-80 hidden md:flex flex-col flex-shrink-0">
-            <div className="bg-brand-panel rounded overflow-hidden shadow-sm flex-1 max-h-[calc(100vh-100px)] sticky top-20">
-              {betError && (
-                <div className="bg-red-900/30 border-b border-red-900/50 text-red-300 text-xs p-2 text-center">
-                  {betError}
-                </div>
-              )}
-              <BetSlip
-                selections={selections}
-                onRemoveSelection={(id) => setSelections((p) => p.filter((x) => uniqueId(x.matchId, x.marketId, x.selectionId) !== id))}
-                onClearAll={() => setSelections([])}
-                onPlaceBet={handlePlaceBet}
-                onCancelBet={handleCancelBet}
-                userBalance={currentUser.balance}
-                myBets={myBets}
-              />
-            </div>
-          </aside>
+          <BetSlipPanels
+            selections={slip.selections}
+            myBets={myBets}
+            userBalance={currentUser.balance}
+            betError={slip.betError}
+            isMobileSlipOpen={nav.isMobileSlipOpen}
+            onOpenMobileSlip={() => nav.setIsMobileSlipOpen(true)}
+            onCloseMobileSlip={nav.goBack}
+            onRemoveSelection={slip.removeSelection}
+            onClearAll={slip.clearSelections}
+            onPlaceBet={slip.placeBet}
+            onCancelBet={admin.cancelBet}
+          />
         )}
       </div>
-
-      {currentView === 'sports' && (
-        <>
-          <div className="fixed bottom-4 right-4 md:hidden z-40">
-            <button
-              onClick={() => setIsMobileSlipOpen(true)}
-              className="bg-brand-yellow text-black font-bold rounded-full w-14 h-14 shadow-2xl flex items-center justify-center relative border-2 border-white"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-              {selections.length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
-                  {selections.length}
-                </span>
-              )}
-            </button>
-          </div>
-
-          {isMobileSlipOpen && (
-            <div className="fixed inset-0 z-50 md:hidden bg-black/50 backdrop-blur-sm flex justify-end animate-in slide-in-from-bottom">
-              <div className="w-full h-full bg-brand-panel flex flex-col">
-                <div className="flex justify-between items-center p-4 bg-brand-header text-white shadow-lg">
-                  <span className="font-bold">Bet Slip</span>
-                  <button onClick={goBackScreen} className="text-white font-bold p-2">Close &times;</button>
-                </div>
-                <div className="flex-1 overflow-hidden">
-                  {betError && (
-                    <div className="bg-red-900/30 border-b border-red-900/50 text-red-300 text-xs p-2 text-center">
-                      {betError}
-                    </div>
-                  )}
-                  <BetSlip
-                    selections={selections}
-                    onRemoveSelection={(id) => setSelections((p) => p.filter((x) => uniqueId(x.matchId, x.marketId, x.selectionId) !== id))}
-                    onClearAll={() => setSelections([])}
-                    onPlaceBet={handlePlaceBet}
-                    onCancelBet={handleCancelBet}
-                    userBalance={currentUser.balance}
-                    myBets={myBets}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
     </div>
   );
 };
