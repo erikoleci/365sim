@@ -3,8 +3,6 @@ import { Match, User, UserRole } from '../types';
 import * as api from '../services/api';
 import { useI18n } from '../i18n';
 
-type Translate = ReturnType<typeof useI18n>['t'];
-
 interface Options {
   currentUser: User | null;
   setCurrentUser: (user: User | null) => void;

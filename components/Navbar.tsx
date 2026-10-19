@@ -16,25 +16,27 @@ interface NavbarProps {
   onGoSoccer: () => void;
   activeTab: 'home' | 'live' | 'results' | 'soccer';
   liveCount: number;
+  // Small screens: opens the football menu drawer (shown as the first item of the second bar).
+  onOpenMenu?: () => void;
 }
 
-const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, currentView, onNavigate, onGoHome, onGoLive, onGoResults, onGoSoccer, activeTab, liveCount, resultsCount }) => {
+const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, currentView, onNavigate, onGoHome, onGoLive, onGoResults, onGoSoccer, activeTab, liveCount, resultsCount, onOpenMenu }) => {
   const { t } = useI18n();
   return (
     <nav className="bg-brand-header text-brand-text text-sm sticky top-0 z-50 shadow-md flex flex-col">
       {/* Top Bar */}
-      <div className="w-full px-4 h-14 flex justify-between items-center">
+      <div className="w-full px-2 sm:px-4 h-14 flex justify-between items-center gap-2">
         {/* Logo & Nav Section */}
-        <div className="flex items-center gap-4 md:gap-6">
+        <div className="flex items-center gap-4 md:gap-6 min-w-0">
           <div className="flex items-center gap-2">
             <div 
-              className="font-bold text-xl md:text-2xl tracking-tighter italic text-white cursor-pointer"
+              className="font-bold text-lg sm:text-xl md:text-2xl tracking-tighter italic text-white cursor-pointer whitespace-nowrap"
               onClick={() => onNavigate('sports')}
             >
               bet<span className="text-brand-yellow">365</span>sim
             </div>
           </div>
-          <div className="flex gap-4 text-brand-text/90 text-xs md:text-sm font-medium">
+          <div className="hidden md:flex gap-4 text-brand-text/90 text-xs md:text-sm font-medium">
             <span 
                 onClick={() => onNavigate('sports')}
                 className={`cursor-pointer transition-opacity ${currentView === 'sports' ? 'text-white opacity-100 font-bold border-b-2 border-brand-yellow' : 'hover:text-white opacity-70'}`}
@@ -51,7 +53,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
         </div>
 
         {/* User Utilities */}
-        <div className="flex items-center gap-2 md:gap-4 text-xs">
+        <div className="flex items-center gap-1.5 sm:gap-2 md:gap-4 text-xs shrink-0">
           {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.AGENT) && (
             <button 
               data-admin-toggle
@@ -67,7 +69,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
           <div className="flex items-center gap-2 cursor-pointer group">
              <div className="text-right leading-tight">
                 <div className="text-white font-bold hidden md:block">{currentUser.name}</div>
-                <div className="text-brand-yellow font-bold">
+                <div className="text-brand-yellow font-bold whitespace-nowrap">
                   {currentUser.balance.toFixed(2)} <span className="hidden md:inline">L</span>
                 </div>
              </div>
@@ -80,9 +82,21 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
       </div>
       
       {/* Secondary Nav Bar (Hidden on Mobile for cleaner look, or simplified) */}
-      <div className="bg-[#282828] border-b border-brand-divider h-8 flex items-center px-4 w-full overflow-x-auto no-scrollbar">
+      <div className="bg-[#282828] border-b border-brand-divider h-9 md:h-8 flex items-center gap-3 px-2 sm:px-4 w-full overflow-x-auto no-scrollbar">
+         {/* Phones: the primary sections and the football menu live here (the top bar has no room). */}
+         <div className="md:hidden flex items-center gap-3 shrink-0 text-[11px] font-bold uppercase">
+           {currentView === 'sports' && onOpenMenu && (
+             <button onClick={onOpenMenu} aria-label={t('Hap Futboll dhe ligat')} className="flex items-center gap-1 text-brand-yellow">
+               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className="w-4 h-4 fill-current" aria-hidden="true"><path fillRule="evenodd" d="M3 5h14a1 1 0 100-2H3a1 1 0 000 2zm0 6h14a1 1 0 100-2H3a1 1 0 000 2zm0 6h14a1 1 0 100-2H3a1 1 0 000 2z" clipRule="evenodd" /></svg>
+               {t('Futboll')}
+             </button>
+           )}
+           <span onClick={() => onNavigate('sports')} className={currentView === 'sports' ? 'text-white' : 'text-brand-text/60'}>SPORTS</span>
+           <span onClick={() => onNavigate('casino')} className={currentView === 'casino' ? 'text-white' : 'text-brand-text/60'}>CASINO</span>
+           <span className="w-px h-4 bg-brand-divider" aria-hidden="true" />
+         </div>
          {currentView === 'sports' ? (
-             <div className="flex gap-6 text-xs text-brand-textMuted whitespace-nowrap">
+             <div className="flex gap-3 sm:gap-6 text-[11px] sm:text-xs text-brand-textMuted whitespace-nowrap">
                  <button onClick={onGoHome} aria-current={activeTab === 'home' ? 'page' : undefined} className={`cursor-pointer transition-colors hover:text-brand-accent ${activeTab === 'home' ? 'font-bold text-white' : ''}`}>Home</button>
                  <button onClick={onGoLive} aria-current={activeTab === 'live' ? 'page' : undefined} className={`cursor-pointer flex items-center gap-1 transition-colors hover:text-brand-accent ${activeTab === 'live' ? 'font-bold text-white' : ''}`}>
                    Live In-Play
@@ -95,7 +109,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
                  <button onClick={onGoSoccer} aria-current={activeTab === 'soccer' ? 'page' : undefined} className={`cursor-pointer transition-colors hover:text-brand-accent ${activeTab === 'soccer' ? 'font-bold text-white' : ''}`}>Soccer</button>
              </div>
          ) : (
-             <div className="flex gap-6 text-xs text-brand-textMuted whitespace-nowrap">
+             <div className="flex gap-3 sm:gap-6 text-[11px] sm:text-xs text-brand-textMuted whitespace-nowrap">
                  <span className="text-white font-bold cursor-pointer">Lobby</span>
                  <span className="hover:text-brand-yellow cursor-pointer">Slots</span>
                  <span className="hover:text-brand-yellow cursor-pointer">Live Casino</span>

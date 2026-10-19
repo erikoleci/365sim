@@ -268,7 +268,7 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
 
       {/* clock */}
       <div
-        className={`absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 rounded-full px-3 py-0.5 text-[11px] md:text-sm font-bold tabular-nums shadow-md ${halftime ? 'bg-brand-yellow text-black' : 'bg-black/65 backdrop-blur-sm text-white'}`}
+        className={`absolute top-8 sm:top-2 left-1/2 -translate-x-1/2 z-20 max-w-[92%] flex items-center gap-1.5 rounded-full px-3 py-0.5 text-[11px] md:text-sm font-bold tabular-nums whitespace-nowrap shadow-md ${halftime ? 'bg-brand-yellow text-black' : 'bg-black/65 backdrop-blur-sm text-white'}`}
       >
         {!halftime && <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />}
         <span>{halftime ? t('Pushim') : (clockLabel ?? formatLiveStatus(match))}</span>
@@ -291,7 +291,7 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
       {/* card just shown */}
       {flash && (
         <div
-          className="absolute left-1/2 top-10 md:top-12 z-30 flex items-center gap-2 bg-black/80 backdrop-blur-sm rounded-full pl-2.5 pr-4 py-1.5 shadow-xl"
+          className="absolute left-1/2 top-[3.75rem] sm:top-10 md:top-12 z-30 max-w-[92%] flex items-center gap-2 bg-black/80 backdrop-blur-sm rounded-full pl-2.5 pr-4 py-1.5 shadow-xl"
           style={{ animation: 'pitch-card-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2) both', border: `1px solid ${flash.kind === 'RED_CARD' ? 'rgba(255,70,70,0.6)' : 'rgba(255,223,27,0.6)'}` }}
         >
           <CardIcon color={flash.kind === 'RED_CARD' ? 'red' : 'yellow'} className="w-4 h-6" />

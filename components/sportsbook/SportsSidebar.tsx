@@ -13,6 +13,9 @@ interface Props extends ScreenActions {
   resultsCount: number;
   leaguesByCountry: [string, string[]][];
   leagueText: (key: string) => string;
+  // The drawer can be controlled by the parent (the Navbar owns the button that opens it).
+  drawerOpen?: boolean;
+  onDrawerOpenChange?: (open: boolean) => void;
 }
 
 /**
@@ -21,8 +24,10 @@ interface Props extends ScreenActions {
  */
 const SportsSidebar: React.FC<Props> = (props) => {
   const { t } = useI18n();
-  const { currentLeague } = props;
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const { currentLeague, drawerOpen, onDrawerOpenChange } = props;
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isDrawerOpen = drawerOpen ?? internalOpen;
+  const setIsDrawerOpen = (open: boolean) => (onDrawerOpenChange ? onDrawerOpenChange(open) : setInternalOpen(open));
 
   // Which country group is expanded: follows the selected league (picking one from the chip strip,
   // or going home, opens/closes the right group) while the person can still open others to browse.
@@ -33,8 +38,9 @@ const SportsSidebar: React.FC<Props> = (props) => {
     else setExpandedCountry(leagueCountry(currentLeague));
   }, [currentLeague]);
 
+  const { drawerOpen: _d, onDrawerOpenChange: _c, ...menuProps } = props;
   const menu = (onNavigated?: () => void) => (
-    <LeagueMenu {...props} expandedCountry={expandedCountry} onToggleCountry={setExpandedCountry} onNavigated={onNavigated} />
+    <LeagueMenu {...menuProps} expandedCountry={expandedCountry} onToggleCountry={setExpandedCountry} onNavigated={onNavigated} />
   );
 
   return (
@@ -47,15 +53,6 @@ const SportsSidebar: React.FC<Props> = (props) => {
           {menu()}
         </div>
       </aside>
-
-      <button
-        onClick={() => setIsDrawerOpen(true)}
-        className="lg:hidden fixed left-2 top-[7.5rem] z-40 bg-brand-panel border border-[#444] rounded-full pl-2.5 pr-3.5 py-2.5 shadow-lg flex items-center gap-1.5"
-        aria-label={t('Hap Futboll dhe ligat')}
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className="w-5 h-5 fill-brand-yellow"><path fillRule="evenodd" d="M3 5h14a1 1 0 100-2H3a1 1 0 000 2zm0 6h14a1 1 0 100-2H3a1 1 0 000 2zm0 6h14a1 1 0 100-2H3a1 1 0 000 2z" clipRule="evenodd" /></svg>
-        <span className="text-xs font-bold uppercase tracking-wider text-brand-text">{t('Futboll')}</span>
-      </button>
 
       {isDrawerOpen && (
         <div className="fixed inset-0 z-50 flex lg:hidden" onClick={() => setIsDrawerOpen(false)}>

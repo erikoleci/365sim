@@ -297,7 +297,7 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
                 <StatBox label={t('Komisioni im ({rate}%)', { rate: monthly.commissionRate })} value={money(monthly.commissionOwed)} tone="pos" />
               </div>
 
-              <table className="w-full text-xs">
+              <div className="overflow-x-auto"><table className="w-full text-xs">
                 <thead>
                   <tr className="text-brand-textMuted text-left border-b border-[#444]">
                     <th className="py-1.5 pr-2">User</th>
@@ -323,7 +323,7 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
                     <tr><td colSpan={6} className="py-4 text-center text-brand-textMuted">{t("S'ka te dhena per kete muaj.")}</td></tr>
                   )}
                 </tbody>
-              </table>
+              </table></div>
             </>
           )}
         </div>

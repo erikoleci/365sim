@@ -41,6 +41,8 @@ const App: React.FC = () => {
   const { currentUser, setCurrentUser, authChecked } = useAuth();
   const [currentView, setCurrentView] = useState<'sports' | 'casino'>('sports');
   const [showAdmin, setShowAdmin] = useState(false);
+  // Football menu drawer on small screens (opened from the Navbar, rendered by SportsSidebar).
+  const [menuDrawerOpen, setMenuDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDate, setSelectedDate] = useState('ALL'); // 'ALL' or 'YYYY-MM-DD' (Albania's calendar)
   const [navTab, setNavTab] = useState<'home' | 'soccer'>('home'); // which top tab was chosen last
@@ -161,6 +163,7 @@ const App: React.FC = () => {
         onGoResults={nav.goToResults}
         resultsCount={views.resultsList.length}
         liveCount={views.liveMatches.length}
+        onOpenMenu={() => setMenuDrawerOpen(true)}
       />
 
       <div className="flex-1 flex w-full pt-4 px-2 lg:px-4 gap-2 relative">
@@ -177,6 +180,8 @@ const App: React.FC = () => {
             goToLeague={nav.goToLeague}
             goToLive={nav.goToLive}
             goToResults={nav.goToResults}
+            drawerOpen={menuDrawerOpen}
+            onDrawerOpenChange={setMenuDrawerOpen}
           />
         )}
 

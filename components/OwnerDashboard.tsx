@@ -242,7 +242,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                             ) : agentDetail[a.id].length === 0 ? (
                               <div className="text-xs text-brand-textMuted">{t("Ky agjent s'ka usera ende.")}</div>
                             ) : (
-                              <table className="w-full text-xs">
+                              <div className="overflow-x-auto"><table className="w-full text-xs">
                                 <thead>
                                   <tr className="text-brand-textMuted text-left border-b border-[#444]">
                                     <th className="py-1.5 pr-2">User</th>
@@ -267,7 +267,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                                     </tr>
                                   ))}
                                 </tbody>
-                              </table>
+                              </table></div>
                             )}
                           </div>
                         )}
@@ -302,7 +302,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                   <KpiCard label={t('Humbje')} value={money(monthly.totals.losses)} positive={false} />
                   <KpiCard label={t('Neto')} value={money(monthly.totals.netResult)} positive={monthly.totals.netResult >= 0} />
                 </div>
-                <table className="w-full text-xs">
+                <div className="overflow-x-auto"><table className="w-full text-xs">
                   <thead>
                     <tr className="text-brand-textMuted text-left border-b border-[#444]">
                       <th className="py-1.5 pr-2">{t('Agjenti')}</th>
@@ -334,7 +334,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                       <tr><td colSpan={8} className="py-4 text-center text-brand-textMuted">{t("S'ka te dhena per kete muaj.")}</td></tr>
                     )}
                   </tbody>
-                </table>
+                </table></div>
               </>
             )}
           </div>

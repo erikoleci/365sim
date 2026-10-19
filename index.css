@@ -2,7 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Phones: the PAGE never scrolls sideways, whatever the width of the phone. Inner strips
+   (league chips, tabs) keep their own horizontal scroll. `clip` (unlike `hidden`) does not
+   turn html/body into a scroll container, so position: sticky keeps working. */
+html, body {
+  max-width: 100%;
+}
+@supports (overflow: clip) {
+  html, body {
+    overflow-x: clip;
+  }
+}
 body {
+  overflow-wrap: break-word;
   background-color: #282828;
   color: #e4e4e4;
   font-family: Verdana, sans-serif;
