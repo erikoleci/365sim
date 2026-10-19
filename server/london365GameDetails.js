@@ -55,6 +55,7 @@ import { isTrackedGame, getLiveRow, setLiveRow, forgetLiveRow, __resetLiveTracke
 import { bump } from './feedStats.js';
 import { captureHalfTimeScore } from './halfTime.js';
 import { queueClockWrite } from './clockWrites.js';
+import { sampleFeedKeys } from './feedKeySampler.js';
 import { announceGoalIfChanged, clearGoalAnnounced } from './goalAnnouncer.js';
 export { parseGameDetails };
 
@@ -281,6 +282,7 @@ async function insertEventOnce(matchId, minute, type, team, detail, now) {
 async function applyGameDetailsNow(raw) {
   bump('gamedetails.received');
   const attrs = parseGameDetails(raw);
+  sampleFeedKeys('socket.gamedetails', attrs);
   if (!attrs) return;
   let eid = attrs.EID;
   if (BLOCKED_EIDS.has(eid)) return;

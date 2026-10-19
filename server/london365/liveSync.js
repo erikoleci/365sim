@@ -2,6 +2,7 @@
 import { noteLiveSyncCompleted, missedLiveCycles } from './liveState.js';
 import { getWatchedMatchIds, pushMatchEnded } from '../ws.js';
 import pool from '../db.js';
+import { sampleFeedKeys } from '../feedKeySampler.js';
 import { bump } from '../feedStats.js';
 import { selectDetailTargets, markDetailFetched, pruneDetailAt } from '../liveDetailPlan.js';
 import { isTrackedGame, hasKnownLiveMatches, retainLiveKnown, noteMatchStatus, forgetLiveRow } from '../liveTracker.js';
@@ -163,6 +164,7 @@ export async function syncLondon365LiveOnce() {
     const detailTargets = selectDetailTargets(games, { budget: LIVE_DETAIL_BUDGET, priorityIds: await collectPriorityGameIds() });
     const processGame = async (g) => {
       if (!g || !g.id) return;
+      sampleFeedKeys('rest.livegames.game', g);
       const resolvedLeagueEarly = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
       // Same country allowlist as the prematch import — a live match from a
       // country outside LONDON365_ONLY_COUNTRIES shouldn't sneak into the

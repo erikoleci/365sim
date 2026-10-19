@@ -1,4 +1,5 @@
 // Provider markets and odds: market names, canonical market keys, outcome mapping, building the event shape.
+import { sampleFeedKeys } from '../feedKeySampler.js';
 import { getKV } from '../db.js';
 import { slug } from './leagueKeys.js';
 import { api } from './api.js';
@@ -124,6 +125,7 @@ export async function fetchLiveRows(gameId) {
     for (const m of group) {
       if (!m) continue;
       if (!meta) {
+        sampleFeedKeys('rest.livegame.row', m); // first row only: which fields exist (names, logos, ...)
         meta = {
           minute: m.current_minute || null,
           result: m.result || null,

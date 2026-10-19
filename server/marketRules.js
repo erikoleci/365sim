@@ -103,11 +103,50 @@ function periodScore(row, period, now) {
   return h >= 0 && a >= 0 ? { h, a } : null;
 }
 
+// What the system does with a market, by name: can it be settled automatically, and can it
+// be bet on while the match is in play. Shared by the admin coverage report and the guards.
+// Kinds matchSettlement.js settles from the result (some need extra data: half-time score for
+// htft and the 1st/2nd-half variants, corner/card counters for corners and cards).
+const AUTO_SETTLES = new Set([
+  'result', 'double_chance', 'dnb', 'handicap', 'odd_even', 'totals', 'team_totals', 'btts',
+  'correct_score', 'htft', 'corners', 'cards', 'combo',
+]);
+// Kinds that stay open for betting while the match is in play (see marketRules.getBetBlockReason).
+const OPEN_IN_PLAY = new Set([
+  'result', 'double_chance', 'dnb', 'handicap', 'odd_even', 'totals', 'team_totals', 'btts', 'correct_score', 'htft',
+]);
+
+export function describeMarket(marketId, marketName) {
+  let c = classifyMarket(marketId, marketName, {});
+  // "Numri i Golave Zakynthos": a per-team total. classifyMarket needs the team names to tell
+  // it apart, which a bare market name does not have, so recognise the shape by its prefix.
+  if (c.kind === 'other') {
+    const n = norm(marketName);
+    if (TOTAL_GOALS_PREFIXES.some((p) => n.startsWith(p + ' '))) c = { ...c, kind: 'team_totals' };
+  }
+  return {
+    kind: c.kind,
+    period: c.period || null,
+    autoSettles: AUTO_SETTLES.has(c.kind),
+    inPlay: OPEN_IN_PLAY.has(c.kind) ? 'open' : 'blocked',
+  };
+}
+
+// BET_REQUIRE_SETTLEMENT_RULE=1: refuse (and show as locked) every market that has no
+// automatic settlement rule, before the match as well as during it. That is what guarantees
+// no accepted ticket can be left open for lack of a way to decide it; the price is that
+// markets the system does not recognise disappear from the board. Off by default: look at
+// GET /api/admin/market-coverage first to see how many markets that would remove.
+export function settlementRuleRequired() {
+  return ['1', 'true', 'yes'].includes(String(process.env.BET_REQUIRE_SETTLEMENT_RULE || '').toLowerCase());
+}
+
 export function unverifiedMarketsAllowed() {
   return String(process.env.LIVE_BET_UNVERIFIED_MARKETS || '').toLowerCase() === 'allow';
 }
 
 const NOT_VERIFIABLE = 'NOT_VERIFIABLE_LIVE';
+const NO_RULE = 'NO_SETTLEMENT_RULE';
 const DECIDED = 'OUTCOME_DECIDED';
 
 // Why a bet on `selection` of `market` must be refused for this matches_cache row
@@ -118,6 +157,8 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
   if (!row) return null;
   const closed = getMarketClosedReason(row, market && market.name, now);
   if (closed) return closed; // MATCH_FINISHED | FIRST_HALF_OVER
+
+  if (settlementRuleRequired() && !describeMarket(market && market.id, market && market.name).autoSettles) return NO_RULE;
 
   const kickoff = Date.parse(row.start_time);
   if (!Number.isFinite(kickoff) || kickoff > now) return null; // not in play yet
@@ -172,6 +213,7 @@ export function describeBlockReason(code) {
     case 'MATCH_FINISHED': return 'the match has finished';
     case 'FIRST_HALF_OVER': return 'the first half is over';
     case 'OUTCOME_DECIDED': return 'the outcome is already decided by the current score';
+    case 'NO_SETTLEMENT_RULE': return 'this market cannot be settled automatically, so it is not offered';
     case 'NOT_VERIFIABLE_LIVE': return 'this market cannot be verified against live data, so it is only open before kick-off';
     default: return 'it is closed';
   }

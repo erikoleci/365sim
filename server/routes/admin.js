@@ -5,6 +5,11 @@ import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { settleMatch, recomputeBetStatus, settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult } from '../matchSettlement.js';
 import { logAudit } from '../auditLog.js';
+import { buildCoverageReport } from '../marketCoverage.js';
+import { settlementRuleRequired } from '../marketRules.js';
+import { getFeedKeySamples } from '../feedKeySampler.js';
+import { mapEventToMatch } from '../oddsUtils.js';
+
 import { transferBalance } from '../ledger.js';
 import { importLondon365, getLondon365Status, getLondon365CountryDebug } from '../london365.js';
 import { monthRange } from './agent.js';
@@ -521,6 +526,44 @@ router.post('/matches/:id/settle', async (req, res) => {
   await logAudit(req.user, 'MATCH_SETTLE', req.params.id, { homeScore, awayScore, ...result });
   res.json({ ok: true, ...result });
 });
+
+// Which markets exist, and which of them the system can settle by itself. One row per market
+// name: those used by placed bets (with how many are still open) and those currently on the
+// board, with the rule it falls under, whether it can be bet on in play, and a summary of how
+// many have NO automatic settlement rule (those tickets end by manual settlement or by the
+// 24h refund). Send this to whoever extends the rules.
+router.get('/market-coverage', async (req, res) => {
+  const { rows: legRows } = await pool.query(
+    `SELECT market_id, market_name, COUNT(*)::int AS legs, COUNT(*) FILTER (WHERE status = 'PENDING')::int AS pending
+       FROM bet_selections GROUP BY market_id, market_name`
+  );
+  const { rows: boardRows } = await pool.query(
+    `SELECT * FROM matches_cache WHERE status IN ('LIVE', 'UPCOMING') ORDER BY start_time LIMIT 300`
+  );
+  const board = new Map();
+  for (const row of boardRows) {
+    let match;
+    try { match = mapEventToMatch(row); } catch { continue; }
+    for (const mk of match.markets || []) {
+      const cur = board.get(mk.name) || { name: mk.name, id: mk.id, matches: 0 };
+      cur.matches += 1;
+      board.set(mk.name, cur);
+    }
+  }
+  const report = buildCoverageReport([
+    ...legRows.map((r) => ({ name: r.market_name, id: r.market_id, legs: r.legs, pending: r.pending })),
+    ...board.values(),
+  ]);
+  res.json({ boardMatchesScanned: boardRows.length, requireSettlementRule: settlementRuleRequired(), ...report });
+});
+
+// Every raw provider field seen so far (REST list, REST live detail, live socket) with a few
+// sample values. Open it while real matches with goals are live to find out whether the feed
+// carries scorer names, team logos, etc. (see feedKeySampler.js). Resets on server restart.
+router.get('/feed-keys', (req, res) => {
+  res.json({ fields: getFeedKeySamples() });
+});
+
 
 // Verifies every open (PENDING) ticket against matches that are already
 // finished and closes the ones whose result is now known.

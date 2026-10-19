@@ -9,7 +9,7 @@
 // and must never change. Only the human-facing `name` fields are
 // translated to Albanian. Never parse business logic out of `name`.
 
-import { getBetBlockReason } from './marketRules.js';
+import { getBetBlockReason, settlementRuleRequired } from './marketRules.js';
 
 export const MARKET_LABELS = {
   h2h: { name: '1X2 - Fituesi', category: 'main' },
@@ -279,7 +279,7 @@ export function mapEventToMatch(row) {
   // options are flagged suspended (the UI renders those as locked) and the market
   // carries the reason. This is only so the board never offers them as bettable --
   // the server-side check at placement is what actually protects.
-  const openMarkets = status === 'LIVE'
+  const openMarkets = (status === 'LIVE' || settlementRuleRequired())
     ? markets.map((m) => {
         const reasons = m.options.map((o) => getBetBlockReason(row, { id: m.id, name: m.name }, { id: o.id, name: o.name }));
         if (!reasons.some(Boolean)) return m;
