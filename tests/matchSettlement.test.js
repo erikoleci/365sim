@@ -283,3 +283,25 @@ describe('last team to score, first goal, both halves', () => {
     expect(determineLegOutcome(L(M, 'Po'), { ...all, htHome: undefined, htAway: undefined })).toBeNull();
   });
 });
+
+describe('first / second half corner and card markets', () => {
+  const L = (market, sel) => ({ market_id: 'x', market_name: market, selection_id: sel, selection_name: sel, match_home: 'Roma', match_away: 'Lazio' });
+  const base = { winner: 'HOME', totalGoals: 3, bothScored: true, homeScore: 2, awayScore: 1, htHome: 1, htAway: 0 };
+  const stats = { cornersHome: 7, cornersAway: 4, cardsHome: 3, cardsAway: 2 };
+  const htStats = { cornersHome: 3, cornersAway: 2, cardsHome: 1, cardsAway: 1 };
+
+  it('first half uses the half-time counters, second half final minus half-time', async () => {
+    const { determineLegOutcome } = await import('../server/matchSettlement.js');
+    const c = { ...base, stats, htStats };
+    expect(determineLegOutcome(L('Numri i korneve Pjesa e Parë', 'Lart 4.5'), c)).toBe('WON'); // 3+2 = 5
+    expect(determineLegOutcome(L('Numri i korneve Pjesa e Parë', 'Lart 5.5'), c)).toBe('LOST');
+    expect(determineLegOutcome(L('Numri i korneve Pjesa e Dytë', 'Lart 5.5'), c)).toBe('WON'); // 4+2 = 6
+    expect(determineLegOutcome(L('Numri i kartonëve Pjesa e Parë', 'Nën 2.5'), c)).toBe('WON'); // 1+1 = 2
+  });
+  it('stays PENDING without half-time counters or when a counter is missing / inconsistent', async () => {
+    const { determineLegOutcome } = await import('../server/matchSettlement.js');
+    expect(determineLegOutcome(L('Numri i korneve Pjesa e Parë', 'Lart 4.5'), { ...base, stats })).toBeNull();
+    expect(determineLegOutcome(L('Numri i korneve Pjesa e Parë', 'Lart 4.5'), { ...base, stats, htStats: { ...htStats, cornersAway: null } })).toBeNull();
+    expect(determineLegOutcome(L('Numri i korneve Pjesa e Dytë', 'Lart 4.5'), { ...base, stats, htStats: { ...htStats, cornersHome: 9 } })).toBeNull();
+  });
+});

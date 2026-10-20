@@ -19,10 +19,25 @@ export async function captureHalfTimeScore(matchId, home, away) {
   if (captured.size >= CAPTURED_CAP) captured.clear();
   captured.add(matchId);
   try {
-    await pool.query(
-      'UPDATE matches_cache SET ht_home = $2, ht_away = $3 WHERE id = $1 AND ht_home IS NULL',
-      [matchId, home, away]
-    );
+    // Corner / card counters at the whistle are stored with the score (same first-write-wins
+    // guard). If the columns do not exist yet (migration not applied) or the stats lookup
+    // fails, the score is still stored on its own.
+    try {
+      await pool.query(
+        `UPDATE matches_cache SET ht_home = $2, ht_away = $3,
+                ht_corners_home = (SELECT corners_home FROM live_statistics WHERE match_id = $1),
+                ht_corners_away = (SELECT corners_away FROM live_statistics WHERE match_id = $1),
+                ht_cards_home = (SELECT cards_home FROM live_statistics WHERE match_id = $1),
+                ht_cards_away = (SELECT cards_away FROM live_statistics WHERE match_id = $1)
+          WHERE id = $1 AND ht_home IS NULL`,
+        [matchId, home, away]
+      );
+    } catch {
+      await pool.query(
+        'UPDATE matches_cache SET ht_home = $2, ht_away = $3 WHERE id = $1 AND ht_home IS NULL',
+        [matchId, home, away]
+      );
+    }
   } catch (err) {
     captured.delete(matchId); // retry on the next HT tick
     console.error('[halftime] failed to store half-time score for ' + matchId + ':', err.message);
