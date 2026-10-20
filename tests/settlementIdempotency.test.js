@@ -52,6 +52,11 @@ const mocks = vi.hoisted(function () {
           if (row) row.status = params[0];
           return { rows: [] };
         }
+        if (s.startsWith('SELECT balance FROM users WHERE id')) {
+          const u = users.get(params[0]);
+          return { rows: u ? [{ balance: u.balance }] : [] };
+        }
+        if (s.startsWith('INSERT INTO transactions')) return { rows: [] };
         if (s === 'UPDATE users SET balance = balance + $1 WHERE id = $2') {
           const row = users.get(params[1]);
           if (row) row.balance += params[0];

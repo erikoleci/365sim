@@ -18,6 +18,14 @@ describe('describeMarket', () => {
       expect(d.inPlay).toBe('blocked');
     }
   });
+  it('agrees with settlement: corner/card variants the counters cannot decide are NOT claimed as settled', () => {
+    for (const name of ['Karton i Kuq', 'Karton i Verdhë', 'Pikët e Kartonave', 'Korner Pjesa e Parë', 'Korner Handikap']) {
+      expect(describeMarket('x', name).autoSettles, name).toBe(false);
+    }
+    for (const name of ['Korner Totali', 'Kartonë Totali', 'Numri i Kornerave']) {
+      expect(describeMarket('x', name).autoSettles, name).toBe(true);
+    }
+  });
   it('says what stays open in play', () => {
     expect(describeMarket('x', 'Rezultat Final').inPlay).toBe('open');
     expect(describeMarket('x', 'Pushim/Fund').inPlay).toBe('open');

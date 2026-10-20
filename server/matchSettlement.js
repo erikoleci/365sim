@@ -2,6 +2,7 @@ import pool from './db.js';
 import { minuteOf, splitPeriod, PERIOD_BASE_ALIASES } from './marketPeriods.js';
 import {
   TOTAL_GOALS_PREFIXES, H2H_NAMES, BTTS_NAMES, DOUBLE_CHANCE_NAMES, CORRECT_SCORE_NAMES, HANDICAP_NAMES, parseOverUnder,
+  STATS_UNDECIDABLE,
 } from './marketRules.js';
 
 // ---- first / second half markets ------------------------------------------
@@ -129,7 +130,7 @@ function statsOutcome(leg, marketName, stats, { home, away }) {
   const isCards = /karton|\bcards?\b|booking/.test(marketName);
   if (!isCorners && !isCards) return undefined; // not a stats market
   if (!stats) return null;
-  if (/pike|points|\bkuq\b|\bred\b|\bverdh|\bhandikap|\bhandicap|\bpare\b|\bdyte\b|\bfillim|\bfirst\b|\bpushim|\bnjeri\b/.test(marketName.replace(/p1\s*\+\s*p2/g, ''))) return null;
+  if (STATS_UNDECIDABLE.test(marketName.replace(/p1\s*\+\s*p2/g, ''))) return null;
   const h = Number(isCorners ? stats.cornersHome : stats.cardsHome);
   const a = Number(isCorners ? stats.cornersAway : stats.cardsAway);
   if (!Number.isFinite(h) || !Number.isFinite(a)) return null;
@@ -278,6 +279,27 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
   return null;
 }
 
+// Credits a user's balance for a settled ticket AND records it in the transactions ledger,
+// in the caller's transaction (the bet row is already locked). Stake deductions and cancel
+// refunds were already ledgered; settlement payouts and void refunds were not, so a balance
+// could change with no trace. A failed ledger write fails (and rolls back) the whole
+// settlement, which the sweeps then retry: money must never move without a record.
+// type: 'BET_WIN_PAYOUT' | 'BET_VOID_REFUND'; reference: the bet id.
+async function creditWithLedger(client, userId, amount, type, betId) {
+  const { rows } = await client.query('SELECT balance FROM users WHERE id = $1 FOR UPDATE', [userId]);
+  if (!rows[0]) return; // user no longer exists: nothing to credit
+  const before = Number(rows[0].balance);
+  const after = Math.round((before + Number(amount)) * 100) / 100;
+  await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [amount, userId]);
+  await client.query(
+    `INSERT INTO transactions
+      (actor_id, source_id, target_id, amount, type, reference,
+       source_balance_before, source_balance_after, target_balance_before, target_balance_after, created_at)
+     VALUES ($1,$1,$1,$2,$3,$4,$5,$6,$5,$6,$7)`,
+    [userId, amount, type, betId, before, after, Date.now()]
+  );
+}
+
 // Recompute a bet's overall status from its legs, and pay out balance
 // exactly once, the moment it transitions into WON (or VOID = refund).
 //
@@ -313,16 +335,16 @@ export async function recomputeBetStatus(betId, client = pool) {
     const totalOdds = active.reduce((acc, l) => acc * Number(l.odds), 1);
     const payout = Number((Number(bet.stake) * totalOdds).toFixed(2));
     await client.query('UPDATE bets SET status = $1, total_odds = $2, potential_return = $3 WHERE id = $4', [nextStatus, totalOdds, payout, betId]);
-    if (bet.status !== 'WON') await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [payout, bet.user_id]);
+    if (bet.status !== 'WON') await creditWithLedger(client, bet.user_id, payout, 'BET_WIN_PAYOUT', betId);
     return;
   }
 
   await client.query('UPDATE bets SET status = $1 WHERE id = $2', [nextStatus, betId]);
   if (nextStatus === 'WON' && bet.status !== 'WON') {
-    await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [bet.potential_return, bet.user_id]);
+    await creditWithLedger(client, bet.user_id, bet.potential_return, 'BET_WIN_PAYOUT', betId);
   }
   if (nextStatus === 'VOID' && bet.status !== 'VOID') {
-    await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [bet.stake, bet.user_id]);
+    await creditWithLedger(client, bet.user_id, bet.stake, 'BET_VOID_REFUND', betId);
   }
 }
 

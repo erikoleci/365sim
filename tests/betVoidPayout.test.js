@@ -9,6 +9,7 @@ function fakeClient(bet, legs) {
     async query(sql, params) {
       if (/FROM bets WHERE id/.test(sql)) return { rows: [bet] };
       if (/FROM bet_selections WHERE bet_id/.test(sql)) return { rows: legs };
+      if (/SELECT balance FROM users/.test(sql)) return { rows: [{ balance: 5000 }] };
       writes.push({ sql, params });
       return { rows: [] };
     },
@@ -16,6 +17,7 @@ function fakeClient(bet, legs) {
 }
 const bet = (o = {}) => ({ id: 'b1', user_id: 'u1', stake: 1000, potential_return: 6000, status: 'PENDING', ...o });
 const leg = (status, odds) => ({ status, odds });
+const ledgerRows = (c) => c.writes.filter((w) => /INSERT INTO transactions/.test(w.sql)).map((w) => ({ amount: w.params[1], type: w.params[2], ref: w.params[3], before: w.params[4], after: w.params[5] }));
 const balanceCredits = (c) => c.writes.filter((w) => /UPDATE users SET balance/.test(w.sql)).map((w) => w.params[0]);
 
 describe('recomputeBetStatus — VOID handling', () => {

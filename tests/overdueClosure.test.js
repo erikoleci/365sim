@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // In-memory DB: bets, legs and matches, driven by the exact SQL the code issues.
-const db = { bets: new Map(), legs: [], matches: new Map(), balances: new Map(), log: [] };
+const db = { bets: new Map(), legs: [], matches: new Map(), balances: new Map(), ledger: [], log: [] };
 function client() {
   return {
     release() {},
@@ -32,6 +32,8 @@ function client() {
         return { rows: [] };
       }
       if (s.startsWith('UPDATE bets SET status = $1 WHERE id')) { db.bets.get(params[1]).status = params[0]; return { rows: [] }; }
+      if (s.startsWith('SELECT balance FROM users WHERE id')) return { rows: [{ balance: db.balances.get(params[0]) ?? 0 }] };
+      if (s.startsWith('INSERT INTO transactions')) { db.ledger.push({ user: params[0], amount: Number(params[1]), type: params[2], ref: params[3], before: params[4], after: params[5] }); return { rows: [] }; }
       if (s.startsWith('UPDATE users SET balance = balance +')) {
         db.balances.set(params[1], (db.balances.get(params[1]) || 0) + Number(params[0]));
         return { rows: [] };
@@ -66,7 +68,7 @@ describe('isLegOverdue', () => {
 });
 
 describe('voidOverdueLegs', () => {
-  beforeEach(() => { db.bets.clear(); db.legs.length = 0; db.matches.clear(); db.balances.clear(); db.log.length = 0; });
+  beforeEach(() => { db.bets.clear(); db.legs.length = 0; db.matches.clear(); db.balances.clear(); db.ledger.length = 0; db.log.length = 0; });
 
   it('a single bet on a match that never resolved is voided and the stake refunded', async () => {
     match('m1', -30); bet('b1'); leg('l1', 'b1', 'm1');
@@ -74,6 +76,7 @@ describe('voidOverdueLegs', () => {
     expect(r).toEqual({ voidedLegs: 1, recomputedBets: 1 });
     expect(db.bets.get('b1').status).toBe('VOID');
     expect(db.balances.get('u1')).toBe(1000);
+    expect(db.ledger.map((r) => [r.type, r.amount, r.ref])).toEqual([['BET_VOID_REFUND', 1000, 'b1']]);
   });
 
   it('accumulator: the overdue leg drops out, the won leg pays at its own odds', async () => {
@@ -114,5 +117,6 @@ describe('voidOverdueLegs', () => {
     await voidOverdueLegs({ olderThanMs: 24 * H, now: NOW });
     await voidOverdueLegs({ olderThanMs: 24 * H, now: NOW });
     expect(db.balances.get('u1')).toBe(1000);
+    expect(db.ledger).toHaveLength(1); // refunded once, ledgered once
   });
 });

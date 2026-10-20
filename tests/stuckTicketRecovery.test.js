@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const db = { bets: new Map(), legs: [], balances: new Map() };
+const db = { bets: new Map(), legs: [], balances: new Map(), ledger: [] };
 function client() {
   return {
     release() {},
@@ -13,6 +13,8 @@ function client() {
       if (s.startsWith('SELECT * FROM bet_selections WHERE bet_id')) return { rows: db.legs.filter((l) => l.bet_id === params[0]).map((l) => ({ ...l })) };
       if (s.startsWith('UPDATE bets SET status = $1, total_odds')) { Object.assign(db.bets.get(params[3]), { status: params[0], total_odds: params[1], potential_return: params[2] }); return { rows: [] }; }
       if (s.startsWith('UPDATE bets SET status = $1 WHERE id')) { db.bets.get(params[1]).status = params[0]; return { rows: [] }; }
+      if (s.startsWith('SELECT balance FROM users WHERE id')) return { rows: [{ balance: db.balances.get(params[0]) ?? 0 }] };
+      if (s.startsWith('INSERT INTO transactions')) { db.ledger.push({ user: params[0], amount: Number(params[1]), type: params[2], ref: params[3], before: params[4], after: params[5] }); return { rows: [] }; }
       if (s.startsWith('UPDATE users SET balance = balance +')) { db.balances.set(params[1], (db.balances.get(params[1]) || 0) + Number(params[0])); return { rows: [] }; }
       throw new Error('unmocked query: ' + s);
     },
@@ -30,7 +32,7 @@ async function sweep() {
 }
 
 describe('stuck ticket recovery', () => {
-  beforeEach(() => { db.bets.clear(); db.legs.length = 0; db.balances.clear(); });
+  beforeEach(() => { db.bets.clear(); db.legs.length = 0; db.balances.clear(); db.ledger.length = 0; });
 
   it('a ticket with one LOST leg and others still open is closed as LOST, nothing paid', async () => {
     bet('b1'); leg('l1', 'b1', 'LOST'); leg('l2', 'b1', 'PENDING'); leg('l3', 'b1', 'WON');
@@ -43,6 +45,8 @@ describe('stuck ticket recovery', () => {
     await sweep(); await sweep();
     expect(db.bets.get('b2').status).toBe('WON');
     expect(db.balances.get('u1')).toBe(6000);
+    // exactly ONE ledger row, however many times the sweep ran
+    expect(db.ledger).toEqual([{ user: 'u1', amount: 6000, type: 'BET_WIN_PAYOUT', ref: 'b2', before: 0, after: 6000 }]);
   });
   it('a ticket still waiting on a leg that has not been played stays open', async () => {
     bet('b3'); leg('l1', 'b3', 'WON'); leg('l2', 'b3', 'PENDING');

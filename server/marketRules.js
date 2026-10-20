@@ -107,6 +107,12 @@ function periodScore(row, period, now) {
 // be bet on while the match is in play. Shared by the admin coverage report and the guards.
 // Kinds matchSettlement.js settles from the result (some need extra data: half-time score for
 // htft and the 1st/2nd-half variants, corner/card counters for corners and cards).
+// Corner / card markets the counters cannot decide: booking points, red-card-only, yellow-only,
+// handicaps, first/second half, "which half", ... Used by matchSettlement (to leave the leg
+// PENDING) and by describeMarket (so the coverage report says the same thing).
+export const STATS_UNDECIDABLE = /pike|points|\bkuq\b|\bred\b|\bverdh|\bhandikap|\bhandicap|\bpare\b|\bdyte\b|\bfillim|\bfirst\b|\bpushim|\bnjeri\b/;
+const stripP1P2 = (name) => String(name).replace(/p1\s*\+\s*p2/g, '');
+
 const AUTO_SETTLES = new Set([
   'result', 'double_chance', 'dnb', 'handicap', 'odd_even', 'totals', 'team_totals', 'btts',
   'correct_score', 'htft', 'corners', 'cards', 'combo',
@@ -127,7 +133,7 @@ export function describeMarket(marketId, marketName) {
   return {
     kind: c.kind,
     period: c.period || null,
-    autoSettles: AUTO_SETTLES.has(c.kind),
+    autoSettles: AUTO_SETTLES.has(c.kind) && !((c.kind === 'corners' || c.kind === 'cards') && STATS_UNDECIDABLE.test(stripP1P2(norm(marketName)))),
     inPlay: OPEN_IN_PLAY.has(c.kind) ? 'open' : 'blocked',
   };
 }

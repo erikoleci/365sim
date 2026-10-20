@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // flipped to FINISHED with NO stored result and NO settlement, so its tickets sat
 // "HAPUR" until the 24h overdue sweep VOIDed them. settleStuckBets() must now pick
 // such matches up from their last real live score and decide the tickets.
-const db = { bets: new Map(), legs: [], matches: new Map(), balances: new Map() };
+const db = { bets: new Map(), legs: [], matches: new Map(), balances: new Map(), ledger: [] };
 const n = (sql) => sql.replace(/\s+/g, ' ').trim();
 
 function client() {
@@ -41,6 +41,8 @@ function client() {
       if (s.startsWith('SELECT * FROM bets WHERE id')) return { rows: [{ ...db.bets.get(params[0]) }] };
       if (s.startsWith('SELECT * FROM bet_selections WHERE bet_id')) return { rows: db.legs.filter((l) => l.bet_id === params[0]).map((l) => ({ ...l })) };
       if (s.startsWith('UPDATE bets SET status = $1 WHERE id')) { db.bets.get(params[1]).status = params[0]; return { rows: [] }; }
+      if (s.startsWith('SELECT balance FROM users WHERE id')) return { rows: [{ balance: db.balances.get(params[0]) ?? 0 }] };
+      if (s.startsWith('INSERT INTO transactions')) { db.ledger.push({ user: params[0], amount: Number(params[1]), type: params[2], ref: params[3], before: params[4], after: params[5] }); return { rows: [] }; }
       if (s.startsWith('UPDATE users SET balance = balance +')) {
         db.balances.set(params[1], (db.balances.get(params[1]) || 0) + Number(params[0]));
         return { rows: [] };
@@ -73,7 +75,7 @@ const leg = (bet_id, match_id, selection_id) => db.legs.push({
 });
 
 describe('settleStuckBets: matches closed without settlement', () => {
-  beforeEach(() => { db.bets.clear(); db.legs.length = 0; db.matches.clear(); db.balances.clear(); legId = 0; });
+  beforeEach(() => { db.bets.clear(); db.legs.length = 0; db.matches.clear(); db.balances.clear(); db.ledger.length = 0; legId = 0; });
 
   it('pays a winning live ticket and closes a losing one from the last live score', async () => {
     match('m1'); // ended 2-1 (HOME), never settled

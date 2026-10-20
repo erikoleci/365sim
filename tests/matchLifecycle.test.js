@@ -70,6 +70,14 @@ const mocks = vi.hoisted(function () {
       bets.get(params[1]).status = params[0];
       return { rows: [] };
     }
+    if (s.startsWith('SELECT balance FROM users WHERE id')) {
+      const u = users.get(params[0]);
+      return { rows: u ? [{ balance: u.balance }] : [] };
+    }
+    if (s.startsWith('INSERT INTO transactions')) {
+      (state.ledger ||= []).push({ user: params[0], amount: Number(params[1]), type: params[2], ref: params[3] });
+      return { rows: [] };
+    }
     if (s === 'UPDATE users SET balance = balance + $1 WHERE id = $2') {
       users.get(params[1]).balance += Number(params[0]);
       return { rows: [] };
