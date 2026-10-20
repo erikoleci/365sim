@@ -55,7 +55,7 @@ describe('determineLegOutcome — provider markets without canonical key (name-b
   const nameLeg = (selection, market_name = 'Numri i Golave ne Ndeshje') => ({
     market_id: 'numri_i_golave_ne_ndeshje_m123', market_name, selection_id: selection, selection_name: selection,
   });
-  const res = (goals) => ({ winner: 'DRAW', totalGoals: goals, bothScored: goals > 1 });
+  const res = (goals) => ({ winner: goals > 0 ? 'HOME' : 'DRAW', totalGoals: goals, bothScored: false, homeScore: goals, awayScore: 0 });
 
   it('"Lart 1.5" wins with 2 goals (the stuck-ticket case)', () => {
     expect(determineLegOutcome(nameLeg('Lart 1.5'), res(2))).toBe('WON');
@@ -105,9 +105,15 @@ describe('determineLegOutcome — every other final-score market', () => {
     expect(determineLegOutcome(L('Dopio Shans', '12'), R(0, 3))).toBe('WON');
   });
   it('draw no bet: draw is VOID, otherwise winner decides', () => {
-    expect(determineLegOutcome(L('Home No Bet', '1'), R(1, 1))).toBe('VOID');
-    expect(determineLegOutcome(L('Home No Bet', '1'), R(2, 1))).toBe('WON');
-    expect(determineLegOutcome(L('Away No Bet', '2'), R(2, 1))).toBe('LOST');
+    // The provider's "Home no bet" offers X / 2 and refunds the stake when HOME wins;
+    // "Away no bet" offers 1 / X and refunds when AWAY wins; "Fitore/Fitore" is plain draw-no-bet (1 / 2).
+    expect(determineLegOutcome(L('Home No Bet', 'X'), R(2, 1))).toBe('VOID');
+    expect(determineLegOutcome(L('Home No Bet', 'X'), R(1, 1))).toBe('WON');
+    expect(determineLegOutcome(L('Home No Bet', '2'), R(0, 1))).toBe('WON');
+    expect(determineLegOutcome(L('Away No Bet', '1'), R(2, 1))).toBe('WON');
+    expect(determineLegOutcome(L('Away No Bet', '1'), R(1, 2))).toBe('VOID');
+    expect(determineLegOutcome(L('Fitore/Fitore', '1'), R(1, 1))).toBe('VOID');
+    expect(determineLegOutcome(L('Fitore/Fitore', '2'), R(2, 1))).toBe('LOST');
   });
   it('both teams to score by Po/Jo', () => {
     expect(determineLegOutcome(L('Gol/Jogol', 'Po'), R(1, 1))).toBe('WON');
@@ -131,12 +137,17 @@ describe('determineLegOutcome — every other final-score market', () => {
     expect(determineLegOutcome(L('Handikap', 'Zakynthos (-1.5)'), R(1, 0))).toBe('LOST');
     expect(determineLegOutcome(L('Handikap', 'Zakynthos (-1)'), R(2, 1))).toBe('VOID');
     expect(determineLegOutcome(L('Handikap', 'Apollon Kalamarias (+1)'), R(1, 1))).toBe('WON');
-    expect(determineLegOutcome(L('Handikap', 'Zakynthos (-0.25)'), R(1, 0))).toBeNull();
+    // quarter lines pay/lose half the stake
+    expect(determineLegOutcome(L('Handikap', 'Zakynthos (-0.25)'), R(1, 0))).toBe('WON');
+    expect(determineLegOutcome(L('Handikap', 'Zakynthos (-0.25)'), R(1, 1))).toBe('HALF_LOST');
+    expect(determineLegOutcome(L('Handikap', 'Zakynthos (0.25)'), R(0, 1))).toBe('LOST');
+    expect(determineLegOutcome(L('Handikap', 'Zakynthos (+0.25)'), R(1, 1))).toBe('HALF_WON');
   });
-  it('never auto-settles half-time, period or combo markets', () => {
+  it('half-time markets need a half-time score; combos settle from the final score', () => {
     expect(determineLegOutcome(L('Rezultati Pjesa e Parë', '1'), R(2, 0))).toBeNull();
     expect(determineLegOutcome(L('Dopio Shans Pjesa e Dytë', '1X'), R(2, 0))).toBeNull();
-    expect(determineLegOutcome(L('Rezultat Final & Totali', '1 & Lart 2.5'), R(3, 0))).toBeNull();
+    expect(determineLegOutcome(L('Rezultat Final & Totali', '1 & Lart 2.5'), R(3, 0))).toBe('WON');
+    expect(determineLegOutcome(L('Rezultat Final & Totali', '1 & Lart 2.5'), R(2, 0))).toBe('LOST');
   });
 });
 
@@ -176,11 +187,13 @@ describe('determineLegOutcome — first / second half markets (need the half-tim
     expect(determineLegOutcome(L('Rezultati Pjesa e Parë', 'X'), noHt)).toBeNull();
     expect(determineLegOutcome(L('Rezultati Pjesa e Dytë', '1'), noHt)).toBeNull();
   });
-  it('HT/FT doubles, combos and unknown half markets stay pending', () => {
-    expect(determineLegOutcome(L('Pushim/Fund', 'X/1'), R)).toBeNull();
-    expect(determineLegOutcome(L('Rezultati Pjesa e Parë / Rezultati Final', 'X/1'), R)).toBeNull();
-    expect(determineLegOutcome(L('Pjesa me Shumë Gola', 'E dyta'), R)).toBeNull();
-    expect(determineLegOutcome(L('Rezultati Pjesa e Parë & Totali', '1 & Lart 0.5'), R)).toBeNull();
+  it('HT/FT doubles, which-half-has-more-goals and half combos are settled; unknown markets stay pending', () => {
+    expect(determineLegOutcome(L('Pushim/Fund', 'X/1'), R)).toBe('WON');           // HT 1-1, FT 3-1
+    expect(determineLegOutcome(L('Rezultati Pjesa e Parë / Rezultati Final', 'X/1'), R)).toBe('WON');
+    expect(determineLegOutcome(L('Pjesa me Shumë Gola', 'E dyta'), R)).toBe('LOST'); // 1st half 2 goals, 2nd half 2 goals: equal
+    expect(determineLegOutcome(L('Pjesa me Shumë Gola', 'Barazim'), R)).toBe('WON');
+    expect(determineLegOutcome(L('Rezultati Pjesa e Parë & Totali', '1 & Lart 0.5'), R)).toBe('LOST'); // HT was a draw
+    expect(determineLegOutcome(L('A Market Nobody Has Heard Of', '1'), R)).toBeNull();
   });
   it('inconsistent data (HT score above the final score) is never settled', () => {
     expect(determineLegOutcome(L('Rezultati Pjesa e Dytë', '1'), { ...R, homeScore: 0, awayScore: 0 })).toBeNull();

@@ -111,7 +111,10 @@ export enum BetStatus {
   PENDING = 'PENDING',
   WON = 'WON',
   LOST = 'LOST',
-  VOID = 'VOID'
+  VOID = 'VOID',
+  // Asian quarter lines (leg level only): half the stake wins / half the stake is lost
+  HALF_WON = 'HALF_WON',
+  HALF_LOST = 'HALF_LOST'
 }
 
 export interface BetSelectionItem {

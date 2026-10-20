@@ -1,225 +1,47 @@
 import pool from './db.js';
-
-// ---- first / second half markets ------------------------------------------
-// "Rezultati Pjesa e Parë", "Numri i Golave në Pjesën e Dytë", "1X2 1st Half" ...
-// The period phrase is cut out of the (normalised) market name and what is left
-// must be one of the known base markets, otherwise the leg stays PENDING for
-// manual review (HT/FT doubles, "which half has more goals" etc. never match).
-// First half uses the stored half-time score (matches_cache.ht_home/ht_away,
-// captured at the whistle); second half is final score minus half-time score.
-const FIRST_HALF_RE = /(?:\bne\s+)?(?:\bpjes(?:a|en|e)\s+(?:e\s+)?(?:pare|1)\b|\b1\.?\s*pjes(?:a|en|e)\b|\b(?:1st|first)\s+half\b|\bne\s+pushim\b)/;
-const SECOND_HALF_RE = /(?:\bne\s+)?(?:\bpjes(?:a|en|e)\s+(?:e\s+)?(?:dyte|2)\b|\b2\.?\s*pjes(?:a|en|e)\b|\b(?:2nd|second)\s+half\b)/;
-// Names that only make sense WITH a period phrase around them.
-const PERIOD_BASE_ALIASES = {
-  rezultati: 'rezultati final',
-  fituesi: 'rezultati final',
-  golat: 'numri i golave',
-  'mbi/nen': 'numri i golave',
-  'lart/poshte': 'numri i golave',
-};
-
-function splitPeriod(name) {
-  for (const [re, period] of [[FIRST_HALF_RE, 'H1'], [SECOND_HALF_RE, 'H2']]) {
-    if (re.test(name)) {
-      const base = name.replace(re, ' ').replace(/[-:()]/g, ' ').replace(/\s+/g, ' ').trim();
-      return { period, base };
-    }
-  }
-  return { period: null, base: name };
-}
+import { evaluateMarket } from './marketRules.js';
 
 // Pure decision logic for a single bet leg given the final match result.
 // Kept separate from settleMatch (which is DB-coupled) so it can be unit
-// tested without a database. Returns 'WON' | 'LOST' | null (null = leave
-// PENDING for manual review — used for markets/lines we don't auto-settle).
-// Lowercase + strip diacritics + collapse whitespace so "Poshtë", "Nën",
-// "Numri i Golave ne Ndeshje" all compare reliably.
-function norm(str) {
-  return String(str ?? '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-// Provider markets that are NOT in CANONICAL_MARKETS (london365.js) get a
-// unique market_id like "numri_i_golave_ne_ndeshje_m123" and their
-// selection_id is the raw option text ("Lart 1.5"). Those never matched the
-// "-xyz" suffix checks, so e.g. "Numri i Golave ne Ndeshje -> Lart 1.5" stayed
-// PENDING forever. Every market that can be decided from the FINAL SCORE
-// alone is therefore also recognised by its (normalised) market NAME.
-// Half-time / period markets, combos ("&") and quarter-handicaps are never
-// auto-settled from the final score: they stay PENDING for manual review
-// instead of being settled wrongly.
-const TOTAL_GOALS_PREFIXES = ['numri i golave ne ndeshje', 'numri i golave', 'totali i golave', 'total goals', 'golat ne ndeshje'];
-const H2H_NAMES = new Set(['rezultat final', 'rezultati final', '1x2', 'rezultati i ndeshjes', 'fituesi i ndeshjes']);
-const BTTS_NAMES = new Set(['gol/jogol', 'gol-jogol', 'gol / jogol', 'te dy skuadrat shenojne', 'both teams to score']);
-const DOUBLE_CHANCE_NAMES = new Set(['dopio shans', 'double chance', 'shans i dyfishte']);
-const CORRECT_SCORE_NAMES = new Set(['rezultati i sakte', 'rezultati ekzakt', 'correct score']);
-const HANDICAP_NAMES = new Set(['handikap', 'hendikep', 'handicap', 'handikap ne ndeshje', 'hendikep ne ndeshje']);
-const PERIOD_OR_COMBO = /(pjes|pjese|half|1st|2nd|\bht\b|\bft\b|&| dhe |\+|minut|kend|korner|karton|faull|corner|card)/;
-
-// Parses "Lart 1.5" / "Mbi 2,5" / "Over-2.5" / "Poshtë 3.5" / "Under 0.5".
-function parseOverUnder(text) {
-  const m = norm(text).match(/^(lart|mbi|over|poshte|nen|under)[\s-]*([0-9]+(?:[.,][0-9]+)?)$/);
-  if (!m) return null;
-  const side = m[1] === 'lart' || m[1] === 'mbi' || m[1] === 'over' ? 'Over' : 'Under';
-  const point = parseFloat(m[2].replace(',', '.'));
-  return Number.isNaN(point) ? null : { side, point };
-}
-
-// Whole-number line landing exactly on the total is a push -> stake refunded.
-function overUnderOutcome(side, point, goals) {
-  if (Number.isNaN(point)) return null;
-  if (point === goals) return 'VOID';
-  if (side === 'Over') return goals > point ? 'WON' : 'LOST';
-  if (side === 'Under') return goals < point ? 'WON' : 'LOST';
-  return null;
-}
-
-// "1X" / "x2" / "1-2" / "1/X" -> canonical "1X" | "X2" | "12" | null
-function normDoubleChance(text) {
-  const t = String(text ?? '').toUpperCase().replace(/[\s/\-_]/g, '');
-  if (t === '1X' || t === 'X1') return '1X';
-  if (t === 'X2' || t === '2X') return 'X2';
-  if (t === '12' || t === '21') return '12';
-  return null;
-}
-
-// Which side a "home / away" style selection refers to, or null.
-function sideOfSelection(leg) {
-  const id = String(leg.selection_id ?? '').toUpperCase();
-  const name = norm(leg.selection_name);
-  if (id === 'HOME' || id === '1' || name === '1' || (leg.match_home && name === norm(leg.match_home))) return 'HOME';
-  if (id === 'AWAY' || id === '2' || name === '2' || (leg.match_away && name === norm(leg.match_away))) return 'AWAY';
-  if (id === 'DRAW' || id === 'X' || name === 'x') return 'DRAW';
-  return null;
-}
-
-function parseHandicap(leg) {
-  const text = String(leg.selection_name || leg.selection_id || '');
-  const m = text.trim().match(/^(.*?)\s*\(\s*([+-]?\d+(?:[.,]\d+)?)\s*\)\s*$/);
-  if (!m) return null;
-  const point = parseFloat(m[2].replace(',', '.'));
-  if (Number.isNaN(point) || (point * 2) % 1 !== 0) return null; // quarter lines: manual
-  const who = norm(m[1]);
-  let side = null;
-  if (who === '1' || (leg.match_home && who === norm(leg.match_home))) side = 'HOME';
-  else if (who === '2' || (leg.match_away && who === norm(leg.match_away))) side = 'AWAY';
-  return side ? { side, point } : null;
-}
-
-// Pure decision logic for a single bet leg given the final match result.
-// Kept separate from settleMatch (which is DB-coupled) so it can be unit
-// tested without a database. Returns 'WON' | 'LOST' | 'VOID' (stake
-// refunded, e.g. a push) | null (null = leave PENDING for manual review).
-export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeScore, awayScore, htHome, htAway }) {
+// tested without a database. Returns:
+//   'WON' | 'LOST'            decided
+//   'VOID'                    push / refund (whole-number lines, draw-no-bet draws, ...)
+//   'HALF_WON' | 'HALF_LOST'  Asian quarter lines (half the stake wins / loses)
+//   null                      a needed fact is missing or the market is unknown:
+//                             the leg stays PENDING for manual review
+//
+// The rules for every market live in marketRules.js (one rule per market family,
+// checked against every market and option of a real live match in
+// tests/marketRules.test.js).
+export function determineLegOutcome(leg, facts) {
+  const { winner, totalGoals, bothScored, homeScore, awayScore, htHome, htAway } = facts;
   const marketId = String(leg.market_id ?? '');
-  const hasScore = Number.isFinite(homeScore) && Number.isFinite(awayScore);
 
-  // ---- canonical keys ----
-  if (marketId.endsWith('-h2h')) {
+  // ---- canonical keys (selection ids are HOME/DRAW/AWAY, Over-2.5, Yes/No) ----
+  if (marketId.endsWith('-h2h') && ['HOME', 'DRAW', 'AWAY'].includes(String(leg.selection_id))) {
     return leg.selection_id === winner ? 'WON' : 'LOST';
   }
-  if (marketId.endsWith('-totals')) {
+  if (marketId.endsWith('-totals') && /^(Over|Under)-/.test(String(leg.selection_id))) {
     const idx = leg.selection_id.lastIndexOf('-');
-    return overUnderOutcome(leg.selection_id.slice(0, idx), parseFloat(leg.selection_id.slice(idx + 1)), totalGoals);
+    const side = leg.selection_id.slice(0, idx);
+    const point = parseFloat(leg.selection_id.slice(idx + 1));
+    if (Number.isNaN(point)) return null;
+    if (point === totalGoals) return 'VOID';
+    return side === 'Over' ? (totalGoals > point ? 'WON' : 'LOST') : (totalGoals < point ? 'WON' : 'LOST');
   }
-  if (marketId.endsWith('-btts')) {
-    if (leg.selection_id === 'Yes') return bothScored ? 'WON' : 'LOST';
-    if (leg.selection_id === 'No') return !bothScored ? 'WON' : 'LOST';
-  }
-
-  // ---- name-based (also covers canonical keys with unusual option text) ----
-  const marketName = norm(leg.market_name);
-  if (!marketName) return null;
-
-  const { period, base } = splitPeriod(marketName);
-  if (period) {
-    // Needs the half-time score; without it (e.g. the server was down at HT) the
-    // leg is left PENDING rather than guessed.
-    if (!hasScore || !Number.isFinite(htHome) || !Number.isFinite(htAway)) return null;
-    const h = period === 'H1' ? htHome : homeScore - htHome;
-    const a = period === 'H1' ? htAway : awayScore - htAway;
-    if (h < 0 || a < 0) return null;
-    return determineLegOutcome(
-      { ...leg, market_id: '', market_name: PERIOD_BASE_ALIASES[base] || base },
-      { winner: h > a ? 'HOME' : a > h ? 'AWAY' : 'DRAW', totalGoals: h + a, bothScored: h > 0 && a > 0, homeScore: h, awayScore: a }
-    );
-  }
-  if (PERIOD_OR_COMBO.test(marketName)) return null;
-
-  if (H2H_NAMES.has(marketName)) {
-    const side = sideOfSelection(leg);
-    return side ? (side === winner ? 'WON' : 'LOST') : null;
+  if (marketId.endsWith('-btts') && (leg.selection_id === 'Yes' || leg.selection_id === 'No')) {
+    return (leg.selection_id === 'Yes') === !!bothScored ? 'WON' : 'LOST';
   }
 
-  if (BTTS_NAMES.has(marketName) || marketId.endsWith('-btts')) {
-    const sel = norm(leg.selection_name || leg.selection_id);
-    if (sel === 'po' || sel === 'yes' || sel === 'gol') return bothScored ? 'WON' : 'LOST';
-    if (sel === 'jo' || sel === 'no' || sel === 'jogol') return !bothScored ? 'WON' : 'LOST';
-    return null;
-  }
-
-  if (DOUBLE_CHANCE_NAMES.has(marketName) || marketId.endsWith('-double_chance')) {
-    const dc = normDoubleChance(leg.selection_id) || normDoubleChance(leg.selection_name);
-    if (!dc) return null;
-    const ok = dc === '1X' ? winner !== 'AWAY' : dc === 'X2' ? winner !== 'HOME' : winner !== 'DRAW';
-    return ok ? 'WON' : 'LOST';
-  }
-
-  if (marketId.endsWith('-draw_no_bet') || /\b(no bet|draw no bet)\b|barazimi = rimbursim/.test(marketName)) {
-    const side = sideOfSelection(leg);
-    if (side !== 'HOME' && side !== 'AWAY') return null;
-    if (winner === 'DRAW') return 'VOID';
-    return side === winner ? 'WON' : 'LOST';
-  }
-
-  // Total goals of the whole match
-  if (TOTAL_GOALS_PREFIXES.includes(marketName)) {
-    const parsed = parseOverUnder(leg.selection_id) || parseOverUnder(leg.selection_name);
-    if (parsed) return overUnderOutcome(parsed.side, parsed.point, totalGoals);
-  }
-
-  // Odd / even total goals ("Tek/Çift")
-  if (/\b(tek|odd)\b/.test(marketName) && /\b(cift|even)\b/.test(marketName)) {
-    const sel = norm(leg.selection_name || leg.selection_id);
-    const odd = totalGoals % 2 === 1;
-    if (sel === 'tek' || sel === 'odd') return odd ? 'WON' : 'LOST';
-    if (sel === 'cift' || sel === 'even') return !odd ? 'WON' : 'LOST';
-    return null;
-  }
-
-  if (!hasScore) return null;
-
-  // Exact final score
-  if (CORRECT_SCORE_NAMES.has(marketName)) {
-    const m = String(leg.selection_name || leg.selection_id).trim().match(/^(\d+)\s*[-:]\s*(\d+)$/);
-    if (!m) return null; // "Tjetër" / any-other-score: manual
-    return Number(m[1]) === homeScore && Number(m[2]) === awayScore ? 'WON' : 'LOST';
-  }
-
-  // Team-specific total goals: "<prefix> <team name>"
-  for (const prefix of TOTAL_GOALS_PREFIXES) {
-    for (const [team, goals] of [[leg.match_home, homeScore], [leg.match_away, awayScore]]) {
-      if (team && marketName === `${prefix} ${norm(team)}`) {
-        const parsed = parseOverUnder(leg.selection_id) || parseOverUnder(leg.selection_name);
-        if (parsed) return overUnderOutcome(parsed.side, parsed.point, goals);
-      }
-    }
-  }
-
-  // Handicap (whole / half lines only)
-  if (HANDICAP_NAMES.has(marketName) || marketId.endsWith('-spreads')) {
-    const h = parseHandicap(leg);
-    if (!h) return null;
-    const diff = h.side === 'HOME' ? homeScore + h.point - awayScore : awayScore + h.point - homeScore;
-    if (diff === 0) return 'VOID';
-    return diff > 0 ? 'WON' : 'LOST';
-  }
-
-  return null;
+  // ---- every other market: by market name + option text ----
+  const home = Number.isFinite(homeScore) ? homeScore : null;
+  const away = Number.isFinite(awayScore) ? awayScore : null;
+  if (home === null || away === null) return null;
+  return evaluateMarket(leg, {
+    home, away, htHome, htAway,
+    firstGoal: facts.firstGoal, lastGoal: facts.lastGoal,
+    cornersTotal: facts.cornersTotal, cornersH1: facts.cornersH1,
+  });
 }
 
 // Recompute a bet's overall status from its legs, and pay out balance
@@ -243,23 +65,33 @@ export async function recomputeBetStatus(betId, client = pool) {
   const { rows: legs } = await client.query('SELECT * FROM bet_selections WHERE bet_id = $1', [betId]);
   if (legs.length === 0) return; // [].every(...) is true — never pay a bet that has no legs
 
+  // Leg statuses: WON / LOST / VOID (refund) / HALF_WON / HALF_LOST (Asian quarter lines:
+  // half the stake wins at full odds, or half the stake is lost and half returned) / PENDING.
   const active = legs.filter((l) => l.status !== 'VOID');
+  const decidedWin = (l) => l.status === 'WON' || l.status === 'HALF_WON' || l.status === 'HALF_LOST';
+  const hasHalf = legs.some((l) => l.status === 'HALF_WON' || l.status === 'HALF_LOST');
   let nextStatus;
   if (active.some((l) => l.status === 'LOST')) nextStatus = 'LOST';
   else if (active.length === 0) nextStatus = 'VOID';
-  else if (active.every((l) => l.status === 'WON')) nextStatus = 'WON';
+  else if (active.every(decidedWin)) nextStatus = 'WON';
   else nextStatus = 'PENDING';
 
-  if (nextStatus === bet.status) return;
-
-  if (nextStatus === 'WON' && active.length < legs.length) {
-    // Some legs were refunded: pay on the remaining legs only.
-    const totalOdds = active.reduce((acc, l) => acc * Number(l.odds), 1);
-    const payout = Number((Number(bet.stake) * totalOdds).toFixed(2));
-    await client.query('UPDATE bets SET status = $1, total_odds = $2, potential_return = $3 WHERE id = $4', [nextStatus, totalOdds, payout, betId]);
-    if (bet.status !== 'WON') await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [payout, bet.user_id]);
+  if (nextStatus === 'WON' && (hasHalf || active.length < legs.length)) {
+    // Refunded and/or half legs: pay stake x the product of what each remaining leg returns.
+    const factor = (l) => (l.status === 'HALF_WON' ? (1 + Number(l.odds)) / 2 : l.status === 'HALF_LOST' ? 0.5 : Number(l.odds));
+    const mult = active.reduce((acc, l) => acc * factor(l), 1);
+    const payout = Number((Number(bet.stake) * mult).toFixed(2));
+    // More than the stake back = WON; exactly the stake = refund; less (a half-lost
+    // leg on its own) is stored as WON with the smaller payout, so every report that sums
+    // (potential_return - stake) over WON tickets still shows the true, smaller loss.
+    const final = payout === Number(bet.stake) ? 'VOID' : 'WON';
+    if (final === bet.status) return;
+    await client.query('UPDATE bets SET status = $1, total_odds = $2, potential_return = $3 WHERE id = $4', [final, mult, payout, betId]);
+    await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [payout, bet.user_id]);
     return;
   }
+
+  if (nextStatus === bet.status) return;
 
   await client.query('UPDATE bets SET status = $1 WHERE id = $2', [nextStatus, betId]);
   if (nextStatus === 'WON' && bet.status !== 'WON') {
@@ -279,6 +111,47 @@ function noteUnrecognizedMarket(leg) {
   if (loggedUnrecognized.has(key) || loggedUnrecognized.size >= 300) return;
   loggedUnrecognized.add(key);
   console.log('[settle] no auto rule for market "' + key + '" (selection "' + (leg.selection_name || leg.selection_id) + '") -- left PENDING for manual settlement');
+}
+
+// Facts the final score alone cannot give: which team scored first / last, and the
+// corner counts. They come from the match_events log and the live statistics row.
+// Anything incomplete stays undefined so the legs that need it wait for the admin
+// instead of being decided on a guess. Always called OUTSIDE a transaction: a failed
+// query inside one would abort it.
+export async function loadMatchFacts(client, matchId, homeTeam, awayTeam, homeScore, awayScore) {
+  const facts = {};
+  try {
+    const nh = String(homeTeam ?? '').trim().toLowerCase();
+    const na = String(awayTeam ?? '').trim().toLowerCase();
+    const { rows: ev } = await client.query(
+      `SELECT type, team, minute FROM match_events WHERE match_id = $1 AND type IN ('GOAL','CORNER') ORDER BY created_at, id`,
+      [matchId]
+    );
+    const sideOf = (t) => {
+      const n = String(t ?? '').trim().toLowerCase();
+      return n && n === nh ? 'HOME' : n && n === na ? 'AWAY' : null;
+    };
+    const goals = (ev || []).filter((e) => e.type === 'GOAL').map((e) => sideOf(e.team));
+    const total = homeScore + awayScore;
+    if (total > 0) {
+      if (awayScore === 0) { facts.firstGoal = 'HOME'; facts.lastGoal = 'HOME'; }
+      else if (homeScore === 0) { facts.firstGoal = 'AWAY'; facts.lastGoal = 'AWAY'; }
+      else if (goals.length === total && goals.every(Boolean)) { facts.firstGoal = goals[0]; facts.lastGoal = goals[goals.length - 1]; }
+    }
+    const corners = (ev || []).filter((e) => e.type === 'CORNER');
+    const { rows: st } = await client.query('SELECT corners_home, corners_away FROM live_statistics WHERE match_id = $1', [matchId]);
+    if (st && st[0] && st[0].corners_home != null && st[0].corners_away != null) {
+      const totalCorners = Number(st[0].corners_home) + Number(st[0].corners_away);
+      facts.cornersTotal = totalCorners;
+      // first-half corners: only when the event log holds every corner and each has a minute
+      if (corners.length === totalCorners && corners.every((c) => c.minute != null)) {
+        facts.cornersH1 = corners.filter((c) => Number(c.minute) <= 45).length;
+      }
+    }
+  } catch (err) {
+    // No events / stats available: the dependent markets simply stay pending.
+  }
+  return facts;
 }
 
 // Given a final score, automatically settles every market whose winner is
@@ -309,6 +182,7 @@ export async function settleMatch(matchId, homeScore, awayScore, { force = false
     const affectedBetIds = new Set();
     let autoSettledCount = 0;
     let leftPendingCount = 0;
+    const facts = legs.length ? await loadMatchFacts(client, matchId, match.home_team, match.away_team, homeScore, awayScore) : {};
 
     await client.query('BEGIN');
     try {
@@ -318,6 +192,7 @@ export async function settleMatch(matchId, homeScore, awayScore, { force = false
           winner, totalGoals, bothScored, homeScore, awayScore,
           htHome: match.ht_home == null ? undefined : Number(match.ht_home),
           htAway: match.ht_away == null ? undefined : Number(match.ht_away),
+          ...facts,
         });
 
         if (outcome) {
@@ -389,7 +264,7 @@ export async function settleStuckBets() {
   const client = await pool.connect();
   try {
     const { rows: legs } = await client.query(
-      `SELECT bs.*, m.result_home, m.result_away, m.ht_home, m.ht_away
+      `SELECT bs.*, m.result_home, m.result_away, m.ht_home, m.ht_away, m.home_team AS m_home_team, m.away_team AS m_away_team
          FROM bet_selections bs
          JOIN matches_cache m ON m.id = bs.match_id
         WHERE bs.status = 'PENDING'
@@ -405,6 +280,12 @@ export async function settleStuckBets() {
 
     const affectedBetIds = new Set(undecided.map((r) => r.id));
     let settledLegs = 0;
+    const factsByMatch = new Map();
+    for (const leg of legs) {
+      if (factsByMatch.has(leg.match_id)) continue;
+      factsByMatch.set(leg.match_id, await loadMatchFacts(
+        client, leg.match_id, leg.m_home_team, leg.m_away_team, Number(leg.result_home), Number(leg.result_away)));
+    }
 
     await client.query('BEGIN');
     try {
@@ -419,6 +300,7 @@ export async function settleStuckBets() {
           awayScore: away,
           htHome: leg.ht_home == null ? undefined : Number(leg.ht_home),
           htAway: leg.ht_away == null ? undefined : Number(leg.ht_away),
+          ...(factsByMatch.get(leg.match_id) || {}),
         });
         if (!outcome) { noteUnrecognizedMarket(leg); continue; }
         await client.query('UPDATE bet_selections SET status = $1 WHERE id = $2', [outcome, leg.id]);
