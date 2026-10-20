@@ -242,10 +242,28 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
     if (/^(asnje|asnje gol|no goal|none|pa gol|x)$/.test(sel)) return actual === 'NONE' ? 'WON' : 'LOST';
     return null; // a player or any other label: no scorer names -> manual
   }
-  // "<team> scores in both halves" (team selections only; Po/Jo is ambiguous -> manual)
+  // "<team> scores in both halves" (team selections) and the Po/Jo form "Shënojnë në të dyja pjesët".
   if (BOTH_HALVES_NAMES.has(marketName)) {
     const side = sideOfSelection(leg);
-    if ((side !== 'HOME' && side !== 'AWAY') || !hasScore || !Number.isFinite(htHome) || !Number.isFinite(htAway)) return null;
+    if (!hasScore || !Number.isFinite(htHome) || !Number.isFinite(htAway)) return null;
+    if (side !== 'HOME' && side !== 'AWAY') {
+      // Po/Jo: the label does not say whether it means (A) "both teams score in both halves" or
+      // (B) "there are goals in both halves". A implies B, so a result is only decided when
+      // every reading agrees: Po wins if A holds, Jo wins if B fails; A false but B true is
+      // exactly where the readings differ -> stays PENDING (never guessed).
+      const sel = norm(leg.selection_name || leg.selection_id);
+      const yes = sel === 'po' || sel === 'yes';
+      const no = sel === 'jo' || sel === 'no';
+      if (!yes && !no) return null;
+      const h2 = homeScore - htHome;
+      const a2 = awayScore - htAway;
+      if (h2 < 0 || a2 < 0) return null;
+      const readingA = htHome > 0 && htAway > 0 && h2 > 0 && a2 > 0;
+      const readingB = htHome + htAway > 0 && h2 + a2 > 0;
+      if (readingA) return yes ? 'WON' : 'LOST';
+      if (!readingB) return yes ? 'LOST' : 'WON';
+      return null;
+    }
     const first = side === 'HOME' ? htHome : htAway;
     const total = side === 'HOME' ? homeScore : awayScore;
     if (total - first < 0) return null;

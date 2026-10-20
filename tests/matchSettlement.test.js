@@ -263,4 +263,23 @@ describe('last team to score, first goal, both halves', () => {
     expect(determineLegOutcome(L('Shënon në të dyja pjesët', 'Po'), ctx)).toBeNull(); // ambiguous
     expect(determineLegOutcome(L('Shënon në të dyja pjesët', 'Roma'), { ...ctx, htHome: undefined, htAway: undefined })).toBeNull();
   });
+  it('settles Po/Jo \"Shënojnë në të dyja pjesët\" only when every reading of the label agrees', async () => {
+    const { determineLegOutcome } = await import('../server/matchSettlement.js');
+    const M = 'Shënojnë në të dyja pjesët';
+    // both teams scored in both halves (1-1 at HT, 2-2 final): Po wins under every reading
+    const all = { ...ctx, homeScore: 2, awayScore: 2, htHome: 1, htAway: 1 };
+    expect(determineLegOutcome(L(M, 'Po'), all)).toBe('WON');
+    expect(determineLegOutcome(L(M, 'Jo'), all)).toBe('LOST');
+    // no goal in the second half (1-0 HT, 1-0 final): no reading can be true
+    const none = { ...ctx, homeScore: 1, awayScore: 0, htHome: 1, htAway: 0 };
+    expect(determineLegOutcome(L(M, 'Po'), none)).toBe('LOST');
+    expect(determineLegOutcome(L(M, 'Jo'), none)).toBe('WON');
+    // 0-0: no goals at all
+    expect(determineLegOutcome(L(M, 'Po'), { ...ctx, homeScore: 0, awayScore: 0, htHome: 0, htAway: 0 })).toBe('LOST');
+    // goals in both halves but not by both teams (2-1, HT 1-0): readings disagree -> PENDING
+    expect(determineLegOutcome(L(M, 'Po'), ctx)).toBeNull();
+    expect(determineLegOutcome(L(M, 'Jo'), ctx)).toBeNull();
+    // no half-time score -> PENDING
+    expect(determineLegOutcome(L(M, 'Po'), { ...all, htHome: undefined, htAway: undefined })).toBeNull();
+  });
 });
