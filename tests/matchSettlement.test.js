@@ -201,3 +201,42 @@ describe('combination with a corners part', () => {
     expect(determineLegOutcome(leg('1 & Poshtë 9.5'), ctx)).toBe('LOST');
   });
 });
+
+describe('first team to score', () => {
+  const leg = (sel, name = 'Skuadra që shënon e parë') => ({ market_id: 'x', market_name: name, selection_id: sel, selection_name: sel, match_home: 'Roma', match_away: 'Lazio' });
+  const ctx = (firstScorer) => ({ winner: 'HOME', totalGoals: 3, bothScored: true, homeScore: 2, awayScore: 1, firstScorer });
+
+  it('settles from the side that scored first', async () => {
+    const { determineLegOutcome } = await import('../server/matchSettlement.js');
+    expect(determineLegOutcome(leg('Roma'), ctx('HOME'))).toBe('WON');
+    expect(determineLegOutcome(leg('2'), ctx('HOME'))).toBe('LOST');
+    expect(determineLegOutcome(leg('Lazio'), ctx('AWAY'))).toBe('WON');
+  });
+  it('handles a goalless match (no goal wins, a team loses)', async () => {
+    const { determineLegOutcome } = await import('../server/matchSettlement.js');
+    expect(determineLegOutcome(leg('Asnjë'), ctx('NONE'))).toBe('WON');
+    expect(determineLegOutcome(leg('1'), ctx('NONE'))).toBe('LOST');
+  });
+  it('stays pending when the goal order is not reliable', async () => {
+    const { determineLegOutcome } = await import('../server/matchSettlement.js');
+    expect(determineLegOutcome(leg('Roma'), ctx(undefined))).toBeNull();
+    expect(determineLegOutcome(leg('Një lojtar'), ctx('HOME'))).toBeNull();
+  });
+  it('works inside a combination', async () => {
+    const { determineLegOutcome } = await import('../server/matchSettlement.js');
+    const c = { market_id: 'x', market_name: 'Skuadra që shënon e parë & Totali', selection_id: 'Roma & Lart 2.5', selection_name: 'Roma & Lart 2.5', match_home: 'Roma', match_away: 'Lazio' };
+    expect(determineLegOutcome(c, ctx('HOME'))).toBe('WON');
+    expect(determineLegOutcome(c, ctx('AWAY'))).toBe('LOST');
+  });
+});
+
+describe('firstScorerFromEvents', () => {
+  it('trusts the events only when they add up to the final score', async () => {
+    const { firstScorerFromEvents: f } = await import('../server/matchSettlement.js');
+    const ev = [{ team: 'Roma', created_at: 1 }, { team: 'Lazio', created_at: 2 }, { team: 'Roma', created_at: 3 }];
+    expect(f(ev, 'Roma', 'Lazio', 2, 1)).toBe('HOME');
+    expect(f(ev, 'Roma', 'Lazio', 3, 1)).toBeUndefined(); // a goal is missing from the log
+    expect(f([], 'Roma', 'Lazio', 0, 0)).toBe('NONE');
+    expect(f([{ team: 'Roma', created_at: 5 }, { team: 'Lazio', created_at: 5 }], 'Roma', 'Lazio', 1, 1)).toBeUndefined(); // tie in time
+  });
+});

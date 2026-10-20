@@ -29,6 +29,13 @@ export const H2H_NAMES = new Set(['rezultat final', 'rezultati final', '1x2', 'r
 export const BTTS_NAMES = new Set(['gol/jogol', 'gol-jogol', 'gol / jogol', 'te dy skuadrat shenojne', 'both teams to score']);
 export const DOUBLE_CHANCE_NAMES = new Set(['dopio shans', 'double chance', 'shans i dyfishte']);
 export const CORRECT_SCORE_NAMES = new Set(['rezultati i sakte', 'rezultati ekzakt', 'correct score']);
+// "Skuadra që shënon e para" / "First team to score": decided from the logged goal order
+// (matchSettlement.js). Only these explicit team-based names; "Goli i Parë" may be a player
+// market, so it is NOT claimed here.
+export const FIRST_TEAM_TO_SCORE_NAMES = new Set([
+  'skuadra qe shenon e pare', 'skuadra qe shenon e para', 'skuadra e pare qe shenon', 'skuadra qe shenon i pari',
+  'ekipi qe shenon e pare', 'ekipi qe shenon i pari', 'first team to score', 'team to score first',
+]);
 export const HANDICAP_NAMES = new Set(['handikap', 'hendikep', 'handicap', 'handikap ne ndeshje', 'hendikep ne ndeshje']);
 
 // Parses "Lart 1.5" / "Mbi 2,5" / "Over-2.5" / "Poshtë 3.5" / "Under 0.5".
@@ -74,6 +81,7 @@ export function classifyMarket(marketId, marketName, { home, away } = {}) {
     if (away && base === `${prefix} ${norm(away)}`) return { kind: 'team_totals', period, side: 'away' };
   }
   if (/\b(tek|odd)\b/.test(full) && /\b(cift|even)\b/.test(full)) return { kind: 'odd_even', period };
+  if (FIRST_TEAM_TO_SCORE_NAMES.has(base) && !period) return { kind: 'first_scorer', period };
   if (CORRECT_SCORE_NAMES.has(base)) return { kind: 'correct_score', period };
   if (HANDICAP_NAMES.has(base)) return { kind: 'handicap', period };
   return { kind: 'other', period };
@@ -115,7 +123,7 @@ const stripP1P2 = (name) => String(name).replace(/p1\s*\+\s*p2/g, '');
 
 const AUTO_SETTLES = new Set([
   'result', 'double_chance', 'dnb', 'handicap', 'odd_even', 'totals', 'team_totals', 'btts',
-  'correct_score', 'htft', 'corners', 'cards', 'combo',
+  'correct_score', 'htft', 'corners', 'cards', 'combo', 'first_scorer',
 ]);
 // Kinds that stay open for betting while the match is in play (see marketRules.getBetBlockReason).
 const OPEN_IN_PLAY = new Set([
