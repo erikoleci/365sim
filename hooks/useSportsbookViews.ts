@@ -10,6 +10,7 @@ import { leagueLabel as baseLeagueLabel, makeLeagueComparator } from '../utils/l
 import {
   compareCountries, groupByCountryAndLeague, liveFirstByKickoff, sliceByRowBudget, toLeagueSections,
 } from '../utils/matchGrouping';
+import { leaguePriority } from '../utils/leaguePriority';
 import { buildDateOptions } from '../utils/dateLabels';
 
 interface Inputs {
@@ -26,7 +27,6 @@ interface Inputs {
 const FEATURED_LIMIT = 12;
 const TOP_LEAGUE_LIMIT = 10;
 const SUGGESTION_LIMIT = 5;
-const isEuropeanCupLabel = (label: string) => /champions|europa|conference/i.test(label);
 const includes = (haystack: string, needle: string) => haystack.toLowerCase().includes(needle);
 
 /**
@@ -93,7 +93,7 @@ export function useSportsbookViews({ matches, leagueNames, searchQuery, currentL
   const liveLeagueSections = useMemo(
     () => toLeagueSections(
       groupByCountryAndLeague(liveMatches, leagueCountry, compareLeagues),
-      (league) => isEuropeanCupLabel(leagueLabel(league)),
+      (league, country) => leaguePriority(leagueLabel(league), country),
     ),
     [liveMatches, compareLeagues, leagueLabel],
   );
@@ -109,17 +109,23 @@ export function useSportsbookViews({ matches, leagueNames, searchQuery, currentL
     return { key, list };
   }, [matches, leagueLabel]);
 
-  // Upcoming only: live matches live in their own section.
+  // Same order everywhere: the big five and the UEFA cups first, then the rest, lower divisions last.
+  const priorityOf = useMemo(() => (m: Match) => leaguePriority(leagueLabel(m.league), leagueCountry(m.league)), [leagueLabel]);
+  const byPriorityThenKickoff = useMemo(() => (a: Match, b: Match) =>
+    priorityOf(a) - priorityOf(b) || new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
+  [priorityOf]);
+
+  // "Ndeshjet Kryesore": upcoming only (live matches have their own section), top competitions first.
   const featuredMatches = useMemo(() => matches
     .filter((m) => m.status === MatchStatus.UPCOMING)
-    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+    .sort(byPriorityThenKickoff)
     .slice(0, FEATURED_LIMIT),
-  [matches]);
+  [matches, byPriorityThenKickoff]);
 
   const todayMatches = useMemo(() => matches
     .filter((m) => (m.status === MatchStatus.UPCOMING || m.status === MatchStatus.LIVE) && isSameAlbaniaDay(m.startTime, albaniaTodayKey()))
-    .sort(liveFirstByKickoff),
-  [matches]);
+    .sort((a, b) => (a.status === b.status ? 0 : a.status === MatchStatus.LIVE ? -1 : 1) || byPriorityThenKickoff(a, b)),
+  [matches, byPriorityThenKickoff]);
 
   // Results: finished within 48h, newest first, grouped by league.
   const resultsList = useMemo(() => recentResults(matches, searchQuery), [matches, searchQuery]);

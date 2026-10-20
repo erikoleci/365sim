@@ -1,20 +1,19 @@
 import { Match, MatchStatus } from '../types';
 import { albaniaDateKey } from './albaniaTime';
+import { COUNTRY_ORDER } from './leaguePriority';
 
 export type LeagueGroup = [league: string, matches: Match[]];
 export type CountryGroup = [country: string, leagues: LeagueGroup[]];
 
-const PRIORITY_COUNTRIES = ['Anglia', 'Spanja', 'Italia', 'Gjermania', 'Franca', 'Portugali', 'Holandë', 'Belgjikë'];
+const PRIORITY_COUNTRIES = COUNTRY_ORDER;
 
 /**
- * Country order: the big European leagues first, then every other country alphabetically, then
- * the continental/international competitions, then "Të tjera".
+ * Country order: England, Italy, Spain, France, Germany, then the international (UEFA)
+ * competitions, then the other known leagues, every other country alphabetically, "Të tjera" last.
  */
 export const compareCountries = (a: string, b: string): number => {
   if (a === 'Të tjera') return 1;
   if (b === 'Të tjera') return -1;
-  if (a === 'Ndërkombëtare') return 1;
-  if (b === 'Ndërkombëtare') return -1;
   const pa = PRIORITY_COUNTRIES.indexOf(a);
   const pb = PRIORITY_COUNTRIES.indexOf(b);
   if (pa !== -1 || pb !== -1) return (pa === -1 ? 999 : pa) - (pb === -1 ? 999 : pb);
@@ -51,11 +50,11 @@ export const groupByCountryAndLeague = (
     ]);
 };
 
-/** One section per league (European cups first), flattened out of the country grouping. */
-export const toLeagueSections = (groups: CountryGroup[], isEuropeanCup: (league: string) => boolean) =>
+/** One section per league, flattened out of the country grouping and ordered by `priority`. */
+export const toLeagueSections = (groups: CountryGroup[], priority: (league: string, country: string) => number) =>
   groups
     .flatMap(([country, leagues]) => leagues.map(([league, matches]) => ({ country, league, matches })))
-    .sort((a, b) => Number(isEuropeanCup(b.league)) - Number(isEuropeanCup(a.league)));
+    .sort((a, b) => priority(a.league, a.country) - priority(b.league, b.country));
 
 /** Number of match rows in a country group. */
 const rowsIn = (group: CountryGroup): number => group[1].reduce((n, l) => n + l[1].length, 0);

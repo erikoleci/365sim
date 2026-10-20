@@ -37,9 +37,9 @@ describe('country / league grouping', () => {
     expect(visibleGroups).toHaveLength(1);
     expect(hiddenRows).toBe(2);
   });
-  it('flattens to league sections with cups first', () => {
+  it('flattens to league sections ordered by priority', () => {
     const cmp = makeLeagueComparator((k) => k);
     const groups = groupByCountryAndLeague([m(1, 'en1'), m(2, 'cup')], country, cmp);
-    expect(toLeagueSections(groups, (l) => l === 'cup')[0].league).toBe('cup');
+    expect(toLeagueSections(groups, (l) => (l === 'cup' ? 0 : 1))[0].league).toBe('cup');
   });
 });
