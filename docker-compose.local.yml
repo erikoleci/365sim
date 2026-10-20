@@ -1,0 +1,79 @@
+# 365sim në PC-në lokale: Postgres me të dhëna të përhershme + aplikacioni + link publik (Cloudflare Tunnel).
+# Nisja:  docker compose --env-file .env.local -f docker-compose.local.yml up -d --build
+# Të gjitha shërbimet kanë "restart: unless-stopped": kur ndizet PC-ja (dhe Docker Desktop), ngrihen vetë.
+# Të dhënat (përdorues, bileta) jenë në volumin "sim365_pgdata" -- mbijetojnë fikjes/rindezjes së PC-së.
+# MOS përdor "docker compose down -v" (fshin volumin dhe me të të gjitha biletat).
+name: sim365
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sim365
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?vendos POSTGRES_PASSWORD në .env.local}
+      POSTGRES_DB: sim365
+    volumes:
+      - sim365_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sim365 -d sim365"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # Nuk botohet jashtë (vetëm aplikacioni e arrin brenda rrjetit të Docker).
+
+  app:
+    build: .
+    image: sim365-app:local
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      JWT_SECRET: ${JWT_SECRET:?vendos JWT_SECRET në .env.local}
+      DATABASE_URL: postgresql://sim365:${POSTGRES_PASSWORD}@db:5432/sim365?sslmode=disable
+      LONDON365_ENABLED: "1"
+    ports:
+      - "127.0.0.1:3001:3001"   # http://localhost:3001 vetëm nga kjo PC
+
+  # Ndërron fjalëkalimet e njohura admin/admin, root/root, user/user (vetëm nëse janë ende ato).
+  secure:
+    image: sim365-app:local
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://sim365:${POSTGRES_PASSWORD}@db:5432/sim365?sslmode=disable
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?vendos ADMIN_PASSWORD në .env.local}
+      AGENT_PASSWORD: ${AGENT_PASSWORD:-}
+    command: ["node", "local/secure-accounts.js"]
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    command: ["tunnel", "--no-autoupdate", "--metrics", "0.0.0.0:2000", "--url", "http://app:3001"]
+
+  notifier:
+    image: alpine:3.20
+    restart: unless-stopped
+    depends_on:
+      - tunnel
+    environment:
+      TUNNEL_METRICS: http://tunnel:2000
+      OUT_FILE: /out/CURRENT_LINK.txt
+      NTFY_TOPIC: ${NTFY_TOPIC:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - ./local/notify-url.sh:/notify-url.sh:ro
+      - ./local-data:/out
+    command: ["sh", "-c", "apk add --no-cache curl >/dev/null && sh /notify-url.sh"]
+
+volumes:
+  sim365_pgdata:
