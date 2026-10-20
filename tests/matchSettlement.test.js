@@ -191,3 +191,13 @@ describe('determineLegOutcome — first / second half markets (need the half-tim
     expect(determineLegOutcome(L('Rezultati Pjesa e Dytë', '1'), { ...R, homeScore: 0, awayScore: 0 })).toBeNull();
   });
 });
+
+describe('combination with a corners part', () => {
+  it('settles "Rezultat Final & Totali i korneve" from the corner counters', async () => {
+    const { determineLegOutcome } = await import('../server/matchSettlement.js');
+    const ctx = { winner: 'HOME', totalGoals: 3, bothScored: true, homeScore: 2, awayScore: 1, htHome: 1, htAway: 0, stats: { cornersHome: 7, cornersAway: 4, cardsHome: 2, cardsAway: 3 } };
+    const leg = (s) => ({ market_id: 'x', market_name: 'Rezultat Final & Totali i korneve', selection_id: s, selection_name: s });
+    expect(determineLegOutcome(leg('1 & Lart 9.5'), ctx)).toBe('WON');
+    expect(determineLegOutcome(leg('1 & Poshtë 9.5'), ctx)).toBe('LOST');
+  });
+});

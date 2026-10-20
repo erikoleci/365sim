@@ -176,7 +176,7 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
   // won. A refunded (VOID) part is left for manual review: its payout rule differs.
   const combo = splitCombo(leg);
   if (combo) {
-    const outcomes = combo.map((sub) => determineLegOutcome(sub, { winner, totalGoals, bothScored, homeScore, awayScore, htHome, htAway }));
+    const outcomes = combo.map((sub) => determineLegOutcome(sub, { winner, totalGoals, bothScored, homeScore, awayScore, htHome, htAway, stats }));
     if (outcomes.includes('LOST')) return 'LOST';
     if (outcomes.every((o) => o === 'WON')) return 'WON';
     return null;
