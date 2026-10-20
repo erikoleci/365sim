@@ -301,11 +301,24 @@ export async function recordGoalIfChanged(ev, score, minute, prev, eventMinute) 
       );
       if (same && same.length) return;
     }
-    await pool.query(
-      `INSERT INTO match_events (match_id, minute, type, team, detail, created_at)
-       VALUES ($1,$2,'GOAL',$3,$4,$5)`,
-      [ev.id, eventMinute != null ? eventMinute : eventMinuteFromClock(minute), team, score.home + '-' + score.away, now]
-    );
+    // The minute is exact only when it came from the provider clock at the instant the score
+    // changed: a known previous score, the first goal of the gap, and a clock-derived minute.
+    const exact = eventMinute != null && hadScoreBefore && nthInGap === 1;
+    const goalMinute = eventMinute != null ? eventMinute : eventMinuteFromClock(minute);
+    try {
+      await pool.query(
+        `INSERT INTO match_events (match_id, minute, type, team, detail, created_at, minute_exact)
+         VALUES ($1,$2,'GOAL',$3,$4,$5,$6)`,
+        [ev.id, goalMinute, team, score.home + '-' + score.away, now, exact]
+      );
+    } catch {
+      // minute_exact column not migrated yet: the goal must still be logged.
+      await pool.query(
+        `INSERT INTO match_events (match_id, minute, type, team, detail, created_at)
+         VALUES ($1,$2,'GOAL',$3,$4,$5)`,
+        [ev.id, goalMinute, team, score.home + '-' + score.away, now]
+      );
+    }
   }
   async function retractLastGoal(team) {
     const { rows } = await pool.query(

@@ -130,10 +130,10 @@ function periodScore(row, period, now) {
 // be bet on while the match is in play. Shared by the admin coverage report and the guards.
 // Kinds matchSettlement.js settles from the result (some need extra data: half-time score for
 // htft and the 1st/2nd-half variants, corner/card counters for corners and cards).
-// Corner / card markets the counters cannot decide: booking points, red-card-only, yellow-only,
+// Corner / card markets the counters cannot decide: booking points,
 // handicaps, first/second half, "which half", ... Used by matchSettlement (to leave the leg
 // PENDING) and by describeMarket (so the coverage report says the same thing).
-export const STATS_UNDECIDABLE = /pike|points|\bkuq\b|\bred\b|\bverdh|\bhandikap|\bhandicap|\bpare\b|\bdyte\b|\bfillim|\bfirst\b|\bpushim|\bnjeri\b/;
+export const STATS_UNDECIDABLE = /pike|points|\bhandikap|\bhandicap|\bpare\b|\bdyte\b|\bfillim|\bfirst\b|\bpushim|\bnjeri\b/;
 const stripP1P2 = (name) => String(name).replace(/p1\s*\+\s*p2/g, '');
 
 const AUTO_SETTLES = new Set([

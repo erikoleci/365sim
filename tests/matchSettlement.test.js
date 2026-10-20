@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { determineLegOutcome } from '../server/matchSettlement.js';
 
 const leg = (market_id, selection_id) => ({ market_id, selection_id });
@@ -303,5 +303,48 @@ describe('first / second half corner and card markets', () => {
     expect(determineLegOutcome(L('Numri i korneve Pjesa e Parë', 'Lart 4.5'), { ...base, stats })).toBeNull();
     expect(determineLegOutcome(L('Numri i korneve Pjesa e Parë', 'Lart 4.5'), { ...base, stats, htStats: { ...htStats, cornersAway: null } })).toBeNull();
     expect(determineLegOutcome(L('Numri i korneve Pjesa e Dytë', 'Lart 4.5'), { ...base, stats, htStats: { ...htStats, cornersHome: 9 } })).toBeNull();
+  });
+});
+
+describe('corners P1+P2, goal minute, red / yellow cards', () => {
+  const L = (market, sel) => ({ market_id: 'x', market_name: market, selection_id: sel, selection_name: sel, match_home: 'Roma', match_away: 'Lazio' });
+  const base = { winner: 'HOME', totalGoals: 3, bothScored: true, homeScore: 2, awayScore: 1, htHome: 1, htAway: 0 };
+  let det;
+  beforeAll(async () => { det = (await import('../server/matchSettlement.js')).determineLegOutcome; });
+
+  it('"Shuma e korneve P1+P2" 5+|6+ = at least 5 in the first half AND at least 6 in the second', () => {
+    const htStats = { cornersHome: 3, cornersAway: 2 }; // 5 at the whistle
+    const M = 'Shuma e korneve P1+P2';
+    expect(det(L(M, '5+|6+'), { ...base, stats: { cornersHome: 8, cornersAway: 3 }, htStats })).toBe('WON'); // 5 + 6
+    expect(det(L(M, '5+|6+'), { ...base, stats: { cornersHome: 7, cornersAway: 3 }, htStats })).toBe('LOST'); // 5 + 5
+    expect(det(L(M, '5+|6+'), { ...base, stats: { cornersHome: 8, cornersAway: 3 }, htStats: { cornersHome: 2, cornersAway: 2 } })).toBe('LOST'); // 4 + 7
+    expect(det(L(M, '5+|6+'), { ...base, stats: { cornersHome: 8, cornersAway: 3 } })).toBeNull(); // no HT snapshot
+    expect(det(L(M, '5+|6+'), { ...base, stats: { cornersHome: 8, cornersAway: 3 }, htStats: { cornersHome: 3, cornersAway: null } })).toBeNull();
+    expect(det(L(M, 'sa|qe'), { ...base, stats: { cornersHome: 8, cornersAway: 3 }, htStats })).toBeNull();
+  });
+
+  it('"Minuta e Golit" settles from exact goal minutes only', () => {
+    const M = 'Minuta e Golit';
+    const c = (goalMinutes) => ({ ...base, goalMinutes });
+    expect(det(L(M, '1-15'), c([4, 70]))).toBeNull(); // first yes, last no: readings differ
+    expect(det(L(M, '1-15'), c([4, 9]))).toBe('WON'); // every reading agrees
+    expect(det(L(M, '76-90'), c([4, 9]))).toBe('LOST');
+    expect(det(L(M, '90+'), c([93]))).toBe('WON');
+    expect(det(L(M, '1-15'), c([]))).toBe('LOST');
+    expect(det(L(M, 'Pa gol'), c([]))).toBe('WON');
+    expect(det(L(M, 'Pa gol'), c([12]))).toBe('LOST');
+    expect(det(L(M, '1-15'), c(undefined))).toBeNull(); // minutes not trusted
+    expect(det(L('Minuta e Golit të Parë', '1-15'), c([4, 70]))).toBe('WON');
+    expect(det(L('Minuta e Golit të Fundit', '1-15'), c([4, 70]))).toBe('LOST');
+    expect(det(L(M, 'Çfarëdo'), c([4]))).toBeNull();
+  });
+
+  it('red / yellow card markets use their own counters and never treat a missing value as 0', () => {
+    const stats = { cardsHome: 3, cardsAway: 2, yellowHome: 2, yellowAway: 2, redHome: 1, redAway: 0 };
+    expect(det(L('Karton i Kuq', 'Po'), { ...base, stats })).toBe('WON');
+    expect(det(L('Karton i Kuq', 'Jo'), { ...base, stats })).toBe('LOST');
+    expect(det(L('Karton i Kuq', 'Jo'), { ...base, stats: { ...stats, redHome: 0 } })).toBe('WON');
+    expect(det(L('Karton i Kuq', 'Po'), { ...base, stats: { ...stats, redHome: null, redAway: null } })).toBeNull();
+    expect(det(L('Numri i kartonëve të verdhë', 'Lart 3.5'), { ...base, stats })).toBe('WON'); // 2+2 = 4 yellow
   });
 });

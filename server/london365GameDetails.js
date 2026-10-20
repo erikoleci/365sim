@@ -649,13 +649,27 @@ async function applyGameDetailsNow(raw) {
   // Only written when it actually changed, same reasoning as
   // live_minute_updated_at: an unconditional write on every ~1/sec tick
   // would be a lot of unnecessary churn for a number that rarely moves.
-  if (yc1 !== prevCards.yc1 || yc2 !== prevCards.yc2 || rc1 !== prevCards.rc1 || rc2 !== prevCards.rc2) {
-    await pool.query(
-      `INSERT INTO live_statistics (match_id, cards_home, cards_away, updated_at)
-       VALUES ($1,$2,$3,$4)
-       ON CONFLICT (match_id) DO UPDATE SET cards_home = excluded.cards_home, cards_away = excluded.cards_away, updated_at = excluded.updated_at`,
-      [matchId, yc1 + rc1, yc2 + rc2, now]
-    );
+  // Also written on the first message of a match (no baseline) so a match with no cards at all
+  // still gets explicit zeros for the yellow / red columns (a missing value never counts as 0).
+  const hasCardFields = ['YC1', 'YC2', 'RC1', 'RC2'].every((k) => attrs[k] !== undefined && attrs[k] !== '');
+  if ((!cardBaseline && hasCardFields) || yc1 !== prevCards.yc1 || yc2 !== prevCards.yc2 || rc1 !== prevCards.rc1 || rc2 !== prevCards.rc2) {
+    try {
+      await pool.query(
+        `INSERT INTO live_statistics (match_id, cards_home, cards_away, yellow_home, yellow_away, red_home, red_away, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (match_id) DO UPDATE SET cards_home = excluded.cards_home, cards_away = excluded.cards_away,
+           yellow_home = excluded.yellow_home, yellow_away = excluded.yellow_away,
+           red_home = excluded.red_home, red_away = excluded.red_away, updated_at = excluded.updated_at`,
+        [matchId, yc1 + rc1, yc2 + rc2, yc1, yc2, rc1, rc2, now]
+      );
+    } catch {
+      await pool.query(
+        `INSERT INTO live_statistics (match_id, cards_home, cards_away, updated_at)
+         VALUES ($1,$2,$3,$4)
+         ON CONFLICT (match_id) DO UPDATE SET cards_home = excluded.cards_home, cards_away = excluded.cards_away, updated_at = excluded.updated_at`,
+        [matchId, yc1 + rc1, yc2 + rc2, now]
+      );
+    }
   }
   // Corners -- same reasoning/shape as cards above, only written on change.
   if (c1 !== prevCards.c1 || c2 !== prevCards.c2) {
