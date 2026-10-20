@@ -204,7 +204,7 @@ describe('combination with a corners part', () => {
 
 describe('first team to score', () => {
   const leg = (sel, name = 'Skuadra që shënon e parë') => ({ market_id: 'x', market_name: name, selection_id: sel, selection_name: sel, match_home: 'Roma', match_away: 'Lazio' });
-  const ctx = (firstScorer) => ({ winner: 'HOME', totalGoals: 3, bothScored: true, homeScore: 2, awayScore: 1, firstScorer });
+  const ctx = (first, last) => ({ winner: 'HOME', totalGoals: 3, bothScored: true, homeScore: 2, awayScore: 1, htHome: 1, htAway: 0, goalOrder: first === undefined ? undefined : { first, last: last ?? first } });
 
   it('settles from the side that scored first', async () => {
     const { determineLegOutcome } = await import('../server/matchSettlement.js');
@@ -238,5 +238,29 @@ describe('firstScorerFromEvents', () => {
     expect(f(ev, 'Roma', 'Lazio', 3, 1)).toBeUndefined(); // a goal is missing from the log
     expect(f([], 'Roma', 'Lazio', 0, 0)).toBe('NONE');
     expect(f([{ team: 'Roma', created_at: 5 }, { team: 'Lazio', created_at: 5 }], 'Roma', 'Lazio', 1, 1)).toBeUndefined(); // tie in time
+  });
+});
+
+describe('last team to score, first goal, both halves', () => {
+  const L = (market, sel) => ({ market_id: 'x', market_name: market, selection_id: sel, selection_name: sel, match_home: 'Roma', match_away: 'Lazio' });
+  const ctx = { winner: 'HOME', totalGoals: 3, bothScored: true, homeScore: 2, awayScore: 1, htHome: 1, htAway: 0, goalOrder: { first: 'HOME', last: 'HOME' } };
+
+  it('settles the last team to score from the goal order', async () => {
+    const { determineLegOutcome } = await import('../server/matchSettlement.js');
+    const c = { ...ctx, goalOrder: { first: 'HOME', last: 'AWAY' } };
+    expect(determineLegOutcome(L('Skuadra që shënon e fundit', 'Lazio'), c)).toBe('WON');
+    expect(determineLegOutcome(L('Skuadra që shënon e fundit', 'Roma'), c)).toBe('LOST');
+  });
+  it('settles \"Goli i Parë\" only for side selections, never for a player', async () => {
+    const { determineLegOutcome } = await import('../server/matchSettlement.js');
+    expect(determineLegOutcome(L('Goli i Parë', '1'), ctx)).toBe('WON');
+    expect(determineLegOutcome(L('Goli i Parë', 'Dybala'), ctx)).toBeNull();
+  });
+  it('settles \"scores in both halves\" for a team selection from the half-time score', async () => {
+    const { determineLegOutcome } = await import('../server/matchSettlement.js');
+    expect(determineLegOutcome(L('Shënon në të dyja pjesët', 'Roma'), ctx)).toBe('WON'); // 1 + 1
+    expect(determineLegOutcome(L('Shënon në të dyja pjesët', 'Lazio'), ctx)).toBe('LOST'); // 0 + 1
+    expect(determineLegOutcome(L('Shënon në të dyja pjesët', 'Po'), ctx)).toBeNull(); // ambiguous
+    expect(determineLegOutcome(L('Shënon në të dyja pjesët', 'Roma'), { ...ctx, htHome: undefined, htAway: undefined })).toBeNull();
   });
 });

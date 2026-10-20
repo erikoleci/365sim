@@ -2,7 +2,7 @@ import pool from './db.js';
 import { minuteOf, splitPeriod, PERIOD_BASE_ALIASES } from './marketPeriods.js';
 import {
   TOTAL_GOALS_PREFIXES, H2H_NAMES, BTTS_NAMES, DOUBLE_CHANCE_NAMES, CORRECT_SCORE_NAMES, HANDICAP_NAMES, parseOverUnder,
-  STATS_UNDECIDABLE, FIRST_TEAM_TO_SCORE_NAMES,
+  STATS_UNDECIDABLE, FIRST_TEAM_TO_SCORE_NAMES, LAST_TEAM_TO_SCORE_NAMES, FIRST_GOAL_NAMES, LAST_GOAL_NAMES, BOTH_HALVES_NAMES, GOAL_ORDER_NAMES,
 } from './marketRules.js';
 
 // ---- first / second half markets ------------------------------------------
@@ -35,7 +35,8 @@ function splitCombo(leg) {
 
 const STATS_MARKET = /korn|corner|karton|\bcards?\b|booking/;
 const legNeedsStats = (leg) => STATS_MARKET.test(norm(leg.market_name));
-const legNeedsFirstScorer = (leg) => /(shenon|score)/.test(norm(leg.market_name)) && /(e pare|i pari|first)/.test(norm(leg.market_name));
+const legNeedsFirstScorer = (leg) => GOAL_ORDER_NAMES.has(norm(leg.market_name))
+  || (splitCombo(leg) || []).some((p) => GOAL_ORDER_NAMES.has(norm(p.market_name)));
 
 // Final corner / card counters of a match, or undefined if there are none (or the
 // lookup fails -- the leg then simply stays PENDING).
@@ -49,29 +50,30 @@ async function loadMatchStats(client, matchId) {
   } catch { return undefined; }
 }
 
-// Which side scored first: 'HOME' | 'AWAY' | 'NONE' (0-0), or undefined when it cannot be
-// trusted. The logged GOAL events (recordGoalIfChanged) are used only if they add up to the
-// final score for each team (a match first seen at 2-1 or a server gap leaves events missing)
-// and the first goal is not tied in time with a goal of the other team.
-async function loadFirstScorer(client, match, homeScore, awayScore) {
+// Goal order of a finished match: { first, last } each 'HOME' | 'AWAY' | 'NONE' (0-0), or
+// undefined when it cannot be trusted. The logged GOAL events (recordGoalIfChanged) are used
+// only if they add up to the final score for each team (a match first seen at 2-1 or a server
+// gap leaves events missing); a first/last goal tied in time with a goal of the other team is
+// not trusted either.
+async function loadGoalOrder(client, match, homeScore, awayScore) {
   try {
-    if (homeScore + awayScore === 0) return 'NONE';
+    if (homeScore + awayScore === 0) return { first: 'NONE', last: 'NONE' };
     const { rows } = await client.query(
       `SELECT team, created_at FROM match_events WHERE match_id = $1 AND type = 'GOAL' ORDER BY created_at, id`, [match.id]);
-    return firstScorerFromEvents(rows, match.home_team, match.away_team, homeScore, awayScore);
+    return goalOrderFromEvents(rows, match.home_team, match.away_team, homeScore, awayScore);
   } catch { return undefined; }
 }
 
-export function firstScorerFromEvents(events, homeTeam, awayTeam, homeScore, awayScore) {
-  if (homeScore + awayScore === 0) return 'NONE';
+export function goalOrderFromEvents(events, homeTeam, awayTeam, homeScore, awayScore) {
+  if (homeScore + awayScore === 0) return { first: 'NONE', last: 'NONE' };
   const nHome = events.filter((e) => e.team === homeTeam).length;
   const nAway = events.filter((e) => e.team === awayTeam).length;
-  if (nHome !== homeScore || nAway !== awayScore) return undefined;
-  const first = events[0];
-  if (!first) return undefined;
-  if (events.some((e) => e.team !== first.team && Number(e.created_at) === Number(first.created_at))) return undefined;
-  return first.team === homeTeam ? 'HOME' : first.team === awayTeam ? 'AWAY' : undefined;
+  if (nHome !== homeScore || nAway !== awayScore || !events.length) return undefined;
+  const side = (e) => (e.team === homeTeam ? 'HOME' : e.team === awayTeam ? 'AWAY' : undefined);
+  const pick = (e) => (events.some((o) => o.team !== e.team && Number(o.created_at) === Number(e.created_at)) ? undefined : side(e));
+  return { first: pick(events[0]), last: pick(events[events.length - 1]) };
 }
+export const firstScorerFromEvents = (...args) => { const g = goalOrderFromEvents(...args); return g ? g.first : undefined; };
 
 // Pure decision logic for a single bet leg given the final match result.
 // Kept separate from settleMatch (which is DB-coupled) so it can be unit
@@ -174,7 +176,7 @@ function statsOutcome(leg, marketName, stats, { home, away }) {
   return null; // any other label (e.g. "5+|6+") has no agreed meaning: manual
 }
 
-export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeScore, awayScore, htHome, htAway, stats, firstScorer }) {
+export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeScore, awayScore, htHome, htAway, stats, goalOrder }) {
   const marketId = String(leg.market_id ?? '');
   const hasScore = Number.isFinite(homeScore) && Number.isFinite(awayScore);
 
@@ -201,7 +203,7 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
   // won. A refunded (VOID) part is left for manual review: its payout rule differs.
   const combo = splitCombo(leg);
   if (combo) {
-    const outcomes = combo.map((sub) => determineLegOutcome(sub, { winner, totalGoals, bothScored, homeScore, awayScore, htHome, htAway, stats, firstScorer }));
+    const outcomes = combo.map((sub) => determineLegOutcome(sub, { winner, totalGoals, bothScored, homeScore, awayScore, htHome, htAway, stats, goalOrder }));
     if (outcomes.includes('LOST')) return 'LOST';
     if (outcomes.every((o) => o === 'WON')) return 'WON';
     return null;
@@ -228,13 +230,26 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
       { winner: h > a ? 'HOME' : a > h ? 'AWAY' : 'DRAW', totalGoals: h + a, bothScored: h > 0 && a > 0, homeScore: h, awayScore: a }
     );
   }
-  if (FIRST_TEAM_TO_SCORE_NAMES.has(marketName)) {
-    if (!firstScorer) return null; // goal order not reliable: stays PENDING
+  // first / last team to score, first / last goal (side selections only): from the goal order
+  const wantsFirst = FIRST_TEAM_TO_SCORE_NAMES.has(marketName) || FIRST_GOAL_NAMES.has(marketName);
+  const wantsLast = LAST_TEAM_TO_SCORE_NAMES.has(marketName) || LAST_GOAL_NAMES.has(marketName);
+  if (wantsFirst || wantsLast) {
+    const actual = goalOrder && (wantsFirst ? goalOrder.first : goalOrder.last);
+    if (!actual) return null; // goal order not reliable: stays PENDING
     const sel = norm(leg.selection_name || leg.selection_id);
     const side = sideOfSelection(leg);
-    if (side === 'HOME' || side === 'AWAY') return side === firstScorer ? 'WON' : 'LOST';
-    if (/^(asnje|asnje gol|no goal|none|pa gol|x)$/.test(sel)) return firstScorer === 'NONE' ? 'WON' : 'LOST';
-    return null;
+    if (side === 'HOME' || side === 'AWAY') return side === actual ? 'WON' : 'LOST';
+    if (/^(asnje|asnje gol|no goal|none|pa gol|x)$/.test(sel)) return actual === 'NONE' ? 'WON' : 'LOST';
+    return null; // a player or any other label: no scorer names -> manual
+  }
+  // "<team> scores in both halves" (team selections only; Po/Jo is ambiguous -> manual)
+  if (BOTH_HALVES_NAMES.has(marketName)) {
+    const side = sideOfSelection(leg);
+    if ((side !== 'HOME' && side !== 'AWAY') || !hasScore || !Number.isFinite(htHome) || !Number.isFinite(htAway)) return null;
+    const first = side === 'HOME' ? htHome : htAway;
+    const total = side === 'HOME' ? homeScore : awayScore;
+    if (total - first < 0) return null;
+    return first > 0 && total - first > 0 ? 'WON' : 'LOST';
   }
   const so = statsOutcome(leg, marketName, stats, { home: leg.match_home && norm(leg.match_home), away: leg.match_away && norm(leg.match_away) });
   if (so !== undefined) return so;
@@ -422,14 +437,14 @@ export async function settleMatch(matchId, homeScore, awayScore, { force = false
     let leftPendingCount = 0;
 
     const stats = legs.some(legNeedsStats) ? await loadMatchStats(client, matchId) : undefined;
-    const firstScorer = legs.some(legNeedsFirstScorer) ? await loadFirstScorer(client, match, homeScore, awayScore) : undefined;
+    const goalOrder = legs.some(legNeedsFirstScorer) ? await loadGoalOrder(client, match, homeScore, awayScore) : undefined;
 
     await client.query('BEGIN');
     try {
       for (const leg of legs) {
         affectedBetIds.add(leg.bet_id);
         const outcome = determineLegOutcome(leg, {
-          winner, totalGoals, bothScored, homeScore, awayScore, stats, firstScorer,
+          winner, totalGoals, bothScored, homeScore, awayScore, stats, goalOrder,
           htHome: match.ht_home == null ? undefined : Number(match.ht_home),
           htAway: match.ht_away == null ? undefined : Number(match.ht_away),
         });
@@ -542,7 +557,7 @@ export async function settleStuckBets() {
     for (const leg of legs) {
       if (legNeedsFirstScorer(leg) && !firstByMatch.has(leg.match_id)) {
         const { rows: mr } = await client.query('SELECT id, home_team, away_team FROM matches_cache WHERE id = $1', [leg.match_id]);
-        firstByMatch.set(leg.match_id, mr[0] ? await loadFirstScorer(client, mr[0], Number(leg.result_home), Number(leg.result_away)) : undefined);
+        firstByMatch.set(leg.match_id, mr[0] ? await loadGoalOrder(client, mr[0], Number(leg.result_home), Number(leg.result_away)) : undefined);
       }
       if (legNeedsStats(leg) && !statsByMatch.has(leg.match_id)) statsByMatch.set(leg.match_id, await loadMatchStats(client, leg.match_id));
     }
@@ -554,7 +569,7 @@ export async function settleStuckBets() {
         const away = Number(leg.result_away);
         const outcome = determineLegOutcome(leg, {
           stats: statsByMatch.get(leg.match_id),
-          firstScorer: firstByMatch.get(leg.match_id),
+          goalOrder: firstByMatch.get(leg.match_id),
           winner: home > away ? 'HOME' : away > home ? 'AWAY' : 'DRAW',
           totalGoals: home + away,
           bothScored: home > 0 && away > 0,

@@ -36,6 +36,21 @@ export const FIRST_TEAM_TO_SCORE_NAMES = new Set([
   'skuadra qe shenon e pare', 'skuadra qe shenon e para', 'skuadra e pare qe shenon', 'skuadra qe shenon i pari',
   'ekipi qe shenon e pare', 'ekipi qe shenon i pari', 'first team to score', 'team to score first',
 ]);
+export const LAST_TEAM_TO_SCORE_NAMES = new Set([
+  'skuadra qe shenon e fundit', 'skuadra e fundit qe shenon', 'skuadra qe shenon i fundit', 'ekipi qe shenon i fundit',
+  'ekipi qe shenon e fundit', 'last team to score', 'team to score last',
+]);
+// "Goli i Parë / i Fundit": settled ONLY when the selection is a side (1 / 2 / team / no goal);
+// a player selection stays PENDING (the provider gives no scorer names). Not counted as
+// auto-settling in the coverage report because the market name alone does not tell.
+export const FIRST_GOAL_NAMES = new Set(['goli i pare', 'gola i pare', 'goli i pare ne ndeshje', 'first goal']);
+export const LAST_GOAL_NAMES = new Set(['goli i fundit', 'gola i fundit', 'goli i fundit ne ndeshje', 'last goal']);
+// "<Team> scores in both halves": settled only for a team selection (1 / 2 / team name).
+export const BOTH_HALVES_NAMES = new Set([
+  'shenon ne te dyja pjeset', 'shenojne ne te dyja pjeset', 'skuadra qe shenon ne te dyja pjeset',
+  'shenon ne dy pjeset', 'ekipi qe shenon ne te dyja pjeset', 'team to score in both halves',
+]);
+export const GOAL_ORDER_NAMES = new Set([...FIRST_TEAM_TO_SCORE_NAMES, ...LAST_TEAM_TO_SCORE_NAMES, ...FIRST_GOAL_NAMES, ...LAST_GOAL_NAMES]);
 export const HANDICAP_NAMES = new Set(['handikap', 'hendikep', 'handicap', 'handikap ne ndeshje', 'hendikep ne ndeshje']);
 
 // Parses "Lart 1.5" / "Mbi 2,5" / "Over-2.5" / "Poshtë 3.5" / "Under 0.5".
@@ -81,7 +96,7 @@ export function classifyMarket(marketId, marketName, { home, away } = {}) {
     if (away && base === `${prefix} ${norm(away)}`) return { kind: 'team_totals', period, side: 'away' };
   }
   if (/\b(tek|odd)\b/.test(full) && /\b(cift|even)\b/.test(full)) return { kind: 'odd_even', period };
-  if (FIRST_TEAM_TO_SCORE_NAMES.has(base) && !period) return { kind: 'first_scorer', period };
+  if ((FIRST_TEAM_TO_SCORE_NAMES.has(base) || LAST_TEAM_TO_SCORE_NAMES.has(base)) && !period) return { kind: 'first_scorer', period };
   if (CORRECT_SCORE_NAMES.has(base)) return { kind: 'correct_score', period };
   if (HANDICAP_NAMES.has(base)) return { kind: 'handicap', period };
   return { kind: 'other', period };
