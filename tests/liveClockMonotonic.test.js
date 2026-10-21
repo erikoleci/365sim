@@ -67,3 +67,15 @@ describe('projectClock - server-side reference timestamp resync (source_time + r
     expect(result.second).toBe(0); // elapsed clamped to 0, not negative
   });
 });
+
+describe('shouldAcceptNewClockBase - a fresher reading corrects a clock that ran ahead (paused match)', () => {
+  const T = 1_000_000;
+  const cur = { totalSeconds: 60 * 60, receivedAt: T };
+  it('rewinds only for a newer stamp and a real discrepancy', () => {
+    const now = T + 180_000; // the local clock has run 3 min -> 63:00
+    expect(shouldAcceptNewClockBase(cur, 61 * 60, now)).toBe(false); // no stamp: old rule, never rewind
+    expect(shouldAcceptNewClockBase(cur, 61 * 60, now, now - 1000)).toBe(true); // fresh, 2 min behind -> correct
+    expect(shouldAcceptNewClockBase(cur, 63 * 60 - 2, now, now)).toBe(false); // 2 s behind: ignore (no flicker)
+    expect(shouldAcceptNewClockBase(cur, 61 * 60, now, T - 5000)).toBe(false); // older stamp: stale reading
+  });
+});

@@ -2,7 +2,7 @@
 // Counts only (no names, no credentials). Input rows: matches that kicked off in the last 8h and
 // are not FINISHED (id, live_minute, live_minute_updated_at, live_home_score).
 export function summarizeLiveHealth(rows, now = Date.now()) {
-  const STALE_MS = 150 * 1000; // > MAX_PROJECTION (120s) + one cycle of grace
+  const STALE_MS = 150 * 1000; // a provider reading older than this is reported as stale
   let withClock = 0;
   let withScore = 0;
   let stale = 0;

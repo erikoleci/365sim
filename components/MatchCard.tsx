@@ -27,10 +27,22 @@ interface MatchRowProps {
 // discarded rather than shown as a nonsense "5015:24".
 const MAX_SANE_MATCH_MINUTES = 130;
 const MAX_CLOCK_STAMP_AGE_MS = 3 * 60 * 60 * 1000;
-// The client only extrapolates seconds between two provider readings. The server refreshes the
-// clock every ~15-30s, so if no new reading arrives for this long the provider has stopped
-// (or the feed is stale) and the clock FREEZES instead of running on for hours.
-export const MAX_PROJECTION_SECONDS = 120;
+// The client keeps the clock RUNNING between provider readings, like londonpro365's own page: the
+// clock is never frozen just because a tick was late (the old 120 s limit froze it whenever the
+// socket hiccuped, the tab was in the background or the feed paused for a moment). It only stops
+// after this long without ANY new reading (the feed is really dead), and never past the end of the
+// period it belongs to (see projectionLimitSeconds).
+export const MAX_PROJECTION_SECONDS = 15 * 60;
+// How far beyond the nominal end of a period a running clock may go (stoppage time) before it holds.
+const FIRST_HALF_CEILING_SECONDS = 55 * 60;   // 45' + up to 10' of stoppage
+const SECOND_HALF_CEILING_SECONDS = 105 * 60; // 90' + up to 15' of stoppage
+const LATE_CEILING_SECONDS = 125 * 60;
+export function projectionLimitSeconds(baseTotalSeconds: number, bareMinute: boolean): number {
+  if (bareMinute) return MAX_PROJECTION_BARE_MINUTE_SECONDS;
+  const ceiling = baseTotalSeconds < 45 * 60 ? FIRST_HALF_CEILING_SECONDS
+    : baseTotalSeconds < 105 * 60 ? SECOND_HALF_CEILING_SECONDS : LATE_CEILING_SECONDS;
+  return Math.max(0, Math.min(MAX_PROJECTION_SECONDS, ceiling - baseTotalSeconds));
+}
 // A clock that came as a bare minute ("72", no seconds) says nothing about the seconds: never
 // let the extrapolation roll over into the next minute ahead of the provider.
 export const MAX_PROJECTION_BARE_MINUTE_SECONDS = 59;
@@ -63,12 +75,22 @@ export function parseLiveClock(minute?: string): { minute: number; second: numbe
 export function shouldAcceptNewClockBase(
   current: { totalSeconds: number; receivedAt: number } | null,
   incomingTotalSeconds: number,
-  now: number = Date.now()
+  now: number = Date.now(),
+  // When the incoming reading was taken (server stamp). With it, a FRESHER reading that says the
+  // running clock is clearly ahead (the match was paused: injury, VAR) corrects it, instead of the
+  // clock running ahead of the provider for good. Small differences still never rewind it.
+  incomingReceivedAt?: number
 ): boolean {
   if (!current) return true;
   const currentProjected = current.totalSeconds + Math.max(0, Math.floor((now - current.receivedAt) / 1000));
-  return incomingTotalSeconds >= currentProjected;
+  if (incomingTotalSeconds >= currentProjected) return true;
+  if (incomingReceivedAt != null && incomingReceivedAt > current.receivedAt) {
+    const incomingProjected = incomingTotalSeconds + Math.max(0, Math.floor((now - incomingReceivedAt) / 1000));
+    return currentProjected - incomingProjected > REWIND_TOLERANCE_SECONDS;
+  }
+  return false;
 }
+const REWIND_TOLERANCE_SECONDS = 5;
 
 // Pure projection, extracted for direct testing: given a known
 // {minute,second} as of `receivedAt`, what should the clock read `now`?
@@ -117,8 +139,8 @@ export function useTickingClock(
   const base = estimated ? null : parseLiveClock(rawMinute);
   // Seconds are only trustworthy when the provider's own value carried them ("72:14", or a
   // bare seconds counter such as "1776"); a bare "72" does not.
-  const maxProject = /:\d/.test(String(rawMinute ?? '')) || (/^\d+$/.test(String(rawMinute ?? '').trim()) && Number(rawMinute) > MAX_SANE_MATCH_MINUTES)
-    ? MAX_PROJECTION_SECONDS : MAX_PROJECTION_BARE_MINUTE_SECONDS;
+  const hasSeconds = /:\d/.test(String(rawMinute ?? '')) || (/^\d+$/.test(String(rawMinute ?? '').trim()) && Number(rawMinute) > MAX_SANE_MATCH_MINUTES);
+  const maxProject = base ? projectionLimitSeconds(base.minute * 60 + base.second, !hasSeconds) : MAX_PROJECTION_SECONDS;
   const [, forceTick] = React.useState(0);
   const baseRef = React.useRef<{ totalSeconds: number; receivedAt: number } | null>(null);
 
@@ -145,7 +167,7 @@ export function useTickingClock(
     // see upsertMatch's team-mismatch reset in server/london365.js.) The
     // "current projected" value is itself computed from receivedAt, so this
     // check is correct whether receivedAt is the client's or the server's.
-    if (!shouldAcceptNewClockBase(baseRef.current, incomingTotalSeconds, Date.now())) return;
+    if (!shouldAcceptNewClockBase(baseRef.current, incomingTotalSeconds, Date.now(), receivedAt)) return;
     baseRef.current = { totalSeconds: incomingTotalSeconds, receivedAt };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawMinute, serverUpdatedAt]);

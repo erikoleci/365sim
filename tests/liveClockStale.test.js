@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  parseLiveClock, projectClock, MAX_PROJECTION_SECONDS, MAX_PROJECTION_BARE_MINUTE_SECONDS, shouldAcceptNewClockBase, clockReceivedAt,
+  parseLiveClock, projectClock, projectionLimitSeconds, MAX_PROJECTION_SECONDS, MAX_PROJECTION_BARE_MINUTE_SECONDS, shouldAcceptNewClockBase, clockReceivedAt,
 } from '../components/MatchCard.tsx';
 import { formatEstimatedMinute, liveMinuteFallback, isMessageForMatch, isHalftime, isGhostLiveMatch, isLiveClockStale } from '../utils/liveStatus.ts';
 
@@ -25,7 +25,16 @@ describe('projectClock - never runs on forever', () => {
   it('still counts normally for a few seconds', () => {
     expect(projectClock(base, T, T + 7000)).toEqual({ minute: 75, second: 46, half: 'Pjesa II' });
   });
-  it('freezes after MAX_PROJECTION_SECONDS without a new provider reading (feed stopped)', () => {
+  it('keeps running through a long gap between readings (no freeze after 2 minutes), like londonpro365', () => {
+    expect(projectClock(base, T, T + 300_000)).toEqual({ minute: 80, second: 39, half: 'Pjesa II' }); // +5 min
+  });
+  it('holds at the end of the period (stoppage ceiling), never running on past it', () => {
+    expect(projectionLimitSeconds(44 * 60, false)).toBe(11 * 60); // first half: up to 55:00
+    expect(projectionLimitSeconds(50 * 60, false)).toBe(15 * 60); // second half, capped by the 15 min gap limit
+    expect(projectionLimitSeconds(100 * 60, false)).toBe(5 * 60); // up to 105:00
+    expect(projectionLimitSeconds(72 * 60, true)).toBe(59);       // bare minute: never rolls over
+  });
+  it('freezes after MAX_PROJECTION_SECONDS without a new provider reading (feed really stopped)', () => {
     const frozen = projectClock(base, T, T + (MAX_PROJECTION_SECONDS + 5) * 1000);
     const hoursLater = projectClock(base, T, T + 3 * 3600 * 1000);
     expect(hoursLater).toEqual(frozen);
