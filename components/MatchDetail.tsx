@@ -133,6 +133,9 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
     // subscription below is the real-time path and fires immediately on
     // every goal/card, same as the provider's own feed.
     const interval = match.status === MatchStatus.LIVE ? setInterval(() => load(), 15000) : null;
+    const onVisible = () => { if (document.visibilityState !== 'hidden') load(); }; // back from the background
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('pageshow', onVisible);
 
     let socket: WebSocket | null = null;
     let flashTimer: ReturnType<typeof setTimeout> | null = null;
@@ -155,6 +158,8 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
     return () => {
       cancelled = true;
       if (interval) clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('pageshow', onVisible);
       if (flashTimer) clearTimeout(flashTimer);
       socket?.close();
     };

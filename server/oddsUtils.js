@@ -9,7 +9,7 @@
 // and must never change. Only the human-facing `name` fields are
 // translated to Albanian. Never parse business logic out of `name`.
 
-import { getBetBlockReason, settlementRuleRequired } from './marketRules.js';
+import { getBetBlockReason, settlementRuleRequired, hidePlayerOdds } from './marketRules.js';
 
 export const MARKET_LABELS = {
   h2h: { name: '1X2 - Fituesi', category: 'main' },
@@ -244,7 +244,7 @@ export function mapEventToMatch(row) {
     }
   }
 
-  const markets = Array.from(marketMap.entries()).map(([key, entry]) => {
+  const allMarkets = Array.from(marketMap.entries()).map(([key, entry]) => {
     const meta = getMarketMeta(key, entry.label, entry.category);
     const options = sortOptions(key, Array.from(entry.outMap.values()));
     return {
@@ -260,6 +260,8 @@ export function mapEventToMatch(row) {
       suspended: options.length > 0 && options.every((o) => o.suspended),
     };
   });
+  // Player markets / player options are not offered: the feed gives no player names to settle them.
+  const markets = hidePlayerOdds(allMarkets, row.home_team, row.away_team);
 
   const status = normalizeStatus(row.start_time, row.status);
 

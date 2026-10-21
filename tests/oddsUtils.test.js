@@ -116,7 +116,7 @@ describe('mapEventToMatch (dynamic/unknown markets)', () => {
           title: 'BookA',
           markets: [
             {
-              key: 'player_props', // not in MARKET_LABELS on purpose
+              key: 'exotic_props', // not in MARKET_LABELS on purpose
               outcomes: [{ name: 'Some Player Over 1.5', price: 2.1 }],
             },
           ],
@@ -124,9 +124,9 @@ describe('mapEventToMatch (dynamic/unknown markets)', () => {
       ],
     });
     const match = mapEventToMatch(row(ev));
-    const market = match.markets.find((m) => m.marketKey === 'player_props');
+    const market = match.markets.find((m) => m.marketKey === 'exotic_props');
     expect(market).toBeDefined();
-    expect(market.name).toBe('Player Props'); // auto-generated, title-cased
+    expect(market.name).toBe('Exotic Props'); // auto-generated, title-cased
     expect(market.category).toBe('other');
     expect(market.options[0].odds).toBe(2.1);
   });

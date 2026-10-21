@@ -53,7 +53,37 @@ describe('getBetBlockReason in play', () => {
   it('blocks corners, cards, player and unknown markets (no live data)', () => {
     expect(block(live(), 'Shuma e korneve P1+P2', '5+')).toBe('NOT_VERIFIABLE_LIVE');
     expect(block(live(), 'Totali i kartonave', 'Lart 3.5')).toBe('NOT_VERIFIABLE_LIVE');
-    expect(block(live(), 'Shënuesi i golit', 'Mbappe')).toBe('NOT_VERIFIABLE_LIVE');
+    expect(block(live(), 'Minuta e Golit', '1-15')).toBe('NOT_VERIFIABLE_LIVE');
+    expect(block(live(), 'Gol brenda 10 minutash', 'Po')).toBe('NOT_VERIFIABLE_LIVE');
+    expect(block(live(), 'Goli i radhës', '1')).toBe('NOT_VERIFIABLE_LIVE');
+  });
+  it('player markets are never offered, before or during the match', () => {
+    expect(block(live(), 'Shënuesi i golit', 'Mbappe')).toBe('NO_PLAYER_DATA');
+    expect(block(live(), 'Lojtari Shënon', 'Haaland')).toBe('NO_PLAYER_DATA');
+    expect(block(live(), 'Goli i Parë', 'Mbappe')).toBe('NO_PLAYER_DATA'); // player option of a goal-order market
+    expect(block(live(), 'Goli i Parë', 'Lens')).toBe('NOT_VERIFIABLE_LIVE'); // side option: only closed live
+    const pre = live({ status: 'UPCOMING', live_status: null, start_time: new Date(NOW + 3600000).toISOString(), live_home_score: null, live_away_score: null });
+    expect(block(pre, 'Shënuesi i golit', 'Mbappe')).toBe('NO_PLAYER_DATA');
+    expect(block(pre, 'Goli i Parë', 'Mbappe')).toBe('NO_PLAYER_DATA');
+    expect(block(pre, 'Goli i Parë', 'Lens')).toBeNull();
+    expect(block(pre, 'Goli i Parë', 'Asnjë')).toBeNull();
+  });
+  it('hidePlayerOdds drops player markets and player options but keeps the sides', async () => {
+    const { hidePlayerOdds } = await import('../server/marketRules.js');
+    const markets = [
+      { name: 'Rezultat Final', options: [{ id: 'HOME', name: '1' }] },
+      { name: 'Shënuesi i golit', options: [{ id: 'a', name: 'Mbappe' }] },
+      { name: 'Goli i Parë', options: [{ id: 'a', name: 'Mbappe' }, { id: 'b', name: 'Lens' }, { id: 'c', name: 'Asnjë' }, { id: 'd', name: '2' }] },
+      { name: 'Goli i Fundit', options: [{ id: 'a', name: 'Mbappe' }] },
+    ];
+    const out = hidePlayerOdds(markets, 'Lens', 'Sporting');
+    expect(out.map((m) => m.name)).toEqual(['Rezultat Final', 'Goli i Parë']);
+    expect(out[1].options.map((o) => o.name)).toEqual(['Lens', 'Asnjë', '2']);
+  });
+  it('no environment variable reopens unverifiable live markets', () => {
+    process.env.LIVE_BET_UNVERIFIED_MARKETS = 'allow';
+    try { expect(block(live(), 'Shuma e korneve', '5+')).toBe('NOT_VERIFIABLE_LIVE'); }
+    finally { delete process.env.LIVE_BET_UNVERIFIED_MARKETS; }
   });
   it('env/option reopens unverifiable markets', () => {
     expect(getBetBlockReason(live(), { id: 'x', name: 'Shuma e korneve' }, { id: '5+' }, NOW, { allowUnverified: true })).toBeNull();

@@ -15,7 +15,7 @@
 //     timing/next-goal markets, combinations, anything we cannot classify) are closed
 //     in play: nothing proves what has already happened, so betting on them live would
 //     be betting against information the player may already have. They stay available
-//     before kick-off. LIVE_BET_UNVERIFIED_MARKETS=allow reopens them.
+//     before kick-off. No configuration can reopen them.
 //
 // Names are matched on the provider's own wording (Albanian), normalised.
 
@@ -170,11 +170,51 @@ export function settlementRuleRequired() {
   return ['1', 'true', 'yes'].includes(String(process.env.BET_REQUIRE_SETTLEMENT_RULE || '').toLowerCase());
 }
 
+// Markets with no verifiable live data (corners, cards, timing, next goal, players, combos...) are
+// ALWAYS closed in play. The old LIVE_BET_UNVERIFIED_MARKETS=allow switch is gone on purpose: a
+// forgotten environment variable must never reopen them (a ticket on such a market was accepted live).
 export function unverifiedMarketsAllowed() {
-  return String(process.env.LIVE_BET_UNVERIFIED_MARKETS || '').toLowerCase() === 'allow';
+  return false;
 }
 
+// ---- player markets -------------------------------------------------------------------------
+// The feed gives no scorer / player names in results, so a bet on a player can never be settled:
+// player markets are not offered at all (before kick-off or in play), and in "Goli i Parë / i Fundit"
+// only the side options (1 / 2 / a team / no goal) are kept; player-name options are dropped.
+const PLAYER_MARKET = /\b(lojtar\w*|shenues\w*|golashenues\w*|autor\w*|scorers?|goalscorers?|players?)\b/;
+export const isPlayerMarketName = (name) => PLAYER_MARKET.test(norm(name));
+const NO_GOAL_OPTIONS = new Set(['asnje', 'asnje gol', 'pa gol', 'nuk ka gol', 'no goal', 'none', 'no scorer']);
+const SIDE_OPTIONS = new Set(['1', '2', 'x', 'home', 'away', 'draw', 'shtepi', 'mik', 'barazim']);
+const teamKey = (v) => norm(v).replace(/[^a-z0-9]+/g, '');
+const isGoalOrderMarketName = (name) => GOAL_ORDER_NAMES.has(norm(name));
+// True when `option` of the goal-order market is a player name (not a side / team / no goal).
+export function isPlayerOption(marketName, option, home, away) {
+  if (!isGoalOrderMarketName(marketName)) return false;
+  const text = norm(option && (option.name ?? option.id));
+  const id = norm(option && option.id);
+  if (SIDE_OPTIONS.has(text) || SIDE_OPTIONS.has(id) || NO_GOAL_OPTIONS.has(text)) return false;
+  const key = teamKey(text);
+  if (key && (key === teamKey(home) || key === teamKey(away))) return false;
+  return true;
+}
+// Removes player markets and player options from a market list (what the board offers).
+export function hidePlayerOdds(markets, home, away) {
+  const out = [];
+  for (const m of markets || []) {
+    if (isPlayerMarketName(m.name)) continue;
+    if (!isGoalOrderMarketName(m.name)) { out.push(m); continue; }
+    const options = (m.options || []).filter((o) => !isPlayerOption(m.name, o, home, away));
+    if (options.length) out.push(options.length === (m.options || []).length ? m : { ...m, options });
+  }
+  return out;
+}
+
+// Market names that are tied to a minute window or a moment ("0-15 minuta", "Minuta e Golit",
+// "gol brenda 5 minutash", next goal): closed in play whatever else the name looks like.
+const TIMING_MARKET = /\bminut\w*|\bmin\b|\d+\s*['\u2019]|\b(i|e) rradhes|\b(golin|gola|goli) e (rradh|radh)\w*|\bnext goal\b|\bgol(i|a)? ne\b.*\d/;
+
 const NOT_VERIFIABLE = 'NOT_VERIFIABLE_LIVE';
+const NO_PLAYER_DATA = 'NO_PLAYER_DATA';
 const NO_RULE = 'NO_SETTLEMENT_RULE';
 const DECIDED = 'OUTCOME_DECIDED';
 
@@ -189,8 +229,14 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
 
   if (settlementRuleRequired() && !describeMarket(market && market.id, market && market.name).autoSettles) return NO_RULE;
 
+  // Player markets / player options: never offered (no scorer names to settle them with).
+  if (market && isPlayerMarketName(market.name)) return NO_PLAYER_DATA;
+  if (market && isPlayerOption(market.name, selection, row.home_team, row.away_team)) return NO_PLAYER_DATA;
+
   const kickoff = Date.parse(row.start_time);
   if (!Number.isFinite(kickoff) || kickoff > now) return null; // not in play yet
+
+  if (market && TIMING_MARKET.test(norm(market.name))) return NOT_VERIFIABLE;
 
   const c = classifyMarket(market && market.id, market && market.name, { home: row.home_team, away: row.away_team });
   const sel = selection || {};
@@ -232,7 +278,7 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
 
     // corners, cards, combos and everything unrecognised (player / scorer / timing...)
     default:
-      return (allowUnverified ?? unverifiedMarketsAllowed()) ? null : NOT_VERIFIABLE;
+      return allowUnverified === true ? null : NOT_VERIFIABLE; // only an explicit test flag; never config
   }
 }
 
@@ -242,6 +288,7 @@ export function describeBlockReason(code) {
     case 'MATCH_FINISHED': return 'the match has finished';
     case 'FIRST_HALF_OVER': return 'the first half is over';
     case 'OUTCOME_DECIDED': return 'the outcome is already decided by the current score';
+    case 'NO_PLAYER_DATA': return 'player odds are not offered (the feed does not provide player names)';
     case 'NO_SETTLEMENT_RULE': return 'this market cannot be settled automatically, so it is not offered';
     case 'NOT_VERIFIABLE_LIVE': return 'this market cannot be verified against live data, so it is only open before kick-off';
     default: return 'it is closed';

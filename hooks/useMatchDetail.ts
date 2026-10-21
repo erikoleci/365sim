@@ -18,7 +18,22 @@ export function useMatchDetail(detailMatchId: string | null, matches: Match[]) {
     api.fetchMatchById(detailMatchId)
       .then((m) => { if (!cancelled) setFull(m); })
       .catch((e) => console.error('Failed to load match detail', e));
-    return () => { cancelled = true; };
+    // Back from the background: the odds patches that arrived while away were lost -> refetch.
+    const onResume = () => {
+      if (document.visibilityState === 'hidden') return;
+      api.fetchMatchById(detailMatchId)
+        .then((m) => { if (!cancelled) setFull(m); })
+        .catch(() => { /* keep what is on screen */ });
+    };
+    document.addEventListener('visibilitychange', onResume);
+    window.addEventListener('pageshow', onResume);
+    window.addEventListener('online', onResume);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onResume);
+      window.removeEventListener('pageshow', onResume);
+      window.removeEventListener('online', onResume);
+    };
   }, [detailMatchId]);
 
   const detailMatch = useMemo(() => {

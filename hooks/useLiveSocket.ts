@@ -1,8 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Match, MatchStatus } from '../types';
 import * as api from '../services/api';
 import { isMessageForMatch } from '../utils/liveStatus';
 import { OddsChange, patchMarketsOdds } from '../utils/matchPatches';
+import {
+  RESUME_RELOAD_MIN_GAP_MS, STALE_CLOCK_RELOAD_GAP_MS, WATCHDOG_INTERVAL_MS,
+  anyLiveClockStale, hasLiveMatches, needsFullResync, socketLooksDead,
+} from '../utils/resumeSync';
 
 type SetMatches = (update: (current: Match[]) => Match[]) => void;
 type SetDetail = (update: (current: Match | null) => Match | null) => void;
@@ -13,6 +17,8 @@ interface Options {
   setDetailMatchFull: SetDetail;
   /** Re-download the match list (used for events the socket cannot patch in place). */
   reloadMatches: () => void;
+  /** The current list: the watchdog needs it to spot a live clock that stopped moving. */
+  matches?: Match[];
 }
 
 // LIVE_TICKs are buffered and applied in ONE setMatches per 250ms. With ~80 live matches each
@@ -44,7 +50,10 @@ const withScoreAndClock = (m: Match, msg: any): Match => ({
  * price moves are patched into the match list in place. Reconnects with exponential backoff.
  * The slow REST refresh in useMatchesFeed is only a safety net for a missed message.
  */
-export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadMatches }: Options) {
+export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadMatches, matches }: Options) {
+  const matchesRef = useRef<Match[]>(matches ?? []);
+  matchesRef.current = matches ?? matchesRef.current;
+
   useEffect(() => {
     if (!enabled) return;
     let socket: WebSocket | null = null;
@@ -53,6 +62,9 @@ export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadM
     let attempt = 0;
     let cancelled = false;
     const tickBuffer = new Map<string, TickAccumulator>();
+    let lastMessageAt = Date.now();
+    let lastReloadAt = 0;
+    let hiddenSince: number | null = typeof document !== 'undefined' && document.visibilityState === 'hidden' ? Date.now() : null;
 
     const flushTicks = () => {
       if (tickTimer) { clearTimeout(tickTimer); tickTimer = null; }
@@ -160,12 +172,14 @@ export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadM
       socket = new WebSocket(api.getWsUrl());
       socket.onopen = () => {
         attempt = 0;
+        lastMessageAt = Date.now();
         const token = api.getToken();
         if (token) socket!.send(JSON.stringify({ type: 'auth', token }));
         socket!.send(JSON.stringify({ type: 'subscribe', topic: 'live' }));
         socket!.send(JSON.stringify({ type: 'subscribe', topic: 'odds' }));
       };
       socket.onmessage = (event) => {
+        lastMessageAt = Date.now();
         try { handleMessage(JSON.parse(event.data)); } catch { /* ignore malformed socket messages */ }
       };
       socket.onclose = () => {
@@ -177,9 +191,66 @@ export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadM
       socket.onerror = () => socket?.close();
     };
 
+    // Throw the current connection away and open a new one right now (no backoff wait).
+    const reconnectNow = () => {
+      if (cancelled) return;
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+      if (socket) {
+        socket.onclose = null; socket.onerror = null; socket.onmessage = null;
+        try { socket.close(); } catch { /* already closed */ }
+        socket = null;
+      }
+      attempt = 0;
+      connect();
+    };
+    const reload = (minGapMs: number) => {
+      const now = Date.now();
+      if (now - lastReloadAt < minGapMs) return;
+      lastReloadAt = now;
+      reloadMatches();
+    };
+
+    // Coming back to the page (tab switch, phone unlocked, network back): after a real absence the
+    // socket cannot be trusted and the clocks are minutes old -> new connection + full reload now.
+    const resume = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        if (hiddenSince == null) hiddenSince = Date.now();
+        return;
+      }
+      const now = Date.now();
+      const away = needsFullResync(hiddenSince, now);
+      hiddenSince = null;
+      if (away || socketLooksDead(socket?.readyState, lastMessageAt, now, hasLiveMatches(matchesRef.current))) reconnectNow();
+      reload(away ? 0 : RESUME_RELOAD_MIN_GAP_MS);
+    };
+    document.addEventListener('visibilitychange', resume);
+    window.addEventListener('pageshow', resume);
+    window.addEventListener('focus', resume);
+    window.addEventListener('online', resume);
+
+    // While the page is open: a silent/dead socket gets replaced, and a live clock that stopped
+    // moving makes the list reload (not stay frozen until someone refreshes the page).
+    const watchdog = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const now = Date.now();
+      const list = matchesRef.current;
+      if (socketLooksDead(socket?.readyState, lastMessageAt, now, hasLiveMatches(list))) {
+        lastMessageAt = now; // do not trigger again before the new connection had a chance
+        reconnectNow();
+        reload(RESUME_RELOAD_MIN_GAP_MS);
+      } else if (anyLiveClockStale(list, now)) {
+        reload(STALE_CLOCK_RELOAD_GAP_MS);
+      }
+    }, WATCHDOG_INTERVAL_MS);
+
     connect();
     return () => {
       cancelled = true;
+      document.removeEventListener('visibilitychange', resume);
+      window.removeEventListener('pageshow', resume);
+      window.removeEventListener('focus', resume);
+      window.removeEventListener('online', resume);
+      clearInterval(watchdog);
       if (retryTimer) clearTimeout(retryTimer);
       if (tickTimer) clearTimeout(tickTimer);
       socket?.close();

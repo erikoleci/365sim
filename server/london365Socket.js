@@ -35,6 +35,8 @@ const SOCKET_ENABLED = (process.env.LONDON365_SOCKET_ENABLED || '1') === '1';
 const GAMEDETAILS_SOCKET_URL = process.env.LONDON365_GAMEDETAILS_SOCKET || 'https://ecco-p2p.socketi355.com:1338';
 const GAMEDETAILS_SOCKET_ENABLED = (process.env.LONDON365_GAMEDETAILS_SOCKET_ENABLED || '1') === '1';
 let gameDetailsSocket = null;
+// When the provider's gamedetails socket last delivered anything (the match clock rides on it).
+let lastGameDetailsAt = Date.now();
 // Game ids (bare provider id, no "l365-" prefix) we've asked the
 // gamedetails socket to stream. Re-sent on every (re)connect since the
 // provider's server doesn't remember subscriptions across a dropped
@@ -177,6 +179,7 @@ export async function startLondon365GameDetailsSocket() {
   }
 
   gameDetailsSocket.on('connect', function () {
+    lastGameDetailsAt = Date.now();
     console.log('[london365-gamedetails] connected to ' + GAMEDETAILS_SOCKET_URL);
     // Per-game subscribe, not a room join (see subscribeGameDetails above).
     // Re-send every id we already know about — the provider's server
@@ -266,6 +269,7 @@ export async function startLondon365GameDetailsSocket() {
   }
 
   gameDetailsSocket.on('gamedetails', function (raw) {
+    lastGameDetailsAt = Date.now();
     gameDetailsCount++;
     if (gameDetailsCount <= 3 || gameDetailsCount % 200 === 0) {
       console.log('[london365-gamedetails] received #' + gameDetailsCount + ':', String(raw).slice(0, 200));
@@ -309,6 +313,20 @@ export async function startLondon365GameDetailsSocket() {
   // polling path (see server/london365.js's live loop) without ever firing
   // the odds socket's 'new-live-game' event above — this sweep catches
   // those too, deduped by subscribedGameIds so it's a no-op most of the time.
+  // Clock watchdog: a connection that stays "connected" but stopped delivering (half-dead TCP, the
+  // provider dropping our subscriptions) froze every match clock until the next redeploy. With live
+  // matches known and nothing received for GAMEDETAILS_SILENCE_MS, drop the socket and connect again;
+  // the 'connect' handler re-sends every subscription.
+  const GAMEDETAILS_SILENCE_MS = Math.max(30000, Number(process.env.LONDON365_GAMEDETAILS_SILENCE_MS || 90000));
+  setInterval(function () {
+    if (!hasKnownLiveMatches() || !gameDetailsSocket) return;
+    if (Date.now() - lastGameDetailsAt < GAMEDETAILS_SILENCE_MS) return;
+    console.warn('[london365-gamedetails] silent for ' + Math.round((Date.now() - lastGameDetailsAt) / 1000) + 's with live matches -- reconnecting');
+    lastGameDetailsAt = Date.now(); // one attempt per silence window
+    try { gameDetailsSocket.disconnect(); } catch { /* already down */ }
+    try { gameDetailsSocket.connect(); } catch { /* socket.io retries on its own */ }
+  }, 15000);
+
   setInterval(function () {
     // Nothing LIVE in memory => nothing to subscribe; skip the query so the
     // DB can idle (fail-open until the tracker has been loaded).
