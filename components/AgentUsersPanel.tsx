@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { User } from '../types';
 import * as api from '../services/api';
 import { useI18n, getLocale } from '../i18n';
+import MatchupLabel from './MatchupLabel';
 
 const money = (n: number) => Number(n || 0).toLocaleString(getLocale(), { maximumFractionDigits: 2 });
 const dateFmt = (ms: number) => new Date(ms).toLocaleString(getLocale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -258,7 +259,7 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
                               <div className="space-y-0.5">
                                 {tk.selections.map((s, i) => (
                                   <div key={i} className="flex justify-between text-[11px] text-brand-textMuted">
-                                    <span>{s.matchHome} vs {s.matchAway} - {s.marketName}: <span className="text-white">{s.selectionName}</span> @{s.odds}</span>
+                                    <span><MatchupLabel home={s.matchHome} away={s.matchAway} separator="vs" /> - {s.marketName}: <span className="text-white">{s.selectionName}</span> @{s.odds}</span>
                                     <span className={statusColor[s.status] || ''}>{s.status}</span>
                                   </div>
                                 ))}

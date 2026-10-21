@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BetSelectionItem, Bet, BetStatus } from '../types';
 import { useI18n } from '../i18n';
+import MatchupLabel from './MatchupLabel';
 
 interface BetSlipProps {
   selections: BetSelectionItem[];
@@ -153,7 +154,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                              <div className="flex-1 p-2 pr-6 min-w-0">
                                  <div className="font-bold text-brand-text truncate">{sel.selectionName}</div>
                                  <div className="text-xs text-brand-textMuted truncate">{sel.marketName}</div>
-                                 <div className="text-xs text-brand-textMuted italic truncate">{sel.matchHome} v {sel.matchAway}</div>
+                                 <div className="text-xs text-brand-textMuted italic truncate"><MatchupLabel home={sel.matchHome} away={sel.matchAway} /></div>
                                  <div className="text-right mt-1 tabular-nums">
                                      {sel.previousOdds != null && (
                                          <span className="text-brand-textMuted line-through mr-1.5">@{sel.previousOdds.toFixed(2)}</span>
@@ -253,7 +254,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                                     <div key={idx} className="flex justify-between items-start gap-2">
                                         <div className="min-w-0">
                                             <div className="font-bold text-white truncate">{leg.selectionName} <span className="font-normal text-brand-textMuted">@{leg.odds.toFixed(2)}</span></div>
-                                            <div className="text-[10px] text-brand-textMuted truncate">{leg.marketName} - {leg.matchHome} v {leg.matchAway}</div>
+                                            <div className="text-[10px] text-brand-textMuted truncate">{leg.marketName} - <MatchupLabel home={leg.matchHome} away={leg.matchAway} size="xs" /></div>
                                         </div>
                                         <div className="text-[10px] flex-shrink-0">
                                             {bet.status !== BetStatus.PENDING && (

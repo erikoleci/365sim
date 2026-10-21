@@ -5,6 +5,7 @@ import { formatLiveStatus, isHalftime, formatScore, pickClockSource } from '../u
 import { useTickingClock, formatLiveClock } from './MatchCard';
 import { BallIcon, CornerFlagIcon, CardIcon, OffsideFlagIcon } from './PitchIcons';
 import { useI18n } from '../i18n';
+import TeamLogo from './TeamLogo';
 
 interface LivePitchProps {
   match: Match;
@@ -258,12 +259,14 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
 
       {/* the two teams, with the way each one attacks (home to the right) */}
       <div className="absolute top-2 left-2 z-20 max-w-[30%] flex items-center gap-1 rounded-full bg-black/45 backdrop-blur-sm pl-2 pr-1.5 py-0.5 text-[10px] md:text-xs font-semibold text-white/90">
+        <TeamLogo name={match.homeTeam} league={match.league} providerLogo={match.homeTeamLogo} size="xs" />
         <span className="truncate">{match.homeTeam}</span>
         <span aria-hidden="true" style={{ color: YELLOW }}>▸</span>
       </div>
       <div className="absolute top-2 right-2 z-20 max-w-[30%] flex items-center gap-1 rounded-full bg-black/45 backdrop-blur-sm pr-2 pl-1.5 py-0.5 text-[10px] md:text-xs font-semibold text-white/90">
         <span aria-hidden="true" style={{ color: YELLOW }}>◂</span>
         <span className="truncate">{match.awayTeam}</span>
+        <TeamLogo name={match.awayTeam} league={match.league} providerLogo={match.awayTeamLogo} size="xs" />
       </div>
 
       {/* clock */}

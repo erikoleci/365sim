@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { Match } from '../../types';
 import { useI18n } from '../../i18n';
+import MatchupLabel from '../MatchupLabel';
 
 const HISTORY_KEY = 'searchHistory';
 const HISTORY_LIMIT = 8;
@@ -111,7 +112,7 @@ const SearchBar: React.FC<Props> = ({ query, onQueryChange, suggestions, favorit
               <div className={SECTION}>{t('Ndeshje')}</div>
               {matches.map((m) => (
                 <button key={m.id} onMouseDown={choose(() => { remember(query); onPickMatch(m.id); onQueryChange(''); })} className={ITEM}>
-                  {m.homeTeam} <span className="text-brand-textMuted">vs</span> {m.awayTeam}
+                  <MatchupLabel home={m.homeTeam} away={m.awayTeam} league={m.league} separator="vs" size="sm" />
                 </button>
               ))}
             </>

@@ -4,6 +4,7 @@ import { formatMatchTime, formatMatchDayMonth, isSameAlbaniaDay, albaniaTodayKey
 import { getMatchWinnerMarket, useTickingClock, formatLiveClock } from './MatchCard';
 import { isHalftime, liveMinuteFallback } from '../utils/liveStatus';
 import { useI18n } from '../i18n';
+import TeamLogo from './TeamLogo';
 
 interface FeaturedMatchCardProps {
   match: Match;
@@ -45,8 +46,14 @@ const FeaturedMatchCard: React.FC<FeaturedMatchCardProps> = ({ match, onBetClick
           </span>
           <span className="opacity-60 hidden sm:inline">{shortId}</span>
         </div>
-        <div className="text-xs font-bold text-brand-text truncate">{match.homeTeam}</div>
-        <div className="text-xs font-bold text-brand-text truncate">{match.awayTeam}</div>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <TeamLogo name={match.homeTeam} league={match.league} providerLogo={match.homeTeamLogo} size="sm" />
+          <span className="text-xs font-bold text-brand-text truncate">{match.homeTeam}</span>
+        </div>
+        <div className="flex items-center gap-1.5 min-w-0 mt-0.5">
+          <TeamLogo name={match.awayTeam} league={match.league} providerLogo={match.awayTeamLogo} size="sm" />
+          <span className="text-xs font-bold text-brand-text truncate">{match.awayTeam}</span>
+        </div>
       </button>
       {matchWinnerMarket && (
         <div className="flex gap-1 px-2 pb-2">

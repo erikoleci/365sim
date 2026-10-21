@@ -188,3 +188,10 @@ docker run -p 3001:3001 --env-file .env 365sim
 ```
 
 Nëse prapë preferohet ndarja frontend/backend (Vercel/Netlify + Railway), duhet së pari të modifikohet `services/api.ts` që të lexojë një bazë URL nga `import.meta.env.VITE_API_TARGET` në vend të path-it relativ `/api`, dhe të kufizohet `cors()` te domain-i specifik i frontend-it.
+## Team logos
+
+Crests are local files in `public/team-logos/<country>/<club>.webp` plus an `index.json` (normalised team name -> file). `components/TeamLogo.tsx` is the only component that draws a crest; `utils/teamLogos.ts` resolves a team name to a file (exact normalised-name match, aliases, league country as tie-break) and falls back to the provider's crest, then to an initials tile.
+
+- **Add or refresh logos:** `node scripts/build-team-logos.mjs` (clones the two source repos to a temp dir, rasterises every crest to a 72px WebP, rebuilds the index). Add countries in the `COUNTRIES` list at the top of the script.
+- **A club shows initials although a logo exists under another spelling:** add one line to `TEAM_ALIASES` in `utils/teamLogos.ts` (`'feed spelling': ['collection key']`; keys are lower-case without FC/AC/... and accents).
+- **Sources:** JoseArroyave/football-logos (MIT) and leoratzlaff/football-badges (MIT per package.json). See `public/team-logos/SOURCES.md`. The crests are club trademarks, shown only to identify teams.

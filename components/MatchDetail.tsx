@@ -7,6 +7,7 @@ import { useTickingClock, formatLiveClock } from './MatchCard';
 import { isHalftime, liveMinuteFallback, formatScore, pickClockSource, isLiveClockStale } from '../utils/liveStatus';
 import { LONDON365_EVENT_LABELS, LONDON365_STAT_LABELS } from '../utils/london365Labels';
 import { useI18n } from '../i18n';
+import TeamLogo from './TeamLogo';
 
 interface MatchDetailProps {
   match: Match;
@@ -55,6 +56,21 @@ const StatBar: React.FC<{ label: string; home: number | null; away: number | nul
 };
 
 const STAT_FIELDS = ['possession_home', 'shots_home', 'shots_on_target_home', 'corners_home', 'cards_home', 'xg_home', 'possession_away', 'shots_away', 'shots_on_target_away', 'corners_away', 'cards_away', 'xg_away'];
+
+// A market option that IS one of the two teams ("Arsenal", or "Arsenal (-1)" in a handicap) gets that
+// team's crest in front; every other option (1, X, Over 2.5, ...) is drawn exactly as before.
+const OptionName: React.FC<{ match: Match; name: string; tn: (text: string) => string }> = ({ match, name, tn }) => {
+  const lower = name.trim().toLowerCase();
+  const isTeam = (team: string) => lower === team.toLowerCase() || lower.startsWith(`${team.toLowerCase()} (`);
+  const team = isTeam(match.homeTeam) ? match.homeTeam : isTeam(match.awayTeam) ? match.awayTeam : null;
+  if (!team) return <>{tn(name)}</>;
+  return (
+    <span className="inline-flex items-center justify-center gap-1">
+      <TeamLogo name={team} league={match.league} providerLogo={team === match.homeTeam ? match.homeTeamLogo : match.awayTeamLogo} size="xs" />
+      <span>{tn(name)}</span>
+    </span>
+  );
+};
 
 const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, onBetClick, selectedIds }) => {
   const { t, tn } = useI18n();
@@ -254,13 +270,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
              )}
              <div className="flex justify-center items-center gap-8">
                  <div className="flex flex-col items-center gap-1">
-                   {match.homeTeamLogo ? (
-                     <img src={match.homeTeamLogo} alt="" className="w-8 h-8 object-contain" />
-                   ) : (
-                     <span className="w-8 h-8 rounded bg-[#444] text-brand-textMuted text-xs font-bold flex items-center justify-center">
-                       {match.homeTeam.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
-                     </span>
-                   )}
+                   <TeamLogo name={match.homeTeam} league={match.league} providerLogo={match.homeTeamLogo} size="xl" />
                    <div className="text-2xl font-bold text-white">{match.homeTeam}</div>
                  </div>
                  <div className="text-3xl text-brand-yellow font-mono">
@@ -271,13 +281,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
                         : 'v'}
                  </div>
                  <div className="flex flex-col items-center gap-1">
-                   {match.awayTeamLogo ? (
-                     <img src={match.awayTeamLogo} alt="" className="w-8 h-8 object-contain" />
-                   ) : (
-                     <span className="w-8 h-8 rounded bg-[#444] text-brand-textMuted text-xs font-bold flex items-center justify-center">
-                       {match.awayTeam.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
-                     </span>
-                   )}
+                   <TeamLogo name={match.awayTeam} league={match.league} providerLogo={match.awayTeamLogo} size="xl" />
                    <div className="text-2xl font-bold text-white">{match.awayTeam}</div>
                  </div>
              </div>
@@ -412,7 +416,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
                               className="flex flex-col items-center justify-center py-2 opacity-40 cursor-not-allowed select-none"
                               title={t('Tregu është pezulluar përkohësisht')}
                             >
-                              <span className="text-xs text-brand-text">{tn(opt.name)}</span>
+                              <span className="text-xs text-brand-text"><OptionName match={match} name={opt.name} tn={tn} /></span>
                               <span className="font-bold text-sm">🔒</span>
                             </div>
                           );
@@ -423,7 +427,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
                             onClick={() => !isFinished && onBetClick(match, market.id, opt.id)}
                             className={getButtonClass(market.id, opt.id)}
                         >
-                            <span className={`text-xs ${isSelected ? 'text-brand-headerDark' : 'text-brand-text'}`}>{tn(opt.name)}</span>
+                            <span className={`text-xs ${isSelected ? 'text-brand-headerDark' : 'text-brand-text'}`}><OptionName match={match} name={opt.name} tn={tn} /></span>
                             <span className={`font-bold text-sm flex items-center gap-0.5 ${isSelected ? 'text-brand-headerDark' : 'text-brand-yellow'}`}>
                               {opt.odds.toFixed(2)}
                               {flash === 'up' && <span className="text-[10px] text-green-400">▲</span>}

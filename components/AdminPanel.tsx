@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User, UserRole, Bet, BetStatus } from '../types';
 import * as api from '../services/api';
 import { useI18n } from '../i18n';
+import MatchupLabel from './MatchupLabel';
 
 interface AdminPanelProps {
   users: User[];
@@ -409,7 +410,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                                     <td className="p-3 text-xs">
                                         {bet.type === 'ACCUMULATOR' 
                                             ? `${bet.selections.length} Matches` 
-                                            : (bet.matchDetails ? `${bet.matchDetails.homeTeam} v ${bet.matchDetails.awayTeam}` : 'Match')}
+                                            : (bet.matchDetails ? <MatchupLabel home={bet.matchDetails.homeTeam} away={bet.matchDetails.awayTeam} /> : 'Match')}
                                     </td>
                                     <td className="p-3 font-bold text-white">
                                         {bet.type === 'ACCUMULATOR' 
