@@ -125,6 +125,15 @@ describe('spot checks (3-1, half-time 1-0)', () => {
     expect(W('Shuma total e korneve ne P2', '4+')).toBe('WON');       // 6 corners
     expect(W('Shuma e korneve P1+P2', '5+|6+')).toBe('WON');
   });
+  it('over/under: "Lart 1.5" means 2 or more (goals and corners alike)', () => {
+    const c = { home: 1, away: 0, htHome: 0, htAway: 0, cornersTotal: 2, cornersH1: 1 };
+    expect(run('Numri i Golave në Ndeshje', 'Lart 1.5', c)).toBe('LOST');   // 1 goal
+    expect(run('Numri i Golave në Ndeshje', 'Poshte 1.5', c)).toBe('WON');
+    expect(run('Numri i Golave në Ndeshje', 'Lart 1.5', { ...c, home: 1, away: 1 })).toBe('WON'); // 2 goals
+    expect(run('Lart/Poshte Korne', 'Lart 1.5', c)).toBe('WON');            // 2 corners
+    expect(run('Lart/Poshte Korne', 'Lart 2', c)).toBe('VOID');             // exactly 2 = push
+    expect(run('Lart/Poshte Korne ne P1', 'Lart 1.5', c)).toBe('LOST');     // 1 corner in 1st half
+  });
   it('0-0: no-goal answers and push', () => {
     expect(W('Cila Skuadër Shënon Golin e 1rë', "S'ka gol", C00)).toBe('WON');
     expect(W('Goli i Pare ne Pjese te Pare', 'None 1', C00)).toBe('WON');

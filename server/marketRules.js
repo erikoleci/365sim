@@ -546,6 +546,9 @@ export function evaluateMarket(leg, ctx) {
     else count = period === 'H1' ? t1 : tt - t1;
     if (!Number.isFinite(count) || count < 0) return null;
     return sel(leg, (t) => {
+      // "Lart 9.5" = 10+ corners, "Poshte 9.5" = 9 or fewer; whole lines push, quarter lines split
+      const ou = parseOverUnder(t);
+      if (ou) return totalOutcome(ou.side, ou.point, count);
       const r = parseRange(t);
       return r ? win(inRange(r, count)) : null;
     });
