@@ -348,3 +348,41 @@ describe('corners P1+P2, goal minute, red / yellow cards', () => {
     expect(det(L('Numri i kartonëve të verdhë', 'Lart 3.5'), { ...base, stats })).toBe('WON'); // 2+2 = 4 yellow
   });
 });
+
+describe('markets seen on real tickets: team totals by side, 45/90, goal ranges, "/" combos, half with more corners', () => {
+  const L = (market, sel) => ({ market_id: '', market_name: market, selection_id: sel, selection_name: sel, match_home: 'Como 1907', match_away: 'Manchester United' });
+  // Como 1-2 Manchester United, half-time 0-1; corners 5-6 (half-time 2-3)
+  const c = { winner: 'AWAY', totalGoals: 3, bothScored: true, homeScore: 1, awayScore: 2, htHome: 0, htAway: 1,
+    stats: { cornersHome: 5, cornersAway: 6 }, htStats: { cornersHome: 2, cornersAway: 3 } };
+  let det;
+  beforeAll(async () => { det = (await import('../server/matchSettlement.js')).determineLegOutcome; });
+
+  it('team goals by side: Udhëtuesi = away, Shtëpiaku = home', () => {
+    expect(det(L('Numri i Golave Udhëtuesi', 'Lart 2.5'), c)).toBe('LOST'); // away scored 2
+    expect(det(L('Numri i Golave Udhëtuesi', 'Lart 1.5'), c)).toBe('WON');
+    expect(det(L('Numri i Golave Shtëpiaku', 'Lart 0.5'), c)).toBe('WON'); // home scored 1
+    expect(det(L('Numri i Golave Shtëpiaku', 'Lart 1.5'), c)).toBe('LOST');
+  });
+  it('goal-count ranges of the total-goals market', () => {
+    expect(det(L('Numri i Golave në Ndeshje', '2-3'), c)).toBe('WON');
+    expect(det(L('Numri i Golave në Ndeshje', '0-1'), c)).toBe('LOST');
+    expect(det(L('Numri i Golave në Ndeshje', '3+'), c)).toBe('WON');
+    expect(det(L('Numri i Golave në Ndeshje', '4+'), c)).toBe('LOST');
+  });
+  it('"45/90" is the half-time / full-time double; combos with "/" between the parts split correctly', () => {
+    expect(det(L('45/90', '2-2'), c)).toBe('WON');
+    expect(det(L('45/90', '2-X'), c)).toBe('LOST');
+    expect(det(L('45/90 & Numri i Golave në Ndeshje', '2-2/2-3'), c)).toBe('WON');
+    expect(det(L('45/90 & Numri i Golave në Ndeshje', '2-X/0-4'), c)).toBe('LOST');
+    expect(det(L('Rezultat Final & Numri i Golave në Ndeshje', '2/2-3'), c)).toBe('WON');
+    expect(det(L('Rezultat Final & Numri i Golave në Ndeshje', 'X/5+'), c)).toBe('LOST');
+    expect(det(L('Rezultat Final & Numri i Golave në Ndeshje', '2/2-3 & x'), c)).toBeNull(); // not a valid shape
+  });
+  it('"Në cilën pjesë do bëhen më shumë korne" from the half-time snapshot', () => {
+    const M = 'Në cilën pjesë do bëhen më shumë korne';
+    expect(det(L(M, 'Pj2'), c)).toBe('WON'); // 5 in the first half, 6 in the second
+    expect(det(L(M, 'Pj1'), c)).toBe('LOST');
+    expect(det(L(M, 'X'), c)).toBe('LOST');
+    expect(det(L(M, 'Pj2'), { ...c, htStats: undefined })).toBeNull(); // no half-time snapshot: PENDING
+  });
+});

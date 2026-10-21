@@ -382,11 +382,13 @@ describe('first-half tickets with the provider\'s real market names settle from 
     expect(mocks.bets.get('home').status).toBe('PENDING');
     expect(mocks.users.get('u1').balance).toBe(0);
   });
-  it('a combo market (Rezultat Final & Numri i Golave) is not auto-settled', async () => {
-    seedMatch();
-    seedBet('combo', 'u1', 100, 7.91, { market_id: 'x', market_name: 'Rezultat Final & Numri i Golave në Ndeshje', selection_id: '1/0-1', selection_name: '1/0-1' });
+  it('a combo market (Rezultat Final & Numri i Golave) with a "/" selection settles from the result', async () => {
+    seedMatch(); // 2-1: home win, 3 goals
+    seedBet('combo-lost', 'u1', 100, 7.91, { market_id: 'x', market_name: 'Rezultat Final & Numri i Golave në Ndeshje', selection_id: '1/0-1', selection_name: '1/0-1' });
+    seedBet('combo-won', 'u2', 100, 4, { market_id: 'x', market_name: 'Rezultat Final & Numri i Golave në Ndeshje', selection_id: '1/2-3', selection_name: '1/2-3' });
     await recoverFinishedWithoutResult({ now: NOW });
-    expect(mocks.bets.get('combo').status).toBe('PENDING');
+    expect(mocks.bets.get('combo-lost').status).toBe('LOST');
+    expect(mocks.bets.get('combo-won').status).toBe('WON');
   });
 });
 

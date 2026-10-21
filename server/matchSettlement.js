@@ -15,14 +15,20 @@ import {
 // (period phrases, name sets and Over/Under parsing live in marketPeriods.js / marketRules.js,
 // shared with the betting rules so both sides always agree on what a market is.)
 
-const HTFT_NAMES = new Set(['pushim/fund', 'pushimi/fundi', 'pushim / fund', 'pushim fund', 'ht/ft', 'ht ft', 'pjesa e pare/finale', 'pjesa e pare/fund']);
+const HTFT_NAMES = new Set(['45/90', '45 / 90', '45/90 min', '45/90 minuta', 'pushim/fund', 'pushimi/fundi', 'pushim / fund', 'pushim fund', 'ht/ft', 'ht ft', 'pjesa e pare/finale', 'pjesa e pare/fund']);
 
 // "Rezultat Final & Totali" + "1 & Lart 2.5"  ->  two single legs. Only when market
 // and selection split into the same number (2-3) of parts, otherwise not a combo.
 function splitCombo(leg) {
   const marketParts = String(leg.market_name || '').split(/\s*&\s*/);
   const selection = String(leg.selection_name || leg.selection_id || '');
-  const selectionParts = selection.split(/\s*&\s*/);
+  let selectionParts = selection.split(/\s*&\s*/);
+  // Some markets write the parts of one combined selection with "/" instead of "&":
+  // "Rezultat Final & Numri i Golave" -> "X/5+", "45/90 & Numri i Golave" -> "2-X/0-4".
+  if (marketParts.length >= 2 && selectionParts.length !== marketParts.length) {
+    const slashed = selection.split(/\s*\/\s*/);
+    if (slashed.length === marketParts.length) selectionParts = slashed;
+  }
   if (marketParts.length < 2 || marketParts.length > 3 || marketParts.length !== selectionParts.length) return null;
   return marketParts.map((m, i) => ({
     ...leg,
@@ -31,6 +37,42 @@ function splitCombo(leg) {
     selection_id: selectionParts[i].trim(),
     selection_name: selectionParts[i].trim(),
   }));
+}
+
+// "Shtëpiaku" / "Udhëtuesi" are how the feed names the home / away side in team-total markets.
+const HOME_SIDE_WORDS = ['shtepiaku', 'vendasi', 'shtepise', 'home', 'host'];
+const AWAY_SIDE_WORDS = ['udhetuesi', 'mysafiri', 'mysafir', 'vizitori', 'vizitor', 'away', 'guest'];
+// "0-4", "2-3" (inclusive) or "5+" -> [lo, hi]; anything else -> null
+function goalCountRange(selection) {
+  const t = norm(selection);
+  let m = t.match(/^(\d+)\s*[-\u2013\u2014]\s*(\d+)$/);
+  if (m) return [Number(m[1]), Number(m[2])];
+  m = t.match(/^(\d+)\s*\+$/);
+  return m ? [Number(m[1]), Infinity] : null;
+}
+
+// "In which half will there be more corners / cards / goals": Pj1 | Pj2 | equal.
+// First half from the half-time snapshot, second half = final minus half-time; PENDING otherwise.
+function halfWithMoreOutcome(leg, kind, ctx) {
+  const t = norm(leg.selection_name || leg.selection_id);
+  const pick = /^(pj ?1|pjesa 1|pjesa e pare|1h|1)$/.test(t) ? 'H1'
+    : /^(pj ?2|pjesa 2|pjesa e dyte|2h|2)$/.test(t) ? 'H2'
+    : /^(x|barazim|baraz|njesoj|e njejta|equal|draw)$/.test(t) ? 'EQ' : null;
+  if (!pick) return null;
+  let h1; let h2;
+  if (kind === 'goals') {
+    const { homeScore: fh, awayScore: fa, htHome, htAway } = ctx;
+    if (![fh, fa, htHome, htAway].every(Number.isFinite)) return null;
+    h1 = htHome + htAway; h2 = fh + fa - h1;
+  } else {
+    const kh = kind + 'Home'; const ka = kind + 'Away';
+    const fin = numOrNaN(ctx.stats && ctx.stats[kh]) + numOrNaN(ctx.stats && ctx.stats[ka]);
+    h1 = numOrNaN(ctx.htStats && ctx.htStats[kh]) + numOrNaN(ctx.htStats && ctx.htStats[ka]);
+    h2 = fin - h1;
+  }
+  if (!Number.isFinite(h1) || !Number.isFinite(h2) || h1 < 0 || h2 < 0) return null;
+  const actual = h1 > h2 ? 'H1' : h2 > h1 ? 'H2' : 'EQ';
+  return actual === pick ? 'WON' : 'LOST';
 }
 
 const STATS_MARKET = /korn|corner|karton|\bcards?\b|booking/;
@@ -299,6 +341,12 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
   // ---- "Minuta e Golit" ----
   if (MINUTE_MARKET.test(marketName)) return minuteOutcome(leg, marketName, goalMinutes);
 
+  // ---- "Në cilën pjesë do bëhen më shumë korne / karton / gola" ----
+  if (/\bne cilen pjese\b|\bpjesa me (me )?shume\b/.test(marketName)) {
+    const kind = /korn|corner/.test(marketName) ? 'corners' : /karton|\bcards?\b/.test(marketName) ? 'cards' : /gol/.test(marketName) ? 'goals' : null;
+    if (kind) return halfWithMoreOutcome(leg, kind, { homeScore, awayScore, htHome, htAway, stats, htStats });
+  }
+
   // ---- half-time / full-time double: "Pushim/Fund" -> "1/2" ----
   if (HTFT_NAMES.has(marketName)) {
     const m = String(leg.selection_name || leg.selection_id).trim().toLowerCase().match(/^([12x])\s*[\/-]\s*([12x])$/);
@@ -406,6 +454,8 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
   if (TOTAL_GOALS_PREFIXES.includes(marketName)) {
     const parsed = parseOverUnder(leg.selection_id) || parseOverUnder(leg.selection_name);
     if (parsed) return overUnderOutcome(parsed.side, parsed.point, totalGoals);
+    const range = goalCountRange(leg.selection_name || leg.selection_id); // "0-4", "2-3", "5+"
+    if (range) return totalGoals >= range[0] && totalGoals <= range[1] ? 'WON' : 'LOST';
   }
 
   // Odd / even total goals ("Tek/Çift")
@@ -426,10 +476,11 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
     return Number(m[1]) === homeScore && Number(m[2]) === awayScore ? 'WON' : 'LOST';
   }
 
-  // Team-specific total goals: "<prefix> <team name>"
+  // Team-specific total goals: "<prefix> <team name>" or "<prefix> Shtëpiaku / Udhëtuesi"
   for (const prefix of TOTAL_GOALS_PREFIXES) {
-    for (const [team, goals] of [[leg.match_home, homeScore], [leg.match_away, awayScore]]) {
-      if (team && marketName === `${prefix} ${norm(team)}`) {
+    for (const [team, words, goals] of [[leg.match_home, HOME_SIDE_WORDS, homeScore], [leg.match_away, AWAY_SIDE_WORDS, awayScore]]) {
+      const names = [...(team ? [norm(team)] : []), ...words];
+      if (names.some((n) => marketName === `${prefix} ${n}`)) {
         const parsed = parseOverUnder(leg.selection_id) || parseOverUnder(leg.selection_name);
         if (parsed) return overUnderOutcome(parsed.side, parsed.point, goals);
       }
@@ -659,15 +710,21 @@ export async function settleStuckBets() {
 
   const client = await pool.connect();
   try {
-    const { rows: legs } = await client.query(
-      `SELECT bs.*, m.result_home, m.result_away, m.ht_home, m.ht_away,
-              m.ht_corners_home, m.ht_corners_away, m.ht_cards_home, m.ht_cards_away
+    // The half-time corner/card snapshot columns come from a newer migration: if they are not
+    // there (yet), settle without them instead of letting this whole sweep fail on every run.
+    const legsSql = (extra) => `SELECT bs.*, m.result_home, m.result_away, m.ht_home, m.ht_away${extra}
          FROM bet_selections bs
          JOIN matches_cache m ON m.id = bs.match_id
         WHERE bs.status = 'PENDING'
           AND m.status = 'FINISHED'
-          AND m.result_home IS NOT NULL AND m.result_away IS NOT NULL`
-    );
+          AND m.result_home IS NOT NULL AND m.result_away IS NOT NULL`;
+    let legs;
+    try {
+      ({ rows: legs } = await client.query(legsSql(',\n              m.ht_corners_home, m.ht_corners_away, m.ht_cards_home, m.ht_cards_away')));
+    } catch (err) {
+      console.error('[settle] sweep query with half-time stats failed, retrying without them:', err.message);
+      ({ rows: legs } = await client.query(legsSql('')));
+    }
     // Tickets whose legs already decide them but whose own status is still PENDING:
     // every leg decided, OR at least one leg LOST (an accumulator is lost the moment
     // one leg loses, whatever its other legs are doing). Without the LOST case a

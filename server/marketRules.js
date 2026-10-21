@@ -83,8 +83,9 @@ export function classifyMarket(marketId, marketName, { home, away } = {}) {
 
   if (/korn|corner/.test(full)) return { kind: 'corners', period };
   if (/karton|\bcards?\b|booking/.test(full)) return { kind: 'cards', period };
-  if (/\bht\b|\bft\b|pushim\s*\/\s*fund/.test(full)) return { kind: 'htft', period };
-  if (/&|\bdhe\b|\+/.test(full)) return { kind: 'combo', period };
+  if (/&/.test(full)) return { kind: 'combo', period }; // "45/90 & Numri i Golave", "Pushim/Fund & Totali": never a plain htft
+  if (/\bht\b|\bft\b|pushim\s*\/\s*fund|\b45\s*\/\s*90\b/.test(full)) return { kind: 'htft', period };
+  if (/\bdhe\b|\+/.test(full)) return { kind: 'combo', period };
 
   if (H2H_NAMES.has(base)) return { kind: 'result', period };
   if (BTTS_NAMES.has(base)) return { kind: 'btts', period };
@@ -94,6 +95,8 @@ export function classifyMarket(marketId, marketName, { home, away } = {}) {
   for (const prefix of TOTAL_GOALS_PREFIXES) {
     if (home && base === `${prefix} ${norm(home)}`) return { kind: 'team_totals', period, side: 'home' };
     if (away && base === `${prefix} ${norm(away)}`) return { kind: 'team_totals', period, side: 'away' };
+    if (['shtepiaku', 'vendasi', 'shtepise', 'home', 'host'].some((w) => base === `${prefix} ${w}`)) return { kind: 'team_totals', period, side: 'home' };
+    if (['udhetuesi', 'mysafiri', 'mysafir', 'vizitori', 'vizitor', 'away', 'guest'].some((w) => base === `${prefix} ${w}`)) return { kind: 'team_totals', period, side: 'away' };
   }
   if (/\b(tek|odd)\b/.test(full) && /\b(cift|even)\b/.test(full)) return { kind: 'odd_even', period };
   if ((FIRST_TEAM_TO_SCORE_NAMES.has(base) || LAST_TEAM_TO_SCORE_NAMES.has(base)) && !period) return { kind: 'first_scorer', period };
