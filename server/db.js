@@ -274,6 +274,10 @@ export async function initDb() {
   // HT (see halfTime.js). Lets first/second-half markets be settled automatically.
   await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS ht_home INTEGER;`);
   await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS ht_away INTEGER;`);
+  // Added by migrations/0002 too (IF NOT EXISTS makes both safe). It has to exist HERE as well:
+  // initDb() runs before the migrations, and the UPDATE below read it, so a brand-new database
+  // (e.g. the local Postgres of the docker setup) failed to initialise at this very statement.
+  await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS live_minute_updated_at BIGINT;`);
   // Rows imported before a match started were stamped with their import time even
   // though they had no minute; that stale stamp made the live clock read days.
   await pool.query(`UPDATE matches_cache SET live_minute_updated_at = NULL WHERE live_minute IS NULL AND live_minute_updated_at IS NOT NULL;`);
