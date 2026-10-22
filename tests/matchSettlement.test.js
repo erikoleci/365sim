@@ -512,3 +512,40 @@ describe('spelling variants of the same market', () => {
     expect(determineLegOutcome(leg('Sa Gola Shënohen në Pjesën e 2', 'Lart 2.5'), ctx)).toBe('LOST');
   });
 });
+
+describe('markets defined from the provider notes', () => {
+  const L = (market_name, sel) => ({ market_id: 'x', market_name, selection_id: sel, selection_name: sel, match_home: 'A', match_away: 'B' });
+  const ctx = (hs, as, extra = {}) => ({ winner: hs > as ? 'HOME' : as > hs ? 'AWAY' : 'DRAW', totalGoals: hs + as, bothScored: hs > 0 && as > 0, homeScore: hs, awayScore: as, htHome: 0, htAway: 0, ...extra });
+
+  it('"<result> or any clean sheet" is an OR of the two conditions', () => {
+    expect(determineLegOutcome(L('Home or any clean sheet', 'Yes'), ctx(2, 0))).toBe('WON');
+    expect(determineLegOutcome(L('Away or any clean sheet', 'Yes'), ctx(2, 0))).toBe('WON'); // away lost but a clean sheet exists
+    expect(determineLegOutcome(L('Away or any clean sheet', 'Yes'), ctx(2, 1))).toBe('LOST'); // neither condition
+    expect(determineLegOutcome(L('Draw or any clean sheet', 'Yes'), ctx(1, 1))).toBe('WON');
+    expect(determineLegOutcome(L('Draw or any clean sheet', 'No'), ctx(2, 1))).toBe('WON');
+    expect(determineLegOutcome(L('Home or any clean sheet', 'Yes'), ctx(0, 0))).toBe('WON'); // 0-0: both kept a clean sheet
+  });
+  it('Booking 1X2 only when no red card was shown', () => {
+    const st = (yh, ya, rh, ra) => ({ stats: { yellowHome: yh, yellowAway: ya, redHome: rh, redAway: ra } });
+    expect(determineLegOutcome(L('Booking 1X2', '1'), ctx(1, 0, st(3, 1, 0, 0)))).toBe('WON');
+    expect(determineLegOutcome(L('Booking 1X2', 'X'), ctx(1, 0, st(2, 2, 0, 0)))).toBe('WON');
+    expect(determineLegOutcome(L('Booking 1X2', '2'), ctx(1, 0, st(3, 1, 0, 0)))).toBe('LOST');
+    expect(determineLegOutcome(L('Booking 1X2', '1'), ctx(1, 0, st(3, 1, 1, 0)))).toBeNull(); // a red card: schemes can disagree
+    expect(determineLegOutcome(L('Booking 1X2', '1'), ctx(1, 0))).toBeNull(); // no counters
+  });
+  it('Rezultati Final Gola 3+ needs the result and the goals', () => {
+    expect(determineLegOutcome(L('Rezultati Final Gola 3+', '1'), ctx(2, 1))).toBe('WON');
+    expect(determineLegOutcome(L('Rezultati Final Gola 3+', '1'), ctx(1, 0))).toBe('LOST');
+    expect(determineLegOutcome(L('Rezultati Final Gola 4+', 'X'), ctx(2, 2))).toBe('WON');
+    expect(determineLegOutcome(L('Rezultati Final Gola 4+', '1'), ctx(2, 1))).toBe('LOST');
+  });
+  it('first goal of the first half: None 1 / 1 1 / 2 1', () => {
+    const o = (sel, ht, first) => determineLegOutcome(L('Goli i parë në pjesën e parë', sel), ctx(2, 1, { htHome: ht[0], htAway: ht[1], goalOrder: first ? { first } : undefined }));
+    expect(o('None 1', [0, 0], 'HOME')).toBe('WON'); // first goal came after the break
+    expect(o('1 1', [0, 0], 'HOME')).toBe('LOST');
+    expect(o('1 1', [1, 0], 'HOME')).toBe('WON');
+    expect(o('2 1', [1, 1], 'AWAY')).toBe('WON');
+    expect(o('None 1', [1, 0], 'HOME')).toBe('LOST');
+    expect(o('1 1', [1, 0], undefined)).toBeNull(); // goal order not reliable
+  });
+});

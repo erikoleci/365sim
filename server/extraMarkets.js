@@ -133,6 +133,31 @@ const RULES = [
     return won((s.home > 0 && s.away > 0) === (p[1] === 'gol') && inRange(s.home + s.away, r));
   }],
 
+  // "<result> OR any clean sheet": OR of the two conditions (Yes wins when either holds).
+  [/^(home|away|draw) or any clean sheet$/, (m, sel, c) => {
+    const s = finalScore(c); const y = yesNo(sel); if (!s || y === null) return null;
+    const res = resultOf(s.home, s.away);
+    const first = m[1] === 'home' ? res === '1' : m[1] === 'away' ? res === '2' : res === 'X';
+    return won((first || s.home === 0 || s.away === 0) === y);
+  }],
+  // Booking 1X2: the side with more cards. Decided only when NO red card was shown by either team:
+  // then comparing yellow counts gives the same answer whether the provider counts cards or
+  // booking points (10 per yellow). With a red card the two schemes can differ -> PENDING.
+  [/^booking 1x2$/, (m, sel, c) => {
+    const st = c.stats; if (!st || !/^[1x2]$/.test(sel)) return null;
+    const yh = fin(st.yellowHome); const ya = fin(st.yellowAway); const rh = fin(st.redHome); const ra = fin(st.redAway);
+    if (![yh, ya, rh, ra].every(Number.isFinite) || rh + ra > 0) return null;
+    return won(resultOf(yh, ya) === sel.toUpperCase());
+  }],
+  // "Rezultati Final Gola 3+" / "4+": the final result AND at least N goals (1 / X / 2 options);
+  // with Po/Jo options only the goals condition.
+  [/^rezultati final gola (\d+)\+$/, (m, sel, c) => {
+    const s = finalScore(c); if (!s) return null;
+    const enough = s.home + s.away >= Number(m[1]);
+    if (/^[1x2]$/.test(sel)) return won(resultOf(s.home, s.away) === sel.toUpperCase() && enough);
+    const y = yesNo(sel); return y === null ? null : won(enough === y);
+  }],
+
   // ---- handicaps ----
   [/^handikap europian(?: - pjesa ([12])\S*| pjesa ([12])\S*)?$/, (m, sel, c) => { const n = m[1] || m[2]; return europeanHandicap(sel, n ? half(c, n) : finalScore(c)); }],
   [/^handikap aziatik$/, (m, sel, c) => asianHandicap(sel, finalScore(c))],
@@ -194,9 +219,9 @@ export function extraMarketOutcome(leg, marketName, ctx) {
 // Names the feed sends that look settleable but are NOT (they need event order / data we do not
 // have), so the coverage report must not claim a rule for them.
 export const UNSETTLEABLE_NAME = new RegExp([
-  'godet kornen e (fundit|pare)', 'merr kartonin e pare', 'penallti', 'shenon golin e dyte', 'goli i pare ne pjese te pare',
-  '\\bor any clean sheet\\b', '\\b(1st|2nd) half - (home |away )?sending off\\b',
+  'godet kornen e (fundit|pare)', 'merr kartonin e pare', 'penallti', 'shenon golin e dyte',
+  '\\b(1st|2nd) half - (home |away )?sending off\\b',
   // meaning / option format not confirmed yet: no rule rather than a guess
-  'booking 1x2', 'exact bookings', 'rezultat final me kartona', 'rezultat i p1 me kartona',
-  'halftime/fulltime & exact goals', 'rp1/rp2 & gol/jogol', 'rezultati final gola \\d\\+', '^fitore ?/ ?fitore', '^fitore - fitore',
+  '1st half - booking 1x2', 'exact bookings', 'rezultat final me kartona', 'rezultat i p1 me kartona',
+  'halftime/fulltime & exact goals', 'rp1/rp2 & gol/jogol', '^fitore ?/ ?fitore', '^fitore - fitore',
 ].join('|'));

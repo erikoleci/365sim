@@ -5,7 +5,7 @@ import { asianHandicapOutcome } from './asianLines.js';
 import { ticketOutcome } from './ticketOutcome.js';
 import {
   TOTAL_GOALS_PREFIXES, H2H_NAMES, BTTS_NAMES, DOUBLE_CHANCE_NAMES, CORRECT_SCORE_NAMES, HANDICAP_NAMES, parseOverUnder,
-  STATS_UNDECIDABLE, FIRST_TEAM_TO_SCORE_NAMES, LAST_TEAM_TO_SCORE_NAMES, FIRST_GOAL_NAMES, LAST_GOAL_NAMES, BOTH_HALVES_NAMES, GOAL_ORDER_NAMES,
+  STATS_UNDECIDABLE, FIRST_TEAM_TO_SCORE_NAMES, LAST_TEAM_TO_SCORE_NAMES, FIRST_GOAL_NAMES, LAST_GOAL_NAMES, BOTH_HALVES_NAMES, GOAL_ORDER_NAMES, FIRST_GOAL_H1_NAMES,
 } from './marketRules.js';
 
 // ---- first / second half markets ------------------------------------------
@@ -83,7 +83,7 @@ function halfWithMoreOutcome(leg, kind, ctx) {
 
 const STATS_MARKET = /korn|corner|karton|\bcards?\b|booking/;
 const legNeedsStats = (leg) => STATS_MARKET.test(norm(leg.market_name));
-const legNeedsFirstScorer = (leg) => GOAL_ORDER_NAMES.has(norm(leg.market_name))
+const legNeedsFirstScorer = (leg) => GOAL_ORDER_NAMES.has(norm(leg.market_name)) || FIRST_GOAL_H1_NAMES.has(norm(leg.market_name))
   || (splitCombo(leg) || []).some((p) => GOAL_ORDER_NAMES.has(norm(p.market_name)));
 
 // Final corner / card counters of a match, or undefined if there are none (or the
@@ -365,6 +365,16 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
     return sign(htHome, htAway) === m[1] && sign(homeScore, awayScore) === m[2] ? 'WON' : 'LOST';
   }
 
+  // First goal of the first half: no goal before the break -> "None 1"; otherwise the first goal of the
+  // match IS the first goal of the half, so its scorer decides ("1 1" home, "2 1" away).
+  if (FIRST_GOAL_H1_NAMES.has(marketName)) {
+    if (!Number.isFinite(htHome) || !Number.isFinite(htAway)) return null;
+    const sel = norm(leg.selection_name || leg.selection_id);
+    const actual = htHome + htAway === 0 ? 'NONE' : goalOrder && (goalOrder.first === 'HOME' || goalOrder.first === 'AWAY') ? goalOrder.first : null;
+    if (!actual) return null; // goal order not reliable: stays PENDING
+    const picked = sel === 'none 1' ? 'NONE' : sel === '1 1' ? 'HOME' : sel === '2 1' ? 'AWAY' : null;
+    return picked ? (picked === actual ? 'WON' : 'LOST') : null;
+  }
   const { period, base } = splitPeriod(marketName);
   if (period) {
     // Needs the half-time score; without it (e.g. the server was down at HT) the
