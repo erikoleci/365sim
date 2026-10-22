@@ -320,6 +320,16 @@ export async function adminCancelBet(betId: string) {
   return request<{ ok: true }>(`/admin/bets/${betId}/cancel`, { method: 'POST' });
 }
 
+export interface AdminMarketCoverage {
+  summary: { markets: number; autoSettled: number; withoutRule: number; betLegsWithoutRule: number; pendingLegsWithoutRule: number };
+  markets: { name: string; legs: number; pending: number; matches: number; autoSettles: boolean; samples?: string[] }[];
+  text: string;
+}
+/** Which markets the system settles by itself and which it does not (admin). */
+export async function adminFetchMarketCoverage() {
+  return request<AdminMarketCoverage>('/admin/market-coverage');
+}
+
 export async function adminSettleMatch(matchId: string, homeScore: number, awayScore: number) {
   return request<{ ok: true; autoSettledLegs: number; leftPendingForManualReview: number; affectedBets: number }>(
     `/admin/matches/${matchId}/settle`,

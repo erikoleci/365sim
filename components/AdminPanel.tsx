@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import MarketReportPanel from './MarketReportPanel';
 import { User, UserRole, Bet, BetStatus } from '../types';
 import * as api from '../services/api';
 import { useI18n } from '../i18n';
@@ -16,7 +17,7 @@ interface AdminPanelProps {
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet }) => {
   const { t, locale } = useI18n();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'tickets' | 'audit'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'tickets' | 'audit' | 'markets'>('dashboard');
   const [auditEntries, setAuditEntries] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [kpi, setKpi] = useState<api.AdminDashboardKpi | null>(null);
@@ -144,7 +145,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
       )}
 
       {/* Header Tabs */}
-      <div className="flex border-b border-brand-divider bg-brand-bg">
+      <div className="flex overflow-x-auto border-b border-brand-divider bg-brand-bg">
         <button
           onClick={() => setActiveTab('dashboard')}
           className={`px-6 py-3 text-sm font-bold ${activeTab === 'dashboard' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
@@ -169,10 +170,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
         >
           Audit Log
         </button>
+        <button
+          onClick={() => setActiveTab('markets')}
+          className={`px-6 py-3 text-sm font-bold whitespace-nowrap ${activeTab === 'markets' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
+        >
+          Tregjet
+        </button>
       </div>
 
       <div className="p-6">
-        {activeTab === 'dashboard' ? (
+        {activeTab === 'markets' ? (
+          <MarketReportPanel />
+        ) : activeTab === 'dashboard' ? (
           <div className="space-y-6">
             {dashboardLoading ? (
               <div className="text-brand-textMuted text-sm">Loading...</div>

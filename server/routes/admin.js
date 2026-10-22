@@ -5,7 +5,7 @@ import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { settleMatch, recomputeBetStatus, settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult } from '../matchSettlement.js';
 import { logAudit } from '../auditLog.js';
-import { buildCoverageReport } from '../marketCoverage.js';
+import { buildCoverageReport, formatCoverageText } from '../marketCoverage.js';
 import { settlementRuleRequired } from '../marketRules.js';
 import { getFeedKeySamples } from '../feedKeySampler.js';
 import { mapEventToMatch } from '../oddsUtils.js';
@@ -534,7 +534,8 @@ router.post('/matches/:id/settle', async (req, res) => {
 // 24h refund). Send this to whoever extends the rules.
 router.get('/market-coverage', async (req, res) => {
   const { rows: legRows } = await pool.query(
-    `SELECT market_id, market_name, COUNT(*)::int AS legs, COUNT(*) FILTER (WHERE status = 'PENDING')::int AS pending
+    `SELECT market_id, market_name, COUNT(*)::int AS legs, COUNT(*) FILTER (WHERE status = 'PENDING')::int AS pending,
+            (array_agg(DISTINCT selection_name))[1:4] AS samples
        FROM bet_selections GROUP BY market_id, market_name`
   );
   const { rows: boardRows } = await pool.query(
@@ -545,16 +546,17 @@ router.get('/market-coverage', async (req, res) => {
     let match;
     try { match = mapEventToMatch(row); } catch { continue; }
     for (const mk of match.markets || []) {
-      const cur = board.get(mk.name) || { name: mk.name, id: mk.id, matches: 0 };
+      const cur = board.get(mk.name) || { name: mk.name, id: mk.id, matches: 0, samples: [] };
       cur.matches += 1;
+      for (const o of mk.options || []) { if (cur.samples.length < 4 && o && o.name != null && !cur.samples.includes(String(o.name))) cur.samples.push(String(o.name)); }
       board.set(mk.name, cur);
     }
   }
   const report = buildCoverageReport([
-    ...legRows.map((r) => ({ name: r.market_name, id: r.market_id, legs: r.legs, pending: r.pending })),
+    ...legRows.map((r) => ({ name: r.market_name, id: r.market_id, legs: r.legs, pending: r.pending, samples: r.samples || [] })),
     ...board.values(),
   ]);
-  res.json({ boardMatchesScanned: boardRows.length, requireSettlementRule: settlementRuleRequired(), ...report });
+  res.json({ boardMatchesScanned: boardRows.length, requireSettlementRule: settlementRuleRequired(), ...report, text: formatCoverageText(report) });
 });
 
 // Every raw provider field seen so far (REST list, REST live detail, live socket) with a few

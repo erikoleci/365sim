@@ -10,7 +10,10 @@ export function buildCoverageReport(entries) {
   for (const e of entries) {
     const name = String(e.name || '').trim();
     if (!name) continue;
-    const cur = byName.get(name) || { name, id: e.id || null, matches: 0, legs: 0, pending: 0 };
+    const cur = byName.get(name) || { name, id: e.id || null, matches: 0, legs: 0, pending: 0, samples: [] };
+    for (const smp of e.samples || []) {
+      if (cur.samples.length < 4 && smp != null && !cur.samples.includes(String(smp))) cur.samples.push(String(smp));
+    }
     cur.matches += Number(e.matches || 0);
     cur.legs += Number(e.legs || 0);
     cur.pending += Number(e.pending || 0);
@@ -32,4 +35,21 @@ export function buildCoverageReport(entries) {
     },
     markets: rows,
   };
+}
+
+// The same report as plain text (what the admin "Tregjet" tab shows and copies): markets WITHOUT a
+// settlement rule first, with how many tickets are open on them and a few example options.
+export function formatCoverageText(report) {
+  const fmt = (r) => `- ${r.name} | bileta: ${r.legs} (hapur: ${r.pending}) | ndeshje në tabelë: ${r.matches} | opsione p.sh.: ${(r.samples || []).join(' ; ')}`;
+  const without = report.markets.filter((r) => !r.autoSettles);
+  const withRule = report.markets.filter((r) => r.autoSettles);
+  return [
+    `TREGJE GJITHSEJ: ${report.summary.markets} | ME RREGULL: ${report.summary.autoSettled} | PA RREGULL: ${report.summary.withoutRule}`,
+    '',
+    '=== PA RREGULL (mbyllen vetëm me dorë ose kthehen pas 24 orësh) ===',
+    without.map(fmt).join('\n') || '(asnjë)',
+    '',
+    '=== ME RREGULL ===',
+    withRule.map((r) => `- ${r.name}`).join('\n') || '(asnjë)',
+  ].join('\n');
 }
