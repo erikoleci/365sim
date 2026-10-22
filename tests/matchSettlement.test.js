@@ -566,3 +566,40 @@ describe('event-order markets', () => {
     expect(determineLegOutcome(leg('Shënon golin e dytë', '1'), ctx(undefined))).toBeNull();
   });
 });
+
+describe('sending off: whole match and first half (half-time red-card counters)', () => {
+  const L = (market, sel) => ({ market_id: '', market_name: market, selection_id: sel, selection_name: sel, match_home: 'Como 1907', match_away: 'Manchester United' });
+  const c = { winner: 'AWAY', totalGoals: 3, bothScored: true, homeScore: 1, awayScore: 2, htHome: 0, htAway: 1,
+    stats: { redHome: 0, redAway: 1 }, htStats: { redHome: 0, redAway: 0 } };
+  let det;
+  beforeAll(async () => { det = (await import('../server/matchSettlement.js')).determineLegOutcome; });
+  const t = (market, sel, expected, ctx = c) => expect(det(L(market, sel), ctx), `${market} | ${sel}`).toBe(expected);
+  it('decides from the right counters', () => {
+    t('Sending off', 'Yes', 'WON');
+    t('Away sending off', 'Yes', 'WON');
+    t('Home sending off', 'Yes', 'LOST');
+    t('1st half - sending off', 'Yes', 'LOST');
+    t('1st half - sending off', 'No', 'WON');
+    t('1st half - Away sending off', 'No', 'WON');
+    t('1st half - sending off', 'Yes', 'WON', { ...c, htStats: { redHome: 1, redAway: 0 } });
+  });
+  it('stays pending without the half-time snapshot or the counters', () => {
+    t('1st half - sending off', 'Yes', null, { ...c, htStats: undefined });
+    t('1st half - sending off', 'Yes', null, { ...c, htStats: { cornersHome: 2, cornersAway: 3 } }); // red counters missing, not 0
+    t('Sending off', 'Yes', null, { ...c, stats: { cornersHome: 5, cornersAway: 6 } });
+  });
+});
+
+describe('booking markets: points vs card count is unconfirmed, so only Booking 1X2 without reds settles', () => {
+  const L = (market, sel) => ({ market_id: '', market_name: market, selection_id: sel, selection_name: sel, match_home: 'Como 1907', match_away: 'Manchester United' });
+  const c = { winner: 'AWAY', totalGoals: 3, bothScored: true, homeScore: 1, awayScore: 2, htHome: 0, htAway: 1,
+    stats: { cardsHome: 1, cardsAway: 2, yellowHome: 1, yellowAway: 1, redHome: 0, redAway: 1 }, htStats: { cardsHome: 1, cardsAway: 1 } };
+  let det;
+  beforeAll(async () => { det = (await import('../server/matchSettlement.js')).determineLegOutcome; });
+  it('total / exact bookings stay pending; plain card markets still settle', () => {
+    expect(det(L('Total bookings', 'Lart 2.5'), c)).toBeNull();
+    expect(det(L('1st half - total bookings', 'Lart 1.5'), c)).toBeNull();
+    expect(det(L('Away exact bookings', '2'), c)).toBeNull();
+    expect(det(L('Pritesi Total Kartona', 'Lart 0.5'), c)).toBe('WON');
+  });
+});

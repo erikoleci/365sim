@@ -177,11 +177,13 @@ const RULES = [
   [/^rezultati sakte live$/, (m, sel, c) => { const s = finalScore(c); const sc = scoreOf(sel); return s && sc ? won(s.home === sc[0] && s.away === sc[1]) : null; }],
 
   // ---- red cards / corners ----
-  [/^(?:(home|away) )?sending off$/, (m, sel, c) => {
-    const y = yesNo(sel); const st = c.stats; if (y === null || !st) return null;
+  // Red cards: whole match from the match counters, "1st half" from the counters taken at the whistle
+  // (matches_cache.ht_red_*, filled once per match at half-time).
+  [/^(?:(1st half) - )?(?:(home|away) )?sending off$/, (m, sel, c) => {
+    const y = yesNo(sel); const st = m[1] ? c.htStats : c.stats; if (y === null || !st) return null;
     const h = fin(st.redHome); const a = fin(st.redAway);
     if (!Number.isFinite(h) || !Number.isFinite(a)) return null;
-    const n = m[1] === 'home' ? h : m[1] === 'away' ? a : h + a;
+    const n = m[2] === 'home' ? h : m[2] === 'away' ? a : h + a;
     return won((n > 0) === y);
   }],
   [/^(?:(1st half) - )?corner 1x2$/, (m, sel, c) => {
@@ -220,7 +222,7 @@ export function extraMarketOutcome(leg, marketName, ctx) {
 // have), so the coverage report must not claim a rule for them.
 export const UNSETTLEABLE_NAME = new RegExp([
   'penallti',
-  '\\b(1st|2nd) half - (home |away )?sending off\\b',
+  '\\b2nd half - (home |away )?sending off\\b',
   // meaning / option format not confirmed yet: no rule rather than a guess
   '1st half - booking 1x2', 'exact bookings', 'rezultat final me kartona', 'rezultat i p1 me kartona',
   'halftime/fulltime & exact goals', 'rp1/rp2 & gol/jogol', '^fitore ?/ ?fitore', '^fitore - fitore',

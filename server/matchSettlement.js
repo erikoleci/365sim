@@ -124,8 +124,9 @@ async function loadGoalMinutes(client, matchId, homeScore, awayScore) {
 const MINUTE_MARKET = /^minuta e gol(?:it|i)?(?: (?:te|i) (pare|fundit))?$/;
 const legNeedsGoalMinutes = (leg) => MINUTE_MARKET.test(norm(leg.market_name))
   || (splitCombo(leg) || []).some((p) => MINUTE_MARKET.test(norm(p.market_name)));
-const htStatsOf = (row) => (row.ht_corners_home == null && row.ht_cards_home == null ? undefined
-  : { cornersHome: row.ht_corners_home, cornersAway: row.ht_corners_away, cardsHome: row.ht_cards_home, cardsAway: row.ht_cards_away });
+const htStatsOf = (row) => (row.ht_corners_home == null && row.ht_cards_home == null && row.ht_red_home == null ? undefined
+  : { cornersHome: row.ht_corners_home, cornersAway: row.ht_corners_away, cardsHome: row.ht_cards_home, cardsAway: row.ht_cards_away,
+      redHome: row.ht_red_home, redAway: row.ht_red_away });
 const numOrNaN = (v) => (v == null || v === '' ? NaN : Number(v)); // a missing counter is NOT 0
 
 // "Minuta e Golit": selection is a minute range ("1-15", "76-90", "90+") or "no goal". Which goal
@@ -768,7 +769,7 @@ export async function settleStuckBets() {
           AND m.result_home IS NOT NULL AND m.result_away IS NOT NULL`;
     let legs;
     try {
-      ({ rows: legs } = await client.query(legsSql(',\n              m.ht_corners_home, m.ht_corners_away, m.ht_cards_home, m.ht_cards_away')));
+      ({ rows: legs } = await client.query(legsSql(',\n              m.ht_corners_home, m.ht_corners_away, m.ht_cards_home, m.ht_cards_away, m.ht_red_home, m.ht_red_away')));
     } catch (err) {
       console.error('[settle] sweep query with half-time stats failed, retrying without them:', err.message);
       ({ rows: legs } = await client.query(legsSql('')));

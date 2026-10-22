@@ -146,7 +146,7 @@ function periodScore(row, period, now) {
 // Corner / card markets the counters cannot decide: booking points,
 // handicaps, first/second half, "which half", ... Used by matchSettlement (to leave the leg
 // PENDING) and by describeMarket (so the coverage report says the same thing).
-export const STATS_UNDECIDABLE = /pike|points|\bhandikap|\bhandicap|\bpare\b|\bdyte\b|\bfillim|\bfirst\b|\bpushim|\bnjeri\b/;
+export const STATS_UNDECIDABLE = /pike|points|\bbookings?\b|\bhandikap|\bhandicap|\bpare\b|\bdyte\b|\bfillim|\bfirst\b|\bpushim|\bnjeri\b/;
 const stripP1P2 = (name) => String(name).replace(/p1\s*\+\s*p2/g, '');
 
 const AUTO_SETTLES = new Set([

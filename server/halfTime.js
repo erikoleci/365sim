@@ -28,7 +28,9 @@ export async function captureHalfTimeScore(matchId, home, away) {
                 ht_corners_home = (SELECT corners_home FROM live_statistics WHERE match_id = $1),
                 ht_corners_away = (SELECT corners_away FROM live_statistics WHERE match_id = $1),
                 ht_cards_home = (SELECT cards_home FROM live_statistics WHERE match_id = $1),
-                ht_cards_away = (SELECT cards_away FROM live_statistics WHERE match_id = $1)
+                ht_cards_away = (SELECT cards_away FROM live_statistics WHERE match_id = $1),
+                ht_red_home = (SELECT red_home FROM live_statistics WHERE match_id = $1),
+                ht_red_away = (SELECT red_away FROM live_statistics WHERE match_id = $1)
           WHERE id = $1 AND ht_home IS NULL`,
         [matchId, home, away]
       );
