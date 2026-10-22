@@ -549,3 +549,20 @@ describe('markets defined from the provider notes', () => {
     expect(o('1 1', [1, 0], undefined)).toBeNull(); // goal order not reliable
   });
 });
+
+describe('event-order markets', () => {
+  const leg = (m, s) => ({ market_name: m, selection_name: s, selection_id: s });
+  const ctx = (go) => ({ winner: 'HOME', totalGoals: 2, bothScored: true, homeScore: 1, awayScore: 1, goalOrder: go });
+  const go = { first: 'HOME', second: 'AWAY', last: 'AWAY', corner: { first: 'AWAY', last: 'HOME' }, card: { first: 'HOME', last: 'AWAY' } };
+  it('first / last corner, first card, second goal', () => {
+    expect(determineLegOutcome(leg('Godet kornen e parë', '2'), ctx(go))).toBe('WON');
+    expect(determineLegOutcome(leg('Godet kornen e fundit', '2'), ctx(go))).toBe('LOST');
+    expect(determineLegOutcome(leg('Merr kartonin e parë', '1'), ctx(go))).toBe('WON');
+    expect(determineLegOutcome(leg('Shënon golin e dytë', '2'), ctx(go))).toBe('WON');
+  });
+  it('stays pending without a reliable log or for X', () => {
+    expect(determineLegOutcome(leg('Godet kornen e parë', '2'), ctx({ ...go, corner: undefined }))).toBeNull();
+    expect(determineLegOutcome(leg('Merr kartonin e parë', 'X'), ctx(go))).toBeNull();
+    expect(determineLegOutcome(leg('Shënon golin e dytë', '1'), ctx(undefined))).toBeNull();
+  });
+});

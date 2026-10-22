@@ -5,7 +5,7 @@ import { asianHandicapOutcome } from './asianLines.js';
 import { ticketOutcome } from './ticketOutcome.js';
 import {
   TOTAL_GOALS_PREFIXES, H2H_NAMES, BTTS_NAMES, DOUBLE_CHANCE_NAMES, CORRECT_SCORE_NAMES, HANDICAP_NAMES, parseOverUnder,
-  STATS_UNDECIDABLE, FIRST_TEAM_TO_SCORE_NAMES, LAST_TEAM_TO_SCORE_NAMES, FIRST_GOAL_NAMES, LAST_GOAL_NAMES, BOTH_HALVES_NAMES, GOAL_ORDER_NAMES, FIRST_GOAL_H1_NAMES,
+  STATS_UNDECIDABLE, EVENT_ORDER_RE, FIRST_TEAM_TO_SCORE_NAMES, LAST_TEAM_TO_SCORE_NAMES, FIRST_GOAL_NAMES, LAST_GOAL_NAMES, BOTH_HALVES_NAMES, GOAL_ORDER_NAMES, FIRST_GOAL_H1_NAMES,
 } from './marketRules.js';
 
 // ---- first / second half markets ------------------------------------------
@@ -83,7 +83,7 @@ function halfWithMoreOutcome(leg, kind, ctx) {
 
 const STATS_MARKET = /korn|corner|karton|\bcards?\b|booking/;
 const legNeedsStats = (leg) => STATS_MARKET.test(norm(leg.market_name));
-const legNeedsFirstScorer = (leg) => GOAL_ORDER_NAMES.has(norm(leg.market_name)) || FIRST_GOAL_H1_NAMES.has(norm(leg.market_name))
+const legNeedsFirstScorer = (leg) => GOAL_ORDER_NAMES.has(norm(leg.market_name)) || FIRST_GOAL_H1_NAMES.has(norm(leg.market_name)) || EVENT_ORDER_RE.test(norm(leg.market_name))
   || (splitCombo(leg) || []).some((p) => GOAL_ORDER_NAMES.has(norm(p.market_name)));
 
 // Final corner / card counters of a match, or undefined if there are none (or the
@@ -160,21 +160,46 @@ function minuteOutcome(leg, marketName, goalMinutes) {
 // not trusted either.
 async function loadGoalOrder(client, match, homeScore, awayScore) {
   try {
-    if (homeScore + awayScore === 0) return { first: 'NONE', last: 'NONE' };
     const { rows } = await client.query(
       `SELECT team, created_at FROM match_events WHERE match_id = $1 AND type = 'GOAL' ORDER BY created_at, id`, [match.id]);
-    return goalOrderFromEvents(rows, match.home_team, match.away_team, homeScore, awayScore);
+    const order = homeScore + awayScore === 0
+      ? { first: 'NONE', second: 'NONE', last: 'NONE' }
+      : goalOrderFromEvents(rows, match.home_team, match.away_team, homeScore, awayScore);
+    // corner / card order: only when the logged events add up to the final counters of each side
+    const st = await loadMatchStats(client, match.id);
+    const sideOrder = async (types, nHome, nAway) => {
+      const { rows: ev } = await client.query(
+        `SELECT team, created_at FROM match_events WHERE match_id = $1 AND type = ANY($2) ORDER BY created_at, id`, [match.id, types]);
+      return sideOrderFromEvents(ev, nHome, nAway);
+    };
+    return {
+      ...(order || {}),
+      corner: st ? await sideOrder(['CORNER'], numOrNaN(st.cornersHome), numOrNaN(st.cornersAway)) : undefined,
+      card: st ? await sideOrder(['YELLOW_CARD', 'RED_CARD'], numOrNaN(st.cardsHome), numOrNaN(st.cardsAway)) : undefined,
+    };
   } catch { return undefined; }
 }
 
+// { first, last } sides ('HOME' | 'AWAY') of corner / card events logged as 'home' / 'away', or undefined
+// when the log does not add up to the final counters (events missed while the server was down) or the
+// first / last event is tied in time with one of the other side. No events at all -> 'NONE'.
+export function sideOrderFromEvents(events, nHome, nAway) {
+  if (!Number.isFinite(nHome) || !Number.isFinite(nAway)) return undefined;
+  if (nHome + nAway === 0) return { first: 'NONE', last: 'NONE' };
+  if (events.filter((e) => e.team === 'home').length !== nHome || events.filter((e) => e.team === 'away').length !== nAway) return undefined;
+  const side = (e) => (e.team === 'home' ? 'HOME' : e.team === 'away' ? 'AWAY' : undefined);
+  const pick = (e) => (events.some((o) => o.team !== e.team && Number(o.created_at) === Number(e.created_at)) ? undefined : side(e));
+  return { first: pick(events[0]), last: pick(events[events.length - 1]) };
+}
+
 export function goalOrderFromEvents(events, homeTeam, awayTeam, homeScore, awayScore) {
-  if (homeScore + awayScore === 0) return { first: 'NONE', last: 'NONE' };
+  if (homeScore + awayScore === 0) return { first: 'NONE', second: 'NONE', last: 'NONE' };
   const nHome = events.filter((e) => e.team === homeTeam).length;
   const nAway = events.filter((e) => e.team === awayTeam).length;
   if (nHome !== homeScore || nAway !== awayScore || !events.length) return undefined;
   const side = (e) => (e.team === homeTeam ? 'HOME' : e.team === awayTeam ? 'AWAY' : undefined);
   const pick = (e) => (events.some((o) => o.team !== e.team && Number(o.created_at) === Number(e.created_at)) ? undefined : side(e));
-  return { first: pick(events[0]), last: pick(events[events.length - 1]) };
+  return { first: pick(events[0]), second: events.length >= 2 ? pick(events[1]) : 'NONE', last: pick(events[events.length - 1]) };
 }
 export const firstScorerFromEvents = (...args) => { const g = goalOrderFromEvents(...args); return g ? g.first : undefined; };
 
@@ -400,6 +425,17 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
       { ...leg, market_id: '', market_name: PERIOD_BASE_ALIASES[base] || base },
       { winner: h > a ? 'HOME' : a > h ? 'AWAY' : 'DRAW', totalGoals: h + a, bothScored: h > 0 && a > 0, homeScore: h, awayScore: a }
     );
+  }
+  // first / last corner, first card, second goal: side selections (1 / 2) from the logged event order
+  const eo = marketName.match(EVENT_ORDER_RE);
+  if (eo) {
+    const key = eo[1] === 'godet kornen e pare' ? ['corner', 'first'] : eo[1] === 'godet kornen e fundit' ? ['corner', 'last']
+      : eo[1] === 'merr kartonin e pare' ? ['card', 'first'] : ['goal', 'second'];
+    const actual = key[0] === 'goal' ? goalOrder && goalOrder.second : goalOrder && goalOrder[key[0]] && goalOrder[key[0]][key[1]];
+    const side = sideOfSelection(leg);
+    // "X" / "no ..." options have no confirmed meaning, and with no such event at all there is nothing to decide
+    if (!actual || actual === 'NONE' || (side !== 'HOME' && side !== 'AWAY')) return null;
+    return side === actual ? 'WON' : 'LOST';
   }
   // first / last team to score, first / last goal (side selections only): from the goal order
   const wantsFirst = FIRST_TEAM_TO_SCORE_NAMES.has(marketName) || FIRST_GOAL_NAMES.has(marketName);

@@ -56,6 +56,10 @@ export const BOTH_HALVES_NAMES = new Set([
 // "Goli i parë në pjesën e parë" (options "None 1" / "1 1" / "2 1"): kept apart from GOAL_ORDER_NAMES because its
 // options are not plain sides. Settled from the half-time score and who scored first.
 export const FIRST_GOAL_H1_NAMES = new Set(['goli i pare ne pjesen e pare', 'gola i pare ne pjesen e pare', 'goli i pare ne pjese te pare', 'first goal 1st half']);
+// Markets decided by the ORDER of match events (the feed gives corner / card / goal events with their
+// side, recorded as the counters move): first / last corner, first card, second goal. Side options
+// (1 / 2) only; the "X" option has no confirmed meaning, so it is never decided.
+export const EVENT_ORDER_RE = /^(godet kornen e (pare|fundit)|merr kartonin e pare|shenon golin e dyte)\b/;
 export const GOAL_ORDER_NAMES = new Set([...FIRST_TEAM_TO_SCORE_NAMES, ...LAST_TEAM_TO_SCORE_NAMES, ...FIRST_GOAL_NAMES, ...LAST_GOAL_NAMES]);
 export const HANDICAP_NAMES = new Set(['handikap', 'hendikep', 'handicap', 'handikap ne ndeshje', 'hendikep ne ndeshje']);
 
@@ -169,7 +173,7 @@ export function describeMarket(marketId, marketName) {
     // markets (server/extraMarkets.js); names known to need data / a meaning we lack never count.
     autoSettles: !UNSETTLEABLE_NAME.test(norm(marketName)) && (
       (AUTO_SETTLES.has(c.kind) && !((c.kind === 'corners' || c.kind === 'cards') && STATS_UNDECIDABLE.test(stripP1P2(norm(marketName)))))
-      || matchExtraMarket(norm(marketName)) || FIRST_GOAL_H1_NAMES.has(norm(marketName))
+      || matchExtraMarket(norm(marketName)) || FIRST_GOAL_H1_NAMES.has(norm(marketName)) || EVENT_ORDER_RE.test(norm(marketName))
     ),
     inPlay: OPEN_IN_PLAY.has(c.kind) ? 'open' : 'blocked',
   };

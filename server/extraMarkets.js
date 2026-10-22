@@ -219,7 +219,7 @@ export function extraMarketOutcome(leg, marketName, ctx) {
 // Names the feed sends that look settleable but are NOT (they need event order / data we do not
 // have), so the coverage report must not claim a rule for them.
 export const UNSETTLEABLE_NAME = new RegExp([
-  'godet kornen e (fundit|pare)', 'merr kartonin e pare', 'penallti', 'shenon golin e dyte',
+  'penallti',
   '\\b(1st|2nd) half - (home |away )?sending off\\b',
   // meaning / option format not confirmed yet: no rule rather than a guess
   '1st half - booking 1x2', 'exact bookings', 'rezultat final me kartona', 'rezultat i p1 me kartona',
