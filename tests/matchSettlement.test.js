@@ -386,3 +386,113 @@ describe('markets seen on real tickets: team totals by side, 45/90, goal ranges,
     expect(det(L(M, 'Pj2'), { ...c, htStats: undefined })).toBeNull(); // no half-time snapshot: PENDING
   });
 });
+
+describe('extra markets from the provider list (server/extraMarkets.js)', () => {
+  const L = (market, sel) => ({ market_id: '', market_name: market, selection_id: sel, selection_name: sel, match_home: 'Como 1907', match_away: 'Manchester United' });
+  // Como 1-2 Manchester United, half-time 0-1 (so the second half was 1-1); corners 5-6, half-time 2-3; one red card (away)
+  const c = { winner: 'AWAY', totalGoals: 3, bothScored: true, homeScore: 1, awayScore: 2, htHome: 0, htAway: 1,
+    stats: { cornersHome: 5, cornersAway: 6, cardsHome: 2, cardsAway: 3, redHome: 0, redAway: 1 }, htStats: { cornersHome: 2, cornersAway: 3 } };
+  let det;
+  beforeAll(async () => { det = (await import('../server/matchSettlement.js')).determineLegOutcome; });
+  const t = (market, sel, expected, ctx = c) => expect(det(L(market, sel), ctx), `${market} | ${sel}`).toBe(expected);
+
+  it('goals in a half, team goals in a half, goal-count ranges', () => {
+    t('Sa Gola Shënohen në Pjesën e 2të', 'Lart 0.5', 'WON'); // 1 goal in the second half... (1-1)
+    t('Sa Gola Shënohen në Pjesën e 1rë', 'Lart 0.5', 'WON');
+    t('Sa Gola Shënohen në Pjesën e 1rë', 'Lart 1.5', 'LOST');
+    t('Sa gola shenon Udhetuesi ne Pjesen e 1re', 'Lart 0.5', 'WON');
+    t('Sa gola shenon Pritesi ne Pjesen e 1re', 'Lart 0.5', 'LOST');
+    t('Sa gola shenon Pritesi ne Pjesen e 2te', 'Poshte 1.5', 'WON');
+    t('Sasia Golave në Pjesën e 1rë', '1-2', 'WON');
+    t('Sasia Golave në Pjesën e 1rë', '0', 'LOST');
+    t('Sasia e Golave Përfundimtare', '1-3', 'WON');
+    t('Shuma e Saktë e Golave në Ndeshje', '3', 'WON');
+    t('Shuma e Saktë e Golave në Ndeshje', '2', 'LOST');
+    t('Away  multigoals', '1-2', 'WON');
+    t('Home  multigoals', '2-3', 'LOST');
+  });
+  it('both teams in a half, scoring in both halves, highest scoring half, clean sheets', () => {
+    t('Gol-Jo Gol në Pjesën e 1rë', 'Jo', 'WON');
+    t('Gol-Jo Gol në Pjesën e 2të', 'Po', 'WON');
+    t('Udhetuesi shenon ne te dy pjeset', 'Po', 'WON');
+    t('Pritesi shenon ne te dy pjeset', 'Po', 'LOST');
+    t('Home  highest scoring half', '2nd', 'WON');
+    t('Away highest scoring half', 'Equal', 'WON');
+    t('Home  clean sheet', 'No', 'WON');
+    t('Away clean sheet', 'Yes', 'LOST');
+    t('1st half - Home  clean sheet', 'No', 'WON');
+    t('1st half - Away clean sheet', 'Yes', 'WON');
+    t('2nd half - Home  clean sheet', 'No', 'WON');
+  });
+  it('wins to nil, win either / both halves, two-way win markets, odd/even of a half', () => {
+    t('Udhetuesi fiton me zero', 'Po', 'LOST');
+    t('Away to win either half', 'Yes', 'WON');
+    t('Home  to win either half', 'Yes', 'LOST');
+    t('Pritesi fiton te dy pjeset', 'Po', 'LOST');
+    t('Udhetuesi fiton te dy pjeset', 'Yes', 'LOST'); // lost the second half? 1-1 in H2 -> not won -> No wins
+    t('Udhetuesi fiton te dy pjeset', 'No', 'WON');
+    t('Away to win', '2', 'WON');
+    t('Away to win', '1X', 'LOST');
+    t('Home  to win', 'X2', 'WON');
+    t('Any team to win', '12', 'WON');
+    t('Tek/Cift Pjesa e 1rë', 'Tek', 'WON');
+    t('Tek/Cift Pjesa e 2të', 'Cift', 'WON');
+  });
+  it('double chance by half, "X ose 0-2 gola" family, combinations, result + both teams', () => {
+    t('Dopio Shans - Pjesa 1rë', 'X2', 'WON');
+    t('Dopio Shans - Pjesa 2të', '12', 'LOST');
+    t('DopioShans Live', '1X', 'LOST');
+    t('Rezultati i Pjeses se Dyte', 'X', 'WON');
+    t('Barazim ose 0-2 Gola', 'Po', 'LOST');
+    t('Barazim ose 3+', 'Po', 'WON');
+    t('Fiton Udhetuesi ose Gol/JoGol', 'Po', 'WON');
+    t('Fiton Pritesi ose 0-2Gola', 'Jo', 'WON');
+    t('Dopio Shans me Kombinime', 'X2_2+', 'WON');
+    t('Dopio Shans me Kombinime', '1X_0-1', 'LOST');
+    t('Rezultat Final/Gol-Jo Gol', '2/Gol', 'WON');
+    t('Rezultat Final/Gol-Jo Gol', '2/JoGol', 'LOST');
+    t('Lart-Poshte/Gol-Jo Gol', 'Gol/3+', 'WON');
+    t('Lart-Poshte/Gol-Jo Gol', 'JoGol/0-2', 'LOST');
+  });
+  it('European / Asian handicaps (quarter lines stay pending, pushes are refunded) and Asian totals', () => {
+    t('Handikap Europian', '1 0:1', 'LOST');   // 1+0 vs 2+1
+    t('Handikap Europian', '2 0:1', 'WON');
+    t('Handikap Europian', 'X 1:0', 'WON');    // 2 vs 2
+    t('Handikap Europian - Pjesa 1rë', '2 0:1', 'WON'); // half-time 0-1 -> 0 vs 2
+    t('Handikap Aziatik', '2 -0.5', 'WON');
+    t('Handikap Aziatik', '1 +1', 'VOID');     // 1+1 = 2 vs 2
+    t('Handikap Aziatik', '2 -0.25', null);
+    t('Handikap Aziatik Pjesa 2-të', '1 -0.5', 'LOST'); // second half 1-1
+    t('Handikap - Pjesa 1rë', '2 -0.5', 'WON');
+    t('Lart/Poshtë Gola Aziatikë', 'Lart 2.5', 'WON');
+    t('Lart/Poshtë Gola Aziatikë', 'Lart 3', 'VOID');
+    t('Lart/Poshtë Gola Aziatikë', 'Lart 2.75', null);
+    t('Lart/Poshte Gola Aziatik ne Pjesen 1', 'Poshte 1.5', 'WON');
+  });
+  it('correct score of a half, half + final, red cards, first-half corners 1x2', () => {
+    t('Rezultat i Sakte Pjesa - 2të', '1:1', 'WON');
+    t('Rezultati i Sakte i Pjeses se 1re', '0:1', 'WON');
+    t('Rezultati i Sakte i Pjeses se 1re', 'Te Tjera', null);
+    t('Rezultat i Sakte Pjesa 1/Final', '0-1 1-2', 'WON');
+    t('Rezultat i Sakte Pjesa 1/Final', '0-0 1-2', 'LOST');
+    t('Rezultati Sakte Live', '1-2', 'WON');
+    t('Sending off', 'Yes', 'WON');
+    t('Away sending off', 'Yes', 'WON');
+    t('Home sending off', 'Yes', 'LOST');
+    t('Sending off', 'Yes', null, { ...c, stats: { cornersHome: 5, cornersAway: 6 } });
+    t('Corner 1x2', '2', 'WON');
+    t('1st half - corner 1x2', '2', 'WON');
+    t('1st half - corner 1x2', '2', null, { ...c, htStats: undefined });
+    t('Cila Skuadër Shënon Golin e fundit', '2', 'WON', { ...c, goalOrder: { first: 'AWAY', last: 'AWAY' } });
+    t('Cila Skuadër Shënon Golin e 1rë', "S'ka gol", 'LOST', { ...c, goalOrder: { first: 'AWAY', last: 'AWAY' } });
+    t('Cila Skuadër Shënon Golin e 1rë', '1', null, c); // no reliable goal order
+    t('Në Cilën Pjesë do të Shënohen më Shumë Gola', 'Pjesen e 2te', 'WON');
+    t('Në Cilën Pjesë do të Shënohen më Shumë Gola', 'Barazim', 'LOST');
+  });
+  it('without a half-time score the half markets stay pending', () => {
+    const no = { ...c, htHome: undefined, htAway: undefined };
+    t('Sa Gola Shënohen në Pjesën e 2të', 'Lart 0.5', null, no);
+    t('Home  clean sheet', 'No', 'WON', no); // full-time only
+    t('1st half - Home  clean sheet', 'No', null, no);
+  });
+});

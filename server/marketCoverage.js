@@ -50,6 +50,6 @@ export function formatCoverageText(report) {
     without.map(fmt).join('\n') || '(asnjë)',
     '',
     '=== ME RREGULL ===',
-    withRule.map((r) => `- ${r.name}`).join('\n') || '(asnjë)',
+    withRule.map((r) => `- ${r.name}${(r.samples || []).length ? ' | ' + r.samples.join(' ; ') : ''}`).join('\n') || '(asnjë)',
   ].join('\n');
 }

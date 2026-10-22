@@ -19,6 +19,7 @@
 //
 // Names are matched on the provider's own wording (Albanian), normalised.
 
+import { matchExtraMarket, UNSETTLEABLE_NAME } from './extraMarkets.js';
 import { normMarketText as norm, splitPeriod, PERIOD_BASE_ALIASES, isPastFirstHalf, getMarketClosedReason } from './marketPeriods.js';
 
 // Shared with the settlement code (matchSettlement.js): both sides must agree on
@@ -35,10 +36,12 @@ export const CORRECT_SCORE_NAMES = new Set(['rezultati i sakte', 'rezultati ekza
 export const FIRST_TEAM_TO_SCORE_NAMES = new Set([
   'skuadra qe shenon e pare', 'skuadra qe shenon e para', 'skuadra e pare qe shenon', 'skuadra qe shenon i pari',
   'ekipi qe shenon e pare', 'ekipi qe shenon i pari', 'first team to score', 'team to score first',
+  'cila skuader shenon golin e 1re', 'cila skuader shenon golin e pare',
 ]);
 export const LAST_TEAM_TO_SCORE_NAMES = new Set([
   'skuadra qe shenon e fundit', 'skuadra e fundit qe shenon', 'skuadra qe shenon i fundit', 'ekipi qe shenon i fundit',
   'ekipi qe shenon e fundit', 'last team to score', 'team to score last',
+  'cila skuader shenon golin e fundit',
 ]);
 // "Goli i Parë / i Fundit": settled ONLY when the selection is a side (1 / 2 / team / no goal);
 // a player selection stays PENDING (the provider gives no scorer names). Not counted as
@@ -159,7 +162,12 @@ export function describeMarket(marketId, marketName) {
   return {
     kind: c.kind,
     period: c.period || null,
-    autoSettles: AUTO_SETTLES.has(c.kind) && !((c.kind === 'corners' || c.kind === 'cards') && STATS_UNDECIDABLE.test(stripP1P2(norm(marketName)))),
+    // A rule exists when the kind is settled by the generic code, or the name is one of the extra
+    // markets (server/extraMarkets.js); names known to need data / a meaning we lack never count.
+    autoSettles: !UNSETTLEABLE_NAME.test(norm(marketName)) && (
+      (AUTO_SETTLES.has(c.kind) && !((c.kind === 'corners' || c.kind === 'cards') && STATS_UNDECIDABLE.test(stripP1P2(norm(marketName)))))
+      || matchExtraMarket(norm(marketName))
+    ),
     inPlay: OPEN_IN_PLAY.has(c.kind) ? 'open' : 'blocked',
   };
 }

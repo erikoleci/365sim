@@ -1,5 +1,6 @@
 import pool from './db.js';
 import { minuteOf, splitPeriod, PERIOD_BASE_ALIASES } from './marketPeriods.js';
+import { extraMarketOutcome } from './extraMarkets.js';
 import {
   TOTAL_GOALS_PREFIXES, H2H_NAMES, BTTS_NAMES, DOUBLE_CHANCE_NAMES, CORRECT_SCORE_NAMES, HANDICAP_NAMES, parseOverUnder,
   STATS_UNDECIDABLE, FIRST_TEAM_TO_SCORE_NAMES, LAST_TEAM_TO_SCORE_NAMES, FIRST_GOAL_NAMES, LAST_GOAL_NAMES, BOTH_HALVES_NAMES, GOAL_ORDER_NAMES,
@@ -55,8 +56,8 @@ function goalCountRange(selection) {
 // First half from the half-time snapshot, second half = final minus half-time; PENDING otherwise.
 function halfWithMoreOutcome(leg, kind, ctx) {
   const t = norm(leg.selection_name || leg.selection_id);
-  const pick = /^(pj ?1|pjesa 1|pjesa e pare|1h|1)$/.test(t) ? 'H1'
-    : /^(pj ?2|pjesa 2|pjesa e dyte|2h|2)$/.test(t) ? 'H2'
+  const pick = /^(pj ?1|pjesa 1|pjesa e pare|pjesen e 1re|pjesen e pare|1st|1h|1)$/.test(t) ? 'H1'
+    : /^(pj ?2|pjesa 2|pjesa e dyte|pjesen e 2te|pjesen e dyte|2nd|2h|2)$/.test(t) ? 'H2'
     : /^(x|barazim|baraz|njesoj|e njejta|equal|draw)$/.test(t) ? 'EQ' : null;
   if (!pick) return null;
   let h1; let h2;
@@ -321,6 +322,10 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
   const marketName = norm(leg.market_name);
   if (!marketName) return null;
 
+  // ---- the provider's less common markets (clean sheet, win either half, half goals, ...) ----
+  const extra = extraMarketOutcome(leg, marketName, { homeScore, awayScore, htHome, htAway, stats, htStats });
+  if (extra !== undefined) return extra;
+
   // ---- combination markets: "Rezultat Final & Totali" -> "1 & Lart 2.5" ----
   // Every part must win. One part that LOSES decides the whole bet at once, even
   // if another part is not understood; otherwise all parts must be understood and
@@ -390,7 +395,7 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
     const sel = norm(leg.selection_name || leg.selection_id);
     const side = sideOfSelection(leg);
     if (side === 'HOME' || side === 'AWAY') return side === actual ? 'WON' : 'LOST';
-    if (/^(asnje|asnje gol|no goal|none|pa gol|x)$/.test(sel)) return actual === 'NONE' ? 'WON' : 'LOST';
+    if (/^(asnje|asnje gol|no goal|none|pa gol|s'ka gol|ska gol|x)$/.test(sel)) return actual === 'NONE' ? 'WON' : 'LOST';
     return null; // a player or any other label: no scorer names -> manual
   }
   // "<team> scores in both halves" (team selections) and the Po/Jo form "Shënojnë në të dyja pjesët".
