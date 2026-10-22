@@ -27,6 +27,7 @@ export const SECOND_HALF_RE = /(?:\bne\s+)?(?:\bpjes(?:a|en|es|e)\s+(?:s?e\s+)?(
 // Names that only make sense WITH a period phrase around them ("Rezultati Pjesa I").
 export const PERIOD_BASE_ALIASES = {
   rezultati: 'rezultati final',
+  'rezultati i': 'rezultati final', // "Rezultati i Pjesës së Parë"
   fituesi: 'rezultati final',
   golat: 'numri i golave',
   'mbi/nen': 'numri i golave',

@@ -183,7 +183,7 @@ describe('determineLegOutcome — first / second half markets (need the half-tim
   it('HT/FT doubles use the half-time score; unknown half markets stay pending', () => {
     expect(determineLegOutcome(L('Pushim/Fund', 'X/1'), R)).toBe('WON'); // HT 1-1, FT 3-1
     expect(determineLegOutcome(L('Pushim/Fund', '1/1'), R)).toBe('LOST');
-    expect(determineLegOutcome(L('Rezultati Pjesa e Parë / Rezultati Final', 'X/1'), R)).toBeNull();
+    expect(determineLegOutcome(L('Rezultati Pjesa e Parë / Rezultati Final', 'X/1'), R)).toBe('WON'); // same market under its long name
     expect(determineLegOutcome(L('Pjesa me Shumë Gola', 'E dyta'), R)).toBeNull();
   });
   it('a combo with a first-half part loses when that part loses', () => {
@@ -496,5 +496,19 @@ describe('extra markets from the provider list (server/extraMarkets.js)', () => 
     t('Sa Gola Shënohen në Pjesën e 2të', 'Lart 0.5', null, no);
     t('Home  clean sheet', 'No', 'WON', no); // full-time only
     t('1st half - Home  clean sheet', 'No', null, no);
+  });
+});
+
+describe('spelling variants of the same market', () => {
+  const ctx = { winner: 'HOME', totalGoals: 3, bothScored: true, homeScore: 2, awayScore: 1, htHome: 1, htAway: 0 };
+  const leg = (market_name, sel) => ({ market_id: 'x', market_name, selection_id: sel, selection_name: sel });
+  it('combos spelled with the HTML entity for &', () => {
+    expect(determineLegOutcome(leg('Rezultat Final &amp; Numri i Golave', '1 &amp; Lart 2.5'), ctx)).toBe('WON');
+  });
+  it('half written in words or digits, and "Rezultati i Pjesës së Parë"', () => {
+    expect(determineLegOutcome(leg('Rezultati i Pjesës së Parë', '1'), ctx)).toBe('WON');
+    expect(determineLegOutcome(leg('Sa Gola Shënohen në Pjesën e Parë', 'Lart 0.5'), ctx)).toBe('WON');
+    expect(determineLegOutcome(leg('Sa Gola Shënohen në Pjesën e Dytë', 'Lart 1.5'), ctx)).toBe('WON');
+    expect(determineLegOutcome(leg('Sa Gola Shënohen në Pjesën e 2', 'Lart 2.5'), ctx)).toBe('LOST');
   });
 });

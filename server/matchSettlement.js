@@ -18,13 +18,16 @@ import {
 // (period phrases, name sets and Over/Under parsing live in marketPeriods.js / marketRules.js,
 // shared with the betting rules so both sides always agree on what a market is.)
 
-const HTFT_NAMES = new Set(['45/90', '45 / 90', '45/90 min', '45/90 minuta', 'pushim/fund', 'pushimi/fundi', 'pushim / fund', 'pushim fund', 'ht/ft', 'ht ft', 'pjesa e pare/finale', 'pjesa e pare/fund']);
+const HTFT_NAMES = new Set(['45/90', '45 / 90', '45/90 min', '45/90 minuta', 'pushim/fund', 'pushimi/fundi', 'pushim / fund', 'pushim fund', 'ht/ft', 'ht ft', 'pjesa e pare/finale', 'pjesa e pare/fund',
+  'rezultati pjesa e pare / rezultati final', 'rezultati pjesa e pare/rezultati final', 'rezultati i pjeses se pare / rezultati final',
+  'rezultati pjesa e pare / final', 'rezultati ne pushim / rezultati final']);
 
 // "Rezultat Final & Totali" + "1 & Lart 2.5"  ->  two single legs. Only when market
 // and selection split into the same number (2-3) of parts, otherwise not a combo.
 function splitCombo(leg) {
-  const marketParts = String(leg.market_name || '').split(/\s*&\s*/);
-  const selection = String(leg.selection_name || leg.selection_id || '');
+  // the provider sometimes sends the HTML entity ("Rezultat Final &amp; Totali")
+  const marketParts = String(leg.market_name || '').replace(/&amp;/g, '&').split(/\s*&\s*/);
+  const selection = String(leg.selection_name || leg.selection_id || '').replace(/&amp;/g, '&');
   let selectionParts = selection.split(/\s*&\s*/);
   // Some markets write the parts of one combined selection with "/" instead of "&":
   // "Rezultat Final & Numri i Golave" -> "X/5+", "45/90 & Numri i Golave" -> "2-X/0-4".

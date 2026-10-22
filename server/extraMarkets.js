@@ -171,13 +171,21 @@ const RULES = [
   }],
 ];
 
+// "pjesen e pare / pjeses se dyte / pjesa e parë" -> "pjesen e 1 / pjesen e 2": the same half is
+// spelled with words or digits depending on the market, and the rules above key on the digit.
+const canon = (name) => String(name)
+  .replace(/\bpjes(a|en|es|e)\s+(s?e\s+)?pare\b/g, (_, f, e) => `pjes${f} ${e || ''}1`.replace(/\s+/g, ' '))
+  .replace(/\bpjes(a|en|es|e)\s+(s?e\s+)?dyte\b/g, (_, f, e) => `pjes${f} ${e || ''}2`.replace(/\s+/g, ' '));
+
 export function matchExtraMarket(nameNorm) {
-  return RULES.some(([re]) => re.test(nameNorm));
+  const n = canon(nameNorm);
+  return RULES.some(([re]) => re.test(n));
 }
 
 export function extraMarketOutcome(leg, marketName, ctx) {
+  const name = canon(marketName);
   for (const [re, run] of RULES) {
-    const m = marketName.match(re);
+    const m = name.match(re);
     if (m) return run(m, norm(leg.selection_name || leg.selection_id), ctx || {}) ?? null;
   }
   return undefined;
