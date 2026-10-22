@@ -1,6 +1,8 @@
 import pool from './db.js';
 import { minuteOf, splitPeriod, PERIOD_BASE_ALIASES } from './marketPeriods.js';
 import { extraMarketOutcome } from './extraMarkets.js';
+import { asianHandicapOutcome } from './asianLines.js';
+import { ticketOutcome } from './ticketOutcome.js';
 import {
   TOTAL_GOALS_PREFIXES, H2H_NAMES, BTTS_NAMES, DOUBLE_CHANCE_NAMES, CORRECT_SCORE_NAMES, HANDICAP_NAMES, parseOverUnder,
   STATS_UNDECIDABLE, FIRST_TEAM_TO_SCORE_NAMES, LAST_TEAM_TO_SCORE_NAMES, FIRST_GOAL_NAMES, LAST_GOAL_NAMES, BOTH_HALVES_NAMES, GOAL_ORDER_NAMES,
@@ -233,7 +235,7 @@ function parseHandicap(leg) {
   const m = text.trim().match(/^(.*?)\s*\(\s*([+-]?\d+(?:[.,]\d+)?)\s*\)\s*$/);
   if (!m) return null;
   const point = parseFloat(m[2].replace(',', '.'));
-  if (Number.isNaN(point) || (point * 2) % 1 !== 0) return null; // quarter lines: manual
+  if (Number.isNaN(point) || Math.abs(point * 4 - Math.round(point * 4)) > 1e-9) return null; // not a multiple of 0.25
   const who = norm(m[1]);
   let side = null;
   if (who === '1' || (leg.match_home && who === norm(leg.match_home))) side = 'HOME';
@@ -496,9 +498,7 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
   if (HANDICAP_NAMES.has(marketName) || marketId.endsWith('-spreads')) {
     const h = parseHandicap(leg);
     if (!h) return null;
-    const diff = h.side === 'HOME' ? homeScore + h.point - awayScore : awayScore + h.point - homeScore;
-    if (diff === 0) return 'VOID';
-    return diff > 0 ? 'WON' : 'LOST';
+    return h.side === 'HOME' ? asianHandicapOutcome(homeScore, awayScore, h.point) : asianHandicapOutcome(awayScore, homeScore, h.point);
   }
 
   return null;
@@ -546,21 +546,15 @@ export async function recomputeBetStatus(betId, client = pool) {
   const { rows: legs } = await client.query('SELECT * FROM bet_selections WHERE bet_id = $1', [betId]);
   if (legs.length === 0) return; // [].every(...) is true — never pay a bet that has no legs
 
-  const active = legs.filter((l) => l.status !== 'VOID');
-  let nextStatus;
-  if (active.some((l) => l.status === 'LOST')) nextStatus = 'LOST';
-  else if (active.length === 0) nextStatus = 'VOID';
-  else if (active.every((l) => l.status === 'WON')) nextStatus = 'WON';
-  else nextStatus = 'PENDING';
+  const outcome = ticketOutcome(bet.stake, legs);
+  const nextStatus = outcome.status;
 
   if (nextStatus === bet.status) return;
 
-  if (nextStatus === 'WON' && active.length < legs.length) {
-    // Some legs were refunded: pay on the remaining legs only.
-    const totalOdds = active.reduce((acc, l) => acc * Number(l.odds), 1);
-    const payout = Number((Number(bet.stake) * totalOdds).toFixed(2));
-    await client.query('UPDATE bets SET status = $1, total_odds = $2, potential_return = $3 WHERE id = $4', [nextStatus, totalOdds, payout, betId]);
-    if (bet.status !== 'WON') await creditWithLedger(client, bet.user_id, payout, 'BET_WIN_PAYOUT', betId);
+  if (nextStatus === 'WON' && outcome.payout != null) {
+    // Some legs were refunded and/or half won / half lost: pay what the legs are really worth.
+    await client.query('UPDATE bets SET status = $1, total_odds = $2, potential_return = $3 WHERE id = $4', [nextStatus, outcome.totalOdds, outcome.payout, betId]);
+    if (bet.status !== 'WON') await creditWithLedger(client, bet.user_id, outcome.payout, 'BET_WIN_PAYOUT', betId);
     return;
   }
 

@@ -126,12 +126,14 @@ describe('determineLegOutcome — every other final-score market', () => {
     expect(determineLegOutcome(L('Numri i Golave Zakynthos', 'Lart 1.5'), R(2, 0))).toBe('WON');
     expect(determineLegOutcome(L('Numri i Golave Apollon Kalamarias', 'Lart 0.5'), R(2, 0))).toBe('LOST');
   });
-  it('handicap: win / loss / push (whole line) / quarter line manual', () => {
+  it('handicap: win / loss / push (whole line) / quarter line half win-half loss', () => {
     expect(determineLegOutcome(L('Handikap', 'Zakynthos (-1.5)'), R(2, 0))).toBe('WON');
     expect(determineLegOutcome(L('Handikap', 'Zakynthos (-1.5)'), R(1, 0))).toBe('LOST');
     expect(determineLegOutcome(L('Handikap', 'Zakynthos (-1)'), R(2, 1))).toBe('VOID');
     expect(determineLegOutcome(L('Handikap', 'Apollon Kalamarias (+1)'), R(1, 1))).toBe('WON');
-    expect(determineLegOutcome(L('Handikap', 'Zakynthos (-0.25)'), R(1, 0))).toBeNull();
+    expect(determineLegOutcome(L('Handikap', 'Zakynthos (-0.25)'), R(1, 0))).toBe('WON');
+    expect(determineLegOutcome(L('Handikap', 'Zakynthos (-0.25)'), R(0, 0))).toBe('HALF_LOST');
+    expect(determineLegOutcome(L('Handikap', 'Zakynthos (-0.12)'), R(1, 0))).toBeNull(); // not a multiple of 0.25
   });
   it('never auto-settles half-time / period markets without a half-time score', () => {
     expect(determineLegOutcome(L('Rezultati Pjesa e Parë', '1'), R(2, 0))).toBeNull();
@@ -461,12 +463,12 @@ describe('extra markets from the provider list (server/extraMarkets.js)', () => 
     t('Handikap Europian - Pjesa 1rë', '2 0:1', 'WON'); // half-time 0-1 -> 0 vs 2
     t('Handikap Aziatik', '2 -0.5', 'WON');
     t('Handikap Aziatik', '1 +1', 'VOID');     // 1+1 = 2 vs 2
-    t('Handikap Aziatik', '2 -0.25', null);
+    t('Handikap Aziatik', '2 -0.25', 'WON'); // away -0.25: wins 2-1 on both neighbouring lines
     t('Handikap Aziatik Pjesa 2-të', '1 -0.5', 'LOST'); // second half 1-1
     t('Handikap - Pjesa 1rë', '2 -0.5', 'WON');
     t('Lart/Poshtë Gola Aziatikë', 'Lart 2.5', 'WON');
     t('Lart/Poshtë Gola Aziatikë', 'Lart 3', 'VOID');
-    t('Lart/Poshtë Gola Aziatikë', 'Lart 2.75', null);
+    t('Lart/Poshtë Gola Aziatikë', 'Lart 2.75', 'HALF_WON'); // 3 goals: wins on 2.5, push on 3
     t('Lart/Poshte Gola Aziatik ne Pjesen 1', 'Poshte 1.5', 'WON');
   });
   it('correct score of a half, half + final, red cards, first-half corners 1x2', () => {

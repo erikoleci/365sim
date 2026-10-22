@@ -237,7 +237,8 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                 )}
                 {myBets.map(bet => {
                     const canCancel = bet.status === BetStatus.PENDING && bet.cancellable === true && (Date.now() - bet.timestamp < 10 * 60 * 1000);
-                    const statusLabel = bet.status === BetStatus.PENDING ? t('Hapur') : bet.status === BetStatus.WON ? t('Fituar') : bet.status === BetStatus.VOID ? t('Rimbursuar') : t('Humbur');
+                    const partialLoss = bet.status === BetStatus.WON && Number(bet.potentialReturn) < Number(bet.stake); // half-lost leg: part of the stake came back
+                    const statusLabel = bet.status === BetStatus.PENDING ? t('Hapur') : partialLoss ? t('Humbje e pjesshme') : bet.status === BetStatus.WON ? t('Fituar') : bet.status === BetStatus.VOID ? t('Rimbursuar') : t('Humbur');
                     const statusColor = bet.status === BetStatus.WON ? 'border-brand-accent' : bet.status === BetStatus.LOST ? 'border-red-500' : bet.status === BetStatus.VOID ? 'border-gray-500' : 'border-brand-yellow';
                     return (
                         <div key={bet.id} className={`bg-brand-bg border-l-4 ${statusColor} border-y border-r border-brand-divider rounded-lg p-2 text-xs relative`}>
@@ -258,8 +259,8 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                                         </div>
                                         <div className="text-[10px] flex-shrink-0">
                                             {bet.status !== BetStatus.PENDING && (
-                                                <span className={leg.status === BetStatus.WON ? 'text-brand-accent' : leg.status === BetStatus.LOST ? 'text-red-400' : 'text-gray-500'}>
-                                                    {leg.status === BetStatus.PENDING ? '' : leg.status === BetStatus.WON ? t('Fituar') : leg.status === BetStatus.VOID ? t('Rimbursuar') : t('Humbur')}
+                                                <span className={leg.status === BetStatus.WON || leg.status === BetStatus.HALF_WON ? 'text-brand-accent' : leg.status === BetStatus.LOST || leg.status === BetStatus.HALF_LOST ? 'text-red-400' : 'text-gray-500'}>
+                                                    {leg.status === BetStatus.PENDING ? '' : leg.status === BetStatus.WON ? t('Fituar') : leg.status === BetStatus.HALF_WON ? t('Gjysmë fitore') : leg.status === BetStatus.HALF_LOST ? t('Gjysmë humbje') : leg.status === BetStatus.VOID ? t('Rimbursuar') : t('Humbur')}
                                                 </span>
                                             )}
                                         </div>

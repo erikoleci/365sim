@@ -7,6 +7,8 @@
 // Everything is decided from the final score, the half-time score and the match counters; nothing
 // is guessed: a missing half-time score / counter, an unknown option or a quarter line gives null.
 
+import { asianHandicapOutcome, asianTotalOutcome } from './asianLines.js';
+
 const norm = (s) => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 const fin = (v) => (v == null || v === '' ? NaN : Number(v));
 
@@ -57,15 +59,16 @@ function europeanHandicap(sel, s) {
   return won(resultOf(s.home + Number(m[2]), s.away + Number(m[3])) === m[1].toUpperCase());
 }
 // Asian handicap: "1 -0.5" = home with a -0.5 line, "2 +1" = away with +1 (own side + its line).
+// Quarter lines split the stake over the two neighbouring lines (see asianLines.js).
 function asianHandicap(sel, s) {
   const m = sel.match(/^([12])\s*([+-]?\d+(?:[.,]\d+)?)$/);
   if (!m || !s) return null;
   const line = parseFloat(m[2].replace(',', '.'));
-  if (!Number.isInteger(line * 2)) return null; // quarter line
-  const own = m[1] === '1' ? s.home : s.away;
-  const opp = m[1] === '1' ? s.away : s.home;
-  const d = own + line - opp;
-  return d === 0 ? 'VOID' : won(d > 0);
+  return m[1] === '1' ? asianHandicapOutcome(s.home, s.away, line) : asianHandicapOutcome(s.away, s.home, line);
+}
+function asianTotal(sel, total) {
+  const o = parseOU(sel);
+  return o && Number.isFinite(total) ? asianTotalOutcome(o.over, o.line, total) : null;
 }
 
 const RULES = [
@@ -134,8 +137,8 @@ const RULES = [
   [/^handikap europian(?: - pjesa ([12])\S*| pjesa ([12])\S*)?$/, (m, sel, c) => { const n = m[1] || m[2]; return europeanHandicap(sel, n ? half(c, n) : finalScore(c)); }],
   [/^handikap aziatik$/, (m, sel, c) => asianHandicap(sel, finalScore(c))],
   [/^(?:handikap aziatik pjesa|handikap - pjesa) ([12])\S*$/, (m, sel, c) => asianHandicap(sel, half(c, m[1]))],
-  [/^lart\/poshtë? ?gola aziatike$|^lart\/poshte gola aziatike$/, (m, sel, c) => { const s = finalScore(c); return s ? ouOutcome(parseOU(sel), s.home + s.away) : null; }],
-  [/^lart\/poshte gola aziatik ne pjesen ([12])$/, (m, sel, c) => { const p = half(c, m[1]); return p ? ouOutcome(parseOU(sel), p.home + p.away) : null; }],
+  [/^lart\/poshtë? ?gola aziatike$|^lart\/poshte gola aziatike$/, (m, sel, c) => { const s = finalScore(c); return s ? asianTotal(sel, s.home + s.away) : null; }],
+  [/^lart\/poshte gola aziatik ne pjesen ([12])$/, (m, sel, c) => { const p = half(c, m[1]); return p ? asianTotal(sel, p.home + p.away) : null; }],
 
   // ---- correct score of a half / half + final ----
   [/^rezultat i sakte pjesa - 2te$/, (m, sel, c) => { const p = half(c, 2); const sc = scoreOf(sel); return p && sc ? won(p.home === sc[0] && p.away === sc[1]) : null; }],

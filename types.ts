@@ -109,6 +109,8 @@ export enum BetSelection {
 
 export enum BetStatus {
   PENDING = 'PENDING',
+  HALF_WON = 'HALF_WON',
+  HALF_LOST = 'HALF_LOST',
   WON = 'WON',
   LOST = 'LOST',
   VOID = 'VOID'
