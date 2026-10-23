@@ -60,7 +60,8 @@ export const TEAM_ALIASES: Record<string, string[]> = {
 
 let index: LogoIndex | null = null;
 let loading: Promise<void> | null = null;
-let failed = false;
+let failedAt = 0; // when the last attempt failed; a new attempt is allowed after RETRY_AFTER_MS
+const RETRY_AFTER_MS = 15_000;
 const listeners = new Set<() => void>();
 const cache = new Map<string, string | null>();
 
@@ -79,12 +80,21 @@ const FOLDER_BY_LABEL: Record<string, string> = (() => {
 const COUNTRY_PRIORITY = ['england', 'spain', 'italy', 'germany', 'france', 'portugal', 'netherlands', 'belgium', 'turkey', 'scotland', 'greece'];
 
 export function loadTeamLogoIndex(): Promise<void> {
-  if (index || failed) return Promise.resolve();
-  loading ??= fetch(`${BASE}index.json`)
+  if (index) return Promise.resolve();
+  if (loading) return loading;
+  if (failedAt && Date.now() - failedAt < RETRY_AFTER_MS) return Promise.resolve();
+  loading = fetch(`${BASE}index.json`)
     .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-    .then((data: LogoIndex) => { index = data; cache.clear(); })
-    .catch(() => { failed = true; }) // no index -> every team simply shows the placeholder
-    .finally(() => { listeners.forEach((fn) => fn()); });
+    .then((data: LogoIndex) => {
+      // A page that answers 200 but is not the index (an error page, a cached HTML shell) is a failure too.
+      if (!data || typeof data !== 'object' || !data.byKey || !data.files) throw new Error('bad index');
+      index = data; failedAt = 0; cache.clear();
+    })
+    .catch(() => {
+      failedAt = Date.now(); // no index for now -> placeholders; tried again later, not only after a reload
+      if (typeof window !== 'undefined') setTimeout(() => { void loadTeamLogoIndex(); }, RETRY_AFTER_MS + 100);
+    })
+    .finally(() => { loading = null; listeners.forEach((fn) => fn()); });
   return loading;
 }
 
@@ -119,4 +129,4 @@ export function resolveTeamLogo(name: string, country?: string | null): string |
 }
 
 // Test hook: lets unit tests inject an index without fetch.
-export function __setTeamLogoIndexForTests(next: LogoIndex | null): void { index = next; failed = false; cache.clear(); }
+export function __setTeamLogoIndexForTests(next: LogoIndex | null): void { index = next; failedAt = 0; loading = null; cache.clear(); }

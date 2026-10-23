@@ -34,9 +34,10 @@ const TeamLogo: React.FC<Props> = ({ name, country, league, providerLogo, size =
   const countryHint = country ?? (league ? leagueCountry(league) : null);
   const local = ready ? resolveTeamLogo(name, countryHint) : null;
   const [stage, setStage] = useState<'local' | 'provider' | 'none'>('local');
-  useEffect(() => { setStage('local'); }, [name, local, providerLogo]);
+  const [retried, setRetried] = useState(false); // a failed local crest is fetched once more before giving up
+  useEffect(() => { setStage('local'); setRetried(false); }, [name, local, providerLogo]);
 
-  const src = stage === 'local' && local ? local : stage !== 'none' && providerLogo ? providerLogo : null;
+  const src = stage === 'local' && local ? (retried ? `${local}?r=1` : local) : stage !== 'none' && providerLogo ? providerLogo : null;
   const box = { width: px, height: px };
 
   if (!src) {
@@ -61,7 +62,10 @@ const TeamLogo: React.FC<Props> = ({ name, country, league, providerLogo, size =
       draggable={false}
       style={box}
       className={`shrink-0 object-contain ${className}`}
-      onError={() => setStage((s) => (s === 'local' && providerLogo ? 'provider' : 'none'))}
+      onError={() => {
+        if (stage === 'local' && local && !retried) { setRetried(true); return; } // one retry (busy connection, blip)
+        setStage((s) => (s === 'local' && providerLogo ? 'provider' : 'none'));
+      }}
     />
   );
 };

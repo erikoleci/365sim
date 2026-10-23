@@ -53,7 +53,17 @@ const app = express();
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 
-app.use(helmet());
+// Same defaults as helmet(), except images may come from any https host: the provider's team crests
+// (the fallback when a club is not in the local logo collection) live on the provider's CDN and the
+// default policy (img-src 'self' data:) blocked them, so those clubs showed initials instead of a crest.
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      'img-src': ["'self'", 'data:', 'https:'],
+    },
+  },
+}));
 // Bandwidth is metered on Render's free tier (5 GB/month) — the API
 // responses here are JSON (matches list, odds, live ticks), which
 // compresses very well. Cuts outbound bytes ~70-80% at negligible CPU
