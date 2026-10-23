@@ -22,6 +22,8 @@
 //   21024          rivenje anesore     (throw-in)
 //   21011          goditje ne porte    (shot on target)
 //   11013          nderrim             (substitution)
+//   21003          gol                 (away goal, SC 0-2 -> 0-3)
+//   11010          gjuajtje e lirë     (free kick, confirmed by the owner)
 //   1015           pushim              (end of first half; seen with T=2700, SC=2-1,
 //                                       Odd 2 v Viking 2, no team digit)
 // NOTE: the side of 21002 and 21007 is taken from the same first-digit rule;
@@ -31,7 +33,9 @@ const ACTIONS = {
   '1000': { kind: 'dangerous_attack', label: 'Sulm i rrezikshëm' },
   '1001': { kind: 'attack', label: 'Sulm' },
   '1002': { kind: 'possession', label: 'Zotëron topin' },
+  '1003': { kind: 'goal', label: 'Gol' },
   '1004': { kind: 'corner', label: 'Korne' },
+  '1010': { kind: 'free_kick', label: 'Gjuajtje e lirë' },
   '1007': { kind: 'back_line_restart', label: 'Rivënie fundore' },
   '1011': { kind: 'shot_on_target', label: 'Goditje në portë' },
   '1013': { kind: 'substitution', label: 'Ndërrim' },

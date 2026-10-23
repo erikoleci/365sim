@@ -60,6 +60,10 @@ export const FIRST_GOAL_H1_NAMES = new Set(['goli i pare ne pjesen e pare', 'gol
 // side, recorded as the counters move): first / last corner, first card, second goal. Side options
 // (1 / 2) only; the "X" option has no confirmed meaning, so it is never decided.
 export const EVENT_ORDER_RE = /^(godet kornen e (pare|fundit)|merr kartonin e pare|shenon golin e dyte)\b/;
+// "X" has no meaning in first / last corner, first card and second goal (nobody does it): the option
+// is not offered, since it could never be settled (the settlement rule leaves it PENDING).
+const isNoSideOption = (o) => /^(x|draw|barazim)$/.test(norm(o && (o.name ?? o.id))) || /^(x|draw)$/.test(norm(o && o.id));
+export const isUnofferedEventOrderOption = (marketName, o) => EVENT_ORDER_RE.test(norm(marketName)) && isNoSideOption(o);
 export const GOAL_ORDER_NAMES = new Set([...FIRST_TEAM_TO_SCORE_NAMES, ...LAST_TEAM_TO_SCORE_NAMES, ...FIRST_GOAL_NAMES, ...LAST_GOAL_NAMES]);
 export const HANDICAP_NAMES = new Set(['handikap', 'hendikep', 'handicap', 'handikap ne ndeshje', 'hendikep ne ndeshje']);
 
@@ -220,6 +224,11 @@ export function hidePlayerOdds(markets, home, away) {
   const out = [];
   for (const m of markets || []) {
     if (isPlayerMarketName(m.name)) continue;
+    if (EVENT_ORDER_RE.test(norm(m.name))) {
+      const options = (m.options || []).filter((o) => !isNoSideOption(o));
+      if (options.length) out.push(options.length === (m.options || []).length ? m : { ...m, options });
+      continue;
+    }
     if (!isGoalOrderMarketName(m.name)) { out.push(m); continue; }
     const options = (m.options || []).filter((o) => !isPlayerOption(m.name, o, home, away));
     if (options.length) out.push(options.length === (m.options || []).length ? m : { ...m, options });
@@ -246,6 +255,7 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
   if (closed) return closed; // MATCH_FINISHED | FIRST_HALF_OVER
 
   if (settlementRuleRequired() && !describeMarket(market && market.id, market && market.name).autoSettles) return NO_RULE;
+  if (market && isUnofferedEventOrderOption(market.name, selection)) return NO_RULE;
 
   // Player markets / player options: never offered (no scorer names to settle them with).
   if (market && isPlayerMarketName(market.name)) return NO_PLAYER_DATA;

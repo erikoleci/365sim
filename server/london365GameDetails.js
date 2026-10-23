@@ -253,6 +253,8 @@ function actionSignature(attrs) {
     .join('|');
 }
 
+const seenUnknownFlags = new Set();
+
 export function applyGameDetails(raw) {
   const a = parseGameDetails(raw);
   const key = a ? `${a.EID}|${a.H}|${a.A}` : '_';
@@ -585,6 +587,16 @@ async function applyGameDetailsNow(raw) {
   // Steady ~1/sec resync path (a score change was already broadcast above).
   broadcastTick();
 
+  // Diagnostic: fields whose meaning is not confirmed (PG, AM, TA, S, Pj, XY) are empty in every capture so far.
+  // Log each distinct non-empty value once, so a penalty (or any other) flag in the feed can be identified.
+  for (const k of ['PG', 'AM', 'TA', 'S', 'Pj', 'XY']) {
+    const v = attrs[k];
+    if (v == null || v === '') continue;
+    const key = `${k}=${v}`;
+    if (seenUnknownFlags.has(key) || seenUnknownFlags.size > 200) continue;
+    seenUnknownFlags.add(key);
+    console.log(`[live-flag] EID=${eid} ${key} SC=${attrs.SC} T=${attrs.T}`);
+  }
   const yc1 = Number(attrs.YC1) || 0, yc2 = Number(attrs.YC2) || 0;
   const rc1 = Number(attrs.RC1) || 0, rc2 = Number(attrs.RC2) || 0;
   // C1/C2 = corners. Naming follows the exact same <letter><side> pattern

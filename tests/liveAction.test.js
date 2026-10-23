@@ -17,7 +17,9 @@ describe('decodeLiveAction', () => {
   });
 
   it('returns null for unknown or malformed codes (never guesses)', () => {
-    expect(decodeLiveAction('21010')).toBeNull();
+    expect(decodeLiveAction('21099')).toBeNull();
+    expect(decodeLiveAction('11010')).toEqual({ side: 'home', kind: 'free_kick', label: 'Gjuajtje e lirë' });
+    expect(decodeLiveAction('21003')).toEqual({ side: 'away', kind: 'goal', label: 'Gol' });
     expect(decodeLiveAction('21025')).toBeNull();
     expect(decodeLiveAction('')).toBeNull();
     expect(decodeLiveAction(undefined)).toBeNull();

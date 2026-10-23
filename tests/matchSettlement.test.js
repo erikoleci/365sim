@@ -666,3 +666,16 @@ describe('quarter over/under lines', () => {
     expect(determineLegOutcome(L('Lart 2'), R)).toBe('VOID');
   });
 });
+
+describe('event-order markets do not offer the "X" option', () => {
+  it('hides X in first corner / first card markets and refuses a bet on it', async () => {
+    const { hidePlayerOdds, getBetBlockReason } = await import('../server/marketRules.js');
+    const m = { id: 'm1', name: 'Merr kartonin e parë', options: [{ id: '1', name: '1' }, { id: 'X', name: 'X' }, { id: '2', name: '2' }] };
+    const out = hidePlayerOdds([m, { id: 'm2', name: 'Totali', options: [{ id: 'X', name: 'X' }] }], 'Roma', 'Lazio');
+    expect(out[0].options.map((o) => o.id)).toEqual(['1', '2']);
+    expect(out[1].options.map((o) => o.id)).toEqual(['X']); // other markets untouched
+    const row = { home_team: 'Roma', away_team: 'Lazio', start_time: new Date(Date.now() + 3600e3).toISOString(), status: 'UPCOMING' };
+    expect(getBetBlockReason(row, m, { id: 'X', name: 'X' })).toBe('NO_SETTLEMENT_RULE');
+    expect(getBetBlockReason(row, m, { id: '1', name: '1' })).not.toBe('NO_SETTLEMENT_RULE');
+  });
+});
