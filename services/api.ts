@@ -320,6 +320,17 @@ export async function adminCancelBet(betId: string) {
   return request<{ ok: true }>(`/admin/bets/${betId}/cancel`, { method: 'POST' });
 }
 
+export interface AdminPendingLeg {
+  match_id: string; match_home: string; match_away: string; market_name: string; selection_name: string;
+  legs: number; bets: number; start_time: string; match_status: string; result_home: number | null; result_away: number | null;
+}
+export async function adminFetchPendingLegs() {
+  return request<{ legs: AdminPendingLeg[] }>('/admin/pending-legs');
+}
+export async function adminSettleLegs(body: { matchId: string; marketName: string; selectionName: string; outcome: 'WON' | 'LOST' | 'VOID' }) {
+  return request<{ ok: boolean; legs: number; bets: number }>('/admin/legs/settle', { method: 'POST', body: JSON.stringify(body) });
+}
+
 export interface AdminMarketCoverage {
   summary: { markets: number; autoSettled: number; withoutRule: number; betLegsWithoutRule: number; pendingLegsWithoutRule: number };
   markets: { name: string; legs: number; pending: number; matches: number; autoSettles: boolean; samples?: string[] }[];

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import MarketReportPanel from './MarketReportPanel';
+import PendingLegsPanel from './PendingLegsPanel';
 import { User, UserRole, Bet, BetStatus } from '../types';
 import * as api from '../services/api';
 import { useI18n } from '../i18n';
@@ -17,7 +18,7 @@ interface AdminPanelProps {
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet }) => {
   const { t, locale } = useI18n();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'tickets' | 'audit' | 'markets'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'tickets' | 'audit' | 'markets' | 'pending'>('dashboard');
   const [auditEntries, setAuditEntries] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [kpi, setKpi] = useState<api.AdminDashboardKpi | null>(null);
@@ -176,10 +177,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
         >
           Tregjet
         </button>
+        <button
+          onClick={() => setActiveTab('pending')}
+          className={`px-6 py-3 text-sm font-bold whitespace-nowrap ${activeTab === 'pending' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
+        >
+          Pezull
+        </button>
       </div>
 
       <div className="p-6">
-        {activeTab === 'markets' ? (
+        {activeTab === 'pending' ? (
+          <PendingLegsPanel />
+        ) : activeTab === 'markets' ? (
           <MarketReportPanel />
         ) : activeTab === 'dashboard' ? (
           <div className="space-y-6">

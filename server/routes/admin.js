@@ -527,6 +527,50 @@ router.post('/matches/:id/settle', async (req, res) => {
   res.json({ ok: true, ...result });
 });
 
+// Tickets the rules cannot decide (penalties, unknown markets...): finished matches (or ones that
+// started long ago) with legs still PENDING, one row per match + market + selection.
+router.get('/pending-legs', async (req, res) => {
+  const cutoff = new Date(Date.now() - 4 * 3600 * 1000).toISOString();
+  const { rows } = await pool.query(
+    `SELECT bs.match_id, bs.match_home, bs.match_away, bs.market_name, bs.selection_name,
+            COUNT(*)::int AS legs, COUNT(DISTINCT bs.bet_id)::int AS bets, MAX(m.start_time) AS start_time, MAX(m.status) AS match_status,
+            MAX(m.result_home) AS result_home, MAX(m.result_away) AS result_away
+       FROM bet_selections bs JOIN matches_cache m ON m.id = bs.match_id
+      WHERE bs.status = 'PENDING' AND (m.status = 'FINISHED' OR m.start_time < $1)
+      GROUP BY bs.match_id, bs.match_home, bs.match_away, bs.market_name, bs.selection_name
+      ORDER BY MAX(m.start_time) DESC, bs.market_name LIMIT 500`, [cutoff]);
+  res.json({ legs: rows });
+});
+
+// Decide every PENDING leg of one match + market + selection by hand, then recompute the tickets
+// they belong to (the same money path as automatic settlement; a ticket already decided is untouched).
+const MANUAL_LEG_OUTCOMES = new Set(['WON', 'LOST', 'VOID', 'HALF_WON', 'HALF_LOST']);
+router.post('/legs/settle', async (req, res) => {
+  const { matchId, marketName, selectionName, outcome } = req.body || {};
+  if (!matchId || !marketName || selectionName == null || !MANUAL_LEG_OUTCOMES.has(outcome)) {
+    return res.status(400).json({ error: 'matchId, marketName, selectionName and outcome (WON, LOST, VOID, HALF_WON, HALF_LOST) are required' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `UPDATE bet_selections SET status = $1
+        WHERE match_id = $2 AND market_name = $3 AND selection_name = $4 AND status = 'PENDING'
+        RETURNING bet_id`, [outcome, matchId, marketName, String(selectionName)]);
+    const betIds = [...new Set(rows.map((r) => r.bet_id))];
+    for (const betId of betIds) await recomputeBetStatus(betId, client);
+    await client.query('COMMIT');
+    await logAudit(req.user, 'LEG_SETTLE_MANUAL', matchId, { marketName, selectionName, outcome, legs: rows.length, bets: betIds.length });
+    res.json({ ok: true, legs: rows.length, bets: betIds.length });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[admin] manual leg settle failed:', err.message);
+    res.status(500).json({ error: 'Could not settle these legs' });
+  } finally {
+    client.release();
+  }
+});
+
 // Which markets exist, and which of them the system can settle by itself. One row per market
 // name: those used by placed bets (with how many are still open) and those currently on the
 // board, with the rule it falls under, whether it can be bet on in play, and a summary of how

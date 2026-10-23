@@ -590,16 +590,61 @@ describe('sending off: whole match and first half (half-time red-card counters)'
   });
 });
 
-describe('booking markets: points vs card count is unconfirmed, so only Booking 1X2 without reds settles', () => {
+describe('booking markets: points vs card count is unconfirmed, so a result is given only when every scheme agrees', () => {
   const L = (market, sel) => ({ market_id: '', market_name: market, selection_id: sel, selection_name: sel, match_home: 'Como 1907', match_away: 'Manchester United' });
   const c = { winner: 'AWAY', totalGoals: 3, bothScored: true, homeScore: 1, awayScore: 2, htHome: 0, htAway: 1,
     stats: { cardsHome: 1, cardsAway: 2, yellowHome: 1, yellowAway: 1, redHome: 0, redAway: 1 }, htStats: { cardsHome: 1, cardsAway: 1 } };
   let det;
   beforeAll(async () => { det = (await import('../server/matchSettlement.js')).determineLegOutcome; });
-  it('total / exact bookings stay pending; plain card markets still settle', () => {
-    expect(det(L('Total bookings', 'Lart 2.5'), c)).toBeNull();
-    expect(det(L('1st half - total bookings', 'Lart 1.5'), c)).toBeNull();
-    expect(det(L('Away exact bookings', '2'), c)).toBeNull();
-    expect(det(L('Pritesi Total Kartona', 'Lart 0.5'), c)).toBe('WON');
+  it('total / exact bookings settle only when counting cards (red = 1 or 2) or points give the same answer', () => {
+    expect(det(L('Total bookings', 'Lart 2.5'), c)).toBe('WON');   // 3 or 4 cards: over 2.5 either way
+    expect(det(L('Total bookings', 'Lart 3.5'), c)).toBeNull();    // 3 vs 4: differs
+    expect(det(L('1st half - total bookings', 'Lart 1.5'), c)).toBeNull(); // half-time red counters missing
+    expect(det(L('Away exact bookings', '2'), c)).toBeNull();      // 2 or 3
+    expect(det(L('Pritesi Total Kartona', 'Lart 0.5'), c)).toBe('WON'); // plain card market, unchanged
+  });
+});
+
+describe('unconfirmed meanings: settled only when every reading agrees (Fitore/Fitore, bookings, result + cards)', () => {
+  const L = (market, sel) => ({ market_id: '', market_name: market, selection_id: sel, selection_name: sel, match_home: 'Como 1907', match_away: 'Manchester United' });
+  const base = { winner: 'HOME', bothScored: true, stats: { yellowHome: 2, yellowAway: 1, redHome: 0, redAway: 0 }, htStats: { cardsHome: 1, cardsAway: 0, redHome: 0, redAway: 0 } };
+  let det;
+  beforeAll(async () => { det = (await import('../server/matchSettlement.js')).determineLegOutcome; });
+  const g = (homeScore, awayScore, htHome, htAway, extra = {}) => ({ ...base, homeScore, awayScore, htHome, htAway, totalGoals: homeScore + awayScore, ...extra });
+  const t = (market, sel, expected, ctx) => expect(det(L(market, sel), ctx), `${market} | ${sel}`).toBe(expected);
+
+  it('Fitore/Fitore: clear cases only (draw-no-bet, win both halves, win HT and FT must agree)', () => {
+    t('Fitore/Fitore', '1', 'WON', g(2, 0, 1, 0));    // home won both halves and the match
+    t('Fitore/Fitore', '2', 'LOST', g(2, 0, 1, 0));
+    t('Fitore/Fitore', '1', null, g(2, 1, 0, 1));     // home won the match but lost the first half: readings differ
+    t('Fitore/Fitore', '1', null, g(1, 1, 0, 0));     // draw: refunded under one reading, lost under the others
+    t('Fitore / Fitore', '2', 'WON', g(0, 3, 0, 1));
+    t('Fitore/Fitore', '1', null, g(2, 0, undefined, undefined)); // no half-time score
+  });
+  it('Fitore/Fitore by half: wins that half = WON, loses it = LOST, a draw stays pending', () => {
+    t('Fitore/Fitore - Pjesa 1rë', '1', 'WON', g(2, 1, 1, 0));
+    t('Fitore/Fitore - Pjesa 1rë', '2', 'LOST', g(2, 1, 1, 0));
+    t('Fitore/Fitore - Pjesa 1rë', '1', null, g(2, 1, 0, 0));
+    t('Fitore - Fitore Pjesa e 2të', '2', 'WON', g(1, 3, 1, 1)); // second half 0-2
+    t('Fitore - Fitore Pjesa e 2të', '1', 'LOST', g(1, 3, 1, 1));
+  });
+  it('bookings: the unit follows the line; a red card that makes the schemes differ keeps it pending', () => {
+    t('Total bookings', 'Lart 2.5', 'WON', g(1, 1, 0, 0));       // 3 yellows: 3 cards
+    t('Total bookings', 'Lart 3.5', 'LOST', g(1, 1, 0, 0));
+    t('Total bookings', 'Lart 25.5', 'WON', g(1, 1, 0, 0));      // 30 points
+    t('Total bookings', 'Lart 35.5', 'LOST', g(1, 1, 0, 0));
+    t('Total bookings', 'Lart 3.5', 'WON', g(1, 1, 0, 0, { stats: { yellowHome: 2, yellowAway: 1, redHome: 0, redAway: 1 } })); // red: 4 or 5 cards, over 3.5 either way
+    t('Total bookings', 'Lart 4.5', null, g(1, 1, 0, 0, { stats: { yellowHome: 2, yellowAway: 1, redHome: 0, redAway: 1 } })); // 4 vs 5: differ
+    t('1st half - total bookings', 'Lart 0.5', 'WON', g(1, 1, 0, 0));
+    t('Home exact bookings', '2', 'WON', g(1, 1, 0, 0));
+    t('Away exact bookings', '2', 'LOST', g(1, 1, 0, 0));
+    t('Home exact bookings', '3+', 'LOST', g(1, 1, 0, 0));
+    t('Total bookings', 'Lart 2.5', null, g(1, 1, 0, 0, { stats: undefined }));
+  });
+  it('result + cards in one option', () => {
+    t('Rezultat Final me Kartona', '1 & Lart 2.5', 'WON', g(2, 0, 1, 0));
+    t('Rezultat Final me Kartona', '1 & Poshte 2.5', 'LOST', g(2, 0, 1, 0));
+    t('Rezultat Final me Kartona', '2 & Lart 2.5', 'LOST', g(2, 0, 1, 0));
+    t('Rezultat Final me Kartona', 'diçka tjetër', null, g(2, 0, 1, 0));
   });
 });

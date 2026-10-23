@@ -46,20 +46,29 @@ Handikap Aziatik (ndeshje, pjesa 1, pjesa 2), Handikap - Pjesa 1, Lart/Poshtë G
 - Bileta me gjysmë humbje ruhet si "WON" me pagesë më të vogël se stake që raportet e adminit të dalin saktë, dhe te UI shfaqet "Humbje e pjesshme".
 - Në këto tregje opsionet që vijnë pa numër ("Lart", "Poshte") nuk shlyhen (nuk dihet vija).
 
-## C. Në pritje (nuk i shlyhet vetë) dhe arsyeja
+## C. Kuptim i pakonfirmuar: shlyhen vetëm kur të gjitha leximet e mundshme përputhen
+
+| Tregu | Si vendoset |
+|---|---|
+| Fitore/Fitore (1, 2) | Tre lexime: pa-barazim (Draw No Bet), fiton të dy pjesët, fiton në pushim dhe në fund. Shlyhet vetëm kur të tria japin të njëjtin rezultat (p.sh. ekipi fiton të dy pjesët). Barazimi ose fitorja pa fituar të dyja pjesët mbetet pezull. |
+| Fitore/Fitore pjesa 1, Fitore - Fitore pjesa 2 | Dy lexime: pa-barazim i pjesës ose "fiton pjesën". Shlyhet kur ekipi fiton ose humbet pjesën; barazimi i pjesës mbetet pezull. |
+| Total bookings (+ pjesa 1), Home/Away exact bookings | Njësia nxirret nga vija (nën 10 = kartona, 10+ = pikë). Kartona: kuq = 1 ose 2; pikë: kuq = 25, 20 ose 40. Shlyhet vetëm kur të gjitha skemat japin të njëjtën anë; pa karton të kuq ato përputhen gjithmonë. |
+| Rezultat Final me Kartona, Rezultat i P1 me kartona | Opsioni pritet si "1 & Lart 3.5" (ndarës &, /, - ose hapësirë); nëse formati është tjetër mbetet pezull. Kartonat me të njëjtën rregull si më sipër. |
+
+## D. Në pritje dhe shlyerja me dorë
 
 | Tregu | Arsyeja |
 |---|---|
-| Fitore/Fitore, Fitore / Fitore, Fitore - Fitore Pjesa e 2të, Fitore/Fitore - Pjesa 1rë (opsionet 1, 2) | Kuptimi nuk është konfirmuar (jo supozuar si Draw No Bet). Dyshimet: fitore në të dy pjesët, ose fitore në pjesë pa barazim. Më duhet përshkrimi nga londonpro365. |
-| Away/Home exact bookings, Total bookings (+ pjesa 1) | Nuk dihet nëse numërohen kartonat (verdhë = 1, kuq = 1) apo pikët; nuk supozoj 10/25. Opsionet e shembullit nuk janë parë. U hoq edhe shlyerja automatike e "Total bookings" që ekzistonte më parë (numëronte kartonat). |
-| Rezultat Final me Kartona, Rezultat i P1 me kartona | Formati i opsioneve dhe përkufizimi i kartonave nuk dihen. |
-| Booking 1x2 me karton të kuq | Bëhet vetëm kur asnjë ekip nuk ka karton të kuq (atëherë verdhat japin të njëjtin përgjigje me kartona ose me pikë). Me të kuq mbetet pezull. |
+| Penallti gjatë ndeshjes | Feed-i nuk jep ngjarje penalltie. Shlyhet me dorë nga admini → skeda **Pezull**. |
 | Halftime/fulltime & exact goals, RP1/RP2 & Gol/JoGol | Formati i opsioneve nuk dihet. |
-| Penallti gjatë ndeshjes | Feed-i nuk jep ngjarje penalltie. |
-| Sending off pjesa 2 | Nuk ruhet. (Ndeshje: ruhet.) |
-| Rezultati i saktë i pjesës 1, opsioni "Të Tjera" | Duhet lista e plotë e opsioneve të tregut për të ditur çfarë është "tjetër". |
-| Çdo treg i ngjarjeve kur numri i ngjarjeve të regjistruara nuk përputhet me numëruesin, ose dy ngjarje janë në të njëjtin sekondë të skuadrave të ndryshme | Renditja nuk shpiket; mbetet pezull. |
+| Booking 1x2 pjesa 1 | Nuk ka rregull. |
+| Sending off pjesa 2 | Nuk ruhet. |
+| Rezultati i saktë i pjesës 1, opsioni "Të Tjera" | Duhet lista e plotë e opsioneve të tregut. |
+| Booking 1x2 me karton të kuq | Bëhet vetëm kur asnjë ekip nuk ka karton të kuq; me të kuq mbetet pezull. |
+| Tregjet e ngjarjeve me ngjarje të munguara ose me barazim kohe | Renditja nuk shpiket. |
 
-## D. Si lexohet raporti i tregjeve te admini
+**Shlyerja me dorë (skeda "Pezull" te admini).** Liston, për ndeshjet e mbaruara, çdo treg dhe selektim që ende ka bileta pezull. Me butonat Fitues / Humbës / Rimburso vendos të gjitha biletat e atij rreshti njëherësh. Bileta paguhet ose mbyllet me të njëjtën rrugë si shlyerja automatike; thirrja e dytë nuk paguan përsëri.
+
+## E. Si lexohet raporti i tregjeve te admini
 
 "Tregjet" → "PA RREGULL" duhet të mbetet vetëm me tregjet e seksionit C. Çdo emër tjetër që del aty është një emër që nuk e kemi parë ende: dërgoje me opsionet e tij dhe shtohet rregulli.
