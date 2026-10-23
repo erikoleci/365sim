@@ -342,9 +342,9 @@ router.post('/', wrap(async (req, res) => {
     for (const sel of verifiedSelections) {
       await client.query(
         `INSERT INTO bet_selections
-          (bet_id, match_id, match_home, match_away, market_id, market_name, selection_id, selection_name, odds, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'PENDING')`,
-        [betId, sel.matchId, sel.matchHome, sel.matchAway, sel.marketId, sel.marketName, sel.selectionId, sel.selectionName, sel.odds]
+          (bet_id, match_id, match_home, match_away, market_id, market_name, selection_id, selection_name, odds, status, placed_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'PENDING',$10)`,
+        [betId, sel.matchId, sel.matchHome, sel.matchAway, sel.marketId, sel.marketName, sel.selectionId, sel.selectionName, sel.odds, Date.now()]
       );
     }
     await client.query('COMMIT');

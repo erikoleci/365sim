@@ -178,8 +178,9 @@ export function describeMarket(marketId, marketName) {
     autoSettles: !UNSETTLEABLE_NAME.test(norm(marketName)) && (
       (AUTO_SETTLES.has(c.kind) && !((c.kind === 'corners' || c.kind === 'cards') && STATS_UNDECIDABLE.test(stripP1P2(norm(marketName)))))
       || matchExtraMarket(norm(marketName)) || FIRST_GOAL_H1_NAMES.has(norm(marketName)) || EVENT_ORDER_RE.test(norm(marketName))
+      || Boolean(nextEventKind(marketName))
     ),
-    inPlay: OPEN_IN_PLAY.has(c.kind) ? 'open' : 'blocked',
+    inPlay: OPEN_IN_PLAY.has(c.kind) || nextEventKind(marketName) ? 'open' : 'blocked',
   };
 }
 
@@ -192,8 +193,8 @@ export function settlementRuleRequired() {
   return ['1', 'true', 'yes'].includes(String(process.env.BET_REQUIRE_SETTLEMENT_RULE || '').toLowerCase());
 }
 
-// Markets with no verifiable live data (corners, cards, timing, next goal, players, combos...) are
-// ALWAYS closed in play. The old LIVE_BET_UNVERIFIED_MARKETS=allow switch is gone on purpose: a
+// Markets with no verifiable live data (corners, cards, timing, players, combos...) are
+// ALWAYS closed in play (the one exception: next goal / corner / card by side, see nextEventKind). The old LIVE_BET_UNVERIFIED_MARKETS=allow switch is gone on purpose: a
 // forgotten environment variable must never reopen them (a ticket on such a market was accepted live).
 export function unverifiedMarketsAllowed() {
   return false;
@@ -240,6 +241,27 @@ export function hidePlayerOdds(markets, home, away) {
 // "gol brenda 5 minutash", next goal): closed in play whatever else the name looks like.
 const TIMING_MARKET = /\bminut\w*|\bmin\b|\d+\s*['\u2019]|\b(i|e) rradhes|\b(golin|gola|goli) e (rradh|radh)\w*|\bnext goal\b|\bgol(i|a)? ne\b.*\d/;
 
+// "Goli / Korneri / Karton i radhës" (next goal / corner / card): which side produces the NEXT one
+// after the bet. The only timing markets that stay open in play: they are settled from the events
+// logged AFTER the bet was placed (matchSettlement.js), and only when that log is complete.
+export function nextEventKind(marketName) {
+  const n = norm(marketName);
+  if (!/\br?radh\w*|\bnext\b/.test(n)) return null;
+  if (/\b(lojtar\w*|player|minut\w*|min|pjes\w*|half|p[12]|pas|after)\b|\d+\s*['\u2019]/.test(n)) return null;
+  if (/\b(korn\w*|corner\w*)\b/.test(n)) return 'corner';
+  if (/\b(karton\w*|card\w*|booking)\b/.test(n)) return 'card';
+  if (/\b(gol|golin|goli|gola|goal)\b/.test(n)) return 'goal';
+  return null;
+}
+// 1 / 2 / X (nothing more) or a team name; a player name is not a side.
+export function isSideOrNoneSelection(row, selection) {
+  const t = norm(selection && (selection.name ?? selection.id));
+  const id = norm(selection && selection.id);
+  return /^(1|2|x|home|away|draw|asnje|asnje gol|asnje korner|asnje karton|no goal|none|pa gol)$/.test(t)
+    || /^(1|2|x|home|away|draw)$/.test(id)
+    || t === norm(row && row.home_team) || t === norm(row && row.away_team);
+}
+
 const NOT_VERIFIABLE = 'NOT_VERIFIABLE_LIVE';
 const NO_PLAYER_DATA = 'NO_PLAYER_DATA';
 const NO_RULE = 'NO_SETTLEMENT_RULE';
@@ -264,6 +286,9 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
   const kickoff = Date.parse(row.start_time);
   if (!Number.isFinite(kickoff) || kickoff > now) return null; // not in play yet
 
+  // next goal / corner / card (team): open in play when the option is a side
+  if (market && nextEventKind(market.name)) return isSideOrNoneSelection(row, selection) ? null : NOT_VERIFIABLE;
+  // every other timing market (minute windows, player, ...) stays closed
   if (market && TIMING_MARKET.test(norm(market.name))) return NOT_VERIFIABLE;
 
   const c = classifyMarket(market && market.id, market && market.name, { home: row.home_team, away: row.away_team });

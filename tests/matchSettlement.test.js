@@ -679,3 +679,61 @@ describe('event-order markets do not offer the "X" option', () => {
     expect(getBetBlockReason(row, m, { id: '1', name: '1' })).not.toBe('NO_SETTLEMENT_RULE');
   });
 });
+
+describe('next goal / corner / card (open in play, settled from events after the bet)', () => {
+  const T0 = 1_000_000;
+  const L = (market, sel, placed = T0) => ({ market_id: 'x', market_name: market, selection_id: sel, selection_name: sel, match_home: 'Roma', match_away: 'Lazio', placed_at: placed });
+  const R = { winner: 'HOME', totalGoals: 2, bothScored: false, homeScore: 2, awayScore: 0 };
+  const pack = (evs, nHome, nAway) => ({ events: evs, complete: true, nHome, nAway });
+
+  it('recognises the market names and nothing else', async () => {
+    const { nextEventKind: k } = await import('../server/marketRules.js');
+    expect(k('Goli i radhës')).toBe('goal');
+    expect(k('Shënon golin e rradhës (skuadra)')).toBe('goal');
+    expect(k('Next goal')).toBe('goal');
+    expect(k('Korneri i radhës')).toBe('corner');
+    expect(k('Karton i radhës')).toBe('card');
+    expect(k('Goli i radhës lojtari')).toBeNull();
+    expect(k('Gol brenda 5 minutash')).toBeNull();
+    expect(k('Shënon golin e parë (skuadra)')).toBeNull();
+  });
+  it('settles on the first event after the bet; a goal before the bet does not count', async () => {
+    const { determineLegOutcome: d, nextEventPack: np } = await import('../server/matchSettlement.js');
+    const evs = [{ team: 'Lazio', created_at: T0 - 60000 }, { team: 'Roma', created_at: T0 + 20000 }];
+    const nextEvents = { goal: np(evs, 'Roma', 'Lazio', 1, 1) };
+    expect(d(L('Goli i radhës', '1'), { ...R, nextEvents })).toBe('WON');
+    expect(d(L('Goli i radhës', '2'), { ...R, nextEvents })).toBe('LOST');
+    expect(d(L('Goli i radhës', 'X'), { ...R, nextEvents })).toBe('LOST');
+  });
+  it('X wins when nothing more happens after the bet', async () => {
+    const { determineLegOutcome: d, nextEventPack: np } = await import('../server/matchSettlement.js');
+    const nextEvents = { goal: np([{ team: 'Roma', created_at: T0 - 1000 }], 'Roma', 'Lazio', 1, 0) };
+    expect(d(L('Goli i radhës', 'X'), { ...R, nextEvents })).toBe('WON');
+    expect(d(L('Goli i radhës', '1'), { ...R, nextEvents })).toBe('LOST');
+  });
+  it('stays pending when the log is incomplete, the bet time is unknown, or the event is too close to the bet', async () => {
+    const { determineLegOutcome: d, nextEventPack: np } = await import('../server/matchSettlement.js');
+    const evs = [{ team: 'Roma', created_at: T0 + 20000 }];
+    expect(d(L('Goli i radhës', '1'), { ...R, nextEvents: { goal: np(evs, 'Roma', 'Lazio', 2, 0) } })).toBeNull(); // a goal missing from the log
+    expect(d(L('Goli i radhës', '1', null), { ...R, nextEvents: { goal: np(evs, 'Roma', 'Lazio', 1, 0) } })).toBeNull(); // old leg, no placed_at
+    expect(d(L('Goli i radhës', '1'), { ...R, nextEvents: { goal: np([{ team: 'Roma', created_at: T0 + 500 }], 'Roma', 'Lazio', 1, 0) } })).toBeNull(); // 0.5 s after the bet
+    expect(d(L('Goli i radhës', 'Dybala'), { ...R, nextEvents: { goal: np(evs, 'Roma', 'Lazio', 1, 0) } })).toBeNull(); // a player
+  });
+  it('settles next corner / card from their own events', async () => {
+    const { determineLegOutcome: d, nextEventPack: np } = await import('../server/matchSettlement.js');
+    const nextEvents = {
+      corner: np([{ team: 'away', created_at: T0 + 30000 }], 'Roma', 'Lazio', 0, 1),
+      card: np([{ team: 'home', created_at: T0 + 40000 }], 'Roma', 'Lazio', 1, 0),
+    };
+    expect(d(L('Korneri i radhës', '2'), { ...R, nextEvents })).toBe('WON');
+    expect(d(L('Karton i radhës', '2'), { ...R, nextEvents })).toBe('LOST');
+    expect(d(L('Karton i radhës', 'Roma'), { ...R, nextEvents })).toBe('WON');
+  });
+  it('is open in play only for side selections; other timing markets stay closed', async () => {
+    const { getBetBlockReason: g } = await import('../server/marketRules.js');
+    const row = { home_team: 'Roma', away_team: 'Lazio', status: 'LIVE', live_status: '1H', start_time: new Date(Date.now() - 20 * 60000).toISOString(), live_minute: 20, home_score: 0, away_score: 0 };
+    expect(g(row, { id: 'm', name: 'Goli i radhës' }, { id: '1', name: '1' })).toBeNull();
+    expect(g(row, { id: 'm', name: 'Goli i radhës' }, { id: 'p', name: 'Dybala' })).not.toBeNull();
+    expect(g(row, { id: 'm', name: 'Gol brenda 5 minutash' }, { id: '1', name: 'Po' })).toBe('NOT_VERIFIABLE_LIVE');
+  });
+});

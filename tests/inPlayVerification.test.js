@@ -55,7 +55,11 @@ describe('getBetBlockReason in play', () => {
     expect(block(live(), 'Totali i kartonave', 'Lart 3.5')).toBe('NOT_VERIFIABLE_LIVE');
     expect(block(live(), 'Minuta e Golit', '1-15')).toBe('NOT_VERIFIABLE_LIVE');
     expect(block(live(), 'Gol brenda 10 minutash', 'Po')).toBe('NOT_VERIFIABLE_LIVE');
-    expect(block(live(), 'Goli i radhës', '1')).toBe('NOT_VERIFIABLE_LIVE');
+    // next goal / corner / card by side is open in play (settled from the events after the bet);
+    // minute windows and player options stay closed
+    expect(block(live(), 'Goli i radhës', '1')).toBeNull();
+    expect(block(live(), 'Goli i radhës', 'Dybala')).toBe('NOT_VERIFIABLE_LIVE');
+    expect(block(live(), 'Gol brenda 5 minutash', 'Po')).toBe('NOT_VERIFIABLE_LIVE');
   });
   it('player markets are never offered, before or during the match', () => {
     expect(block(live(), 'Shënuesi i golit', 'Mbappe')).toBe('NO_PLAYER_DATA');
