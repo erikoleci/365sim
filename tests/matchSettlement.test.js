@@ -648,3 +648,21 @@ describe('unconfirmed meanings: settled only when every reading agrees (Fitore/F
     t('Rezultat Final me Kartona', 'diçka tjetër', null, g(2, 0, 1, 0));
   });
 });
+describe('quarter over/under lines', () => {
+  const L = (sel) => ({ market_id: 'x', market_name: 'Numri i Golave në Ndeshje', selection_id: sel, selection_name: sel, match_home: 'Roma', match_away: 'Lazio' });
+  const R = { winner: 'HOME', totalGoals: 2, bothScored: false, homeScore: 2, awayScore: 0, htHome: 0, htAway: 0 };
+
+  it('pays a half win / half loss when the total lands on a neighbouring line', async () => {
+    const { determineLegOutcome } = await import('../server/matchSettlement.js');
+    expect(determineLegOutcome(L('Lart 2.25'), R)).toBe('HALF_LOST'); // half on 2 (push), half on 2.5 (loss)
+    expect(determineLegOutcome(L('Poshtë 1.75'), R)).toBe('HALF_LOST'); // half on 1.5 (loss), half on 2 (push)
+    expect(determineLegOutcome(L('Lart 1.75'), R)).toBe('HALF_WON');
+    expect(determineLegOutcome(L('Poshtë 2.25'), R)).toBe('HALF_WON');
+    expect(determineLegOutcome(L('Lart 1.25'), R)).toBe('WON');
+  });
+  it('keeps whole and half lines as before', async () => {
+    const { determineLegOutcome } = await import('../server/matchSettlement.js');
+    expect(determineLegOutcome(L('Lart 1.5'), R)).toBe('WON');
+    expect(determineLegOutcome(L('Lart 2'), R)).toBe('VOID');
+  });
+});

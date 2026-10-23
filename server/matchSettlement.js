@@ -1,7 +1,7 @@
 import pool from './db.js';
 import { minuteOf, splitPeriod, PERIOD_BASE_ALIASES } from './marketPeriods.js';
 import { extraMarketOutcome } from './extraMarkets.js';
-import { asianHandicapOutcome } from './asianLines.js';
+import { asianHandicapOutcome, asianTotalOutcome } from './asianLines.js';
 import { ticketOutcome } from './ticketOutcome.js';
 import {
   TOTAL_GOALS_PREFIXES, H2H_NAMES, BTTS_NAMES, DOUBLE_CHANCE_NAMES, CORRECT_SCORE_NAMES, HANDICAP_NAMES, parseOverUnder,
@@ -234,6 +234,9 @@ const PERIOD_OR_COMBO = /(pjes|pjese|half|1st|2nd|\bht\b|\bft\b|&| dhe |\+|minut
 // Whole-number line landing exactly on the total is a push -> stake refunded.
 function overUnderOutcome(side, point, goals) {
   if (Number.isNaN(point)) return null;
+  // Quarter lines (2.25, 2.75) split the stake over the two neighbouring lines: a total landing
+  // on one of them is a half win / half loss (the ticket model pays HALF_WON / HALF_LOST).
+  if ((point * 2) % 1 !== 0) return side === 'Over' || side === 'Under' ? asianTotalOutcome(side === 'Over', point, goals) : null;
   if (point === goals) return 'VOID';
   if (side === 'Over') return goals > point ? 'WON' : 'LOST';
   if (side === 'Under') return goals < point ? 'WON' : 'LOST';
