@@ -355,18 +355,8 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
         {matchWinnerMarket && matchWinnerMarket.options.map(opt => {
             if (opt.odds === 0) return null;
             const flash = oddsFlash.get(`${matchWinnerMarket.id}-${opt.id}`);
-            if (opt.suspended) {
-              return (
-                <div
-                  key={opt.id}
-                  className="flex-1 flex flex-col items-center justify-center opacity-40 cursor-not-allowed select-none"
-                  title={t('Tregu është pezulluar përkohësisht')}
-                >
-                  <span className="text-brand-textMuted text-[10px] font-normal leading-none mb-0.5">{opt.id === 'DRAW' ? 'X' : opt.id === 'HOME' ? '1' : opt.id === 'AWAY' ? '2' : ''}</span>
-                  <span className="leading-none text-[10px]">🔒</span>
-                </div>
-              );
-            }
+            // A closed option is not shown at all: an empty cell keeps the 1 / X / 2 columns where they are.
+            if (opt.suspended) return <div key={opt.id} className="flex-1" aria-hidden="true" />;
             return (
              <div 
                 key={opt.id}

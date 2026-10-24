@@ -65,7 +65,8 @@ const FeaturedMatchCard: React.FC<FeaturedMatchCardProps> = ({ match, onBetClick
             // entirely rather than leave a dead cell in the row.
             if (!opt.suspended && (!opt.odds || opt.odds <= 0)) return null;
             return opt.suspended ? (
-              <div key={opt.id} className="flex-1 flex items-center justify-center min-h-[36px] rounded text-[11px] opacity-40" title={t('Tregu është pezulluar përkohësisht')}>🔒</div>
+              // closed: nothing shown, an empty cell keeps the columns aligned
+              <div key={opt.id} className="flex-1" aria-hidden="true" />
             ) : (
               <button
                 key={opt.id}

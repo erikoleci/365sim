@@ -221,7 +221,12 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
     return ['All', ...Array.from(cats)];
   }, [match]);
 
-  const filteredMarkets = match.markets.filter(m => activeTab === 'All' || m.category === activeTab);
+  // Closed (suspended) options and options without a price are not shown at all, and a market left
+  // with nothing open disappears with them -- no lock icons, no greyed-out cells.
+  const filteredMarkets = match.markets
+    .filter(m => activeTab === 'All' || m.category === activeTab)
+    .map(m => ({ ...m, options: m.options.filter(o => !o.suspended && o.odds > 0) }))
+    .filter(m => m.options.length > 0);
 
   const getButtonClass = (marketId: string, selectionId: string) => {
     const uniqueId = `${match.id}-${marketId}-${selectionId}`;
@@ -409,18 +414,6 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
                     {market.options.map(opt => {
                         const isSelected = selectedIds.includes(`${match.id}-${market.id}-${opt.id}`);
                         const flash = oddsFlash.get(`${market.id}-${opt.id}`);
-                        if (opt.suspended) {
-                          return (
-                            <div
-                              key={opt.id}
-                              className="flex flex-col items-center justify-center py-2 opacity-40 cursor-not-allowed select-none"
-                              title={t('Tregu është pezulluar përkohësisht')}
-                            >
-                              <span className="text-xs text-brand-text"><OptionName match={match} name={opt.name} tn={tn} /></span>
-                              <span className="font-bold text-sm">🔒</span>
-                            </div>
-                          );
-                        }
                         return (
                         <div
                             key={opt.id}
