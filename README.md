@@ -124,7 +124,7 @@ se buxheti, rifreskohen të gjitha në çdo cikël.
 | `LONDON365_API_TIMEOUT_MS` | `12000` | koha maksimale e një kërkese te provideri |
 | `LIVE_BET_EVENT_LOCK_MS` | `30000` | bastet pezullohen kaq kohë pas golit/kartonit të kuq (`0` = fikur) |
 | `LIVE_BET_ODDS_MAX_AGE_MS` | `120000` | bastet refuzohen nëse tregjet jo-1X2 s'janë rifreskuar kaq kohë (`0` = fikur) |
-| `UNSETTLED_BET_VOID_AFTER_HOURS` | `24` | leg pa rezultat/rregull rimbursohet kaq orë pas fillimit (`0` = fikur) |
+| `UNSETTLED_BET_VOID_AFTER_HOURS` | `4` | leg pa rezultat/rregull rimbursohet kaq orë pas fillimit (`0` = fikur) |
 | `PG_POOL_MAX` | `7` | lidhje DB për instancë (2 instanca gjatë deploy duhet të futen nën limitin e pooler-it) |
 | `BET_REQUIRE_SETTLEMENT_RULE` | çaktivizuar | `1` = refuzo (dhe shfaq të kyçur) çdo treg pa rregull settlement-i automatik, para ndeshjes dhe gjatë saj. Garanton që asnjë biletë e pranuar nuk mbetet pa mënyrë vendosjeje; shiko `/api/admin/market-coverage` para se ta ndezësh |
 

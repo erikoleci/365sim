@@ -85,11 +85,11 @@ const dnb = (sel, a, b) => { // draw no bet on a score pair: 1 / 2, a draw refun
 };
 const winsHalf = (sel, a, b) => (a === b ? null : won((sel === '1') === (a > b))); // draw loses (no refund): null here = readings differ
 
-// Booking value of a team / the match. A booking can be a card count (yellow 1, red 1 or 2) or booking
-// points (yellow 10, red 25 / 20 / 40); the size of the line or option tells which unit the market
-// uses, and the market is decided only if every scheme of that unit lands on the same side.
-const COUNT_SCHEMES = [{ y: 1, r: 1 }, { y: 1, r: 2 }];
-const POINT_SCHEMES = [{ y: 10, r: 25 }, { y: 10, r: 20 }, { y: 10, r: 40 }];
+// Booking value of a team / the match. A booking can be a card count (yellow 1, red 1) or booking
+// points (yellow 10, red 25); the size of the line or option tells which unit the market uses.
+// The first scheme of each unit is the one used (card count: yellow 1 / red 1; points: yellow 10 / red 25).
+const COUNT_SCHEMES = [{ y: 1, r: 1 }];
+const POINT_SCHEMES = [{ y: 10, r: 25 }];
 const schemesFor = (n) => (n >= 10 ? POINT_SCHEMES : COUNT_SCHEMES);
 function bookingParts(c, firstHalf) {
   const st = c.stats; if (!st) return null;
@@ -178,11 +178,11 @@ const RULES = [
   // Booking 1X2: the side with more cards. Decided only when NO red card was shown by either team:
   // then comparing yellow counts gives the same answer whether the provider counts cards or
   // booking points (10 per yellow). With a red card the two schemes can differ -> PENDING.
-  [/^booking 1x2$/, (m, sel, c) => {
-    const st = c.stats; if (!st || !/^[1x2]$/.test(sel)) return null;
-    const yh = fin(st.yellowHome); const ya = fin(st.yellowAway); const rh = fin(st.redHome); const ra = fin(st.redAway);
-    if (![yh, ya, rh, ra].every(Number.isFinite) || rh + ra > 0) return null;
-    return won(resultOf(yh, ya) === sel.toUpperCase());
+  [/^(?:(1st half) - )?booking 1x2$/, (m, sel, c) => {
+    if (!/^[1x2]$/.test(sel)) return null;
+    const b = bookingParts(c, !!m[1]); if (!b) return null;
+    const [home] = bookingValues(b, 'home', POINT_SCHEMES); const [away] = bookingValues(b, 'away', POINT_SCHEMES);
+    return won(resultOf(home, away) === sel.toUpperCase());
   }],
   // "Rezultati Final Gola 3+" / "4+": the final result AND at least N goals (1 / X / 2 options);
   // with Po/Jo options only the goals condition.
@@ -194,31 +194,48 @@ const RULES = [
   }],
 
   // ---- "Fitore/Fitore" (options 1 / 2) and its half variants ----
-  // Draw-no-bet, win-both-halves and win-at-half-time-and-full-time all read the name; the ticket is
-  // decided only when the readings agree. Half variants: draw-no-bet of that half vs "wins that half".
-  [/^fitore ?\/ ?fitore$/, (m, sel, c) => {
-    const s = finalScore(c); const h = halves(c); if (!s || !h) return null;
-    const bothHalves = (k, o) => h.h1[k] > h.h1[o] && h.h2[k] > h.h2[o];
-    const team = sel === '1' ? ['home', 'away'] : sel === '2' ? ['away', 'home'] : null;
-    if (!team) return null;
-    const reading = (k, o) => ({ dnb: dnb(sel, s.home, s.away), both: won(bothHalves(k, o)), htft: won(h.h1[k] > h.h1[o] && s[k] > s[o]) });
-    const r = reading(team[0], team[1]);
-    return unanimous([r.dnb, r.both, r.htft]);
-  }],
+  // Read as draw no bet (like the 1st / 2nd half versions the provider lists next to the other
+  // standard markets): the chosen team wins -> WON, the other wins -> LOST, a draw -> refunded.
+  [/^fitore ?\/ ?fitore$/, (m, sel, c) => { const s = finalScore(c); return s ? dnb(sel, s.home, s.away) : null; }],
   [/^(?:fitore ?\/ ?fitore - pjesa ([12])\w*|fitore - fitore pjesa e? ?([12])\w*)$/, (m, sel, c) => {
-    const p = half(c, m[1] || m[2]); if (!p || !/^[12]$/.test(sel)) return null;
-    return unanimous([dnb(sel, p.home, p.away), winsHalf(sel, p.home, p.away)]);
+    const p = half(c, m[1] || m[2]); return p ? dnb(sel, p.home, p.away) : null;
+  }],
+
+  // "Halftime/fulltime & exact goals": option = half-time result, full-time result, then the goals
+  // ("1/1 & 3", "2-X/0-1", "1-1 2+"): all three must be right.
+  [/^halftime\/fulltime & exact goals$/, (m, sel, c) => {
+    const s = finalScore(c); const h = halves(c); if (!s || !h) return null;
+    const o = sel.match(/^([1x2])\s*[-\/]\s*([1x2])\s*(?:&|\/|_|-|\s)\s*(\d+(?:\s*-\s*\d+|\s*\+)?)$/);
+    const r = o && rangeOf(o[3].replace(/\s+/g, ''));
+    if (!o || !r) return null;
+    return won(resultOf(h.h1.home, h.h1.away) === o[1].toUpperCase() && resultOf(s.home, s.away) === o[2].toUpperCase() && inRange(s.home + s.away, r));
+  }],
+  // "RP1/RP2 & Gol/JoGol": result of the first half, result of the second half, and both teams to score.
+  [/^rp1\/rp2 & gol\/jogol$/, (m, sel, c) => {
+    const s = finalScore(c); const h = halves(c); if (!s || !h) return null;
+    const o = sel.match(/^([1x2])\s*[-\/]\s*([1x2])\s*(?:&|\/|_|-|\s)\s*(gol|jogol)$/);
+    if (!o) return null;
+    return won(resultOf(h.h1.home, h.h1.away) === o[1].toUpperCase() && resultOf(h.h2.home, h.h2.away) === o[2].toUpperCase() && (s.home > 0 && s.away > 0) === (o[3] === 'gol'));
+  }],
+  // Second-half red cards = full-time counters minus those taken at the whistle.
+  [/^2nd half - (?:(home|away) )?sending off$/, (m, sel, c) => {
+    const y = yesNo(sel); if (y === null || !c.stats || !c.htStats) return null;
+    const f = (k) => fin(c.stats[k]) - fin(c.htStats[k]);
+    const h = f('redHome'); const a = f('redAway');
+    if (!Number.isFinite(h) || !Number.isFinite(a) || h < 0 || a < 0) return null;
+    const n = m[1] === 'home' ? h : m[1] === 'away' ? a : h + a;
+    return won((n > 0) === y);
   }],
 
   // ---- bookings (see the note at COUNT_SCHEMES) ----
   [/^(?:(1st half) - )?total bookings$/, (m, sel, c) => {
     const o = parseOU(sel); const b = bookingParts(c, !!m[1]); if (!o || !b) return null;
-    return unanimous(bookingValues(b, 'both', schemesFor(o.line)).map((v) => (v === o.line ? null : won(o.over ? v > o.line : v < o.line))));
+    return bookingValues(b, 'both', schemesFor(o.line)).map((v) => (v === o.line ? 'VOID' : won(o.over ? v > o.line : v < o.line)))[0];
   }],
   [/^(?:(1st half) - )?(home|away) exact bookings$/, (m, sel, c) => {
     const r = rangeOf(sel); const b = bookingParts(c, !!m[1]); if (!r || !b) return null;
     const unit = Number.isFinite(r[1]) ? r[1] : r[0];
-    return unanimous(bookingValues(b, m[2], schemesFor(unit)).map((v) => won(inRange(v, r))));
+    return bookingValues(b, m[2], schemesFor(unit)).map((v) => won(inRange(v, r)))[0];
   }],
   // "Rezultat Final me Kartona" / "Rezultat i P1 me kartona": a 1 / X / 2 and an over / under on the
   // bookings in one option ("1 & Lart 3.5"; the separator may be &, /, - or a space).
@@ -229,7 +246,7 @@ const RULES = [
     if (!o || !sc || !b) return null;
     const ou = parseOU(o[2]); if (!ou) return null;
     if (resultOf(sc.home, sc.away) !== o[1].toUpperCase()) return 'LOST';
-    return unanimous(bookingValues(b, 'both', schemesFor(ou.line)).map((v) => (v === ou.line ? null : won(ou.over ? v > ou.line : v < ou.line))));
+    return bookingValues(b, 'both', schemesFor(ou.line)).map((v) => (v === ou.line ? 'VOID' : won(ou.over ? v > ou.line : v < ou.line)))[0];
   }],
 
   // ---- handicaps ----
@@ -241,7 +258,13 @@ const RULES = [
 
   // ---- correct score of a half / half + final ----
   [/^rezultat i sakte pjesa - 2te$/, (m, sel, c) => { const p = half(c, 2); const sc = scoreOf(sel); return p && sc ? won(p.home === sc[0] && p.away === sc[1]) : null; }],
-  [/^rezultati i sakte i pjeses se 1re$/, (m, sel, c) => { const p = half(c, 1); const sc = scoreOf(sel); return p && sc ? won(p.home === sc[0] && p.away === sc[1]) : null; }], // "Te Tjera" (other) needs the option list: PENDING
+  [/^rezultati i sakte i pjeses se 1re$/, (m, sel, c) => {
+    const p = half(c, 1); if (!p) return null;
+    // "Te Tjera" (any other score) = anything outside the usual grid of half-time scores up to 2:2
+    if (/^te tjera$/.test(sel)) return won(p.home > 2 || p.away > 2);
+    const sc = scoreOf(sel);
+    return sc ? won(p.home === sc[0] && p.away === sc[1]) : null;
+  }],
   [/^rezultat i sakte pjesa 1\/final$/, (m, sel, c) => {
     const h = halves(c); const s = finalScore(c); const p = sel.match(/^(\d+\s*[:-]\s*\d+)\s+(\d+\s*[:-]\s*\d+)$/);
     if (!h || !s || !p) return null;
@@ -295,9 +318,6 @@ export function extraMarketOutcome(leg, marketName, ctx) {
 // Names the feed sends that look settleable but are NOT (they need event order / data we do not
 // have), so the coverage report must not claim a rule for them.
 export const UNSETTLEABLE_NAME = new RegExp([
+  // the feed gives no penalty events: decided by hand in the admin "Pezull" tab (or refunded)
   'penallti',
-  '\\b2nd half - (home |away )?sending off\\b',
-  // meaning / option format not confirmed yet: no rule rather than a guess
-  '1st half - booking 1x2',
-  'halftime/fulltime & exact goals', 'rp1/rp2 & gol/jogol',
 ].join('|'));

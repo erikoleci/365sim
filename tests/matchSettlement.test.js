@@ -474,7 +474,8 @@ describe('extra markets from the provider list (server/extraMarkets.js)', () => 
   it('correct score of a half, half + final, red cards, first-half corners 1x2', () => {
     t('Rezultat i Sakte Pjesa - 2të', '1:1', 'WON');
     t('Rezultati i Sakte i Pjeses se 1re', '0:1', 'WON');
-    t('Rezultati i Sakte i Pjeses se 1re', 'Te Tjera', null);
+    t('Rezultati i Sakte i Pjeses se 1re', 'Te Tjera', 'LOST');   // 0:1 is in the usual grid, so "other" loses
+    t('Rezultati i Sakte i Pjeses se 1re', 'Te Tjera', 'WON', { ...c, htHome: 3, htAway: 0, homeScore: 3, awayScore: 1 });
     t('Rezultat i Sakte Pjesa 1/Final', '0-1 1-2', 'WON');
     t('Rezultat i Sakte Pjesa 1/Final', '0-0 1-2', 'LOST');
     t('Rezultati Sakte Live', '1-2', 'WON');
@@ -530,7 +531,8 @@ describe('markets defined from the provider notes', () => {
     expect(determineLegOutcome(L('Booking 1X2', '1'), ctx(1, 0, st(3, 1, 0, 0)))).toBe('WON');
     expect(determineLegOutcome(L('Booking 1X2', 'X'), ctx(1, 0, st(2, 2, 0, 0)))).toBe('WON');
     expect(determineLegOutcome(L('Booking 1X2', '2'), ctx(1, 0, st(3, 1, 0, 0)))).toBe('LOST');
-    expect(determineLegOutcome(L('Booking 1X2', '1'), ctx(1, 0, st(3, 1, 1, 0)))).toBeNull(); // a red card: schemes can disagree
+    expect(determineLegOutcome(L('Booking 1X2', '1'), ctx(1, 0, st(3, 1, 1, 0)))).toBe('WON'); // booking points: 30 + 25 against 10
+    expect(determineLegOutcome(L('Booking 1X2', '2'), ctx(1, 0, st(1, 1, 1, 0)))).toBe('LOST');
     expect(determineLegOutcome(L('Booking 1X2', '1'), ctx(1, 0))).toBeNull(); // no counters
   });
   it('Rezultati Final Gola 3+ needs the result and the goals', () => {
@@ -590,17 +592,17 @@ describe('sending off: whole match and first half (half-time red-card counters)'
   });
 });
 
-describe('booking markets: points vs card count is unconfirmed, so a result is given only when every scheme agrees', () => {
+describe('booking markets: the unit (cards or points) follows the size of the line', () => {
   const L = (market, sel) => ({ market_id: '', market_name: market, selection_id: sel, selection_name: sel, match_home: 'Como 1907', match_away: 'Manchester United' });
   const c = { winner: 'AWAY', totalGoals: 3, bothScored: true, homeScore: 1, awayScore: 2, htHome: 0, htAway: 1,
     stats: { cardsHome: 1, cardsAway: 2, yellowHome: 1, yellowAway: 1, redHome: 0, redAway: 1 }, htStats: { cardsHome: 1, cardsAway: 1 } };
   let det;
   beforeAll(async () => { det = (await import('../server/matchSettlement.js')).determineLegOutcome; });
-  it('total / exact bookings settle only when counting cards (red = 1 or 2) or points give the same answer', () => {
-    expect(det(L('Total bookings', 'Lart 2.5'), c)).toBe('WON');   // 3 or 4 cards: over 2.5 either way
-    expect(det(L('Total bookings', 'Lart 3.5'), c)).toBeNull();    // 3 vs 4: differs
+  it('total / exact bookings settle with a card count (yellow 1, red 1) or points (10 / 25)', () => {
+    expect(det(L('Total bookings', 'Lart 2.5'), c)).toBe('WON');   // yellow 1 + 1, red 1 = 3 cards
+    expect(det(L('Total bookings', 'Lart 3.5'), c)).toBe('LOST');
     expect(det(L('1st half - total bookings', 'Lart 1.5'), c)).toBeNull(); // half-time red counters missing
-    expect(det(L('Away exact bookings', '2'), c)).toBeNull();      // 2 or 3
+    expect(det(L('Away exact bookings', '2'), c)).toBe('WON');     // away: 1 yellow + 1 red
     expect(det(L('Pritesi Total Kartona', 'Lart 0.5'), c)).toBe('WON'); // plain card market, unchanged
   });
 });
@@ -613,28 +615,28 @@ describe('unconfirmed meanings: settled only when every reading agrees (Fitore/F
   const g = (homeScore, awayScore, htHome, htAway, extra = {}) => ({ ...base, homeScore, awayScore, htHome, htAway, totalGoals: homeScore + awayScore, ...extra });
   const t = (market, sel, expected, ctx) => expect(det(L(market, sel), ctx), `${market} | ${sel}`).toBe(expected);
 
-  it('Fitore/Fitore: clear cases only (draw-no-bet, win both halves, win HT and FT must agree)', () => {
-    t('Fitore/Fitore', '1', 'WON', g(2, 0, 1, 0));    // home won both halves and the match
+  it('Fitore/Fitore is read as draw no bet: the team wins, loses, or the draw is refunded', () => {
+    t('Fitore/Fitore', '1', 'WON', g(2, 0, 1, 0));
     t('Fitore/Fitore', '2', 'LOST', g(2, 0, 1, 0));
-    t('Fitore/Fitore', '1', null, g(2, 1, 0, 1));     // home won the match but lost the first half: readings differ
-    t('Fitore/Fitore', '1', null, g(1, 1, 0, 0));     // draw: refunded under one reading, lost under the others
+    t('Fitore/Fitore', '1', 'WON', g(2, 1, 0, 1));
+    t('Fitore/Fitore', '1', 'VOID', g(1, 1, 0, 0));
     t('Fitore / Fitore', '2', 'WON', g(0, 3, 0, 1));
-    t('Fitore/Fitore', '1', null, g(2, 0, undefined, undefined)); // no half-time score
   });
-  it('Fitore/Fitore by half: wins that half = WON, loses it = LOST, a draw stays pending', () => {
+  it('Fitore/Fitore by half: draw no bet of that half', () => {
     t('Fitore/Fitore - Pjesa 1rë', '1', 'WON', g(2, 1, 1, 0));
     t('Fitore/Fitore - Pjesa 1rë', '2', 'LOST', g(2, 1, 1, 0));
-    t('Fitore/Fitore - Pjesa 1rë', '1', null, g(2, 1, 0, 0));
+    t('Fitore/Fitore - Pjesa 1rë', '1', 'VOID', g(2, 1, 0, 0));
     t('Fitore - Fitore Pjesa e 2të', '2', 'WON', g(1, 3, 1, 1)); // second half 0-2
     t('Fitore - Fitore Pjesa e 2të', '1', 'LOST', g(1, 3, 1, 1));
+    t('Fitore/Fitore - Pjesa 1rë', '1', null, g(2, 1, undefined, undefined)); // no half-time score
   });
-  it('bookings: the unit follows the line; a red card that makes the schemes differ keeps it pending', () => {
+  it('bookings: the unit follows the line (cards under 10, points from 10)', () => {
     t('Total bookings', 'Lart 2.5', 'WON', g(1, 1, 0, 0));       // 3 yellows: 3 cards
     t('Total bookings', 'Lart 3.5', 'LOST', g(1, 1, 0, 0));
     t('Total bookings', 'Lart 25.5', 'WON', g(1, 1, 0, 0));      // 30 points
     t('Total bookings', 'Lart 35.5', 'LOST', g(1, 1, 0, 0));
     t('Total bookings', 'Lart 3.5', 'WON', g(1, 1, 0, 0, { stats: { yellowHome: 2, yellowAway: 1, redHome: 0, redAway: 1 } })); // red: 4 or 5 cards, over 3.5 either way
-    t('Total bookings', 'Lart 4.5', null, g(1, 1, 0, 0, { stats: { yellowHome: 2, yellowAway: 1, redHome: 0, redAway: 1 } })); // 4 vs 5: differ
+    t('Total bookings', 'Lart 4.5', 'LOST', g(1, 1, 0, 0, { stats: { yellowHome: 2, yellowAway: 1, redHome: 0, redAway: 1 } })); // 4 cards
     t('1st half - total bookings', 'Lart 0.5', 'WON', g(1, 1, 0, 0));
     t('Home exact bookings', '2', 'WON', g(1, 1, 0, 0));
     t('Away exact bookings', '2', 'LOST', g(1, 1, 0, 0));
@@ -735,5 +737,34 @@ describe('next goal / corner / card (open in play, settled from events after the
     expect(g(row, { id: 'm', name: 'Goli i radhës' }, { id: '1', name: '1' })).toBeNull();
     expect(g(row, { id: 'm', name: 'Goli i radhës' }, { id: 'p', name: 'Dybala' })).not.toBeNull();
     expect(g(row, { id: 'm', name: 'Gol brenda 5 minutash' }, { id: '1', name: 'Po' })).toBe('NOT_VERIFIABLE_LIVE');
+  });
+});
+
+describe('last markets: HT/FT & exact goals, RP1/RP2 & Gol/JoGol, second-half red cards', () => {
+  const L = (market, sel) => ({ market_id: '', market_name: market, selection_id: sel, selection_name: sel, match_home: 'Como 1907', match_away: 'Manchester United' });
+  // Como 1-2 Manchester United, half-time 0-1 (second half 1-1); a red card for the away team after half-time
+  const c = { winner: 'AWAY', totalGoals: 3, bothScored: true, homeScore: 1, awayScore: 2, htHome: 0, htAway: 1,
+    stats: { redHome: 0, redAway: 1 }, htStats: { redHome: 0, redAway: 0 } };
+  let det;
+  beforeAll(async () => { det = (await import('../server/matchSettlement.js')).determineLegOutcome; });
+  const t = (market, sel, expected, ctx = c) => expect(det(L(market, sel), ctx), `${market} | ${sel}`).toBe(expected);
+  it('HT result, FT result and goals all have to be right', () => {
+    t('Halftime/fulltime & exact goals', '2/2 & 3', 'WON');
+    t('Halftime/fulltime & exact goals', '2-2/2-3', 'WON');
+    t('Halftime/fulltime & exact goals', '2/2 & 4+', 'LOST');
+    t('Halftime/fulltime & exact goals', 'X/2 & 3', 'LOST');
+    t('Halftime/fulltime & exact goals', 'diçka tjetër', null);
+  });
+  it('first-half result / second-half result and both teams to score', () => {
+    t('RP1/RP2 & Gol/JoGol', '2/X & Gol', 'WON');
+    t('RP1/RP2 & Gol/JoGol', '2/X & JoGol', 'LOST');
+    t('RP1/RP2 & Gol/JoGol', '2/1 & Gol', 'LOST');
+  });
+  it('second-half sending off = full-time red cards minus those at the whistle', () => {
+    t('2nd half - sending off', 'Yes', 'WON');
+    t('2nd half - Away sending off', 'Yes', 'WON');
+    t('2nd half - Home sending off', 'Yes', 'LOST');
+    t('2nd half - sending off', 'Yes', 'LOST', { ...c, htStats: { redHome: 0, redAway: 1 } }); // the red card came before half-time
+    t('2nd half - sending off', 'Yes', null, { ...c, htStats: undefined });
   });
 });
