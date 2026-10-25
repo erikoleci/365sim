@@ -36,7 +36,7 @@ import { getMatchesResponseCacheSize } from './routes/matches.js';
 import { startKeepAliveSelfPing } from './keepAlive.js';
 import { startFeedStatsLog } from './feedStats.js';
 import { hydrateBetMatchIds } from './oddsHistoryPolicy.js';
-import { settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult } from './matchSettlement.js';
+import { settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult, settleNextEventLegs } from './matchSettlement.js';
 import { startClockWriteFlusher } from './clockWrites.js';
 
 let dbReady = false;
@@ -372,6 +372,13 @@ async function start() {
   };
   setTimeout(runStuckBetSweep, 20 * 1000);
   setInterval(runStuckBetSweep, 2 * 60 * 1000);
+  // "Next goal / corner / card" tickets are decided as soon as the next such event has happened.
+  let nextEventBusy = false;
+  setInterval(function () {
+    if (nextEventBusy) return;
+    nextEventBusy = true;
+    settleNextEventLegs().catch(function (e) { console.error('[settle] next-event sweep failed:', e.message); }).finally(function () { nextEventBusy = false; });
+  }, 10 * 1000);
   // A match the feed has just closed whose result was not trustworthy YET (clock still short of the
   // end) becomes settleable within seconds, so re-check those every 30s instead of waiting for the
   // 2-minute sweep: a finished game should not leave its tickets open for minutes. Idempotent.

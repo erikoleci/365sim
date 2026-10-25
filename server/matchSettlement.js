@@ -234,6 +234,52 @@ async function loadNextEvents(client, match, homeScore, awayScore) {
 }
 const legNeedsNextEvent = (leg) => Boolean(nextEventKind(leg.market_name));
 
+// "Next goal / corner / card" tickets are decided the moment the next such event happens after the
+// bet (not when the match ends): the first event logged after the bet decides every ticket on it.
+// Runs on a short timer (server.js). A ticket is only decided from a complete, untied event log
+// (see nextEventPack / sideAfterBet); otherwise it waits and is tried again, and at full time
+// settleMatch() settles whatever is left ("no more events" included).
+export async function settleNextEventLegs() {
+  let decided = 0;
+  const { rows } = await pool.query(
+    `SELECT bs.*, m.home_team AS m_home, m.away_team AS m_away, m.live_home_score AS m_live_home, m.live_away_score AS m_live_away
+       FROM bet_selections bs JOIN matches_cache m ON m.id = bs.match_id
+      WHERE bs.status = 'PENDING' AND bs.placed_at IS NOT NULL AND m.result_home IS NULL
+        AND (bs.market_name ILIKE '%radh%' OR bs.market_name ILIKE '%next%')`);
+  const legs = rows.filter(legNeedsNextEvent);
+  const byMatch = new Map();
+  for (const l of legs) byMatch.set(l.match_id, [...(byMatch.get(l.match_id) || []), l]);
+  for (const [matchId, list] of byMatch) {
+    const first = list[0];
+    const hs = Number(first.m_live_home); const as = Number(first.m_live_away);
+    if (!Number.isFinite(hs) || !Number.isFinite(as)) continue;
+    const packs = await loadNextEvents(pool, { id: matchId, home_team: first.m_home, away_team: first.m_away }, hs, as);
+    if (!packs) continue;
+    for (const leg of list) {
+      const actual = sideAfterBet(packs[nextEventKind(leg.market_name)], Number(leg.placed_at));
+      if (actual !== 'HOME' && actual !== 'AWAY') continue; // nothing after the bet yet / not trustworthy yet
+      const sel = norm(leg.selection_name || leg.selection_id);
+      const side = /^(asnje|asnje gol|asnje korner|asnje karton|no goal|none|pa gol)$/.test(sel) ? 'DRAW' : sideOfSelection(leg);
+      if (side !== 'HOME' && side !== 'AWAY' && side !== 'DRAW') continue;
+      const outcome = side === actual ? 'WON' : 'LOST';
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const res = await client.query(`UPDATE bet_selections SET status = $1 WHERE id = $2 AND status = 'PENDING'`, [outcome, leg.id]);
+        if (res.rowCount) await recomputeBetStatus(leg.bet_id, client);
+        await client.query('COMMIT');
+        decided += res.rowCount;
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        console.error('[settle] next-event leg ' + leg.id + ' failed:', err.message);
+      } finally {
+        client.release();
+      }
+    }
+  }
+  return { decided };
+}
+
 export function goalOrderFromEvents(events, homeTeam, awayTeam, homeScore, awayScore) {
   if (homeScore + awayScore === 0) return { first: 'NONE', second: 'NONE', last: 'NONE' };
   const nHome = events.filter((e) => e.team === homeTeam).length;
