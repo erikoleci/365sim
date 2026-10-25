@@ -916,6 +916,23 @@ export function canSettleFromLiveScore(row, now = Date.now()) {
   return Number.isFinite(kickoff) && now - kickoff >= SETTLE_MIN_ELAPSED_MS;
 }
 
+// Human-readable reason a finished/ending match is NOT settled from its live score yet, derived from
+// the same facts canSettleFromLiveScore uses (kept next to it so they cannot drift apart). Used by
+// the admin diagnostic and by the logs, so "why is this ticket still open?" has a direct answer.
+export function explainSettleBlock(row, now = Date.now()) {
+  if (!row) return 'match not found';
+  if (row.settled_at) return 'already settled';
+  const hasScore = row.live_home_score != null && row.live_away_score != null
+    && Number.isInteger(Number(row.live_home_score)) && Number.isInteger(Number(row.live_away_score));
+  const hasClock = row.live_minute != null && String(row.live_minute).trim() !== '';
+  if (!hasScore) return 'no score was ever stored for this match (the feed gave none), so there is no result to settle from';
+  if (!hasClock) return 'a score is stored (' + row.live_home_score + '-' + row.live_away_score + ') but no match clock was ever stored, so the result is not trusted (it could be a default 0-0): settle it by hand or wait for the 24h refund';
+  if (canSettleFromLiveScore(row, now)) return 'ready: the stored result (' + row.live_home_score + '-' + row.live_away_score + ') is reliable, the next sweep settles it';
+  const kickoff = Date.parse(row.start_time);
+  const since = Number.isFinite(kickoff) ? Math.round((now - kickoff) / 60000) + ' min since kickoff' : 'kickoff unknown';
+  return 'the match is not over by our rules yet: clock ' + row.live_minute + " (needs >= " + SETTLE_MIN_CLOCK_MINUTE + "') and " + since + ' (needs >= ' + Math.round(SETTLE_MIN_ELAPSED_MS / 60000) + ')';
+}
+
 // Idempotent: a match that gets settled now has a result, so it is no longer a
 // candidate; settleMatch itself refuses an already-settled match, and payouts are
 // guarded per bet row (recomputeBetStatus). Safe to run on every sweep and at boot.

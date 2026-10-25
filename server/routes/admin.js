@@ -3,7 +3,8 @@ import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
-import { settleMatch, recomputeBetStatus, settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult } from '../matchSettlement.js';
+import { settleMatch, recomputeBetStatus, settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult, explainSettleBlock } from '../matchSettlement.js';
+import { missedLiveCycles } from '../london365/liveState.js';
 import { logAudit } from '../auditLog.js';
 import { buildCoverageReport, formatCoverageText } from '../marketCoverage.js';
 import { settlementRuleRequired } from '../marketRules.js';
@@ -610,6 +611,39 @@ router.get('/feed-keys', (req, res) => {
   res.json({ fields: getFeedKeySamples() });
 });
 
+
+// "Why is this ticket still open?" For every match that still has OPEN bets (optionally filtered by
+// team name or match id with ?q=), what we know about its end and the exact reason it is not settled:
+// status, stored score and clock, when it kicked off, how many bets wait on it, and the verdict of
+// the same rule the live loop uses. Example: /api/admin/settle-diagnose?q=Augsburg
+router.get('/settle-diagnose', async (req, res) => {
+  const q = String(req.query.q || '').trim().toLowerCase();
+  const { rows } = await pool.query(
+    `SELECT m.id, m.home_team, m.away_team, m.start_time, m.status, m.live_status, m.live_home_score, m.live_away_score,
+            m.live_minute, m.live_minute_updated_at, m.fetched_at, m.result_home, m.result_away, m.settled_at,
+            COUNT(bs.id)::int AS open_legs
+       FROM matches_cache m
+       JOIN bet_selections bs ON bs.match_id = m.id AND bs.status = 'PENDING'
+      WHERE ($1 = '' OR lower(m.home_team) LIKE '%' || $1 || '%' OR lower(m.away_team) LIKE '%' || $1 || '%' OR m.id = $1)
+      GROUP BY m.id
+      ORDER BY m.start_time DESC
+      LIMIT 40`,
+    [q]
+  );
+  const now = Date.now();
+  const iso = (v) => (v ? new Date(Number(v)).toISOString() : null);
+  res.json({
+    now: new Date(now).toISOString(),
+    matches: rows.map((r) => ({
+      id: r.id, match: r.home_team + ' v ' + r.away_team, kickoff: r.start_time, status: r.status, liveStatus: r.live_status,
+      storedScore: r.live_home_score == null ? null : r.live_home_score + '-' + r.live_away_score,
+      storedClock: r.live_minute, clockUpdatedAt: iso(r.live_minute_updated_at), lastFeedUpdate: iso(r.fetched_at),
+      finalResult: r.result_home == null ? null : r.result_home + '-' + r.result_away, settledAt: iso(r.settled_at),
+      openLegs: r.open_legs, missedLiveCycles: missedLiveCycles.get(r.id) || 0,
+      why: explainSettleBlock(r, now),
+    })),
+  });
+});
 
 // Verifies every open (PENDING) ticket against matches that are already
 // finished and closes the ones whose result is now known.

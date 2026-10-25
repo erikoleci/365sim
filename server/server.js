@@ -372,6 +372,14 @@ async function start() {
   };
   setTimeout(runStuckBetSweep, 20 * 1000);
   setInterval(runStuckBetSweep, 2 * 60 * 1000);
+  // A match the feed has just closed whose result was not trustworthy YET (clock still short of the
+  // end) becomes settleable within seconds, so re-check those every 30s instead of waiting for the
+  // 2-minute sweep: a finished game should not leave its tickets open for minutes. Idempotent.
+  setInterval(function () {
+    recoverFinishedWithoutResult()
+      .then(function (r) { if (r.recoveredMatches || r.recoverFailed) console.log('[settle] fast recovery: ' + JSON.stringify(r)); })
+      .catch(function (err) { console.error('[settle] fast recovery failed:', err.message); });
+  }, 30 * 1000);
 
   // Diagnostic visibility requested after the OOM crash investigation:
   // logs process memory alongside every known unbounded-risk in-memory

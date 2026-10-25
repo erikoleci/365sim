@@ -7,7 +7,7 @@ import { pushOddsChanged, pushMatchEnded } from '../ws.js';
 import { forgetLiveState } from '../london365GameDetails.js';
 import { unsubscribeGameDetails } from '../london365Socket.js';
 import { clearGoalAnnounced } from '../goalAnnouncer.js';
-import { canSettleFromLiveScore, settleMatch } from '../matchSettlement.js';
+import { canSettleFromLiveScore, settleMatch, explainSettleBlock } from '../matchSettlement.js';
 import { withDbLock, statusSampler, upsertMatch, recordGoalIfChanged } from './persist.js';
 import { leagueById, resolveLeagueByName } from './leagueRegistry.js';
 import { isAllowedByCountryFilter } from './leagueRules.js';
@@ -122,7 +122,7 @@ export async function markLondon365GameEnded(gameId) {
           console.error('[london365] socket end: settle ' + id + ' failed (the sweep will retry):', err.message);
         }
       } else {
-        console.warn('[london365] socket end: ' + id + ' closed but its result is not reliable yet (score/clock missing or match not over) -- bets stay PENDING for the recovery sweep');
+        console.warn('[london365] socket end: ' + id + ' closed but NOT settled yet: ' + explainSettleBlock(row) + ' -- bets stay PENDING for the recovery sweep');
       }
     }
     return res ? res.rowCount : 0;

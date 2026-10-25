@@ -8,7 +8,7 @@ import { selectDetailTargets, markDetailFetched, pruneDetailAt } from '../liveDe
 import { isTrackedGame, hasKnownLiveMatches, retainLiveKnown, noteMatchStatus, forgetLiveRow } from '../liveTracker.js';
 import { forgetLiveState } from '../london365GameDetails.js';
 import { unsubscribeGameDetails } from '../london365Socket.js';
-import { canSettleFromLiveScore, settleMatch } from '../matchSettlement.js';
+import { canSettleFromLiveScore, settleMatch, explainSettleBlock } from '../matchSettlement.js';
 import { LIVE_INTERVAL_MS, ENABLED, DETAIL_DELAY_MS, sleep, SPORTS_RAW } from './config.js';
 import { ensureMarketNamesLoaded, fetchLiveRows, parseOddString, hydrateRowNames, buildEvent } from './markets.js';
 import { resolveSports, api } from './api.js';
@@ -333,6 +333,7 @@ export async function syncLondon365LiveOnce() {
       // clock has not reached the end. It stays LIVE and is looked at again next cycle.
       if (!canSettleFromLiveScore(row)) {
         bump('endDetection.deferred_not_over');
+        if (shouldLogMissingLive('end:' + row.id)) console.warn('[london365] ' + row.id + ' left the live feed but is NOT settled yet: ' + explainSettleBlock(row));
         continue;
       }
       const home = row.live_home_score ?? 0;
