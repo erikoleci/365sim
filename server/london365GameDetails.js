@@ -241,6 +241,26 @@ const detailChains = new Map();
 // ~80 messages/s per connected client, each re-mapping the whole match list).
 // Clients tick the clock themselves from the last anchor, so a broadcast is only
 // due when the WHOLE minute changes (or on the periodic resync that re-anchors).
+// "mm:ss" from the provider's game clock in seconds (T), or null when it is not a usable clock.
+export function clockFromSeconds(t) {
+  if (!Number.isFinite(t) || t <= 0 || t >= 8 * 3600) return null;
+  return Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0');
+}
+// The clock to show when we also hold a minute from the REST/odds feed: T when it is the same clock
+// just fresher (not behind the stored minute by more than 5 s, not ahead by more than 3 min), else
+// null = keep the stored minute (the two clocks disagree: a period restart, stoppage labels like
+// "45+", a bad value). Without a stored minute T is used as is.
+export function pickProviderClock(storedMinute, t) {
+  const fresh = clockFromSeconds(t);
+  if (!fresh) return null;
+  const stored = String(normalizeLiveMinute(storedMinute) ?? '').trim();
+  if (!stored) return fresh;
+  const m = stored.match(/^(\d+)(?::(\d{1,2}))?/);
+  if (!m) return null;
+  const ahead = Math.floor(t) - (Number(m[1]) * 60 + (m[2] ? Number(m[2]) : 0));
+  return ahead >= -5 && ahead <= 180 ? fresh : null;
+}
+
 function minuteBucket(m) {
   const mm = String(m ?? '').match(/^(\d+):\d{2}$/);
   return mm ? mm[1] : m;
@@ -424,12 +444,18 @@ async function applyGameDetailsNow(raw) {
   // and keep using it for matches already marked as derived (a value we
   // stored ourselves would otherwise freeze as the "REST minute").
   const derivedState = derivedClock.get(matchId);
-  const useDerived = Number.isFinite(t) && t > 0 && t < 8 * 3600 && (!minuteDisplay || derivedState);
-  if (useDerived) {
-    minuteDisplay = Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0');
+  // The provider's own clock (T, ~1/sec) drives the minute we show whenever it agrees with the
+  // minute we hold: the REST/odds minute can be ~30 s old, and broadcasting it stamped "now" made
+  // the on-screen clock lag, stall and jump back. See pickProviderClock for the agreement rule.
+  const restMinute = minuteDisplay;
+  const providerClock = (!restMinute || (derivedState && !derivedState.restBacked))
+    ? clockFromSeconds(t)
+    : pickProviderClock(restMinute, t);
+  if (providerClock) {
+    minuteDisplay = providerClock;
     const nowW = Date.now();
     if (!derivedState || nowW - derivedState.at >= DERIVED_CLOCK_WRITE_MS) {
-      derivedClock.set(matchId, { at: nowW });
+      derivedClock.set(matchId, { at: nowW, restBacked: Boolean(restMinute) && !(derivedState && !derivedState.restBacked) });
       // Batched (see clockWrites.js): not one awaited UPDATE per match in this hot path.
       queueClockWrite(matchId, minuteDisplay, nowW);
     }
