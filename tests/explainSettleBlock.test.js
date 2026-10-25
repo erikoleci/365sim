@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { explainSettleBlock, canSettleFromLiveScore } from '../server/matchSettlement.js';
 
 const NOW = Date.parse('2026-10-24T15:30:00Z');
@@ -34,5 +34,24 @@ describe('explainSettleBlock (why a finished match is still open)', () => {
     for (const r of [row(), row({ live_minute: null }), row({ live_minute: '60:00', start_time: min(70) }), row({ live_minute: '60:00', start_time: min(130) })]) {
       expect(explainSettleBlock(r, NOW).startsWith('ready')).toBe(canSettleFromLiveScore(r, NOW));
     }
+  });
+});
+
+describe('SETTLE_SCORE_WITHOUT_CLOCK_AFTER_MIN (opt-in)', () => {
+  afterEach(() => { delete process.env.SETTLE_SCORE_WITHOUT_CLOCK_AFTER_MIN; });
+  const noClock = (minutesSinceKickoff) => ({ live_home_score: 1, live_away_score: 0, live_minute: null, start_time: min(minutesSinceKickoff), settled_at: null });
+
+  it('off by default: a score without a clock is never settled', () => {
+    expect(canSettleFromLiveScore(noClock(300), NOW)).toBe(false);
+  });
+  it('when set, trusts a stored score only once that long after kickoff', () => {
+    process.env.SETTLE_SCORE_WITHOUT_CLOCK_AFTER_MIN = '130';
+    expect(canSettleFromLiveScore(noClock(120), NOW)).toBe(false); // too soon: could still be playing
+    expect(canSettleFromLiveScore(noClock(131), NOW)).toBe(true);
+    expect(explainSettleBlock(noClock(131), NOW)).toMatch(/^ready/);
+  });
+  it('still needs a real score, whatever the setting', () => {
+    process.env.SETTLE_SCORE_WITHOUT_CLOCK_AFTER_MIN = '130';
+    expect(canSettleFromLiveScore({ ...noClock(300), live_home_score: null, live_away_score: null }, NOW)).toBe(false);
   });
 });

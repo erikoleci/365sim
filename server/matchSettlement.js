@@ -904,12 +904,24 @@ export async function settleStuckBets() {
 export const SETTLE_MIN_ELAPSED_MS = 105 * 60 * 1000;
 const SETTLE_MIN_CLOCK_MINUTE = 88;
 
+// SETTLE_SCORE_WITHOUT_CLOCK_AFTER_MIN (default 0 = off): a match whose provider score is stored but whose
+// clock never was (the feed gave a result and no minute) is NOT settled by default, because such a score
+// could be a default 0-0 of a game that never went live, and its tickets end as 24h refunds. Set this to
+// e.g. 130 to trust a stored score once that many minutes have passed since kickoff (long after any
+// football match, extra time included). Use /api/admin/settle-diagnose to see whether this is your case.
+const scoreWithoutClockAfterMs = () => Math.max(0, Number(process.env.SETTLE_SCORE_WITHOUT_CLOCK_AFTER_MIN || 0)) * 60000;
+
 export function canSettleFromLiveScore(row, now = Date.now()) {
   if (!row) return false;
   const hasScore = row.live_home_score != null && row.live_away_score != null
     && Number.isInteger(Number(row.live_home_score)) && Number.isInteger(Number(row.live_away_score));
   const hasClock = row.live_minute != null && String(row.live_minute).trim() !== '';
-  if (!hasScore || !hasClock) return false;
+  if (!hasScore) return false;
+  if (!hasClock) {
+    const trustAfter = scoreWithoutClockAfterMs();
+    const kickoffAt = Date.parse(row.start_time);
+    return trustAfter > 0 && Number.isFinite(kickoffAt) && now - kickoffAt >= trustAfter;
+  }
   const minute = minuteOf(row.live_minute);
   if (minute != null && minute >= SETTLE_MIN_CLOCK_MINUTE) return true;
   const kickoff = Date.parse(row.start_time);
@@ -926,8 +938,8 @@ export function explainSettleBlock(row, now = Date.now()) {
     && Number.isInteger(Number(row.live_home_score)) && Number.isInteger(Number(row.live_away_score));
   const hasClock = row.live_minute != null && String(row.live_minute).trim() !== '';
   if (!hasScore) return 'no score was ever stored for this match (the feed gave none), so there is no result to settle from';
-  if (!hasClock) return 'a score is stored (' + row.live_home_score + '-' + row.live_away_score + ') but no match clock was ever stored, so the result is not trusted (it could be a default 0-0): settle it by hand or wait for the 24h refund';
   if (canSettleFromLiveScore(row, now)) return 'ready: the stored result (' + row.live_home_score + '-' + row.live_away_score + ') is reliable, the next sweep settles it';
+  if (!hasClock) return 'a score is stored (' + row.live_home_score + '-' + row.live_away_score + ') but no match clock was ever stored, so the result is not trusted (it could be a default 0-0): settle it by hand, set SETTLE_SCORE_WITHOUT_CLOCK_AFTER_MIN (e.g. 130) to trust such scores, or wait for the 24h refund';
   const kickoff = Date.parse(row.start_time);
   const since = Number.isFinite(kickoff) ? Math.round((now - kickoff) / 60000) + ' min since kickoff' : 'kickoff unknown';
   return 'the match is not over by our rules yet: clock ' + row.live_minute + " (needs >= " + SETTLE_MIN_CLOCK_MINUTE + "') and " + since + ' (needs >= ' + Math.round(SETTLE_MIN_ELAPSED_MS / 60000) + ')';
