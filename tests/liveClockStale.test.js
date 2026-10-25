@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  parseLiveClock, projectClock, projectionLimitSeconds, MAX_PROJECTION_SECONDS, MAX_PROJECTION_BARE_MINUTE_SECONDS, shouldAcceptNewClockBase, clockReceivedAt,
+  parseLiveClock, projectClock, projectionLimitSeconds, LATE_MAX_PROJECTION_SECONDS, MAX_PROJECTION_SECONDS, MAX_PROJECTION_BARE_MINUTE_SECONDS, shouldAcceptNewClockBase, clockReceivedAt,
 } from '../components/MatchCard.tsx';
 import { formatEstimatedMinute, liveMinuteFallback, isMessageForMatch, isHalftime, isGhostLiveMatch, isLiveClockStale } from '../utils/liveStatus.ts';
 
@@ -33,6 +33,11 @@ describe('projectClock - never runs on forever', () => {
     expect(projectionLimitSeconds(50 * 60, false)).toBe(15 * 60); // second half, capped by the 15 min gap limit
     expect(projectionLimitSeconds(100 * 60, false)).toBe(5 * 60); // up to 105:00
     expect(projectionLimitSeconds(72 * 60, true)).toBe(59);       // bare minute: never rolls over
+    // a last reading already in stoppage time: a quiet feed is most likely a finished match, so the
+    // clock runs on for 5 minutes at most (never up to "105:00")
+    expect(projectionLimitSeconds(90 * 60, false)).toBe(LATE_MAX_PROJECTION_SECONDS);
+    expect(projectionLimitSeconds(93 * 60 + 10, false)).toBe(5 * 60);
+    expect(projectionLimitSeconds(89 * 60, false)).toBe(15 * 60);  // before 90:00 nothing changes
   });
   it('freezes after MAX_PROJECTION_SECONDS without a new provider reading (feed really stopped)', () => {
     const frozen = projectClock(base, T, T + (MAX_PROJECTION_SECONDS + 5) * 1000);

@@ -38,11 +38,16 @@ export const MAX_PROJECTION_SECONDS = 15 * 60;
 const FIRST_HALF_CEILING_SECONDS = 55 * 60;   // 45' + up to 10' of stoppage
 const SECOND_HALF_CEILING_SECONDS = 105 * 60; // 90' + up to 15' of stoppage
 const LATE_CEILING_SECONDS = 125 * 60;
+// Once the last reading is already in stoppage time (>= 90:00) the match is about to end, and a feed
+// that goes quiet then has most likely lost the match (final whistle), not paused it: the clock may
+// run on for only this long, so a finished match is not left showing "105:00".
+export const LATE_MAX_PROJECTION_SECONDS = 5 * 60;
 export function projectionLimitSeconds(baseTotalSeconds: number, bareMinute: boolean): number {
   if (bareMinute) return MAX_PROJECTION_BARE_MINUTE_SECONDS;
   const ceiling = baseTotalSeconds < 45 * 60 ? FIRST_HALF_CEILING_SECONDS
     : baseTotalSeconds < 105 * 60 ? SECOND_HALF_CEILING_SECONDS : LATE_CEILING_SECONDS;
-  return Math.max(0, Math.min(MAX_PROJECTION_SECONDS, ceiling - baseTotalSeconds));
+  const maxRun = baseTotalSeconds >= 90 * 60 && baseTotalSeconds < 105 * 60 ? LATE_MAX_PROJECTION_SECONDS : MAX_PROJECTION_SECONDS;
+  return Math.max(0, Math.min(maxRun, ceiling - baseTotalSeconds));
 }
 // A clock that came as a bare minute ("72", no seconds) says nothing about the seconds: never
 // let the extrapolation roll over into the next minute ahead of the provider.
