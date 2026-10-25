@@ -768,3 +768,55 @@ describe('last markets: HT/FT & exact goals, RP1/RP2 & Gol/JoGol, second-half re
     t('2nd half - sending off', 'Yes', null, { ...c, htStats: undefined });
   });
 });
+
+describe('next corner / card / goal with the counter taken at the bet', () => {
+  const T0 = 2_000_000;
+  const ev = (team, at, extra = {}) => ({ team, created_at: at, ...extra });
+  it('ignores gaps earlier in the match (corners missed before the bet do not block settlement)', async () => {
+    const { nextEventPack: np, sideAfterBet: sab } = await import('../server/matchSettlement.js');
+    // counters now: home 5, away 3; the log only has the events from the bet on (3 home corners missed earlier)
+    const pack = np([ev('away', T0 + 1000), ev('home', T0 + 9000)], 'Roma', 'Lazio', 5, 3);
+    expect(pack.complete).toBe(false); // whole-log check fails ...
+    expect(sab(pack, T0, { home: 4, away: 2 })).toBe('AWAY'); // ... the relative one passes: +1 away, +1 home
+  });
+  it('needs no grace period: an event the snapshot already counted is detected as a mismatch', async () => {
+    const { nextEventPack: np, sideAfterBet: sab } = await import('../server/matchSettlement.js');
+    // the corner happened just before the bet (snapshot 4 home) but was logged 300 ms after it
+    const pack = np([ev('home', T0 + 300)], 'Roma', 'Lazio', 4, 0);
+    expect(sab(pack, T0, { home: 4, away: 0 })).toBeUndefined(); // 1 logged after the bet, 0 counted since -> not trusted
+  });
+  it('a fast genuine next event right after the bet is decided', async () => {
+    const { nextEventPack: np, sideAfterBet: sab } = await import('../server/matchSettlement.js');
+    const pack = np([ev('away', T0 + 400)], 'Roma', 'Lazio', 4, 1);
+    expect(sab(pack, T0, { home: 4, away: 0 })).toBe('AWAY');
+  });
+  it('NONE when nothing was counted after the bet, untrusted when a counter went down', async () => {
+    const { nextEventPack: np, sideAfterBet: sab } = await import('../server/matchSettlement.js');
+    expect(sab(np([], 'Roma', 'Lazio', 4, 2), T0, { home: 4, away: 2 })).toBe('NONE');
+    expect(sab(np([], 'Roma', 'Lazio', 3, 2), T0, { home: 4, away: 2 })).toBeUndefined();
+  });
+  it('an old ticket without a snapshot still uses the strict whole-log check', async () => {
+    const { nextEventPack: np, sideAfterBet: sab } = await import('../server/matchSettlement.js');
+    const pack = np([ev('away', T0 + 20000)], 'Roma', 'Lazio', 4, 1);
+    expect(sab(pack, T0, undefined)).toBeUndefined();
+  });
+  it('determineLegOutcome uses the stored snapshot', async () => {
+    const { determineLegOutcome: d, nextEventPack: np } = await import('../server/matchSettlement.js');
+    const leg = { market_id: 'x', market_name: 'Korneri i radhës', selection_id: '2', selection_name: '2', match_home: 'Roma', match_away: 'Lazio', placed_at: T0, placed_counts: { home: 4, away: 2 } };
+    const R = { winner: 'HOME', totalGoals: 1, bothScored: false, homeScore: 1, awayScore: 0 };
+    const nextEvents = { corner: np([ev('away', T0 + 15000)], 'Roma', 'Lazio', 4, 3) };
+    expect(d(leg, { ...R, nextEvents })).toBe('WON');
+    expect(d({ ...leg, selection_id: '1', selection_name: '1' }, { ...R, nextEvents })).toBe('LOST');
+    expect(d({ ...leg, placed_counts: JSON.stringify({ home: 4, away: 2 }) }, { ...R, nextEvents })).toBe('WON'); // jsonb as text
+  });
+  it('reads the counters at placement (goal from the live score, corner/card from live_statistics)', async () => {
+    const { readNextEventCounters: r } = await import('../server/matchSettlement.js');
+    const client = { query: async (sql) => (sql.includes('matches_cache')
+      ? { rows: [{ live_home_score: 1, live_away_score: 0 }] }
+      : { rows: [{ corners_home: 5, corners_away: 2, cards_home: 1, cards_away: 3 }] }) };
+    expect(await r(client, 'm1', 'goal')).toEqual({ home: 1, away: 0 });
+    expect(await r(client, 'm1', 'corner')).toEqual({ home: 5, away: 2 });
+    expect(await r(client, 'm1', 'card')).toEqual({ home: 1, away: 3 });
+    expect(await r({ query: async () => ({ rows: [] }) }, 'm1', 'corner')).toBeNull();
+  });
+});

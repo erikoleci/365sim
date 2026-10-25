@@ -205,20 +205,53 @@ export function nextEventPack(events, homeTeam, awayTeam, nHome, nAway) {
   const sideOf = (e) => (e.team === 'home' || e.team === homeTeam ? 'HOME' : e.team === 'away' || e.team === awayTeam ? 'AWAY' : undefined);
   const evs = (events || []).map((e) => ({ side: sideOf(e), created_at: Number(e.created_at) })).filter((e) => e.side);
   const count = (side) => evs.filter((e) => e.side === side).length;
-  return { events: evs, complete: count('HOME') === nHome && count('AWAY') === nAway };
+  return { events: evs, complete: count('HOME') === nHome && count('AWAY') === nAway, nHome, nAway };
 }
 
 // Side of the first event logged after the bet: 'HOME' | 'AWAY' | 'NONE' (no more of them), or
 // undefined when that cannot be trusted.
-export function sideAfterBet(pack, placedAt) {
-  if (!pack || !pack.complete || !Number.isFinite(placedAt) || placedAt <= 0) return undefined;
+export function sideAfterBet(pack, placedAt, snap) {
+  if (!pack || !Number.isFinite(placedAt) || placedAt <= 0) return undefined;
   const after = pack.events.filter((e) => e.created_at > placedAt);
+  const tied = (first) => after.some((o) => o.side !== first.side && o.created_at === first.created_at);
+  // Counters at the moment of the bet are known: only the events AFTER it have to add up
+  // (counter now - counter at the bet, per side), whatever happened earlier in the match.
+  if (snap && [snap.home, snap.away, pack.nHome, pack.nAway].every(Number.isFinite)) {
+    const dHome = pack.nHome - snap.home;
+    const dAway = pack.nAway - snap.away;
+    if (dHome < 0 || dAway < 0) return undefined; // a counter went down (VAR / correction)
+    if (after.filter((e) => e.side === 'HOME').length !== dHome || after.filter((e) => e.side === 'AWAY').length !== dAway) return undefined;
+    if (!after.length) return 'NONE';
+    return tied(after[0]) ? undefined : after[0].side;
+  }
+  // Older tickets (no snapshot): the whole log must add up, and an event right after the bet may
+  // really predate it.
+  if (!pack.complete) return undefined;
   if (!after.length) return 'NONE';
-  const first = after[0];
-  if (first.created_at - placedAt < NEXT_EVENT_GRACE_MS) return undefined;
-  if (after.some((o) => o.side !== first.side && o.created_at === first.created_at)) return undefined;
-  return first.side;
+  if (after[0].created_at - placedAt < NEXT_EVENT_GRACE_MS) return undefined;
+  return tied(after[0]) ? undefined : after[0].side;
 }
+
+// Counter of one kind per side right now ({ home, away }), stored with the ticket at placement.
+export async function readNextEventCounters(client, matchId, kind) {
+  try {
+    if (kind === 'goal') {
+      const { rows } = await client.query('SELECT live_home_score, live_away_score FROM matches_cache WHERE id = $1', [matchId]);
+      const home = Number(rows[0] && rows[0].live_home_score); const away = Number(rows[0] && rows[0].live_away_score);
+      return rows[0] && rows[0].live_home_score != null && rows[0].live_away_score != null && Number.isFinite(home) && Number.isFinite(away) ? { home, away } : null;
+    }
+    const st = await loadMatchStats(client, matchId);
+    if (!st) return null;
+    const home = numOrNaN(kind === 'corner' ? st.cornersHome : st.cardsHome);
+    const away = numOrNaN(kind === 'corner' ? st.cornersAway : st.cardsAway);
+    return Number.isFinite(home) && Number.isFinite(away) ? { home, away } : null;
+  } catch { return null; }
+}
+const legSnapshot = (leg) => {
+  let c = leg.placed_counts;
+  if (typeof c === 'string') { try { c = JSON.parse(c); } catch { c = null; } }
+  return c && Number.isFinite(Number(c.home)) && Number.isFinite(Number(c.away)) ? { home: Number(c.home), away: Number(c.away) } : undefined;
+};
 
 async function loadNextEvents(client, match, homeScore, awayScore) {
   try {
@@ -256,7 +289,7 @@ export async function settleNextEventLegs() {
     const packs = await loadNextEvents(pool, { id: matchId, home_team: first.m_home, away_team: first.m_away }, hs, as);
     if (!packs) continue;
     for (const leg of list) {
-      const actual = sideAfterBet(packs[nextEventKind(leg.market_name)], Number(leg.placed_at));
+      const actual = sideAfterBet(packs[nextEventKind(leg.market_name)], Number(leg.placed_at), legSnapshot(leg));
       if (actual !== 'HOME' && actual !== 'AWAY') continue; // nothing after the bet yet / not trustworthy yet
       const sel = norm(leg.selection_name || leg.selection_id);
       const side = /^(asnje|asnje gol|asnje korner|asnje karton|no goal|none|pa gol)$/.test(sel) ? 'DRAW' : sideOfSelection(leg);
@@ -494,7 +527,7 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
   // ---- "Goli / Korneri / Karton i radhës": the side of the first such event AFTER the bet ----
   const nextKind = nextEventKind(marketName);
   if (nextKind) {
-    const actual = sideAfterBet(nextEvents && nextEvents[nextKind], leg.placed_at == null ? NaN : Number(leg.placed_at));
+    const actual = sideAfterBet(nextEvents && nextEvents[nextKind], leg.placed_at == null ? NaN : Number(leg.placed_at), legSnapshot(leg));
     if (!actual) return null; // log incomplete / bet time unknown / too close to the bet: stays PENDING
     const sel = norm(leg.selection_name || leg.selection_id);
     const side = /^(asnje|asnje gol|asnje korner|asnje karton|no goal|none|pa gol)$/.test(sel) ? 'DRAW' : sideOfSelection(leg);

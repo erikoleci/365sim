@@ -3,7 +3,8 @@ import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { resolveCurrentSelection, mapEventToMatch, isStaleLive } from '../oddsUtils.js';
-import { getBetBlockReason, describeBlockReason } from '../marketRules.js';
+import { getBetBlockReason, describeBlockReason, nextEventKind } from '../marketRules.js';
+import { readNextEventCounters } from '../matchSettlement.js';
 import { findConflictingSelection, validateStakeAmount, getCancelBlockReason, isLiveEventLocked } from '../betValidation.js';
 import { getLiveDetailAgeMs, isLiveDetailStale } from '../liveDetailPlan.js';
 import { wrap } from '../asyncHandler.js';
@@ -340,11 +341,14 @@ router.post('/', wrap(async (req, res) => {
       [user.id, stake, betId, balanceBefore, balanceAfter, Date.now()]
     );
     for (const sel of verifiedSelections) {
+      // "Next goal / corner / card": remember the counter of that kind at this very moment
+      const kind = nextEventKind(sel.marketName);
+      const counters = kind ? await readNextEventCounters(client, sel.matchId, kind) : null;
       await client.query(
         `INSERT INTO bet_selections
-          (bet_id, match_id, match_home, match_away, market_id, market_name, selection_id, selection_name, odds, status, placed_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'PENDING',$10)`,
-        [betId, sel.matchId, sel.matchHome, sel.matchAway, sel.marketId, sel.marketName, sel.selectionId, sel.selectionName, sel.odds, Date.now()]
+          (bet_id, match_id, match_home, match_away, market_id, market_name, selection_id, selection_name, odds, status, placed_at, placed_counts)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'PENDING',$10,$11)`,
+        [betId, sel.matchId, sel.matchHome, sel.matchAway, sel.marketId, sel.marketName, sel.selectionId, sel.selectionName, sel.odds, Date.now(), counters ? JSON.stringify(counters) : null]
       );
     }
     await client.query('COMMIT');
