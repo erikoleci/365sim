@@ -19,6 +19,8 @@ interface Options {
   reloadMatches: () => void;
   /** The current list: the watchdog needs it to spot a live clock that stopped moving. */
   matches?: Match[];
+  /** A match ended: the tickets on it are being settled right now, so reload the user's tickets. */
+  onMatchEnded?: () => void;
 }
 
 // LIVE_TICKs are buffered and applied in ONE setMatches per 250ms. With ~80 live matches each
@@ -50,7 +52,9 @@ const withScoreAndClock = (m: Match, msg: any): Match => ({
  * price moves are patched into the match list in place. Reconnects with exponential backoff.
  * The slow REST refresh in useMatchesFeed is only a safety net for a missed message.
  */
-export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadMatches, matches }: Options) {
+export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadMatches, matches, onMatchEnded }: Options) {
+  const onMatchEndedRef = useRef(onMatchEnded);
+  onMatchEndedRef.current = onMatchEnded;
   const matchesRef = useRef<Match[]>(matches ?? []);
   matchesRef.current = matches ?? matchesRef.current;
 
@@ -158,6 +162,10 @@ export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadM
             liveHomeScore: msg.homeScore ?? m.liveHomeScore,
             liveAwayScore: msg.awayScore ?? m.liveAwayScore,
           }));
+          // The server settles the tickets right after announcing the end: pick the result up a
+          // moment later (twice, in case settlement takes a few seconds) without a manual refresh.
+          setTimeout(() => onMatchEndedRef.current?.(), 2000);
+          setTimeout(() => onMatchEndedRef.current?.(), 8000);
           break;
         case 'ODDS_CHANGED':
           handleOddsChanged(msg);

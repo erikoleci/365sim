@@ -53,10 +53,10 @@ const App: React.FC = () => {
 
   const feed = useMatchesFeed(sportsEnabled, currentUser?.id ?? null);
   const { detailMatch, setDetailMatchFull } = useMatchDetail(nav.detailMatchId, feed.matches);
-  useLiveSocket({ enabled: sportsEnabled, setMatches: feed.setMatches, setDetailMatchFull, reloadMatches: feed.loadMatches, matches: feed.matches });
+  const { myBets, loadMyBets, reset: resetMyBets } = useMyBets(currentUser);
+  useLiveSocket({ enabled: sportsEnabled, setMatches: feed.setMatches, setDetailMatchFull, reloadMatches: feed.loadMatches, matches: feed.matches, onMatchEnded: loadMyBets });
 
   const { favoriteTeams, favoriteLeagues, toggleFavorite } = useFavorites(currentUser);
-  const { myBets, loadMyBets, reset: resetMyBets } = useMyBets(currentUser);
 
   const slip = useBetSlip({
     currentUser,
