@@ -35,6 +35,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:?vendos JWT_SECRET në .env.local}
       DATABASE_URL: postgresql://sim365:${POSTGRES_PASSWORD}@db:5432/sim365?sslmode=disable
       LONDON365_ENABLED: "1"
+      # Only markets the system can settle by itself are offered (no ticket can be accepted that nobody can close).
+      BET_REQUIRE_SETTLEMENT_RULE: "1"
     ports:
       - "127.0.0.1:3001:3001"   # http://localhost:3001 vetëm nga kjo PC
 
