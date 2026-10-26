@@ -6,7 +6,7 @@ import { ticketOutcome } from './ticketOutcome.js';
 import {
   TOTAL_GOALS_PREFIXES, H2H_NAMES, BTTS_NAMES, DOUBLE_CHANCE_NAMES, CORRECT_SCORE_NAMES, HANDICAP_NAMES, parseOverUnder,
   STATS_UNDECIDABLE, EVENT_ORDER_RE, FIRST_TEAM_TO_SCORE_NAMES, LAST_TEAM_TO_SCORE_NAMES, FIRST_GOAL_NAMES, LAST_GOAL_NAMES, BOTH_HALVES_NAMES, GOAL_ORDER_NAMES, FIRST_GOAL_H1_NAMES,
-  nextEventKind,
+  nextEventKind, CORNER_ORDINALS, isCornerRace, parseCornerRaceOption,
 } from './marketRules.js';
 import { parseProviderMarket, providerOutcome, goalTimelineFromRows } from './providerMarkets.js';
 
@@ -85,7 +85,7 @@ function halfWithMoreOutcome(leg, kind, ctx) {
 
 const STATS_MARKET = /korn|corner|karton|\bcards?\b|booking/;
 const legNeedsStats = (leg) => STATS_MARKET.test(norm(leg.market_name));
-const legNeedsFirstScorer = (leg) => GOAL_ORDER_NAMES.has(norm(leg.market_name)) || FIRST_GOAL_H1_NAMES.has(norm(leg.market_name)) || EVENT_ORDER_RE.test(norm(leg.market_name))
+const legNeedsFirstScorer = (leg) => GOAL_ORDER_NAMES.has(norm(leg.market_name)) || FIRST_GOAL_H1_NAMES.has(norm(leg.market_name)) || EVENT_ORDER_RE.test(norm(leg.market_name)) || isCornerRace(leg.market_name)
   || (splitCombo(leg) || []).some((p) => GOAL_ORDER_NAMES.has(norm(p.market_name)));
 
 // Final corner / card counters of a match, or undefined if there are none (or the
@@ -175,8 +175,11 @@ async function loadGoalOrder(client, match, homeScore, awayScore) {
         `SELECT team, created_at FROM match_events WHERE match_id = $1 AND type = ANY($2) ORDER BY created_at, id`, [match.id, types]);
       return sideOrderFromEvents(ev, nHome, nAway);
     };
+    const { rows: cornerLog } = await client.query(
+      `SELECT team, created_at FROM match_events WHERE match_id = $1 AND type = 'CORNER' ORDER BY created_at, id`, [match.id]);
     return {
       ...(order || {}),
+      cornerLog, // every corner event in order: "Gara e Korneve" and "Godet kornen e N-te"
       corner: st ? await sideOrder(['CORNER'], numOrNaN(st.cornersHome), numOrNaN(st.cornersAway)) : undefined,
       card: st ? await sideOrder(['YELLOW_CARD', 'RED_CARD'], numOrNaN(st.cardsHome), numOrNaN(st.cardsAway)) : undefined,
     };
@@ -193,6 +196,44 @@ export function sideOrderFromEvents(events, nHome, nAway) {
   const side = (e) => (e.team === 'home' ? 'HOME' : e.team === 'away' ? 'AWAY' : undefined);
   const pick = (e) => (events.some((o) => o.team !== e.team && Number(o.created_at) === Number(e.created_at)) ? undefined : side(e));
   return { first: pick(events[0]), last: pick(events[events.length - 1]) };
+}
+
+// Side of the Nth corner of the match ('HOME' | 'AWAY'), 'NONE' when there were fewer than N corners, or
+// undefined when the log cannot be trusted (it must add up to the final counters; the Nth event must not be
+// tied in time with an event of the other side).
+export function nthEventSide(events, nHome, nAway, n) {
+  if (!Array.isArray(events) || !Number.isFinite(nHome) || !Number.isFinite(nAway) || !Number.isFinite(n) || n < 1) return undefined;
+  if (events.filter((e) => e.team === 'home').length !== nHome || events.filter((e) => e.team === 'away').length !== nAway) return undefined;
+  if (events.length < n) return 'NONE';
+  const e = events[n - 1];
+  if (events.some((o) => o.team !== e.team && Number(o.created_at) === Number(e.created_at))) return undefined;
+  return e.team === 'home' ? 'HOME' : e.team === 'away' ? 'AWAY' : undefined;
+}
+
+// "Gara e Korneve": the team that reached N corners first. Decided by the counters alone unless BOTH
+// teams reached N; then the logged corner order decides (the log must add up to the counters, and the
+// two Nth corners must not share a timestamp). 'NONE' when neither reached N.
+export function raceWinnerFromEvents(events, n, nHome, nAway) {
+  if (![n, nHome, nAway].every(Number.isFinite) || n < 1) return undefined;
+  if (nHome < n && nAway < n) return 'NONE';
+  if (nHome >= n && nAway < n) return 'HOME';
+  if (nAway >= n && nHome < n) return 'AWAY';
+  if (!Array.isArray(events)) return undefined;
+  if (events.filter((e) => e.team === 'home').length !== nHome || events.filter((e) => e.team === 'away').length !== nAway) return undefined;
+  let h = 0; let a = 0; let hitHome = null; let hitAway = null;
+  for (const e of events) {
+    if (e.team === 'home') { h += 1; if (h === n) hitHome = Number(e.created_at); } else if (e.team === 'away') { a += 1; if (a === n) hitAway = Number(e.created_at); }
+  }
+  if (!Number.isFinite(hitHome) || !Number.isFinite(hitAway) || hitHome === hitAway) return undefined;
+  return hitHome < hitAway ? 'HOME' : 'AWAY';
+}
+
+function cornerRaceOutcome(leg, stats, cornerLog) {
+  const opt = parseCornerRaceOption(leg.selection_name || leg.selection_id, leg.match_home, leg.match_away);
+  if (!opt || !stats) return null;
+  const winner = raceWinnerFromEvents(cornerLog, opt.n, numOrNaN(stats.cornersHome), numOrNaN(stats.cornersAway));
+  if (!winner) return null; // order not reliable: stays PENDING
+  return winner === opt.side ? 'WON' : 'LOST';
 }
 
 // An event logged less than this long after the bet may really have happened just before it (feed
@@ -594,11 +635,16 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
     );
   }
   // first / last corner, first card, second goal: side selections (1 / 2) from the logged event order
+  if (isCornerRace(marketName)) return cornerRaceOutcome(leg, stats, goalOrder && goalOrder.cornerLog);
   const eo = marketName.match(EVENT_ORDER_RE);
   if (eo) {
-    const key = eo[1] === 'godet kornen e pare' ? ['corner', 'first'] : eo[1] === 'godet kornen e fundit' ? ['corner', 'last']
+    const nthWord = (eo[1].match(/^godet kornen e (\w+)$/) || [])[1];
+    const nth = nthWord && nthWord !== 'fundit' && nthWord !== 'pare' ? CORNER_ORDINALS[nthWord] : null; // "the Nth corner of the match" (first / last keep their own logic)
+    const key = nth ? ['corner', 'nth'] : eo[1] === 'godet kornen e pare' ? ['corner', 'first'] : eo[1] === 'godet kornen e fundit' ? ['corner', 'last']
       : eo[1] === 'merr kartonin e pare' ? ['card', 'first'] : ['goal', 'second'];
-    const actual = key[0] === 'goal' ? goalOrder && goalOrder.second : goalOrder && goalOrder[key[0]] && goalOrder[key[0]][key[1]];
+    const actual = nth
+      ? (stats && goalOrder ? nthEventSide(goalOrder.cornerLog, numOrNaN(stats.cornersHome), numOrNaN(stats.cornersAway), nth) : undefined)
+      : key[0] === 'goal' ? goalOrder && goalOrder.second : goalOrder && goalOrder[key[0]] && goalOrder[key[0]][key[1]];
     const side = sideOfSelection(leg);
     // "X" / "no ..." options have no confirmed meaning, and with no such event at all there is nothing to decide
     if (!actual || actual === 'NONE' || (side !== 'HOME' && side !== 'AWAY')) return null;

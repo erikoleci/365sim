@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { resolveCurrentSelection, mapEventToMatch, isStaleLive } from '../oddsUtils.js';
-import { getBetBlockReason, describeBlockReason, nextEventKind, eventOrderOrdinal, isLiveCornerTotals } from '../marketRules.js';
+import { getBetBlockReason, describeBlockReason, nextEventKind, eventOrderOrdinal, isLiveCornerMarket } from '../marketRules.js';
 import { readNextEventCounters, readLiveCorners } from '../matchSettlement.js';
 import { findConflictingSelection, validateStakeAmount, getCancelBlockReason, isLiveEventLocked } from '../betValidation.js';
 import { getLiveDetailAgeMs, isLiveDetailStale } from '../liveDetailPlan.js';
@@ -205,13 +205,13 @@ router.post('/', wrap(async (req, res) => {
       return fail(400, { error: `Selection ${sel.selectionId} in market ${sel.marketId} not found in current odds — it may have closed or moved` });
     }
     if (matchRow.status === 'LIVE' || matchRow.live_status != null) {
-      if (isLiveCornerTotals(current.marketName)) {
+      if (isLiveCornerMarket(current.marketName)) {
         matchRow.live_corners = await readLiveCorners(pool, matchRow.id);
         if (LIVE_CORNER_LOCK_MS > 0) {
           const { rows: cRows } = await pool.query("SELECT MAX(created_at) AS last_at FROM match_events WHERE match_id = $1 AND type = 'CORNER'", [matchRow.id]);
           if (isLiveEventLocked(matchRow, cRows[0]?.last_at, { lockMs: LIVE_CORNER_LOCK_MS })) {
             return fail(409, {
-              error: `Betting on corner totals for ${matchRow.home_team} vs ${matchRow.away_team} is paused for a few seconds after a corner — odds are updating.`,
+              error: `Betting on corner markets for ${matchRow.home_team} vs ${matchRow.away_team} is paused for a few seconds after a corner — odds are updating.`,
               code: 'LIVE_EVENT_LOCK',
             });
           }
@@ -234,7 +234,10 @@ router.post('/', wrap(async (req, res) => {
     const ordinal = eventOrderOrdinal(current.marketName);
     if (!closedReason && inPlay && ordinal && ordinal.kind !== 'goal' && !ordinal.last) {
       const counters = await readNextEventCounters(pool, sel.matchId, ordinal.kind);
-      ordinalReason = !counters ? 'NOT_VERIFIABLE_LIVE' : (counters.home + counters.away !== ordinal.n - 1 ? 'OUTCOME_DECIDED' : null);
+      const total = counters ? counters.home + counters.away : NaN;
+      // first corner / card: only while none has happened; the Nth corner: while fewer than N have
+      ordinalReason = !counters ? 'NOT_VERIFIABLE_LIVE'
+        : ((ordinal.kind === 'corner' ? total >= ordinal.n : total !== ordinal.n - 1) ? 'OUTCOME_DECIDED' : null);
     }
     if (closedReason || ordinalReason) {
       const why = closedReason || ordinalReason;

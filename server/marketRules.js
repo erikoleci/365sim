@@ -62,7 +62,8 @@ export const FIRST_GOAL_H1_NAMES = new Set(['goli i pare ne pjesen e pare', 'gol
 // Markets decided by the ORDER of match events (the feed gives corner / card / goal events with their
 // side, recorded as the counters move): first / last corner, first card, second goal. Side options
 // (1 / 2) only; the "X" option has no confirmed meaning, so it is never decided.
-export const EVENT_ORDER_RE = /^(godet kornen e (pare|fundit)|merr kartonin e pare|shenon golin e dyte)\b/;
+export const CORNER_ORDINALS = { pare: 1, dyte: 2, trete: 3, katert: 4, peste: 5, gjashte: 6, shtate: 7, tete: 8, nente: 9, dhjete: 10 };
+export const EVENT_ORDER_RE = /^(godet kornen e (pare|dyte|trete|katert|peste|gjashte|shtate|tete|nente|dhjete|fundit)|merr kartonin e pare|shenon golin e dyte)\b/;
 // "X" has no meaning in first / last corner, first card and second goal (nobody does it): the option
 // is not offered, since it could never be settled (the settlement rule leaves it PENDING).
 const isNoSideOption = (o) => /^(x|draw|barazim)$/.test(norm(o && (o.name ?? o.id))) || /^(x|draw)$/.test(norm(o && o.id));
@@ -267,7 +268,8 @@ export function eventOrderOrdinal(marketName) {
   if (/\b(pjes\w*|half|p[12]|minut\w*|lojtar\w*|player)\b/.test(n)) return null;
   const goal = n.match(/^shenon golin e (pare|dyte)\b/);
   if (goal) return { kind: 'goal', n: goal[1] === 'pare' ? 1 : 2 };
-  if (/^godet kornen e pare\b/.test(n)) return { kind: 'corner', n: 1 };
+  const nthCorner = n.match(/^godet kornen e (pare|dyte|trete|katert|peste|gjashte|shtate|tete|nente|dhjete)\b/);
+  if (nthCorner) return { kind: 'corner', n: CORNER_ORDINALS[nthCorner[1]] }; // the Nth corner of the match
   if (/^godet kornen e fundit\b/.test(n)) return { kind: 'corner', n: 0, last: true }; // the final corner of the match
   if (/^merr kartonin e pare\b/.test(n)) return { kind: 'card', n: 1 };
   return null;
@@ -322,6 +324,7 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
       const minute = parseInt(String(row.live_minute || ''), 10);
       return Number.isFinite(minute) && minute < LAST_EVENT_CUTOFF_MINUTE ? null : NOT_VERIFIABLE;
     }
+    if (ord.kind === 'corner' && row.live_corners && row.live_corners.fresh && row.live_corners.home + row.live_corners.away >= ord.n) return DECIDED; // the Nth corner is already taken
     return null; // first corner / first card: the counters are checked at placement
   }
   // next goal / corner / card (team): open in play when the option is a side
@@ -369,7 +372,11 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
 
     // corners, cards, combos and everything unrecognised (player / scorer / timing...)
     default: {
-      if (c.kind === 'corners' && market && isLiveCornerTotals(market.name)) return cornerTotalsReason(sel, row);
+      if (c.kind === 'corners' && market) {
+        const ctSpec = cornerTotalsSpec(market.name);
+        if (ctSpec) return cornerTotalsReason(sel, row, ctSpec, now);
+        if (isCornerRace(market.name)) return cornerRaceReason(sel, row);
+      }
       const spec = parseProviderMarket(norm(market && market.name));
       if (spec) return providerLiveReason(spec, sel, row, now);
       return allowUnverified === true ? null : NOT_VERIFIABLE;
@@ -377,25 +384,75 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
   }
 }
 
-// ---- corner totals in play ----------------------------------------------------------------
-// "Lart/Poshtë Korne" and "Lart/Poshtë Korne Totali" (Lart N+.5 / Sakte N / Poshte N-.5) are decided by
-// the full-time corner count, which the live feed keeps current (C1/C2 -> live_statistics). They are open
-// in play while that counter is fresh and the option is not already decided; callers attach it as
-// row.live_corners = { home, away, fresh } (matchSettlement.readLiveCorners). First-half / team variants
-// are not matched here and stay closed in play.
-const LIVE_CORNER_TOTALS = /^lart\s*\/\s*poshte korne( totali)?$/;
-export const isLiveCornerTotals = (name) => LIVE_CORNER_TOTALS.test(norm(name));
-function cornerTotalsReason(sel, row) {
+// ---- corner markets in play ---------------------------------------------------------------
+// The live feed keeps the corner counters current (C1/C2 -> live_statistics, event log in match_events),
+// so these corner markets are open in play while that counter is fresh and the option is not already
+// decided. Callers attach the counter as row.live_corners = { home, away, fresh } (readLiveCorners).
+//   * totals "Lart/Poshtë Korne" / "... Totali" (Lart N+.5 / Sakte N / Poshte N-.5), full time, 1st or 2nd half
+//   * "Gara e Korneve": first team to reach N corners; X = neither team reaches N (inferred from the odds: it is the
+//     long shot at N=5 and the favourite at N=9)
+//   * "Godet kornen e <N-të>": the team that takes the Nth corner of the match
+// Anything else about corners (team totals, handicap, ...) stays closed in play.
+function cornerTotalsSpec(name) {
+  const { period, base } = splitPeriod(norm(name));
+  // splitPeriod leaves the ordinal suffix of "Pjesa 1-rë" / "Pjesa 2-të" behind ("re" / "te")
+  return /^lart\s*\/\s*poshte korne( totali)?( (re|te))?$/.test(base) ? { period } : null;
+}
+export const isLiveCornerTotals = (name) => Boolean(cornerTotalsSpec(name));
+export const isCornerRace = (name) => /^gara e korneve$/.test(norm(name));
+export const isNthCornerMarket = (name) => { const o = eventOrderOrdinal(name); return Boolean(o && o.kind === 'corner' && !o.last); };
+// Markets whose in-play check needs the live corner counter (bets.js attaches it and applies the corner lock).
+export const isLiveCornerMarket = (name) => isLiveCornerTotals(name) || isCornerRace(name) || isNthCornerMarket(name);
+
+// "Gara e Korneve" option text -> { n, side: 'HOME' | 'AWAY' | 'NONE' } or null. The line N is the only
+// number in the text; the rest must be a team name or X / draw / neither. Anything else is not guessed.
+export function parseCornerRaceOption(text, home, away) {
+  const t = norm(text);
+  const nums = t.match(/\d+/g);
+  if (!nums || nums.length !== 1) return null;
+  const n = Number(nums[0]);
+  if (!Number.isFinite(n) || n < 1) return null;
+  const rest = t.replace(/\d+/, ' ').replace(/[|()\-:,]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!rest) return null;
+  if (home && rest === norm(home)) return { n, side: 'HOME' };
+  if (away && rest === norm(away)) return { n, side: 'AWAY' };
+  if (/^(x|draw|barazim|asnje|neither|none)$/.test(rest)) return { n, side: 'NONE' };
+  return null;
+}
+
+function cornersFreshAndEarly(row) {
   const lc = row.live_corners;
-  if (!lc || !lc.fresh || !Number.isFinite(lc.home) || !Number.isFinite(lc.away)) return NOT_VERIFIABLE;
+  if (!lc || !lc.fresh || !Number.isFinite(lc.home) || !Number.isFinite(lc.away)) return null;
   const minute = parseInt(String(row.live_minute || ''), 10);
-  if (!Number.isFinite(minute) || minute >= LAST_EVENT_CUTOFF_MINUTE) return NOT_VERIFIABLE; // the end is too close
-  const total = lc.home + lc.away;
+  if (!Number.isFinite(minute) || minute >= LAST_EVENT_CUTOFF_MINUTE) return null; // the end is too close
+  return lc;
+}
+
+function cornerTotalsReason(sel, row, spec, now) {
+  const lc = cornersFreshAndEarly(row);
+  if (!lc) return NOT_VERIFIABLE;
+  let total = lc.home + lc.away;
+  if (spec.period === 'H2') { // corners of the second half only: final counter minus the half-time snapshot
+    if (!isPastFirstHalf(row, now)) total = 0;
+    else {
+      const ht = Number(row.ht_corners_home) + Number(row.ht_corners_away);
+      if (row.ht_corners_home == null || row.ht_corners_away == null || !Number.isFinite(ht) || total < ht) return NOT_VERIFIABLE;
+      total -= ht;
+    }
+  }
   const ou = parseOverUnder(sel.id) || parseOverUnder(sel.name);
   if (ou) return total > ou.point ? DECIDED : null; // Over already won / Under already lost
   const m = norm(sel.name ?? sel.id).match(/^sakte\s+(\d+)$/);
   if (m) return total > Number(m[1]) ? DECIDED : null; // exactly N is lost once there are more
   return NOT_VERIFIABLE;
+}
+
+function cornerRaceReason(sel, row) {
+  const lc = cornersFreshAndEarly(row);
+  if (!lc) return NOT_VERIFIABLE;
+  const o = parseCornerRaceOption(sel.name ?? sel.id, row.home_team, row.away_team);
+  if (!o) return NOT_VERIFIABLE;
+  return lc.home >= o.n || lc.away >= o.n ? DECIDED : null; // somebody already reached N: the race is over
 }
 
 // In-play check for the provider's own markets (providerMarkets.js): closed once the outcome is fixed
