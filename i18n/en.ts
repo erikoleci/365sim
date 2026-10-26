@@ -110,6 +110,7 @@ export const enCore: Record<string, string> = {
   'Rezultati është {score}. Provider-i jep vetëm rezultatin: golashënuesit dhe minutat e golave nuk janë të disponueshme.': 'The score is {score}. The provider only supplies the score: goalscorers and goal minutes are not available.',
   "Ende s'ka ngjarje të regjistruara.": 'No events recorded yet.',
   'Fundi i pjesës së parë': 'End of first half',
+  'Fundi i kohës rregullt': 'End of regular time',
   '⚽ Gol': '⚽ Goal',
   '🟨 Kartion i verdh': '🟨 Yellow card',
   '🟥 Karton i kuq': '🟥 Red card',

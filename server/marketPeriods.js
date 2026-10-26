@@ -57,6 +57,8 @@ export function marketPeriod(marketName) {
   return null;
 }
 
+export const EXTRA_TIME_STATUSES = new Set(['ET', 'EXTRA_TIME', 'PEN', 'PENALTIES', 'AET']);
+
 // Provider live status codes that can only occur AFTER the first half
 // (see utils/liveStatus.ts and server/oddsUtils.js estimateLiveMinute).
 const PAST_FIRST_HALF_STATUSES = new Set([
@@ -114,6 +116,8 @@ export function isPastFirstHalf(row, now = Date.now()) {
 export function getMarketClosedReason(row, marketName, now = Date.now()) {
   if (!row) return null;
   if (row.status === 'FINISHED') return 'MATCH_FINISHED';
+  // Extra time / penalties: the regular-time result is fixed, and no market of ours is settled on 120 minutes.
+  if (EXTRA_TIME_STATUSES.has(String(row.live_status || '').toUpperCase().trim())) return 'REGULAR_TIME_OVER';
   if (marketPeriod(marketName) === 'H1' && isPastFirstHalf(row, now)) return 'FIRST_HALF_OVER';
   return null;
 }

@@ -7,6 +7,9 @@ export interface HalfEvent { minute: number | null; half?: number | null }
 export const isFirstHalfEvent = (e: HalfEvent): boolean =>
   e.half != null ? e.half === 1 : e.minute != null && e.minute <= 45;
 
+// half = 3: extra time (the provider status ET); its two halves are not told apart.
+export const isExtraTimeEvent = (e: HalfEvent): boolean => e.half === 3;
+
 export const isSecondHalfEvent = (e: HalfEvent): boolean =>
   e.half != null ? e.half === 2 : e.minute != null && e.minute > 45;
 
@@ -26,10 +29,16 @@ export function firstHalfDividerIndex(
   ctx: { halftime: boolean; finished: boolean; minuteNow: number; liveStatus?: string | null },
 ): number | null {
   const inFirstHalf = /^(1H|FIRST)/i.test(String(ctx.liveStatus ?? ''));
-  const reachedSecondHalf = ctx.halftime || ctx.finished || events.some(isSecondHalfEvent)
+  const reachedSecondHalf = ctx.halftime || ctx.finished || events.some(isSecondHalfEvent) || events.some(isExtraTimeEvent)
     // the minute alone says "second half" only when the status does not say we are still in the first
     || (!inFirstHalf && Number.isFinite(ctx.minuteNow) && ctx.minuteNow > 45);
   if (!reachedSecondHalf || !events.some(isFirstHalfEvent)) return null;
-  const idx = events.findIndex(isSecondHalfEvent);
+  const idx = events.findIndex((e) => isSecondHalfEvent(e) || isExtraTimeEvent(e));
   return idx === -1 ? events.length : idx;
+}
+
+// Index where "Fundi i kohës rregullt" goes: before the first extra-time event (null if there is none).
+export function regularTimeDividerIndex(events: HalfEvent[]): number | null {
+  const idx = events.findIndex(isExtraTimeEvent);
+  return idx === -1 ? null : idx;
 }

@@ -442,6 +442,7 @@ export function describeBlockReason(code) {
     case 'NO_PLAYER_DATA': return 'player odds are not offered (the feed does not provide player names)';
     case 'NO_SETTLEMENT_RULE': return 'this market cannot be settled automatically, so it is not offered';
     case 'NOT_VERIFIABLE_LIVE': return 'this market cannot be verified against live data, so it is only open before kick-off';
+    case 'REGULAR_TIME_OVER': return 'regular time is over (extra time / penalties): markets are settled on the 90-minute score and are closed';
     case 'WINDOW_CLOSED': return 'the time window of this market is about to end or has ended';
     default: return 'it is closed';
   }

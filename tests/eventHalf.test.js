@@ -34,3 +34,18 @@ describe('first-half stoppage time stays in the first half', () => {
     expect(firstHalfDividerIndex([], ctx({ halftime: true }))).toBeNull();
   });
 });
+
+describe('extra time (90-120)', () => {
+  const E = (minute, half) => ({ minute, half });
+  it('shows extra-time minutes as they are, not as 90+N, and puts the regular-time divider before them', async () => {
+    const { eventMinuteLabel: label, regularTimeDividerIndex: rt, firstHalfDividerIndex: fh, isSecondHalfEvent: second } = await import('../utils/eventHalf');
+    expect(label(E(97, 3))).toBe("97'");
+    expect(label(E(118, 3))).toBe("118'");
+    expect(label(E(93, 2))).toBe("90+3'"); // real stoppage time of the second half
+    const evs = [E(10, 1), E(46, 2), E(93, 2), E(96, 3), E(112, 3)];
+    expect(rt(evs)).toBe(3);
+    expect(rt([E(10, 1), E(70, 2)])).toBeNull();
+    expect(second(E(96, 3))).toBe(false);
+    expect(fh(evs, { halftime: false, finished: false, minuteNow: 112, liveStatus: 'ET' })).toBe(1);
+  });
+});

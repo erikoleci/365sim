@@ -7,7 +7,7 @@ import { shouldRecordOddsHistory } from '../oddsHistoryPolicy.js';
 import { bump } from '../feedStats.js';
 import { pushOddsChanged } from '../ws.js';
 import { trackGame, noteMatchStatus, setLiveRow } from '../liveTracker.js';
-import { captureHalfTimeScore } from '../halfTime.js';
+import { captureHalfTimeScore, captureRegularTimeScore } from '../halfTime.js';
 import { isHalfTimeLatched } from '../halfTimeLatch.js';
 import { createStatusSampler } from '../liveStatusSampler.js';
 import { countOutcomes, mergeEvents, isSparseEvent } from './markets.js';
@@ -204,6 +204,7 @@ export async function upsertMatch(ev, league, status, liveScores, liveInfo, leag
     trackGame(ev.id);
     noteMatchStatus(ev.id, eff.status);
     if (String(eff.live_status || '').toUpperCase() === 'HT') captureHalfTimeScore(ev.id, eff.live_home_score, eff.live_away_score);
+    if (['ET', 'EXTRA_TIME'].includes(String(eff.live_status || '').toUpperCase())) captureRegularTimeScore(ev.id, eff.live_home_score, eff.live_away_score);
     setLiveRow(ev.id, {
       home_team: ev.home_team, away_team: ev.away_team,
       live_home_score: eff.live_home_score, live_away_score: eff.live_away_score, live_minute: eff.live_minute,

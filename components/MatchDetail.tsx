@@ -8,7 +8,7 @@ import { isHalftime, liveMinuteFallback, formatScore, pickClockSource, isLiveClo
 import { LONDON365_EVENT_LABELS, LONDON365_STAT_LABELS } from '../utils/london365Labels';
 import { useI18n } from '../i18n';
 import TeamLogo from './TeamLogo';
-import { firstHalfDividerIndex, eventMinuteLabel } from '../utils/eventHalf';
+import { firstHalfDividerIndex, regularTimeDividerIndex, eventMinuteLabel } from '../utils/eventHalf';
 
 interface MatchDetailProps {
   match: Match;
@@ -190,6 +190,8 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
     const minuteNow = Number(liveDetail?.statistics?.minute ?? String(match.currentMinute ?? '').match(/^\d+/)?.[0] ?? NaN);
     return firstHalfDividerIndex(liveDetail?.events ?? [], { halftime: isHalftime(match), finished: isFinished, minuteNow, liveStatus: match.liveStatus });
   }, [liveDetail, isFinished, match.currentMinute, match.liveStatus]);
+
+  const regularTimeDividerAt = useMemo(() => regularTimeDividerIndex(liveDetail?.events ?? []), [liveDetail]);
 
   const CATEGORY_LABELS: Record<string, string> = {
     All: t('Të Gjitha'),
@@ -380,6 +382,9 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
                 <React.Fragment key={i}>
                 {i === firstHalfDividerAt && (
                   <div className="text-center text-brand-yellow text-xs font-bold py-2">{t('Fundi i pjesës së parë')}</div>
+                )}
+                {i === regularTimeDividerAt && (
+                  <div className="text-center text-brand-yellow text-xs font-bold py-2">{t('Fundi i kohës rregullt')}</div>
                 )}
                 <div className="flex items-center gap-3 bg-[#333] rounded px-3 py-2">
                   <span className="text-brand-yellow font-mono text-xs w-10 shrink-0">{eventMinuteLabel(ev)}</span>

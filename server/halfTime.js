@@ -45,3 +45,20 @@ export async function captureHalfTimeScore(matchId, home, away) {
     console.error('[halftime] failed to store half-time score for ' + matchId + ':', err.message);
   }
 }
+
+// Score at the end of regular time: the first reading while the match is in extra time. Extra time
+// has not added a goal yet at that moment, so this is the 90-minute score. First write wins.
+const rtCaptured = new Set();
+export function __resetRegularTimeCaptureForTests() { rtCaptured.clear(); }
+export async function captureRegularTimeScore(matchId, home, away) {
+  if (!matchId || rtCaptured.has(matchId)) return;
+  if (!Number.isInteger(home) || !Number.isInteger(away) || home < 0 || away < 0) return;
+  if (rtCaptured.size >= CAPTURED_CAP) rtCaptured.clear();
+  rtCaptured.add(matchId);
+  try {
+    await pool.query('UPDATE matches_cache SET rt_home = $2, rt_away = $3 WHERE id = $1 AND rt_home IS NULL', [matchId, home, away]);
+  } catch (err) {
+    rtCaptured.delete(matchId); // retry on the next extra-time tick
+    console.error('[regular-time] failed to store the 90-minute score for ' + matchId + ':', err.message);
+  }
+}

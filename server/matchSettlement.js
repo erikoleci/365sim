@@ -788,6 +788,22 @@ function noteUnrecognizedMarket(leg) {
 // Returns null if the match doesn't exist or is already settled (so callers
 // — both the admin route and the automatic poller — never double-pay a bet);
 // settleStuckBets() below is the safety net that re-checks leftovers.
+// The score markets are settled on: the one at the end of regular time. Captured when the match
+// entered extra time (rt_home / rt_away); without it, the goals logged in extra time (half = 3) are
+// taken off the final score. Never above the live score (a goal can be cancelled by VAR).
+export function regularTimeScoreFrom(match, extraGoals, home, away) {
+  if (match && match.rt_home != null && match.rt_away != null) {
+    return { home: Math.min(home, Number(match.rt_home)), away: Math.min(away, Number(match.rt_away)) };
+  }
+  return { home: Math.max(0, home - ((extraGoals && extraGoals.home) || 0)), away: Math.max(0, away - ((extraGoals && extraGoals.away) || 0)) };
+}
+async function loadExtraTimeGoals(client, match) {
+  try {
+    const { rows } = await client.query(`SELECT team FROM match_events WHERE match_id = $1 AND type = 'GOAL' AND half = 3`, [match.id]);
+    return { home: rows.filter((r) => r.team === match.home_team).length, away: rows.filter((r) => r.team === match.away_team).length };
+  } catch { return { home: 0, away: 0 }; } // half column not migrated yet
+}
+
 export async function settleMatch(matchId, homeScore, awayScore, { force = false } = {}) {
   const client = await pool.connect();
   try {
@@ -795,6 +811,11 @@ export async function settleMatch(matchId, homeScore, awayScore, { force = false
     const match = matchRows[0];
     if (!match) return null;
     if (!force && match.status === 'FINISHED' && match.settled_at) return null; // already settled, don't redo
+
+    // Extra time: settle on the score at the end of regular time (see regularTimeScoreFrom)
+    const rt = regularTimeScoreFrom(match, await loadExtraTimeGoals(client, match), homeScore, awayScore);
+    homeScore = rt.home;
+    awayScore = rt.away;
 
     const totalGoals = homeScore + awayScore;
     const bothScored = homeScore > 0 && awayScore > 0;
