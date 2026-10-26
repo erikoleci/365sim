@@ -54,6 +54,7 @@ import { decodeLiveAction, makeAction } from './liveAction.js';
 import { isTrackedGame, getLiveRow, setLiveRow, forgetLiveRow, __resetLiveTrackerForTests } from './liveTracker.js';
 import { bump } from './feedStats.js';
 import { captureHalfTimeScore } from './halfTime.js';
+import { isHalfTimeLatched, enterHalfTime, maybeReleaseHalfTime, __resetHalfTimeLatchForTests } from './halfTimeLatch.js';
 import { queueClockWrite } from './clockWrites.js';
 import { sampleFeedKeys } from './feedKeySampler.js';
 import { announceGoalIfChanged, clearGoalAnnounced } from './goalAnnouncer.js';
@@ -103,7 +104,6 @@ const ACTION_HOLD_MS = 8000;
 // liveAction.js (never guessed). Bounded so a noisy feed cannot grow it.
 const unmappedVcSeen = new Set();
 const UNMAPPED_VC_CAP = 200;
-const HT_HOLD_MS = 45000; // how long a VC=1015 "pushim" keeps clients in HT (> one REST cycle)
 
 // Test-only: clears in-memory state between test cases so each test is
 // independent (lastSeen/lastBroadcast are intentionally module-level, not
@@ -113,6 +113,7 @@ export function __resetLiveStateForTests() {
   pruneRuns = 0;
   unmappedVcSeen.clear();
   __resetLiveTrackerForTests(); // also clears the live row cache
+  __resetHalfTimeLatchForTests();
   lastSeen.clear();
   lastBroadcast.clear();
   derivedClock.clear();
@@ -535,9 +536,24 @@ async function applyGameDetailsNow(raw) {
   // running clock before the REST sync (api_status) confirms it. Otherwise the
   // provider's status code from the REST sync is passed on, so clients learn about
   // HT / 2H at socket speed instead of at the next list refresh.
-  let htUntil = cardBaseline && cardBaseline.htUntil > nowMs ? cardBaseline.htUntil : 0;
-  if (liveAction && liveAction.kind === 'half_time') htUntil = nowMs + HT_HOLD_MS;
-  const liveStatusNow = htUntil > nowMs ? 'HT' : (row.live_status || undefined);
+  const scoreMovedNow = Boolean(score) && (score.home !== row.live_home_score || score.away !== row.live_away_score);
+  const releasedHt = maybeReleaseHalfTime(matchId, {
+    action: decodedAction, restStatus: row.live_status, scoreMoved: scoreMovedNow, now: nowMs,
+  });
+  let statusOverride = null;
+  if (releasedHt) {
+    // The break is over: the ball is in play again -> second half (the REST sync later overwrites).
+    statusOverride = '2H';
+  } else if (liveAction && liveAction.kind === 'half_time' && enterHalfTime(matchId, nowMs)) {
+    statusOverride = 'HT';
+  }
+  if (statusOverride) {
+    // Persist so a list refresh / reconnect sees the same status as the live tick.
+    row = { ...row, live_status: statusOverride };
+    setLiveRow(matchId, row);
+    pool.query('UPDATE matches_cache SET live_status = $1 WHERE id = $2', [statusOverride, matchId]).catch(() => {});
+  }
+  const liveStatusNow = isHalfTimeLatched(matchId, nowMs) ? 'HT' : (row.live_status || undefined);
   if (liveStatusNow === 'HT') {
     // Score is frozen at the whistle: remember it for first/second-half settlement.
     const htH = score && Number.isFinite(score.home) ? score.home : row.live_home_score;
@@ -729,7 +745,7 @@ async function applyGameDetailsNow(raw) {
     );
   }
 
-  lastSeen.set(eid, { t: Number.isFinite(t) ? t : (prevSeen ? prevSeen.t : 0), yc1, yc2, rc1, rc2, c1, c2, posHome, posAway, ctr, recent, htUntil, held, sig: actionSignature(attrs) });
+  lastSeen.set(eid, { t: Number.isFinite(t) ? t : (prevSeen ? prevSeen.t : 0), yc1, yc2, rc1, rc2, c1, c2, posHome, posAway, ctr, recent, held, sig: actionSignature(attrs) });
 }
 
 export function getGameDetailsMemoryDiagnostics() {

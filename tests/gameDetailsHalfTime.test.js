@@ -31,6 +31,11 @@ const mocks = vi.hoisted(function () {
       return Promise.resolve({ rows: [] });
     }
     if (s.startsWith('UPDATE matches_cache SET ht_home')) return Promise.resolve({ rows: [] });
+    if (s.startsWith('UPDATE matches_cache SET live_status')) {
+      const row = matches.get(params[1]);
+      if (row) row.live_status = params[0];
+      return Promise.resolve({ rows: [] });
+    }
     throw new Error('unmocked query: ' + s);
   }
   const pool = { query };
@@ -99,5 +104,72 @@ describe('applyGameDetails - half time reaches clients through the live tick', (
     seed('HT');
     await applyGameDetails(tag({ ...base, VC: '', T: '2760' }));
     expect(lastTick().liveStatus).toBe('HT');
+  });
+
+  it('stays in HT for the whole break even when the provider status is an unknown numeric code', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-10-25T18:00:00Z'));
+      seed('3');
+      await applyGameDetails(tag({ ...base, VC: '1015', T: '2700' }));
+      expect(lastTick().liveStatus).toBe('HT');
+      // 10 minutes later: quiet ticks, REST still sends its numeric status
+      vi.setSystemTime(new Date('2026-10-25T18:10:00Z'));
+      mocks.matches.get('l365-' + EID).live_status = '3';
+      await applyGameDetails(tag({ ...base, VC: '', T: '2700' }));
+      expect(lastTick().liveStatus).toBe('HT');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a substitution during the break does not end it', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-10-25T18:00:00Z'));
+      seed('3');
+      await applyGameDetails(tag({ ...base, VC: '1015', T: '2700' }));
+      vi.setSystemTime(new Date('2026-10-25T18:05:00Z'));
+      await applyGameDetails(tag({ ...base, VC: '11013', T: '2700' }));
+      expect(lastTick().liveStatus).toBe('HT');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the first gameplay action after the break restarts the clock (2H)', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-10-25T18:00:00Z'));
+      seed('3');
+      await applyGameDetails(tag({ ...base, VC: '1015', T: '2700' }));
+      vi.setSystemTime(new Date('2026-10-25T18:15:00Z'));
+      await applyGameDetails(tag({ ...base, VC: '11001', T: '2705' }));
+      expect(lastTick().liveStatus).toBe('2H');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a gameplay message right after the whistle (out of order) does not cancel HT', async () => {
+    seed('1H');
+    await applyGameDetails(tag({ ...base, VC: '1015', T: '2700' }));
+    await applyGameDetails(tag({ ...base, VC: '21001', T: '2699' }));
+    expect(lastTick().liveStatus).toBe('HT');
+  });
+
+  it('gives up after 20 minutes so a missed restart cannot leave HT on forever', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-10-25T18:00:00Z'));
+      seed('2H');
+      await applyGameDetails(tag({ ...base, VC: '1015', T: '2700' }));
+      vi.setSystemTime(new Date('2026-10-25T18:21:00Z'));
+      mocks.matches.get('l365-' + EID).live_status = '2H';
+      await applyGameDetails(tag({ ...base, VC: '', T: '3900' }));
+      expect(lastTick().liveStatus).toBe('2H');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
