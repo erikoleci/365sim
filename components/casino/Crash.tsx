@@ -16,6 +16,8 @@ const Crash: React.FC<CrashProps> = ({ onSetBalance, userBalance, onClose }) => 
   const requestRef = useRef<number>(0);
   const startTimeRef = useRef<number>(0);
   const roundIdRef = useRef<string | null>(null);
+  const pollRef = useRef<number | null>(null);
+  const stopPolling = () => { if (pollRef.current != null) { window.clearInterval(pollRef.current); pollRef.current = null; } };
 
   const startGame = async () => {
     if (userBalance < stake || gameState === 'RUNNING') return;
@@ -41,6 +43,22 @@ const Crash: React.FC<CrashProps> = ({ onSetBalance, userBalance, onClose }) => 
       setCashedAt(null);
       startTimeRef.current = Date.now();
       requestRef.current = requestAnimationFrame(tick);
+      // The server decides when the round crashes: ask it every 250 ms and stop the climb the moment it has.
+      stopPolling();
+      pollRef.current = window.setInterval(async () => {
+        const id = roundIdRef.current;
+        if (!id) return;
+        try {
+          const st = await casinoCrashStatus(id);
+          if (st.crashed && roundIdRef.current === id) {
+            stopPolling();
+            cancelAnimationFrame(requestRef.current);
+            roundIdRef.current = null;
+            setMultiplier(st.multiplier ?? 1.00);
+            setGameState('CRASHED');
+          }
+        } catch { /* a missed poll is retried on the next tick */ }
+      }, 250);
     } catch (err) {
       // Insufficient balance or network error — nothing to animate.
     }
@@ -58,9 +76,12 @@ const Crash: React.FC<CrashProps> = ({ onSetBalance, userBalance, onClose }) => 
   const cashOut = async () => {
       if (gameState !== 'RUNNING' || !roundIdRef.current) return;
       cancelAnimationFrame(requestRef.current!);
+      stopPolling();
+      const id = roundIdRef.current;
+      roundIdRef.current = null;
 
       try {
-        const { crashed, multiplier: finalMultiplier, balance } = await casinoCrashCashout(roundIdRef.current);
+        const { crashed, multiplier: finalMultiplier, balance } = await casinoCrashCashout(id);
         onSetBalance(balance);
         if (crashed) {
           setMultiplier(finalMultiplier);
@@ -78,6 +99,7 @@ const Crash: React.FC<CrashProps> = ({ onSetBalance, userBalance, onClose }) => 
   // Cleanup on unmount
   useEffect(() => {
       return () => {
+          stopPolling();
           if (requestRef.current) cancelAnimationFrame(requestRef.current);
       };
   }, []);

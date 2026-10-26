@@ -1,5 +1,5 @@
 import express from 'express';
-import { randomUUID } from 'crypto';
+import { randomUUID, randomInt } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
 
@@ -208,9 +208,17 @@ router.post('/baccarat/deal', async (req, res) => {
 });
 
 // =====================================================================
-// CRASH — round starts with a hidden, server-committed crash point;
+// CRASH — fair: a hidden, server-committed crash point (see fairCrashPoint);
 // cashing out is checked against server-elapsed time, not client claims.
 // =====================================================================
+// Fair crash point: 0.99 / (1 - r) with r uniform in [0, 1) -> the multiplier reaches x with probability
+// 0.99 / x (a 1% house edge, ~1% of rounds crash at 1.00x), capped at 100x to bound the house's exposure.
+export const CRASH_MAX = 100;
+export function fairCrashPoint(r = randomInt(0, 2 ** 40) / 2 ** 40) {
+  const point = Math.floor((0.99 / (1 - r)) * 100) / 100;
+  return Math.min(CRASH_MAX, Math.max(1, point));
+}
+
 router.post('/crash/start', async (req, res) => {
   const { stake } = req.body || {};
   if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
@@ -218,9 +226,7 @@ router.post('/crash/start', async (req, res) => {
   const ok = await deductStake(req.user.id, stake);
   if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
 
-  // ~1% of rounds get a real, reachable crash point (a small win if cashed
-  // out in time); the other ~99% crash instantly at 1.00x.
-  const crashPoint = Math.random() < WIN_CHANCE ? 1.05 + Math.random() * 0.45 : 1.0;
+  const crashPoint = fairCrashPoint();
   const roundId = randomUUID();
   const startTime = Date.now();
 
@@ -280,11 +286,11 @@ router.post('/crash/:id/cashout', async (req, res) => {
 
   await pool.query(
     'UPDATE casino_rounds SET status = $1, payout = $2, resolved_at = $3, result = $4 WHERE id = $5',
-    ['RESOLVED', payout, Date.now(), JSON.stringify({ crashed, cashoutMultiplier: currentMultiplier }), round.id]
+    ['RESOLVED', payout, Date.now(), JSON.stringify({ crashed, cashoutMultiplier: crashed ? state.crashPoint : currentMultiplier }), round.id]
   );
   await creditPayout(req.user.id, payout);
   const balance = await getBalance(req.user.id);
-  res.json({ crashed, multiplier: currentMultiplier, payout, balance });
+  res.json({ crashed, multiplier: crashed ? state.crashPoint : currentMultiplier, payout, balance });
 });
 
 // =====================================================================
