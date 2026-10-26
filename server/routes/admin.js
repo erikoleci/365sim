@@ -12,6 +12,7 @@ import { buildCoverageReport, formatCoverageText } from '../marketCoverage.js';
 import { settlementRuleRequired } from '../marketRules.js';
 import { getFeedKeySamples } from '../feedKeySampler.js';
 import { getRecentErrors } from '../recentErrors.js';
+import { getUnmappedVcReport } from '../vcDeltaSampler.js';
 import { mapEventToMatch } from '../oddsUtils.js';
 
 import { transferBalance } from '../ledger.js';
@@ -611,6 +612,11 @@ router.get('/market-coverage', async (req, res) => {
 // sample values. Open it while real matches with goals are live to find out whether the feed
 // carries scorer names, team logos, etc. (see feedKeySampler.js). Resets on server restart.
 // The last unhandled route errors with their real cause (code, message, top stack lines).
+// Unknown provider action codes (VC) with the counters that moved alongside them: helps label new ones.
+router.get('/unmapped-vc', (req, res) => {
+  res.json({ now: new Date().toISOString(), codes: getUnmappedVcReport() });
+});
+
 router.get('/recent-errors', (req, res) => {
   res.json({ now: new Date().toISOString(), errors: getRecentErrors() });
 });

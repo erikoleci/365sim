@@ -55,6 +55,7 @@ import { decodeLiveAction, makeAction } from './liveAction.js';
 import { isTrackedGame, getLiveRow, setLiveRow, forgetLiveRow, __resetLiveTrackerForTests } from './liveTracker.js';
 import { bump } from './feedStats.js';
 import { captureHalfTimeScore } from './halfTime.js';
+import { observeVcFrame } from './vcDeltaSampler.js';
 import { isHalfTimeLatched, enterHalfTime, maybeReleaseHalfTime, __resetHalfTimeLatchForTests } from './halfTimeLatch.js';
 import { queueClockWrite } from './clockWrites.js';
 import { sampleFeedKeys } from './feedKeySampler.js';
@@ -516,6 +517,7 @@ async function applyGameDetailsNow(raw) {
   }
   const decodedAction = decodeLiveAction(attrs.VC);
   recordVcSample(attrs.VC, decodedAction && decodedAction.label, { match: `${attrs.H} - ${attrs.A}`, score: attrs.SC, t: attrs.T });
+  observeVcFrame(eid, attrs, Boolean(decodedAction), { match: `${attrs.H} - ${attrs.A}` });
   const vcText = String(attrs.VC ?? '').trim();
   if (vcText && !decodedAction && !unmappedVcSeen.has(vcText) && unmappedVcSeen.size < UNMAPPED_VC_CAP) {
     unmappedVcSeen.add(vcText);
