@@ -1,3 +1,4 @@
+import { findProviderLabels } from '../providerLabels.js';
 import { getVcSamples } from '../vcSampler.js';
 import express from 'express';
 import bcrypt from 'bcryptjs';
@@ -617,6 +618,11 @@ router.get('/recent-errors', (req, res) => {
 // VC (live action) codes seen from the feed with counts: unlabelled ones, rarest first (a penalty is rare).
 router.get('/vc-codes', (req, res) => {
   res.json({ now: new Date().toISOString(), ...getVcSamples() });
+});
+
+// Asks the provider's own site what it calls each live action code (to find the penalty code).
+router.get('/provider-labels', async (req, res) => {
+  try { res.json(await findProviderLabels()); } catch (e) { res.status(502).json({ error: String(e.message || e) }); }
 });
 
 router.get('/feed-keys', (req, res) => {
