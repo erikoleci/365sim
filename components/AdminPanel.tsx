@@ -4,6 +4,7 @@ import PendingLegsPanel from './PendingLegsPanel';
 import { User, UserRole, Bet, BetStatus } from '../types';
 import * as api from '../services/api';
 import { useI18n } from '../i18n';
+import TicketDetailModal, { TicketView } from './TicketDetailModal';
 import MatchupLabel from './MatchupLabel';
 
 interface AdminPanelProps {
@@ -21,6 +22,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
   const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'tickets' | 'audit' | 'markets' | 'pending'>('dashboard');
   const [auditEntries, setAuditEntries] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [openTicket, setOpenTicket] = useState<TicketView | null>(null);
   const [kpi, setKpi] = useState<api.AdminDashboardKpi | null>(null);
   const [exposure, setExposure] = useState<api.AdminExposureRow[]>([]);
   const [dashboardLoading, setDashboardLoading] = useState(false);
@@ -412,7 +414,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                         allBets.sort((a,b) => b.timestamp - a.timestamp).map(bet => {
                             const user = users.find(u => u.id === bet.userId);
                             return (
-                                <tr key={bet.id} className="hover:bg-brand-bg/50">
+                                <tr key={bet.id} className="hover:bg-brand-bg/50 cursor-pointer" title="Hap biletën"
+                                    onClick={() => setOpenTicket({ id: bet.id, createdAt: bet.timestamp, status: bet.status, type: bet.type, stake: bet.stake, totalOdds: bet.totalOdds, potentialReturn: bet.potentialReturn, user: user ? user.username : undefined, legs: bet.selections })}>
                                     <td className="p-3 text-xs text-brand-textMuted">{new Date(bet.timestamp).toLocaleString()}</td>
                                     <td className="p-3">
                                         <div className="flex items-center gap-1">
@@ -449,7 +452,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                                     </td>
                                     <td className="p-3 text-right">
                                         <button 
-                                            onClick={() => onCancelBet(bet.id, 'ADMIN')}
+                                            onClick={(e) => { e.stopPropagation(); onCancelBet(bet.id, 'ADMIN'); }}
                                             className="text-red-400 hover:text-white bg-red-900/30 hover:bg-red-900 px-2 py-1 rounded text-xs transition-colors"
                                         >
                                             Delete
@@ -499,6 +502,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
           </div>
         )}
       </div>
+      <TicketDetailModal ticket={openTicket} onClose={() => setOpenTicket(null)} />
     </div>
   );
 };

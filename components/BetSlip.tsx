@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BetSelectionItem, Bet, BetStatus } from '../types';
 import { useI18n } from '../i18n';
 import MatchupLabel from './MatchupLabel';
+import TicketDetailModal, { TicketView } from './TicketDetailModal';
 
 interface BetSlipProps {
   selections: BetSelectionItem[];
@@ -20,6 +21,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
   const [stake, setStake] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'slip' | 'mybets'>('slip');
   const [showConfirm, setShowConfirm] = useState(false);
+  const [openTicket, setOpenTicket] = useState<TicketView | null>(null);
   
   // Force re-render to update timers for "Cancel" button visibility
   const [, setTick] = useState(0);
@@ -241,7 +243,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                     const statusLabel = bet.status === BetStatus.PENDING ? t('Hapur') : partialLoss ? t('Humbje e pjesshme') : bet.status === BetStatus.WON ? t('Fituar') : bet.status === BetStatus.VOID ? t('Rimbursuar') : t('Humbur');
                     const statusColor = bet.status === BetStatus.WON ? 'border-brand-accent' : bet.status === BetStatus.LOST ? 'border-red-500' : bet.status === BetStatus.VOID ? 'border-gray-500' : 'border-brand-yellow';
                     return (
-                        <div key={bet.id} className={`bg-brand-bg border-l-4 ${statusColor} border-y border-r border-brand-divider rounded-lg p-2 text-xs relative`}>
+                        <div key={bet.id} onClick={() => setOpenTicket({ id: bet.id, createdAt: bet.timestamp, status: bet.status, stake: bet.stake, totalOdds: bet.totalOdds, potentialReturn: bet.potentialReturn, legs: bet.selections })} className={`bg-brand-bg border-l-4 ${statusColor} border-y border-r border-brand-divider rounded-lg p-2 text-xs relative cursor-pointer hover:bg-brand-panel/60`} title={t('Hap biletën')}>
                             <div className="flex justify-between mb-2 border-b border-brand-divider pb-1.5">
                                 <span className="text-brand-textMuted tabular-nums">{new Date(bet.timestamp).toLocaleDateString(locale, { timeZone: 'Europe/Tirane' })} {new Date(bet.timestamp).toLocaleTimeString(locale, { timeZone: 'Europe/Tirane', hour: '2-digit', minute: '2-digit' })}</span>
                                 <span className={`font-bold uppercase text-[10px] tracking-wide px-1.5 py-0.5 rounded ${bet.status === BetStatus.WON ? 'bg-brand-accent/15 text-brand-accent' : bet.status === BetStatus.LOST ? 'bg-red-500/15 text-red-400' : bet.status === BetStatus.VOID ? 'bg-gray-500/20 text-gray-300' : 'bg-brand-yellow/15 text-brand-yellow'}`}>
@@ -275,7 +277,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                                 </div>
                                 {canCancel && (
                                     <button
-                                        onClick={() => onCancelBet(bet.id, 'USER')}
+                                        onClick={(e) => { e.stopPropagation(); onCancelBet(bet.id, 'USER'); }}
                                         className="bg-red-900/40 hover:bg-red-800 text-red-200 border border-red-800 px-2 py-0.5 rounded-md text-[10px] transition-colors"
                                     >
                                         {t('Anulo Biletën')}
@@ -288,6 +290,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
             </div>
         )}
       </div>
+      <TicketDetailModal ticket={openTicket} onClose={() => setOpenTicket(null)} />
     </div>
   );
 };

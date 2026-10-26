@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { User } from '../types';
 import * as api from '../services/api';
 import { useI18n, getLocale } from '../i18n';
+import TicketDetailModal, { TicketView } from './TicketDetailModal';
 import MatchupLabel from './MatchupLabel';
 
 const money = (n: number) => Number(n || 0).toLocaleString(getLocale(), { maximumFractionDigits: 2 });
@@ -29,6 +30,7 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
   const [error, setError] = useState<string | null>(null);
 
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [openTicket, setOpenTicket] = useState<TicketView | null>(null);
   const [tickets, setTickets] = useState<Record<string, api.AgentTicket[]>>({});
 
   const [showCreate, setShowCreate] = useState(false);
@@ -251,7 +253,8 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
                       ) : (
                         <div className="space-y-2 max-h-[420px] overflow-y-auto">
                           {tickets[u.id].map((tk) => (
-                            <div key={tk.id} className="border border-[#444] rounded p-2 bg-brand-panel">
+                            <div key={tk.id} className="border border-[#444] rounded p-2 bg-brand-panel cursor-pointer hover:border-brand-yellow/60" title={t('Hap biletën')}
+                              onClick={() => setOpenTicket({ id: tk.id, createdAt: tk.createdAt, status: tk.status, type: tk.type, stake: tk.stake, totalOdds: tk.totalOdds, potentialReturn: tk.potentialReturn, user: u.name || u.username, legs: tk.selections })}>
                               <div className="flex justify-between text-xs mb-1">
                                 <span className="text-brand-textMuted">{t('{date} - Stake: {stake} - Kuota: {odds}', { date: dateFmt(tk.createdAt), stake: money(tk.stake), odds: tk.totalOdds })}</span>
                                 <span className={'font-bold ' + (statusColor[tk.status] || '')}>{tk.status}</span>
@@ -331,6 +334,7 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
       )}
 
       <style>{'.input { background:#1f1f1f; border:1px solid #444; border-radius:4px; padding:6px 8px; font-size:12px; color:#eee; }'}</style>
+      <TicketDetailModal ticket={openTicket} onClose={() => setOpenTicket(null)} />
     </div>
   );
 };
