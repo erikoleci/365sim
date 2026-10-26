@@ -41,6 +41,7 @@ const ACTIONS = {
   '1013': { kind: 'substitution', label: 'Ndërrim' },
   '1015': { kind: 'half_time', label: 'Pushim' },
   '1024': { kind: 'throw_in', label: 'Rivënie anësore' },
+  '1025': { kind: 'injury', label: 'Dëmtim' }, // player injured (owner-confirmed; seen VC="1025", FC Van v Gandzasar Kapan, T=3717)
   '1234': { kind: 'offside', label: 'Pozicion jashtë loje' },
 };
 

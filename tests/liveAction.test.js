@@ -16,11 +16,17 @@ describe('decodeLiveAction', () => {
     expect(decodeLiveAction(vc)).toMatchObject({ side, kind });
   });
 
+  it('decodes 1025 as an injury (Dëmtim), with or without a team digit', () => {
+    expect(decodeLiveAction('1025')).toEqual({ side: null, kind: 'injury', label: 'Dëmtim' });
+    expect(decodeLiveAction('11025')).toMatchObject({ side: 'home', kind: 'injury' });
+    expect(decodeLiveAction('21025')).toMatchObject({ side: 'away', kind: 'injury' });
+  });
+
   it('returns null for unknown or malformed codes (never guesses)', () => {
     expect(decodeLiveAction('21099')).toBeNull();
     expect(decodeLiveAction('11010')).toEqual({ side: 'home', kind: 'free_kick', label: 'Gjuajtje e lirë' });
     expect(decodeLiveAction('21003')).toEqual({ side: 'away', kind: 'goal', label: 'Gol' });
-    expect(decodeLiveAction('21025')).toBeNull();
+    expect(decodeLiveAction('21098')).toBeNull();
     expect(decodeLiveAction('')).toBeNull();
     expect(decodeLiveAction(undefined)).toBeNull();
     expect(decodeLiveAction('abc')).toBeNull();
