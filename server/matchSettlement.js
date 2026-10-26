@@ -8,6 +8,7 @@ import {
   STATS_UNDECIDABLE, EVENT_ORDER_RE, FIRST_TEAM_TO_SCORE_NAMES, LAST_TEAM_TO_SCORE_NAMES, FIRST_GOAL_NAMES, LAST_GOAL_NAMES, BOTH_HALVES_NAMES, GOAL_ORDER_NAMES, FIRST_GOAL_H1_NAMES,
   nextEventKind,
 } from './marketRules.js';
+import { parseProviderMarket, providerOutcome, goalTimelineFromRows } from './providerMarkets.js';
 
 // ---- first / second half markets ------------------------------------------
 // "Rezultati Pjesa e Parë", "Numri i Golave në Pjesën e Dytë", "1X2 1st Half" ...
@@ -266,6 +267,15 @@ async function loadNextEvents(client, match, homeScore, awayScore) {
   } catch { return undefined; }
 }
 const legNeedsNextEvent = (leg) => Boolean(nextEventKind(leg.market_name));
+// Goal-by-goal timeline (minute + side) for "goal before minute N" and "RF-N" markets.
+async function loadGoalTimeline(client, match, homeScore, awayScore) {
+  try {
+    if (homeScore + awayScore === 0) return [];
+    const { rows } = await client.query(`SELECT team, minute, minute_exact FROM match_events WHERE match_id = $1 AND type = 'GOAL'`, [match.id]);
+    return goalTimelineFromRows(rows, match.home_team, match.away_team, homeScore, awayScore);
+  } catch { return undefined; }
+}
+const legNeedsTimeline = (leg) => { const p = parseProviderMarket(norm(leg.market_name)); return Boolean(p && (p.type === 'goal_before' || p.type === 'rf_at')); };
 
 // "Next goal / corner / card" tickets are decided the moment the next such event happens after the
 // bet (not when the match ends): the first event logged after the bet decides every ticket on it.
@@ -455,7 +465,7 @@ function cornersP1P2Outcome(leg, stats, htStats) {
   return c1 >= r1[0] && c1 <= r1[1] && c2 >= r2[0] && c2 <= r2[1] ? 'WON' : 'LOST';
 }
 
-export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeScore, awayScore, htHome, htAway, stats, htStats, goalOrder, goalMinutes, nextEvents }) {
+export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeScore, awayScore, htHome, htAway, stats, htStats, goalOrder, goalMinutes, nextEvents, goalTimeline }) {
   const marketId = String(leg.market_id ?? '');
   const hasScore = Number.isFinite(homeScore) && Number.isFinite(awayScore);
 
@@ -533,6 +543,12 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
     const side = /^(asnje|asnje gol|asnje korner|asnje karton|no goal|none|pa gol)$/.test(sel) ? 'DRAW' : sideOfSelection(leg);
     if (side !== 'HOME' && side !== 'AWAY' && side !== 'DRAW') return null;
     return (side === 'DRAW' ? 'NONE' : side) === actual ? 'WON' : 'LOST';
+  }
+
+  // ---- the provider's own markets: team goals, scores in P2, result & BTTS, goal before minute N, RF-N ----
+  const pm = parseProviderMarket(marketName);
+  if (pm && pm.type !== 'result_goals') {
+    return providerOutcome(pm, norm(leg.selection_name || leg.selection_id), { homeScore, awayScore, htHome, htAway, goalTimeline }) ?? null;
   }
 
   const { period, base } = splitPeriod(marketName);
@@ -622,8 +638,10 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
 
   if (BTTS_NAMES.has(marketName) || marketId.endsWith('-btts')) {
     const sel = norm(leg.selection_name || leg.selection_id);
-    if (sel === 'po' || sel === 'yes' || sel === 'gol') return bothScored ? 'WON' : 'LOST';
-    if (sel === 'jo' || sel === 'no' || sel === 'jogol') return !bothScored ? 'WON' : 'LOST';
+    // the provider's "Gol Jo Gol Live" / "Gol / Jo Gol Ne P2" label the options 1 = Gol, 2 = Jo Gol
+    const numeric = marketName === 'gol jo gol live';
+    if (sel === 'po' || sel === 'yes' || sel === 'gol' || (numeric && sel === '1')) return bothScored ? 'WON' : 'LOST';
+    if (sel === 'jo' || sel === 'no' || sel === 'jogol' || (numeric && sel === '2')) return !bothScored ? 'WON' : 'LOST';
     return null;
   }
 
@@ -795,13 +813,14 @@ export async function settleMatch(matchId, homeScore, awayScore, { force = false
     const goalOrder = legs.some(legNeedsFirstScorer) ? await loadGoalOrder(client, match, homeScore, awayScore) : undefined;
     const goalMinutes = legs.some(legNeedsGoalMinutes) ? await loadGoalMinutes(client, matchId, homeScore, awayScore) : undefined;
     const nextEvents = legs.some(legNeedsNextEvent) ? await loadNextEvents(client, match, homeScore, awayScore) : undefined;
+    const goalTimeline = legs.some(legNeedsTimeline) ? await loadGoalTimeline(client, match, homeScore, awayScore) : undefined;
 
     await client.query('BEGIN');
     try {
       for (const leg of legs) {
         affectedBetIds.add(leg.bet_id);
         const outcome = determineLegOutcome(leg, {
-          winner, totalGoals, bothScored, homeScore, awayScore, stats, goalOrder, goalMinutes, nextEvents,
+          winner, totalGoals, bothScored, homeScore, awayScore, stats, goalOrder, goalMinutes, nextEvents, goalTimeline,
           htStats: htStatsOf(match),
           htHome: match.ht_home == null ? undefined : Number(match.ht_home),
           htAway: match.ht_away == null ? undefined : Number(match.ht_away),
@@ -921,7 +940,12 @@ export async function settleStuckBets() {
     const firstByMatch = new Map();
     const minutesByMatch = new Map();
     const nextByMatch = new Map();
+    const timelineByMatch = new Map();
     for (const leg of legs) {
+      if (legNeedsTimeline(leg) && !timelineByMatch.has(leg.match_id)) {
+        const { rows: mr } = await client.query('SELECT id, home_team, away_team FROM matches_cache WHERE id = $1', [leg.match_id]);
+        timelineByMatch.set(leg.match_id, mr[0] ? await loadGoalTimeline(client, mr[0], Number(leg.result_home), Number(leg.result_away)) : undefined);
+      }
       if (legNeedsNextEvent(leg) && !nextByMatch.has(leg.match_id)) {
         const { rows: mr } = await client.query('SELECT id, home_team, away_team FROM matches_cache WHERE id = $1', [leg.match_id]);
         nextByMatch.set(leg.match_id, mr[0] ? await loadNextEvents(client, mr[0], Number(leg.result_home), Number(leg.result_away)) : undefined);
@@ -947,6 +971,7 @@ export async function settleStuckBets() {
           goalOrder: firstByMatch.get(leg.match_id),
           goalMinutes: minutesByMatch.get(leg.match_id),
           nextEvents: nextByMatch.get(leg.match_id),
+          goalTimeline: timelineByMatch.get(leg.match_id),
           winner: home > away ? 'HOME' : away > home ? 'AWAY' : 'DRAW',
           totalGoals: home + away,
           bothScored: home > 0 && away > 0,

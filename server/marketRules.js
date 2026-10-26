@@ -20,6 +20,7 @@
 // Names are matched on the provider's own wording (Albanian), normalised.
 
 import { matchExtraMarket, UNSETTLEABLE_NAME } from './extraMarkets.js';
+import { parseProviderMarket, teamGoalsOption } from './providerMarkets.js';
 import { normMarketText as norm, splitPeriod, PERIOD_BASE_ALIASES, isPastFirstHalf, getMarketClosedReason } from './marketPeriods.js';
 
 // Shared with the settlement code (matchSettlement.js): both sides must agree on
@@ -27,9 +28,9 @@ import { normMarketText as norm, splitPeriod, PERIOD_BASE_ALIASES, isPastFirstHa
 // 'totali' / 'total' are the short names used inside combination markets ("Rezultat Final & Totali").
 export const TOTAL_GOALS_PREFIXES = ['numri i golave ne ndeshje', 'numri i golave', 'totali i golave', 'total goals', 'golat ne ndeshje', 'totali', 'total'];
 export const H2H_NAMES = new Set(['rezultat final', 'rezultati final', '1x2', 'rezultati i ndeshjes', 'fituesi i ndeshjes']);
-export const BTTS_NAMES = new Set(['gol/jogol', 'gol-jogol', 'gol / jogol', 'te dy skuadrat shenojne', 'both teams to score']);
-export const DOUBLE_CHANCE_NAMES = new Set(['dopio shans', 'double chance', 'shans i dyfishte']);
-export const CORRECT_SCORE_NAMES = new Set(['rezultati i sakte', 'rezultati ekzakt', 'correct score']);
+export const BTTS_NAMES = new Set(['gol/jogol', 'gol-jogol', 'gol / jogol', 'gol jo gol live', 'te dy skuadrat shenojne', 'both teams to score']);
+export const DOUBLE_CHANCE_NAMES = new Set(['dopioshans live', 'dopioshans', 'dopio shans', 'double chance', 'shans i dyfishte']);
+export const CORRECT_SCORE_NAMES = new Set(['rezultati sakte live', 'rezultati i sakte', 'rezultati ekzakt', 'correct score']);
 // "Skuadra që shënon e para" / "First team to score": decided from the logged goal order
 // (matchSettlement.js). Only these explicit team-based names; "Goli i Parë" may be a player
 // market, so it is NOT claimed here.
@@ -106,7 +107,7 @@ export function classifyMarket(marketId, marketName, { home, away } = {}) {
   if (H2H_NAMES.has(base)) return { kind: 'result', period };
   if (BTTS_NAMES.has(base)) return { kind: 'btts', period };
   if (DOUBLE_CHANCE_NAMES.has(base)) return { kind: 'double_chance', period };
-  if (/\b(no bet|draw no bet)\b|barazimi = rimbursim/.test(full)) return { kind: 'dnb', period };
+  if (/\b(no bet|draw no bet)\b|barazimi = rimbursim|^fitore ?\/ ?fitore$/.test(full)) return { kind: 'dnb', period };
   if (TOTAL_GOALS_PREFIXES.includes(base)) return { kind: 'totals', period };
   for (const prefix of TOTAL_GOALS_PREFIXES) {
     if (home && base === `${prefix} ${norm(home)}`) return { kind: 'team_totals', period, side: 'home' };
@@ -181,8 +182,9 @@ export function describeMarket(marketId, marketName) {
       (AUTO_SETTLES.has(c.kind) && !((c.kind === 'corners' || c.kind === 'cards') && STATS_UNDECIDABLE.test(stripP1P2(norm(marketName)))))
       || matchExtraMarket(norm(marketName)) || FIRST_GOAL_H1_NAMES.has(norm(marketName)) || EVENT_ORDER_RE.test(norm(marketName))
       || Boolean(nextEventKind(marketName))
+      || Boolean(parseProviderMarket(norm(marketName)))
     ),
-    inPlay: OPEN_IN_PLAY.has(c.kind) || nextEventKind(marketName) ? 'open' : 'blocked',
+    inPlay: OPEN_IN_PLAY.has(c.kind) || nextEventKind(marketName) || parseProviderMarket(norm(marketName)) ? 'open' : 'blocked',
   };
 }
 
@@ -325,7 +327,7 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
   // next goal / corner / card (team): open in play when the option is a side
   if (market && nextEventKind(market.name)) return isSideOrNoneSelection(row, selection) ? null : NOT_VERIFIABLE;
   // every other timing market (minute windows, player, ...) stays closed
-  if (market && TIMING_MARKET.test(norm(market.name))) return NOT_VERIFIABLE;
+  if (market && TIMING_MARKET.test(norm(market.name)) && !parseProviderMarket(norm(market.name))) return NOT_VERIFIABLE;
 
   const c = classifyMarket(market && market.id, market && market.name, { home: row.home_team, away: row.away_team });
   const sel = selection || {};
@@ -366,8 +368,68 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
     }
 
     // corners, cards, combos and everything unrecognised (player / scorer / timing...)
-    default:
-      return allowUnverified === true ? null : NOT_VERIFIABLE; // only an explicit test flag; never config
+    default: {
+      const spec = parseProviderMarket(norm(market && market.name));
+      if (spec) return providerLiveReason(spec, sel, row, now);
+      return allowUnverified === true ? null : NOT_VERIFIABLE;
+    } // only an explicit test flag; never config
+  }
+}
+
+// In-play check for the provider's own markets (providerMarkets.js): closed once the outcome is fixed
+// by what has already happened, or when the time window of the market is about to end.
+const WINDOW_MARGIN_SECONDS = 90;
+function clockSeconds(row) {
+  const m = String(row.live_minute || '').match(/^(\d+)(?::(\d{1,2}))?/);
+  return m ? Number(m[1]) * 60 + (m[2] ? Number(m[2]) : 0) : null;
+}
+function providerLiveReason(spec, sel, row, now) {
+  const s = liveScore(row);
+  if (!s) return NOT_VERIFIABLE;
+  const selText = norm(sel.name ?? sel.id);
+  switch (spec.type) {
+    case 'team_goals': {
+      const o = teamGoalsOption(selText); if (!o) return NOT_VERIFIABLE;
+      const g = spec.side === 'HOME' ? s.h : s.a;
+      return (o.plus ? g >= o.n : g > o.n) ? DECIDED : null; // fixed already: reached N+ / passed N
+    }
+    case 'team_scores': {
+      const past = isPastFirstHalf(row, now);
+      if (spec.half === 1) {
+        if (past) return 'FIRST_HALF_OVER';
+        return (spec.side === 'HOME' ? s.h : s.a) > 0 ? DECIDED : null;
+      }
+      const ps2 = periodScore(row, 'H2', now); if (!ps2) return NOT_VERIFIABLE;
+      const g2 = spec.side === 'HOME' ? ps2.h : ps2.a;
+      if (spec.half === 2) return g2 > 0 ? DECIDED : null; // already scored in P2: Po is certain
+      // both halves: needs a first-half goal AND a second-half goal
+      if (!past) return null;
+      const g1 = (spec.side === 'HOME' ? s.h : s.a) - g2;
+      return g1 <= 0 || g2 > 0 ? DECIDED : null; // no goal in P1 (lost) or both done (won)
+    }
+    case 'btts_half': {
+      if (spec.half === 1) {
+        if (isPastFirstHalf(row, now)) return 'FIRST_HALF_OVER';
+        return s.h > 0 && s.a > 0 ? DECIDED : null;
+      }
+      const ps2 = periodScore(row, 'H2', now); if (!ps2) return NOT_VERIFIABLE;
+      return ps2.h > 0 && ps2.a > 0 ? DECIDED : null;
+    }
+    case 'result_btts':
+      return /^[12x]\s*\|\s*jg$/.test(selText) && s.h > 0 && s.a > 0 ? DECIDED : null; // both scored: JG is lost
+    case 'goal_before':
+    case 'rf_at': {
+      const clock = clockSeconds(row);
+      if (clock == null) return NOT_VERIFIABLE;
+      if (clock >= spec.minute * 60 - WINDOW_MARGIN_SECONDS) return 'WINDOW_CLOSED'; // too close to (or past) the cut-off
+      if (spec.type === 'goal_before') {
+        const goals = spec.side === 'HOME' ? s.h : spec.side === 'AWAY' ? s.a : s.h + s.a;
+        return goals >= spec.k ? DECIDED : null; // that goal has already been scored in time
+      }
+      return null;
+    }
+    default: // result_goals: a result can still change, never fixed by the score
+      return null;
   }
 }
 
@@ -380,6 +442,7 @@ export function describeBlockReason(code) {
     case 'NO_PLAYER_DATA': return 'player odds are not offered (the feed does not provide player names)';
     case 'NO_SETTLEMENT_RULE': return 'this market cannot be settled automatically, so it is not offered';
     case 'NOT_VERIFIABLE_LIVE': return 'this market cannot be verified against live data, so it is only open before kick-off';
+    case 'WINDOW_CLOSED': return 'the time window of this market is about to end or has ended';
     default: return 'it is closed';
   }
 }
