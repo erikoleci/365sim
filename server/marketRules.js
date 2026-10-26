@@ -37,8 +37,10 @@ export const FIRST_TEAM_TO_SCORE_NAMES = new Set([
   'skuadra qe shenon e pare', 'skuadra qe shenon e para', 'skuadra e pare qe shenon', 'skuadra qe shenon i pari',
   'ekipi qe shenon e pare', 'ekipi qe shenon i pari', 'first team to score', 'team to score first',
   'cila skuader shenon golin e 1re', 'cila skuader shenon golin e pare',
+  'shenon golin e pare (skuadra)', 'shenon golin e pare skuadra', 'shenon golin e pare',
 ]);
 export const LAST_TEAM_TO_SCORE_NAMES = new Set([
+  'shenon golin e fundit (skuadra)', 'shenon golin e fundit skuadra', 'shenon golin e fundit',
   'skuadra qe shenon e fundit', 'skuadra e fundit qe shenon', 'skuadra qe shenon i fundit', 'ekipi qe shenon i fundit',
   'ekipi qe shenon e fundit', 'last team to score', 'team to score last',
   'cila skuader shenon golin e fundit',
@@ -253,6 +255,21 @@ export function nextEventKind(marketName) {
   if (/\b(gol|golin|goli|gola|goal)\b/.test(n)) return 'goal';
   return null;
 }
+// The provider's own "next event" markets: "Shënon golin e parë / dytë (skuadra)", "Godet kornen e
+// parë", "Merr kartonin e parë". The provider offers the one that is NEXT (first goal at 0-0, second
+// goal at 1-0, first corner while there is none ...), so these are open in play exactly while the
+// match has n-1 such events. Goals are checked against the live score here; corners and cards need the
+// live counters, which bets.js reads at placement.
+export function eventOrderOrdinal(marketName) {
+  const n = norm(marketName);
+  if (/\b(pjes\w*|half|p[12]|minut\w*|lojtar\w*|player)\b/.test(n)) return null;
+  const goal = n.match(/^shenon golin e (pare|dyte)\b/);
+  if (goal) return { kind: 'goal', n: goal[1] === 'pare' ? 1 : 2 };
+  if (/^godet kornen e pare\b/.test(n)) return { kind: 'corner', n: 1 };
+  if (/^godet kornen e fundit\b/.test(n)) return { kind: 'corner', n: 0, last: true }; // the final corner of the match
+  if (/^merr kartonin e pare\b/.test(n)) return { kind: 'card', n: 1 };
+  return null;
+}
 // 1 / 2 / X (nothing more) or a team name; a player name is not a side.
 export function isSideOrNoneSelection(row, selection) {
   const t = norm(selection && (selection.name ?? selection.id));
@@ -261,6 +278,9 @@ export function isSideOrNoneSelection(row, selection) {
     || /^(1|2|x|home|away|draw)$/.test(id)
     || t === norm(row && row.home_team) || t === norm(row && row.away_team);
 }
+
+// The "last corner" market stays open in play until this minute (afterwards the end is too close).
+const LAST_EVENT_CUTOFF_MINUTE = 88;
 
 const NOT_VERIFIABLE = 'NOT_VERIFIABLE_LIVE';
 const NO_PLAYER_DATA = 'NO_PLAYER_DATA';
@@ -286,6 +306,22 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
   const kickoff = Date.parse(row.start_time);
   if (!Number.isFinite(kickoff) || kickoff > now) return null; // not in play yet
 
+  // the provider's ordinal "next" markets (first / second goal, first corner, first card)
+  const ord = market && eventOrderOrdinal(market.name);
+  if (ord) {
+    if (!isSideOrNoneSelection(row, selection)) return NOT_VERIFIABLE;
+    if (ord.kind === 'goal') {
+      if (row.live_home_score == null || row.live_away_score == null) return NOT_VERIFIABLE;
+      const goals = Number(row.live_home_score) + Number(row.live_away_score);
+      if (!Number.isFinite(goals)) return NOT_VERIFIABLE;
+      if (goals !== ord.n - 1) return DECIDED; // not the NEXT goal (already scored / not reached yet)
+    }
+    if (ord.last) { // last corner: open until the end is too close
+      const minute = parseInt(String(row.live_minute || ''), 10);
+      return Number.isFinite(minute) && minute < LAST_EVENT_CUTOFF_MINUTE ? null : NOT_VERIFIABLE;
+    }
+    return null; // first corner / first card: the counters are checked at placement
+  }
   // next goal / corner / card (team): open in play when the option is a side
   if (market && nextEventKind(market.name)) return isSideOrNoneSelection(row, selection) ? null : NOT_VERIFIABLE;
   // every other timing market (minute windows, player, ...) stays closed

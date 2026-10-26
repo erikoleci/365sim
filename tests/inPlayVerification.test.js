@@ -132,3 +132,29 @@ describe('corners / cards settle automatically from the final counters', () => {
     expect(o(leg('Karton i kuq', 'Po'))).toBeNull();
   });
 });
+
+describe('the provider "next" markets are open in play while they are the next event', () => {
+  const live = (h, a) => ({ home_team: 'Chanmari FC', away_team: 'MLS FC', status: 'LIVE', live_status: '1H', start_time: new Date(Date.now() - 20 * 60000).toISOString(), live_minute: '20:00', live_home_score: h, live_away_score: a });
+  const g = (row, name, sel) => getBetBlockReason(row, { id: 'm', name }, { id: sel, name: sel });
+  it('first goal (team) is open at 0-0 and closed once a goal was scored', () => {
+    expect(g(live(0, 0), 'Shenon golin e pare (skuadra)', '1')).toBeNull();
+    expect(g(live(0, 0), 'Shenon golin e pare (skuadra)', 'X')).toBeNull(); // X = no goal
+    expect(g(live(1, 0), 'Shenon golin e pare (skuadra)', '1')).toBe('OUTCOME_DECIDED');
+  });
+  it('second goal (team) is open exactly at one goal', () => {
+    expect(g(live(1, 0), 'Shenon golin e dyte (skuadra)', '2')).toBeNull();
+    expect(g(live(0, 0), 'Shenon golin e dyte (skuadra)', '2')).toBe('OUTCOME_DECIDED');
+    expect(g(live(1, 1), 'Shenon golin e dyte (skuadra)', '2')).toBe('OUTCOME_DECIDED');
+  });
+  it('first corner / first card pass the sync check (counters are read at placement); a player option does not', () => {
+    expect(g(live(0, 0), 'Godet kornen e pare', '1')).toBeNull();
+    expect(g(live(0, 0), 'Merr kartonin e pare', '2')).toBeNull();
+    expect(g(live(0, 0), 'Merr kartonin e pare', 'Dybala')).not.toBeNull();
+  });
+  it('the last corner market is open in play until the end is too close', () => {
+    expect(g(live(1, 0), 'Godet kornen e fundit', '1')).toBeNull();
+    expect(g({ ...live(1, 0), live_minute: '56:12' }, 'Godet kornen e fundit', '2')).toBeNull();
+    expect(g({ ...live(1, 0), live_minute: '89:30' }, 'Godet kornen e fundit', '2')).toBe('NOT_VERIFIABLE_LIVE');
+    expect(g(live(1, 0), 'Godet kornen e fundit', 'Dybala')).not.toBeNull();
+  });
+});

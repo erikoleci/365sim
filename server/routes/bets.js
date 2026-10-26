@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { resolveCurrentSelection, mapEventToMatch, isStaleLive } from '../oddsUtils.js';
-import { getBetBlockReason, describeBlockReason, nextEventKind } from '../marketRules.js';
+import { getBetBlockReason, describeBlockReason, nextEventKind, eventOrderOrdinal } from '../marketRules.js';
 import { readNextEventCounters } from '../matchSettlement.js';
 import { findConflictingSelection, validateStakeAmount, getCancelBlockReason, isLiveEventLocked } from '../betValidation.js';
 import { getLiveDetailAgeMs, isLiveDetailStale } from '../liveDetailPlan.js';
@@ -213,6 +213,23 @@ router.post('/', wrap(async (req, res) => {
       { id: sel.selectionId, name: current.selectionName || sel.selectionName }
     );
     if (matchRow.status === 'LIVE' || matchRow.live_status != null) inPlay = true;
+    // first corner / first card in play: only while none has happened yet (live counters)
+    let ordinalReason = null;
+    const ordinal = eventOrderOrdinal(current.marketName);
+    if (!closedReason && inPlay && ordinal && ordinal.kind !== 'goal' && !ordinal.last) {
+      const counters = await readNextEventCounters(pool, sel.matchId, ordinal.kind);
+      ordinalReason = !counters ? 'NOT_VERIFIABLE_LIVE' : (counters.home + counters.away !== ordinal.n - 1 ? 'OUTCOME_DECIDED' : null);
+    }
+    if (closedReason || ordinalReason) {
+      const why = closedReason || ordinalReason;
+      console.log('[bets] rejected bet: match=' + matchRow.id + ' market=' + sel.marketId + ' selection=' + sel.selectionId + ' reason=' + why + ' user=' + req.user.id);
+      return fail(409, {
+        error: `Betting on "${current.marketName}" is closed — ${describeBlockReason(why)}.`,
+        code: 'MARKET_CLOSED',
+        reason: why,
+        closed: [{ matchId: sel.matchId, marketId: sel.marketId, selectionId: sel.selectionId }],
+      });
+    }
     if (closedReason) {
       console.log('[bets] rejected bet: match=' + matchRow.id + ' market=' + sel.marketId + ' selection=' + sel.selectionId + ' reason=' + closedReason + ' user=' + req.user.id);
       return fail(409, {
