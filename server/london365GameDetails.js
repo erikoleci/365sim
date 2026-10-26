@@ -74,6 +74,9 @@ function parseScore(sc) {
 // round-trip per tick). Resets on restart, which just means the very next
 // real change after a restart is treated as "first seen" instead of a
 // diff — never produces a false card duplicate.
+// How often a quiet match's live_statistics.updated_at is refreshed (must stay well under the 60 s stale limit
+// the live-detail endpoint applies, see STATS_STALE_MS in routes/matches.js).
+const STATS_HEARTBEAT_MS = 20000;
 const lastSeen = new Map();
 // EID -> last-touched timestamp, for ALL eids (matched or not) — used only
 // by pruneStaleLiveState below to bound the maps' growth over time.
@@ -738,8 +741,11 @@ async function applyGameDetailsNow(raw) {
       );
     }
   }
-  // Corners -- same reasoning/shape as cards above, only written on change.
-  if (c1 !== prevCards.c1 || c2 !== prevCards.c2) {
+  // Corners -- same reasoning/shape as cards above, only written on change. Also written on the first
+  // message of a match so "0-0 corners" is an explicit 0 (a missing value is hidden by the UI, so the
+  // Korne row used to be absent until the first corner of the match).
+  const hasCornerFields = attrs.C1 !== undefined && attrs.C1 !== '' && attrs.C2 !== undefined && attrs.C2 !== '';
+  if ((!cardBaseline && hasCornerFields) || c1 !== prevCards.c1 || c2 !== prevCards.c2) {
     await pool.query(
       `INSERT INTO live_statistics (match_id, corners_home, corners_away, updated_at)
        VALUES ($1,$2,$3,$4)
@@ -758,7 +764,19 @@ async function applyGameDetailsNow(raw) {
     );
   }
 
-  lastSeen.set(eid, { t: Number.isFinite(t) ? t : (prevSeen ? prevSeen.t : 0), yc1, yc2, rc1, rc2, c1, c2, posHome, posAway, ctr, recent, held, sig: actionSignature(attrs) });
+  // Heartbeat: the counters above are only written when they CHANGE (a corner every few minutes), so
+  // live_statistics.updated_at stopped moving and after STATS_STALE_MS (60 s) the detail endpoint
+  // treated the whole row as stale and dropped corners / cards / possession -- the stats vanished
+  // between events. A throttled touch tells the endpoint the feed is still delivering.
+  let hb = cardBaseline && cardBaseline.hb ? cardBaseline.hb : 0;
+  if (now - hb >= STATS_HEARTBEAT_MS) {
+    try {
+      await pool.query('UPDATE live_statistics SET updated_at = $2 WHERE match_id = $1', [matchId, now]);
+      hb = now;
+    } catch { /* best effort: the next tick retries */ }
+  }
+
+  lastSeen.set(eid, { t: Number.isFinite(t) ? t : (prevSeen ? prevSeen.t : 0), yc1, yc2, rc1, rc2, c1, c2, posHome, posAway, ctr, recent, held, hb, sig: actionSignature(attrs) });
 }
 
 export function getGameDetailsMemoryDiagnostics() {
