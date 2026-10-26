@@ -8,6 +8,7 @@ import { isHalftime, liveMinuteFallback, formatScore, pickClockSource, isLiveClo
 import { LONDON365_EVENT_LABELS, LONDON365_STAT_LABELS } from '../utils/london365Labels';
 import { useI18n } from '../i18n';
 import TeamLogo from './TeamLogo';
+import { firstHalfDividerIndex, eventMinuteLabel } from '../utils/eventHalf';
 
 interface MatchDetailProps {
   match: Match;
@@ -186,12 +187,8 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
   // second half / finished but nothing happened after the break yet. null
   // while the first half is still being played.
   const firstHalfDividerAt = useMemo(() => {
-    const evs = liveDetail?.events ?? [];
     const minuteNow = Number(liveDetail?.statistics?.minute ?? String(match.currentMinute ?? '').match(/^\d+/)?.[0] ?? NaN);
-    const reachedSecondHalf = isHalftime(match) || isFinished || (Number.isFinite(minuteNow) && minuteNow > 45) || evs.some((e) => e.minute != null && e.minute > 45);
-    if (!reachedSecondHalf || !evs.some((e) => e.minute != null && e.minute <= 45)) return null;
-    const idx = evs.findIndex((e) => e.minute != null && e.minute > 45);
-    return idx === -1 ? evs.length : idx;
+    return firstHalfDividerIndex(liveDetail?.events ?? [], { halftime: isHalftime(match), finished: isFinished, minuteNow, liveStatus: match.liveStatus });
   }, [liveDetail, isFinished, match.currentMinute, match.liveStatus]);
 
   const CATEGORY_LABELS: Record<string, string> = {
@@ -385,7 +382,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
                   <div className="text-center text-brand-yellow text-xs font-bold py-2">{t('Fundi i pjesës së parë')}</div>
                 )}
                 <div className="flex items-center gap-3 bg-[#333] rounded px-3 py-2">
-                  <span className="text-brand-yellow font-mono text-xs w-8 shrink-0">{ev.minute != null ? `${ev.minute}'` : '-'}</span>
+                  <span className="text-brand-yellow font-mono text-xs w-10 shrink-0">{eventMinuteLabel(ev)}</span>
                   <span className="text-white text-xs flex-1">{EVENT_LABELS[ev.type] ? t(EVENT_LABELS[ev.type]) : ev.type}</span>
                   {ev.team && <span className="text-brand-textMuted text-[10px]">{ev.team}</span>}
                   {ev.player && <span className="text-brand-textMuted text-[10px]">{ev.player}</span>}

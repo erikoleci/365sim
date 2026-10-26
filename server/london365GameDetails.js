@@ -36,6 +36,7 @@
 // truth for logging; this module never derives a minute from the
 // unverified fields above.
 
+import { halfSql } from './eventHalf.js';
 import { recordVcSample } from './vcSampler.js';
 import { buildTeamIndex, normTeam } from './teamIndex.js';
 import pool from './db.js';
@@ -297,10 +298,18 @@ async function insertEventOnce(matchId, minute, type, team, detail, now) {
     [matchId, type, team, detail]
   );
   if (rows && rows.length) return false;
-  await pool.query(
-    `INSERT INTO match_events (match_id, minute, type, team, detail, created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
-    [matchId, minute, type, team, detail, now]
-  );
+  try {
+    await pool.query(
+      `INSERT INTO match_events (match_id, minute, type, team, detail, created_at, half) VALUES ($1,$2,$3,$4,$5,$6,${halfSql('$1')})`,
+      [matchId, minute, type, team, detail, now]
+    );
+  } catch {
+    // half column not migrated yet: the event must still be logged
+    await pool.query(
+      `INSERT INTO match_events (match_id, minute, type, team, detail, created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
+      [matchId, minute, type, team, detail, now]
+    );
+  }
   return true;
 }
 

@@ -182,6 +182,8 @@ export interface MatchEvent {
   player: string | null;
   detail: string | null;
   created_at: number;
+  /** 1 | 2 = the half it happened in (from the match status when logged); null = unknown */
+  half?: number | null;
 }
 
 export async function fetchMatchLiveDetail(matchId: string): Promise<{ statistics: LiveStatistics | null; events: MatchEvent[] }> {

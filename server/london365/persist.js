@@ -1,4 +1,5 @@
 // Writing matches to the database: skip-unchanged upserts, per-key write locks, goal recording.
+import { halfSql } from '../eventHalf.js';
 import pool from '../db.js';
 import { clearGoalAnnounced, announceGoalIfChanged } from '../goalAnnouncer.js';
 import { diffOddsChanges } from '../oddsUtils.js';
@@ -310,8 +311,8 @@ export async function recordGoalIfChanged(ev, score, minute, prev, eventMinute) 
     const goalMinute = eventMinute != null ? eventMinute : eventMinuteFromClock(minute);
     try {
       await pool.query(
-        `INSERT INTO match_events (match_id, minute, type, team, detail, created_at, minute_exact)
-         VALUES ($1,$2,'GOAL',$3,$4,$5,$6)`,
+        `INSERT INTO match_events (match_id, minute, type, team, detail, created_at, minute_exact, half)
+         VALUES ($1,$2,'GOAL',$3,$4,$5,$6,${halfSql('$1')})`,
         [ev.id, goalMinute, team, score.home + '-' + score.away, now, exact]
       );
     } catch {

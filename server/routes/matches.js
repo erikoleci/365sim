@@ -231,7 +231,7 @@ router.get('/:id/live-detail', wrap(async (req, res) => {
   const [{ rows: statsRows }, { rows: eventRows }, { rows: cacheRows }] = await Promise.all([
     queryWithRetry('SELECT * FROM live_statistics WHERE match_id = $1', [req.params.id]),
     queryWithRetry(
-      'SELECT minute, type, team, player, detail, created_at FROM match_events WHERE match_id = $1 ORDER BY created_at ASC',
+      'SELECT minute, type, team, player, detail, created_at, half FROM match_events WHERE match_id = $1 ORDER BY created_at ASC',
       [req.params.id]
     ),
     queryWithRetry('SELECT home_team, away_team, live_minute, live_home_score, live_away_score, status, live_minute_updated_at FROM matches_cache WHERE id = $1', [req.params.id]),
