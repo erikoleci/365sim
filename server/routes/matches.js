@@ -166,14 +166,29 @@ router.get('/', wrap(async (req, res) => {
   // (Aiven connection reset, a pool slot momentarily full during a Render
   // rolling deploy) is exactly the kind of thing that should self-heal
   // with one quick retry instead of surfacing a 502/503 to the user.
-  const rows = req.query.league
-    ? (await queryWithRetry(
-        `SELECT ${MATCH_COLUMNS_LIST} FROM matches_cache WHERE league = $1 ORDER BY start_time ASC`,
-        [req.query.league]
-      )).rows
-    : await fetchUpcomingMatchRowsPaged();
+  const t0 = Date.now();
+  let rows;
+  try {
+    rows = req.query.league
+      ? (await queryWithRetry(
+          `SELECT ${MATCH_COLUMNS_LIST} FROM matches_cache WHERE league = $1 ORDER BY start_time ASC`,
+          [req.query.league]
+        )).rows
+      : await fetchUpcomingMatchRowsPaged();
+  } catch (err) {
+    console.error(`[matches] list query failed after ${Date.now() - t0}ms: [${err && err.code}] ${err && err.message}`);
+    // Better a slightly old list than an empty board: serve the last good response if we have one.
+    if (cached) return res.json(cached.body);
+    throw err;
+  }
+  if (Date.now() - t0 > 3000) console.warn(`[matches] list query was slow: ${Date.now() - t0}ms for ${rows.length} row(s)`);
   console.log(`[matches] GET / -> ${rows.length} cached row(s)${req.query.league ? ` for league=${req.query.league}` : ''}`);
-  const body = { matches: dedupeMatches(rows.map(mapEventToMatch), logMerge), leagueNames: getLondon365LeagueNames(), leagueMeta: getLondon365LeagueMeta() };
+  // One malformed row must never take the whole board down: skip it and say which one.
+  const mapped = [];
+  for (const r of rows) {
+    try { mapped.push(mapEventToMatch(r)); } catch (err) { console.error(`[matches] skipped unreadable row ${r && r.id}: ${err && err.message}`); }
+  }
+  const body = { matches: dedupeMatches(mapped, logMerge), leagueNames: getLondon365LeagueNames(), leagueMeta: getLondon365LeagueMeta() };
   matchesResponseCache.set(cacheKey, { body, computedAt: Date.now() });
   res.json(body);
 }));

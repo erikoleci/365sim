@@ -9,6 +9,7 @@ import { logAudit } from '../auditLog.js';
 import { buildCoverageReport, formatCoverageText } from '../marketCoverage.js';
 import { settlementRuleRequired } from '../marketRules.js';
 import { getFeedKeySamples } from '../feedKeySampler.js';
+import { getRecentErrors } from '../recentErrors.js';
 import { mapEventToMatch } from '../oddsUtils.js';
 
 import { transferBalance } from '../ledger.js';
@@ -607,6 +608,11 @@ router.get('/market-coverage', async (req, res) => {
 // Every raw provider field seen so far (REST list, REST live detail, live socket) with a few
 // sample values. Open it while real matches with goals are live to find out whether the feed
 // carries scorer names, team logos, etc. (see feedKeySampler.js). Resets on server restart.
+// The last unhandled route errors with their real cause (code, message, top stack lines).
+router.get('/recent-errors', (req, res) => {
+  res.json({ now: new Date().toISOString(), errors: getRecentErrors() });
+});
+
 router.get('/feed-keys', (req, res) => {
   res.json({ fields: getFeedKeySamples() });
 });

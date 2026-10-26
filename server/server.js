@@ -28,6 +28,7 @@ import { initDb, cleanupOldData } from './db.js';
 import { runMigrations } from './migrate.js';
 import { pool } from './db.js';
 import { mapDbError } from './dbErrors.js';
+import { recordRouteError } from './recentErrors.js';
 import { initWebSocket } from './ws.js';
 import { refreshLiveTracker, logLondon365FilterConfig, startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCrossCountryMisclassifiedLeagues, purgeCountriesNotInOnlyList, wipeLondon365Data, loadPersistedLeagueMap, startGameDetailsSubscriptionReconcileLoop, getLondon365MemoryDiagnostics } from './london365.js';
 import { startLondon365Socket, startLondon365GameDetailsSocket, getSocketMemoryDiagnostics } from './london365Socket.js';
@@ -163,6 +164,7 @@ app.use('/api/favorites', favoritesRouter);
 // crashing the entire Node process (which was causing full 502s + restart
 // loops on transient DB issues).
 app.use((err, req, res, next) => {
+  recordRouteError(err, req);
   console.error('[unhandled route error]', (err && err.code ? '[' + err.code + '] ' : '') + (err && err.message), req.method, req.originalUrl);
   if (res.headersSent) return next(err);
   const mapped = mapDbError(err);
