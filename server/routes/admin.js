@@ -1,3 +1,4 @@
+import { getVcSamples } from '../vcSampler.js';
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
@@ -611,6 +612,11 @@ router.get('/market-coverage', async (req, res) => {
 // The last unhandled route errors with their real cause (code, message, top stack lines).
 router.get('/recent-errors', (req, res) => {
   res.json({ now: new Date().toISOString(), errors: getRecentErrors() });
+});
+
+// VC (live action) codes seen from the feed with counts: unlabelled ones, rarest first (a penalty is rare).
+router.get('/vc-codes', (req, res) => {
+  res.json({ now: new Date().toISOString(), ...getVcSamples() });
 });
 
 router.get('/feed-keys', (req, res) => {

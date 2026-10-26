@@ -36,6 +36,7 @@
 // truth for logging; this module never derives a minute from the
 // unverified fields above.
 
+import { recordVcSample } from './vcSampler.js';
 import { buildTeamIndex, normTeam } from './teamIndex.js';
 import pool from './db.js';
 import { pushCardEvent, pushLiveTick } from './ws.js';
@@ -514,6 +515,7 @@ async function applyGameDetailsNow(raw) {
     if (found) recent = { ...makeAction(found[0], found[1]), until: nowMs + 7000 };
   }
   const decodedAction = decodeLiveAction(attrs.VC);
+  recordVcSample(attrs.VC, decodedAction && decodedAction.label, { match: `${attrs.H} - ${attrs.A}`, score: attrs.SC, t: attrs.T });
   const vcText = String(attrs.VC ?? '').trim();
   if (vcText && !decodedAction && !unmappedVcSeen.has(vcText) && unmappedVcSeen.size < UNMAPPED_VC_CAP) {
     unmappedVcSeen.add(vcText);
