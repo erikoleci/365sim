@@ -248,6 +248,20 @@ export async function readNextEventCounters(client, matchId, kind) {
     return Number.isFinite(home) && Number.isFinite(away) ? { home, away } : null;
   } catch { return null; }
 }
+// Live corner counters for the in-play corner totals markets: { home, away, fresh }.
+// `fresh` = the live feed touched live_statistics within maxAgeMs (the gamedetails heartbeat keeps it
+// moving while the feed delivers), so a dead feed never lets a bet through on a frozen count.
+export async function readLiveCorners(client, matchId, now = Date.now(), maxAgeMs = 60000) {
+  try {
+    const { rows } = await client.query('SELECT corners_home, corners_away, updated_at FROM live_statistics WHERE match_id = $1', [matchId]);
+    const r = rows[0];
+    if (!r) return null;
+    const home = numOrNaN(r.corners_home); const away = numOrNaN(r.corners_away);
+    if (!Number.isFinite(home) || !Number.isFinite(away)) return null;
+    const at = Number(r.updated_at);
+    return { home, away, fresh: Number.isFinite(at) && now - at <= maxAgeMs };
+  } catch { return null; }
+}
 const legSnapshot = (leg) => {
   let c = leg.placed_counts;
   if (typeof c === 'string') { try { c = JSON.parse(c); } catch { c = null; } }
@@ -433,7 +447,9 @@ function statsOutcome(leg, marketName, stats, { home, away }) {
   const text = norm(leg.selection_name || leg.selection_id);
   const ou = parseOverUnder(leg.selection_id) || parseOverUnder(leg.selection_name);
   if (ou) return overUnderOutcome(ou.side, ou.point, total);
-  let m = text.match(/^(\d+)\s*\+$/); // "5+" = at least 5
+  let m = text.match(/^sakte\s+(\d+)$/); // "Sakte 10" = exactly 10 (Lart/Poshtë Korne Totali)
+  if (m) return total === Number(m[1]) ? 'WON' : 'LOST';
+  m = text.match(/^(\d+)\s*\+$/); // "5+" = at least 5
   if (m) return total >= Number(m[1]) ? 'WON' : 'LOST';
   m = text.match(/^(\d+)\s*[-\u2013]\s*(\d+)$/); // "3-5"
   if (m) return total >= Number(m[1]) && total <= Number(m[2]) ? 'WON' : 'LOST';

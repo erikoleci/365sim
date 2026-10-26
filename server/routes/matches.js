@@ -8,6 +8,7 @@ import { dedupeMatches } from '../fixtureDedupe.js';
 import { buildLiveStatistics } from '../liveDetail.js';
 import { summarizeLiveHealth } from '../liveHealth.js';
 import { fetchMatchRowsPrioritized, PAGE_SIZE } from '../matchRows.js';
+import { readLiveCorners } from '../matchSettlement.js';
 
 const router = express.Router();
 
@@ -252,6 +253,11 @@ router.get('/:id/live-detail', wrap(async (req, res) => {
 router.get('/:id', wrap(async (req, res) => {
   const { rows } = await queryWithRetry('SELECT * FROM matches_cache WHERE id = $1', [req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: 'Match not found' });
+  // In-play corner totals are only offered while the live corner counter is fresh (see marketRules).
+  if (rows[0].status === 'LIVE' || rows[0].live_status != null) {
+    const lc = await readLiveCorners({ query: queryWithRetry }, rows[0].id);
+    if (lc) rows[0].live_corners = lc;
+  }
   res.json({ match: mapEventToMatch(rows[0]) });
 }));
 

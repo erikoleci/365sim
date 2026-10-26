@@ -369,11 +369,33 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
 
     // corners, cards, combos and everything unrecognised (player / scorer / timing...)
     default: {
+      if (c.kind === 'corners' && market && isLiveCornerTotals(market.name)) return cornerTotalsReason(sel, row);
       const spec = parseProviderMarket(norm(market && market.name));
       if (spec) return providerLiveReason(spec, sel, row, now);
       return allowUnverified === true ? null : NOT_VERIFIABLE;
     } // only an explicit test flag; never config
   }
+}
+
+// ---- corner totals in play ----------------------------------------------------------------
+// "Lart/Poshtë Korne" and "Lart/Poshtë Korne Totali" (Lart N+.5 / Sakte N / Poshte N-.5) are decided by
+// the full-time corner count, which the live feed keeps current (C1/C2 -> live_statistics). They are open
+// in play while that counter is fresh and the option is not already decided; callers attach it as
+// row.live_corners = { home, away, fresh } (matchSettlement.readLiveCorners). First-half / team variants
+// are not matched here and stay closed in play.
+const LIVE_CORNER_TOTALS = /^lart\s*\/\s*poshte korne( totali)?$/;
+export const isLiveCornerTotals = (name) => LIVE_CORNER_TOTALS.test(norm(name));
+function cornerTotalsReason(sel, row) {
+  const lc = row.live_corners;
+  if (!lc || !lc.fresh || !Number.isFinite(lc.home) || !Number.isFinite(lc.away)) return NOT_VERIFIABLE;
+  const minute = parseInt(String(row.live_minute || ''), 10);
+  if (!Number.isFinite(minute) || minute >= LAST_EVENT_CUTOFF_MINUTE) return NOT_VERIFIABLE; // the end is too close
+  const total = lc.home + lc.away;
+  const ou = parseOverUnder(sel.id) || parseOverUnder(sel.name);
+  if (ou) return total > ou.point ? DECIDED : null; // Over already won / Under already lost
+  const m = norm(sel.name ?? sel.id).match(/^sakte\s+(\d+)$/);
+  if (m) return total > Number(m[1]) ? DECIDED : null; // exactly N is lost once there are more
+  return NOT_VERIFIABLE;
 }
 
 // In-play check for the provider's own markets (providerMarkets.js): closed once the outcome is fixed

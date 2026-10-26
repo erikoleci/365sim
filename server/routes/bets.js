@@ -3,8 +3,8 @@ import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { resolveCurrentSelection, mapEventToMatch, isStaleLive } from '../oddsUtils.js';
-import { getBetBlockReason, describeBlockReason, nextEventKind, eventOrderOrdinal } from '../marketRules.js';
-import { readNextEventCounters } from '../matchSettlement.js';
+import { getBetBlockReason, describeBlockReason, nextEventKind, eventOrderOrdinal, isLiveCornerTotals } from '../marketRules.js';
+import { readNextEventCounters, readLiveCorners } from '../matchSettlement.js';
 import { findConflictingSelection, validateStakeAmount, getCancelBlockReason, isLiveEventLocked } from '../betValidation.js';
 import { getLiveDetailAgeMs, isLiveDetailStale } from '../liveDetailPlan.js';
 import { wrap } from '../asyncHandler.js';
@@ -12,6 +12,8 @@ import { noteBetOnMatches } from '../oddsHistoryPolicy.js';
 
 // After a goal / red card on a LIVE match, bets on it are refused for this long so
 // nobody can bet on prices that have not caught up with what just happened. 0 = off.
+// After a corner, bets on the corner TOTALS wait this long (the counter and the odds need to catch up).
+const LIVE_CORNER_LOCK_MS = Math.max(0, Number(process.env.LIVE_BET_CORNER_LOCK_MS ?? 15000));
 const LIVE_EVENT_LOCK_MS = Math.max(0, Number(process.env.LIVE_BET_EVENT_LOCK_MS ?? 30000));
 const LIVE_BET_DELAY_MS = Math.max(0, Number(process.env.LIVE_BET_DELAY_MS ?? 5000));
 
@@ -201,6 +203,20 @@ router.post('/', wrap(async (req, res) => {
     const current = resolveCurrentSelection(matchRow, sel.marketId, sel.selectionId);
     if (current === null) {
       return fail(400, { error: `Selection ${sel.selectionId} in market ${sel.marketId} not found in current odds — it may have closed or moved` });
+    }
+    if (matchRow.status === 'LIVE' || matchRow.live_status != null) {
+      if (isLiveCornerTotals(current.marketName)) {
+        matchRow.live_corners = await readLiveCorners(pool, matchRow.id);
+        if (LIVE_CORNER_LOCK_MS > 0) {
+          const { rows: cRows } = await pool.query("SELECT MAX(created_at) AS last_at FROM match_events WHERE match_id = $1 AND type = 'CORNER'", [matchRow.id]);
+          if (isLiveEventLocked(matchRow, cRows[0]?.last_at, { lockMs: LIVE_CORNER_LOCK_MS })) {
+            return fail(409, {
+              error: `Betting on corner totals for ${matchRow.home_team} vs ${matchRow.away_team} is paused for a few seconds after a corner — odds are updating.`,
+              code: 'LIVE_EVENT_LOCK',
+            });
+          }
+        }
+      }
     }
     // Period rule, enforced here (not just by locking the button): a first-half
     // market takes no bets once the first half is over, even if a stale client
