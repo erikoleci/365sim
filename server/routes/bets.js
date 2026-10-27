@@ -292,7 +292,7 @@ router.post('/', wrap(async (req, res) => {
     }
     totalOdds *= currentOdds;
     verifiedSelections.push({ ...sel, odds: currentOdds });
-    correlationInput.push({ matchId: sel.matchId, marketId: sel.marketId, marketName: current.marketName, optionName: current.selectionName || sel.selectionName, home: matchRow.home_team, away: matchRow.away_team });
+    correlationInput.push({ matchId: sel.matchId, marketId: sel.marketId, marketName: current.marketName, optionName: current.selectionName || sel.selectionName, home: matchRow.home_team, away: matchRow.away_team, startTime: matchRow.start_time });
   }
 
   // Same-match selections with the same logic (4+ with 1+/2+/3+, 1 & 2+ with 0-3, 1 with 1X ...)

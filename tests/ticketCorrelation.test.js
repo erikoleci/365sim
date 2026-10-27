@@ -35,4 +35,35 @@ describe('findCorrelatedSelections', () => {
     expect(findCorrelatedSelections([s('m1', 'm1-h2h', 'Rezultat Final', '1'), s('m1', 'm1-btts', 'Gol/Jogol', 'Gol')])).toBeNull();
     expect(findCorrelatedSelections([s('m1', 'm1-totals', 'Totali i golave', 'Mbi 2.5'), s('m1', 'a', 'Korner Mbi/Nen 8.5', 'Mbi')])).toBeNull();
   });
+
+  it('BTTS Yes with Over 0.5 / 1.5 / 1+ / 2+ is refused (needs 2+ goals); BTTS No with Under 1.5 too', () => {
+    const yes = s('m1', 'm1-btts', 'Gol/Jogol', 'Gol');
+    const no = s('m1', 'm1-btts', 'Gol/Jogol', 'Jogol');
+    expect(findCorrelatedSelections([yes, s('m1', 'm1-t1', 'Totali i golave', 'Mbi 0.5')])?.family).toBe('btts');
+    expect(findCorrelatedSelections([yes, s('m1', 'm1-t1', 'Totali i golave', 'Mbi 1.5')])).not.toBeNull();
+    expect(findCorrelatedSelections([yes, s('m1', 'm1-t2', 'Numri i golave', '2+')])).not.toBeNull();
+    expect(findCorrelatedSelections([yes, s('m1', 'm1-t3', 'Totali i golave', 'Nen 1.5')])).not.toBeNull(); // impossible together
+    expect(findCorrelatedSelections([no, s('m1', 'm1-t4', 'Totali i golave', 'Nen 1.5')])).not.toBeNull();
+    expect(findCorrelatedSelections([no, s('m1', 'm1-t5', 'Numri i golave', '0-1')])).not.toBeNull();
+  });
+  it('allows BTTS with goal selections that are not decided by it', () => {
+    const yes = s('m1', 'm1-btts', 'Gol/Jogol', 'Gol');
+    expect(findCorrelatedSelections([yes, s('m1', 'm1-t', 'Totali i golave', 'Mbi 2.5')])).toBeNull();
+    expect(findCorrelatedSelections([s('m1', 'm1-btts', 'Gol/Jogol', 'Jogol'), s('m1', 'm1-t', 'Totali i golave', 'Mbi 2.5')])).toBeNull();
+  });
+  it('treats one real match listed under two ids as the same match', () => {
+    const a = { ...s('l365-1', 'a', 'Numri i golave', '4+'), home: 'UD Almeria', away: 'Elche CF', startTime: '2026-10-27T18:00:00Z' };
+    const b = { ...s('l365-2', 'b', 'Numri i golave 2', '2+'), home: 'UD Almeria', away: 'Elche CF', startTime: '2026-10-27T18:00:00Z' };
+    expect(findCorrelatedSelections([a, b])).not.toBeNull();
+    // same teams a week later is another match
+    expect(findCorrelatedSelections([a, { ...b, startTime: '2026-11-03T18:00:00Z' }])).toBeNull();
+  });
+  it('refuses a result with "qualifies", and scoring facts with each other / with BTTS', () => {
+    expect(findCorrelatedSelections([s('m1', 'm1-h2h', 'Rezultat Final', '1'), s('m1', 'q', 'Skuadra qe kualifikohet', '1')])?.family).toBe('result');
+    expect(findCorrelatedSelections([s('m1', 'a', 'Shenon golin e pare (skuadra)', '1'), s('m1', 'm1-btts', 'Gol/Jogol', 'Gol')])?.family).toBe('scoring');
+    expect(findCorrelatedSelections([s('m1', 'a', 'Skuadra qe shenon e pare', '1'), s('m1', 'b', 'Shenon golin e fundit (skuadra)', '1')])?.family).toBe('scoring');
+  });
+  it('refuses Asian goal lines together with other goal selections', () => {
+    expect(findCorrelatedSelections([s('m1', 'a', 'Gola Aziatik', 'Mbi 2.25'), s('m1', 'm1-totals', 'Totali i golave', 'Mbi 1.5')])?.family).toBe('goals');
+  });
 });
