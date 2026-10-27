@@ -1,0 +1,96 @@
+# 365sim në VPS (Hostinger/Contabo/Hetzner): Caddy (HTTPS automatik) + aplikacioni + Postgres + kopje ditore.
+# Nisja:  docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+# Hapat e plota: DEPLOY-VPS.md.
+# MOS përdor "down -v": fshin volumin sim365_pgdata (përdoruesit dhe biletat).
+name: sim365
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sim365
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?vendos POSTGRES_PASSWORD në .env.prod}
+      POSTGRES_DB: sim365
+    volumes:
+      - sim365_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sim365 -d sim365"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # Nuk botohet jashtë: vetëm aplikacioni e arrin brenda rrjetit të Docker.
+
+  app:
+    build: .
+    image: sim365-app:prod
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      JWT_SECRET: ${JWT_SECRET:?vendos JWT_SECRET në .env.prod}
+      DATABASE_URL: postgresql://sim365:${POSTGRES_PASSWORD}@db:5432/sim365?sslmode=disable
+      FRONTEND_ORIGIN: https://${DOMAIN:?vendos DOMAIN në .env.prod}
+      LONDON365_ENABLED: "1"
+      # Vetëm tregjet që sistemi i mbyll vetë (asnjë biletë e pambyllshme).
+      BET_REQUIRE_SETTLEMENT_RULE: "1"
+    # Nuk botohet jashtë: Caddy e arrin brenda rrjetit.
+
+  # Ndërron fjalëkalimet e njohura admin/admin, root/root, user/user (vetëm nëse janë ende ato).
+  secure:
+    image: sim365-app:prod
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://sim365:${POSTGRES_PASSWORD}@db:5432/sim365?sslmode=disable
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?vendos ADMIN_PASSWORD në .env.prod}
+      AGENT_PASSWORD: ${AGENT_PASSWORD:-}
+    command: ["node", "local/secure-accounts.js"]
+
+  # HTTPS me certifikatë falas (Let's Encrypt) dhe websocket (/ws) pa konfigurim shtesë.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # Kopje rezervë çdo ditë në ./backups (ruhen 14 ditët e fundit). Kopjoji edhe jashtë serverit!
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        while true; do
+          f="/backups/sim365-$$(date +%Y%m%d-%H%M).sql.gz"
+          pg_dump -h db -U sim365 sim365 | gzip > "$$f" && echo "U ruajt $$f"
+          find /backups -name 'sim365-*.sql.gz' -mtime +14 -delete
+          sleep 86400
+        done
+
+volumes:
+  sim365_pgdata:
+  caddy_data:
+  caddy_config:

@@ -31,3 +31,7 @@ server/data/*.db-*
 coverage
 pnpm-workspace.yaml
 local-data/
+
+# Server (VPS) secrets and backups
+.env.prod
+backups/
