@@ -41,6 +41,11 @@ ufw allow OpenSSH && ufw allow 80 && ufw allow 443 && ufw --force enable
 ```
 Portet e databazës dhe të aplikacionit nuk janë të hapura jashtë: vetëm Caddy (80/443).
 
+## Ligat që shfaqen
+Si parazgjedhje `docker-compose.prod.yml` importon **të gjitha vendet dhe ligat** (`LONDON365_ONLY_COUNTRIES=*`, `LONDON365_MAJOR_ONLY=0`).
+Pas nisjes, ligat shfaqen gradualisht gjatë disa minutave (importi i parë është i ngadalshëm). Nëse do vetëm ligat kryesore,
+shto te `.env.prod`: `LONDON365_ONLY_COUNTRIES=England,France,Spain,Italy,Germany` dhe `LONDON365_MAJOR_ONLY=1`.
+
 ## Përditësimi i kodit
 ```
 cd /opt/365sim && git pull

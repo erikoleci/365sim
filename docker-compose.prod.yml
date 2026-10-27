@@ -37,6 +37,23 @@ services:
       LONDON365_ENABLED: "1"
       # Vetëm tregjet që sistemi i mbyll vetë (asnjë biletë e pambyllshme).
       BET_REQUIRE_SETTLEMENT_RULE: "1"
+      # Katalogu: pa këto, aplikacioni importon vetëm Angli/Itali/Spanjë/Francë/Gjermani + Ndërkombëtare
+      # dhe vetëm ligat kryesore. Këtu: të gjitha vendet dhe ligat (mund ta ndryshosh te .env.prod).
+      LONDON365_ONLY_COUNTRIES: ${LONDON365_ONLY_COUNTRIES:-*}
+      LONDON365_MAJOR_ONLY: ${LONDON365_MAJOR_ONLY:-0}
+      LONDON365_EXCLUDE_SECOND_TIER: ${LONDON365_EXCLUDE_SECOND_TIER:-0}
+      LONDON365_EXCLUDE_COUNTRIES: ${LONDON365_EXCLUDE_COUNTRIES:-}   # bosh = asnjë vend i përjashtuar
+      LONDON365_LEAGUES: "0"
+      LONDON365_FULL: "1"
+      # Më shumë ndeshje live njëkohësisht: më shumë linja sinkronizimi dhe lidhje databaze (Postgres lejon 100).
+      LONDON365_LIVE_CONCURRENCY: "20"
+      LONDON365_LIVE_CONCURRENCY_MAX: "60"
+      PG_POOL_MAX: "40"
+      MATCHES_PAGE_HARD_CAP: "1000"
+      LIVE_MAX_AGE_HOURS: "24"
+      # Pastrimi i emergjencës fillon kur databaza kalon këtë madhësi (default 400 MB është për planet falas;
+      # me katalog të plotë është shumë i vogël). Disku ka 100 GB.
+      DB_DISK_PRESSURE_MB: ${DB_DISK_PRESSURE_MB:-15000}
     # Nuk botohet jashtë: Caddy e arrin brenda rrjetit.
 
   # Ndërron fjalëkalimet e njohura admin/admin, root/root, user/user (vetëm nëse janë ende ato).
