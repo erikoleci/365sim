@@ -136,7 +136,6 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
   const action = !halftime && match.liveAction ? match.liveAction : null;
   const scene = action ? sceneFor(action) : null;
   const clockLabel = formatLiveClock(liveClock);
-  const half = liveClock?.half ?? null;
   const hasPoss = stats?.possession_home != null;
   const possHome = stats?.possession_home ?? 50;
   const possAway = stats?.possession_away ?? (100 - possHome);
@@ -276,7 +275,6 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
       >
         {!halftime && <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />}
         <span>{halftime ? t('Pushim') : (clockLabel ?? formatLiveStatus(match))}</span>
-        {half && !halftime && <span className="text-brand-yellow font-semibold text-[10px] md:text-xs">{t(half)}</span>}
       </div>
 
       {/* half time: the pitch rests, the score stays */}

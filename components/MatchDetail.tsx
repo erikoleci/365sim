@@ -263,7 +263,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
              <div className="text-xs text-brand-textMuted uppercase tracking-wider mb-2">{leagueLabel}</div>
              {isLive && (
                <div className={`inline-block mb-2 text-xs font-bold px-3 py-1 rounded-full ${isHalftime(match) ? 'bg-brand-yellow text-black' : 'bg-brand-accent/90 text-black'}`}>
-                 {isHalftime(match) ? t('Pushim') : headerClock ? `${formatLiveClock(headerClock)} · ${t(headerClock.half)}` : liveMinuteFallback(match)}
+                 {isHalftime(match) ? t('Pushim') : headerClock ? formatLiveClock(headerClock) : liveMinuteFallback(match)}
                  {isLiveClockStale(match) && <span title={t('Pa përditësim nga provider-i')} className="ml-1 text-amber-400">●</span>}
                </div>
              )}

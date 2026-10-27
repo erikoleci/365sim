@@ -14,7 +14,7 @@ describe('parseLiveClock - verified provider formats and rejects', () => {
     expect(parseLiveClock('')).toBeNull();
     expect(parseLiveClock(undefined)).toBeNull();
     expect(parseLiveClock('abc')).toBeNull();
-    expect(parseLiveClock('11081:42')).toEqual({ minute: 11081, second: 42, half: 'Penallti' }); // parsed, but useTickingClock refuses > 130 min
+    expect(parseLiveClock('11081:42')).toEqual({ minute: 11081, second: 42, half: 'Shtesë' }); // parsed, but useTickingClock refuses > 130 min
     expect(parseLiveClock('300924')).toBeNull();
   });
 });

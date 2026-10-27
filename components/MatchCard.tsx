@@ -65,7 +65,7 @@ export function parseLiveClock(minute?: string): { minute: number; second: numbe
   const m = parseInt(match[1], 10);
   if (Number.isNaN(m)) return null;
   const s = match[2] ? parseInt(match[2], 10) : 0;
-  const half = m < 45 ? 'Pjesa I' : m < 46 ? 'Pushim' : m < 90 ? 'Pjesa II' : m < 105 ? 'Shtesë' : 'Penallti';
+  const half = m < 45 ? 'Pjesa I' : m < 46 ? 'Pushim' : m < 90 ? 'Pjesa II' : 'Shtesë';
   return { minute: m, second: Number.isNaN(s) ? 0 : s, half };
 }
 
@@ -107,7 +107,7 @@ export function projectClock(totalSecondsAtReceivedAt: number, receivedAt: numbe
   const total = totalSecondsAtReceivedAt + elapsed;
   const minute = Math.floor(total / 60);
   const second = total % 60;
-  const half = minute < 45 ? 'Pjesa I' : minute < 46 ? 'Pushim' : minute < 90 ? 'Pjesa II' : minute < 105 ? 'Shtesë' : 'Penallti';
+  const half = minute < 45 ? 'Pjesa I' : minute < 46 ? 'Pushim' : minute < 90 ? 'Pjesa II' : 'Shtesë';
   return { minute, second, half };
 }
 
@@ -277,7 +277,6 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
                <div className={`font-bold leading-tight ${isHalftime(match) ? 'text-brand-yellow' : 'text-brand-accent animate-pulse'}`}>
                    {isHalftime(match) ? t('Pushim') : (liveClock ? formatLiveClock(liveClock) : liveMinuteFallback(match))}
                    {isLiveClockStale(match) && <span title={t('Pa përditësim nga provider-i')} className="ml-1 text-amber-400">●</span>}
-                   {liveClock && !isHalftime(match) && <div className="text-[9px] font-semibold text-brand-yellow normal-case leading-none mt-0.5">{t(liveClock.half)}</div>}
                </div>
            ) : (
                <>
