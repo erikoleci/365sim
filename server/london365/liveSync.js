@@ -52,8 +52,8 @@ export function shouldLogMissingLive(gameId, now = Date.now()) {
   return true;
 }
 // Per cycle, at most this many live games get the full-market refresh (see
-// liveDetailPlan.js). The cheap list data covers all the others. 0 = no limit.
-export const LIVE_DETAIL_BUDGET = Math.max(0, Number(process.env.LONDON365_LIVE_DETAIL_BUDGET ?? 120));
+// liveDetailPlan.js). The cheap list data covers all the others. 0 = no limit (default: every live game gets its odds every cycle).
+export const LIVE_DETAIL_BUDGET = Math.max(0, Number(process.env.LONDON365_LIVE_DETAIL_BUDGET ?? 0));
 // Games that must be refreshed first: ones with an open bet, and ones a client is
 // looking at right now. Bare provider ids (no "l365-" prefix).
 export let priorityLookupWarned = false;
@@ -149,6 +149,7 @@ export async function syncLondon365LiveOnce() {
   let liveSeen = 0;
   let noMinute = 0;
   let noScore = 0;
+  let noOdds = 0;
   const liveIds = new Set();
 
   for (const sid of await resolveSports()) {
@@ -224,6 +225,7 @@ export async function syncLondon365LiveOnce() {
         // clock and status froze at the first value. Only skip when there is
         // nothing live to record either; empty markets merge into the cached
         // event (mergeEvents), so the known odds are kept.
+        if (!odds.length) { noOdds++; if (shouldLogMissingLive('odds-' + g.id)) console.warn('[london365] game ' + g.id + ' (' + g.home_team + ' - ' + g.away_team + ') has NO odds from the provider (detail rows=' + rows.length + ', list odd=' + JSON.stringify(g.odd) + ')'); }
         if (!odds.length && !((liveMeta && (liveMeta.result || liveMeta.minute)) || g.result || g.current_minute)) return;
         const ev = buildEvent(g.id, g.home_team, g.away_team, isoFromWholeDate(g.whole_date, g.game_date, g.game_time) || new Date().toISOString(), odds);
         // liveMeta comes from /ajax/livegame/{id} (per-game detail, confirmed
@@ -359,7 +361,7 @@ export async function syncLondon365LiveOnce() {
   // admin status page). getLondon365Status() reads this first.
   pruneDetailAt(new Set(Array.from(liveIds, (id) => String(id).replace(/^l365-/, ''))));
   noteLiveSyncCompleted();
-  if (liveSeen) console.log('[london365] live cycle: ' + gamesSynced + '/' + liveSeen + ' games synced, ' + detailFailures + ' detail fetch failures, ' + detailFetched + ' full refreshes, ' + noMinute + ' without minute, ' + noScore + ' without score');
+  if (liveSeen) console.log('[london365] live cycle: ' + gamesSynced + '/' + liveSeen + ' games synced, ' + detailFailures + ' detail fetch failures, ' + detailFetched + ' full refreshes, ' + noMinute + ' without minute, ' + noScore + ' without score, ' + noOdds + ' without odds');
   return { games: gamesSynced };
 }
 export let liveTimer = null;
