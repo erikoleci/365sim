@@ -1,3 +1,4 @@
+import { isAdminRole } from '../utils/roles';
 import React from 'react';
 import { User, UserRole } from '../types';
 import { useI18n } from '../i18n';
@@ -54,7 +55,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
 
         {/* User Utilities */}
         <div className="flex items-center gap-1.5 sm:gap-2 md:gap-4 text-xs shrink-0">
-          {(currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.AGENT) && (
+          {(isAdminRole(currentUser.role) || currentUser.role === UserRole.AGENT) && (
             <button 
               data-admin-toggle
               onClick={onOpenAdmin}

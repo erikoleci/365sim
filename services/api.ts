@@ -322,6 +322,19 @@ export async function adminCancelBet(betId: string) {
   return request<{ ok: true }>(`/admin/bets/${betId}/cancel`, { method: 'POST' });
 }
 
+export async function adminCreateAdmin(a: { name: string; username: string; password: string; balance: number }) {
+  return request<{ admin: User }>('/admin/admins', { method: 'POST', body: JSON.stringify(a) });
+}
+
+export async function adminCreditAdmin(adminId: string, amount: number) {
+  return request<{ balance: number }>(`/admin/admins/${adminId}/credit`, { method: 'POST', body: JSON.stringify({ amount }) });
+}
+
+/** Super admin: erase any ticket (open, live or settled). adjust=false leaves all balances untouched. */
+export async function adminDeleteBet(betId: string, adjust = true) {
+  return request<{ ok: true; balanceChange: number }>(`/admin/bets/${betId}?adjust=${adjust ? '1' : '0'}`, { method: 'DELETE' });
+}
+
 export interface AdminPendingLeg {
   match_id: string; match_home: string; match_away: string; market_name: string; selection_name: string;
   legs: number; bets: number; start_time: string; match_status: string; result_home: number | null; result_away: number | null;

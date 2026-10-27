@@ -1,3 +1,4 @@
+import { isAdminRole } from './utils/roles';
 import React, { useCallback, useEffect, useMemo, useRef, useState, startTransition } from 'react';
 import Navbar from './components/Navbar';
 import MatchDetail from './components/MatchDetail';
@@ -109,7 +110,7 @@ const App: React.FC = () => {
   const rowActions: MatchRowActions = useMemo(() => ({
     onBetClick: slip.toggleSelection,
     onOpenDetail: (match) => openMatchById(match.id),
-    isAdmin: currentUser?.role === UserRole.ADMIN,
+    isAdmin: isAdminRole(currentUser?.role),
     onSettleMatch: admin.settleMatch,
     simulatingMatchId: admin.simulatingMatchId,
     selectedIds: slip.selectedIds,
@@ -122,7 +123,7 @@ const App: React.FC = () => {
 
   // The owner (ADMIN) gets a separate, read-first page and never the sportsbook/casino shell, so
   // the owner has no way to place a bet or play. Reports first; management is one tab away.
-  if (currentUser.role === UserRole.ADMIN) {
+  if (isAdminRole(currentUser.role)) {
     return (
       <OwnerDashboard
         currentUser={currentUser}

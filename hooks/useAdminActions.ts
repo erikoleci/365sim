@@ -1,3 +1,4 @@
+import { isAdminRole, isSuperAdminRole } from '../utils/roles';
 import { useCallback, useEffect, useState } from 'react';
 import { Match, User, UserRole } from '../types';
 import * as api from '../services/api';
@@ -15,7 +16,7 @@ interface Options {
   applyBalance: (balance: number) => void;
 }
 
-export type NewUser = { name: string; username: string; password: string; balance: number; role: 'USER' | 'AGENT' };
+export type NewUser = { name: string; username: string; password: string; balance: number; role: 'USER' | 'AGENT' | 'ADMIN' };
 
 /** Everything the owner (ADMIN) does: users, credit, tickets, manual settlement. */
 export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reloadMatches, reloadMyBets, applyBalance }: Options) {
@@ -23,7 +24,8 @@ export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reload
   const [adminUsers, setAdminUsers] = useState<User[]>([]);
   const [adminAllBets, setAdminAllBets] = useState<any[]>([]);
   const [simulatingMatchId, setSimulatingMatchId] = useState<string | null>(null);
-  const isAdmin = currentUser?.role === UserRole.ADMIN;
+  const isAdmin = isAdminRole(currentUser?.role);
+  const isSuper = isSuperAdminRole(currentUser?.role);
 
   const loadAdminData = useCallback(async () => {
     if (!isAdmin) return;
@@ -44,6 +46,7 @@ export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reload
     try {
       const { role, ...rest } = newUser;
       if (role === 'AGENT') await api.adminCreateAgent(rest);
+      else if (role === 'ADMIN' && isSuper) await api.adminCreateAdmin(rest);
       else await api.adminCreateUser(rest);
       await loadAdminData();
     } catch (e: any) {
@@ -75,7 +78,9 @@ export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reload
 
   const addCredit = async (userId: string, amount: number) => {
     try {
-      await api.adminAddCredit(userId, amount);
+      // credit for an admin account is the super admin's own route (ledger SUPER_TO_ADMIN)
+      if (isSuper && adminUsers.find((u) => u.id === userId)?.role === UserRole.ADMIN) await api.adminCreditAdmin(userId, amount);
+      else await api.adminAddCredit(userId, amount);
       await loadAdminData();
       if (currentUser?.id === userId) setCurrentUser(await api.fetchCurrentUser());
     } catch (e: any) {
@@ -96,7 +101,8 @@ export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reload
     if (origin === 'ADMIN') {
       if (!window.confirm('Admin delete this bet and adjust balance?')) return;
       try {
-        await api.adminCancelBet(betId);
+        // the super admin erases any ticket (open, live or settled)
+        if (isSuper) await api.adminDeleteBet(betId); else await api.adminCancelBet(betId);
         await loadAdminData();
       } catch (e: any) {
         alert(e.message || 'Failed to cancel bet');

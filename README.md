@@ -197,3 +197,15 @@ Crests are local files in `public/team-logos/<country>/<club>.webp` plus an `ind
 - **Add or refresh logos:** `node scripts/build-team-logos.mjs` (clones the two source repos to a temp dir, rasterises every crest to a 72px WebP, rebuilds the index). Add countries in the `COUNTRIES` list at the top of the script.
 - **A club shows initials although a logo exists under another spelling:** add one line to `TEAM_ALIASES` in `utils/teamLogos.ts` (`'feed spelling': ['collection key']`; keys are lower-case without FC/AC/... and accents).
 - **Sources:** JoseArroyave/football-logos (MIT) and leoratzlaff/football-badges (MIT per package.json). See `public/team-logos/SOURCES.md`. The crests are club trademarks, shown only to identify teams.
+
+## Super admin
+
+`SUPER_ADMIN` is above `ADMIN` (the owner): everything an admin does, plus giving credit to admins
+(`POST /api/admin/admins/:id/credit`, ledger type `SUPER_TO_ADMIN`), creating and deleting admin accounts,
+and erasing any ticket (`DELETE /api/admin/bets/:id`, `?adjust=0` leaves the balances alone). An admin can
+no longer give credit to an admin account, not even his own.
+
+No password is stored in the repo. Create the account with either:
+
+- environment on server start (created only when missing): `SUPER_ADMIN_USERNAME`, `SUPER_ADMIN_PASSWORD` (min. 6 chars), optional `SUPER_ADMIN_NAME`
+- the command line (creates it, or promotes an existing account and sets its password): `npm run super-admin -- <username> <password> [name]`

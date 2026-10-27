@@ -1,3 +1,4 @@
+import { ensureSuperAdmin } from './superAdmin.js';
 import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import { resolveDbConnection } from './dbConfig.js';
@@ -420,6 +421,14 @@ export async function initDb() {
     console.log('  agent (Agent)       -> username: root  / password: root');
     console.log('  user  (User)        -> username: user  / password: user  (linked to agent "root")');
     console.log('WARNING: these are weak credentials for local testing — do not use in production.');
+  }
+  // Super admin from the environment (created only when missing; never overwritten on boot)
+  try {
+    const r = await ensureSuperAdmin(pool, { username: process.env.SUPER_ADMIN_USERNAME, password: process.env.SUPER_ADMIN_PASSWORD, name: process.env.SUPER_ADMIN_NAME });
+    if (r.status === 'created') console.log('Super admin created: ' + process.env.SUPER_ADMIN_USERNAME);
+    if (r.status === 'username-taken') console.warn('SUPER_ADMIN_USERNAME is already used by a non-super-admin account; use `npm run super-admin` to promote it');
+  } catch (err) {
+    console.error('Super admin setup failed:', err.message);
   }
 }
 

@@ -9,7 +9,7 @@ interface OwnerDashboardProps {
   onLogout: () => void;
   users: User[];
   allBets: Bet[];
-  onCreateUser: (u: { name: string; username: string; password: string; balance: number; role: 'USER' | 'AGENT' }) => void;
+  onCreateUser: (u: { name: string; username: string; password: string; balance: number; role: 'USER' | 'AGENT' | 'ADMIN' }) => void;
   onDeleteUser: (userId: string) => void;
   onAddCredit: (userId: string, amount: number) => void;
   onResetPassword: (userId: string, newPass: string) => void;
@@ -128,7 +128,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
       <header className="bg-brand-header border-b border-[#444] px-4 py-3 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-3">
           <span className="text-brand-yellow font-extrabold text-lg tracking-wide">365SIM - OWNER</span>
-          <span className="text-xs text-brand-textMuted hidden sm:inline">{currentUser.name}</span>
+          <span className="text-xs text-brand-textMuted hidden sm:inline">{currentUser.name}{currentUser.role === 'SUPER_ADMIN' ? ' · SUPER ADMIN' : ''}</span>
         </div>
         <button onClick={onLogout} className="text-xs px-3 py-1.5 rounded bg-brand-panel hover:bg-[#444] border border-[#444]">
           {t('Dil')}
@@ -342,6 +342,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
 
         {tab === 'manage' && (
           <AdminPanel
+            viewerRole={currentUser.role}
             users={users} allBets={allBets}
             onCreateUser={onCreateUser} onDeleteUser={onDeleteUser}
             onAddCredit={onAddCredit} onResetPassword={onResetPassword}

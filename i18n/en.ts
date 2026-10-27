@@ -111,6 +111,7 @@ export const enCore: Record<string, string> = {
   "Ende s'ka ngjarje të regjistruara.": 'No events recorded yet.',
   'Fundi i pjesës së parë': 'End of first half',
   'Fundi i kohës rregullt': 'End of regular time',
+  'Kredit vetëm nga super admini': 'Credit only from the super admin',
   '⚽ Gol': '⚽ Goal',
   '🟨 Kartion i verdh': '🟨 Yellow card',
   '🟥 Karton i kuq': '🟥 Red card',

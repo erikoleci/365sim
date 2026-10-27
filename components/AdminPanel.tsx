@@ -1,3 +1,4 @@
+import { isAdminRole, isSuperAdminRole } from '../utils/roles';
 import React, { useState, useEffect } from 'react';
 import MarketReportPanel from './MarketReportPanel';
 import PendingLegsPanel from './PendingLegsPanel';
@@ -10,14 +11,17 @@ import MatchupLabel from './MatchupLabel';
 interface AdminPanelProps {
   users: User[];
   allBets: Bet[];
-  onCreateUser: (u: Omit<User, 'id' | 'role' | 'avatar'> & { role: 'USER' | 'AGENT' }) => void;
+  onCreateUser: (u: Omit<User, 'id' | 'role' | 'avatar'> & { role: 'USER' | 'AGENT' | 'ADMIN' }) => void;
+  /** Role of whoever is looking at the panel (SUPER_ADMIN sees the extra controls). */
+  viewerRole?: string;
   onDeleteUser: (userId: string) => void;
   onAddCredit: (userId: string, amount: number) => void;
   onResetPassword: (userId: string, newPass: string) => void;
   onCancelBet: (betId: string, origin: 'USER' | 'ADMIN') => void;
 }
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet }) => {
+const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet, viewerRole }) => {
+  const viewerIsSuper = isSuperAdminRole(viewerRole);
   const { t, locale } = useI18n();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'tickets' | 'audit' | 'markets' | 'pending'>('dashboard');
   const [auditEntries, setAuditEntries] = useState<any[]>([]);
@@ -46,7 +50,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
   
   // Create User State -- role defaults to USER; admin can switch to AGENT
   // (routed server-side to POST /admin/agents instead of /admin/users).
-  const [newUser, setNewUser] = useState<{ name: string; username: string; password: string; balance: number; role: 'USER' | 'AGENT' }>({ name: '', username: '', password: '', balance: 0, role: 'USER' });
+  const [newUser, setNewUser] = useState<{ name: string; username: string; password: string; balance: number; role: 'USER' | 'AGENT' | 'ADMIN' }>({ name: '', username: '', password: '', balance: 0, role: 'USER' });
   
   // Credit State
   const [creditAmounts, setCreditAmounts] = useState<Record<string, string>>({});
@@ -286,13 +290,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                 <div>
                   <label className="text-xs text-brand-textMuted block mb-1">{t('Lloji')}</label>
                   <select className="w-full bg-brand-panel border border-brand-divider rounded p-2 text-white text-sm"
-                    value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as 'USER' | 'AGENT'})}>
+                    value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as 'USER' | 'AGENT' | 'ADMIN'})}>
                     <option value="USER">User</option>
                     <option value="AGENT">{t('Agjent')}</option>
+                    {viewerIsSuper && <option value="ADMIN">Admin</option>}
                   </select>
                 </div>
                 <button type="submit" className="bg-brand-header hover:bg-brand-headerDark text-white font-bold py-2 px-4 rounded text-sm transition-colors">
-                  {newUser.role === 'AGENT' ? 'Create Agent' : 'Create User'}
+                  {newUser.role === 'AGENT' ? 'Create Agent' : newUser.role === 'ADMIN' ? 'Create Admin' : 'Create User'}
                 </button>
               </form>
             </div>
@@ -330,7 +335,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                           </div>
                         </td>
                         <td className="p-3">
-                          <span className={`text-xs px-2 py-1 rounded ${u.role === UserRole.ADMIN ? 'bg-purple-900 text-purple-200' : 'bg-brand-headerDark text-white'}`}>
+                          <span className={`text-xs px-2 py-1 rounded ${isAdminRole(u.role) ? 'bg-purple-900 text-purple-200' : 'bg-brand-headerDark text-white'}`}>
                             {u.role}
                           </span>
                         </td>
@@ -342,6 +347,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                         <td className="p-3 font-mono text-red-400">{stats.lost.toFixed(2)} L</td>
                         
                         <td className="p-3">
+                          {isAdminRole(u.role) && !(viewerIsSuper && u.role === UserRole.ADMIN) ? (
+                            <span className="text-[10px] text-brand-textMuted">{u.role === UserRole.SUPER_ADMIN ? '—' : t('Kredit vetëm nga super admini')}</span>
+                          ) : (
                           <div className="flex items-center gap-2">
                             <input 
                               type="number" 
@@ -357,6 +365,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                               Add
                             </button>
                           </div>
+                          )}
                         </td>
                         <td className="p-3 text-right">
                           <div className="flex flex-col gap-1 items-end">
@@ -367,7 +376,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                                 Reset Pass
                               </button>
                               
-                              {u.role !== UserRole.ADMIN && (
+                              {(u.role === UserRole.USER || u.role === UserRole.AGENT || (viewerIsSuper && u.role === UserRole.ADMIN)) && (
                                 <button 
                                   onClick={() => { if(confirm('Delete user?')) onDeleteUser(u.id) }}
                                   className="text-red-400 hover:text-red-300 text-xs underline"

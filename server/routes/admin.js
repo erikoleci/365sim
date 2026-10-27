@@ -17,6 +17,7 @@ import { getUnmappedVcReport } from '../vcDeltaSampler.js';
 import { mapEventToMatch } from '../oddsUtils.js';
 
 import { transferBalance } from '../ledger.js';
+import { isAdminRole, isSuperAdmin, ROLE_ADMIN } from '../roles.js';
 import { importLondon365, getLondon365Status, getLondon365CountryDebug } from '../london365.js';
 import { monthRange } from './agent.js';
 import { deleteUserIfUnused, deleteBlockedMessage, forceDeleteUser } from '../userDeletion.js';
@@ -24,11 +25,37 @@ import { deleteUserIfUnused, deleteBlockedMessage, forceDeleteUser } from '../us
 const router = express.Router();
 
 function requireAdmin(req, res, next) {
-  if (req.user?.role !== 'ADMIN') return res.status(403).json({ error: 'Admin access required' });
+  if (!isAdminRole(req.user?.role)) return res.status(403).json({ error: 'Admin access required' });
+  next();
+}
+
+// Super admin only: crediting admins, creating / deleting admins, erasing any ticket.
+function requireSuperAdmin(req, res, next) {
+  if (!isSuperAdmin(req.user?.role)) return res.status(403).json({ error: 'Super admin access required' });
   next();
 }
 
 router.use(requireAuth, requireAdmin);
+
+// What to add to the player's balance so the ticket is as if it had never been placed:
+// open / lost -> the stake comes back; won -> the winnings are taken back; void (already refunded) -> nothing.
+export function betBalanceReversal(bet) {
+  const stake = Number(bet.stake) || 0;
+  const ret = Number(bet.potential_return) || 0;
+  switch (bet.status) {
+    case 'PENDING': case 'LOST': return stake;
+    case 'WON': return -(ret - stake);
+    default: return 0; // VOID, cash-out ...: the money already moved back, nothing to reverse
+  }
+}
+
+// An admin account can only be deleted by the super admin; a super admin is never deleted
+// (and nobody deletes their own account).
+function canDeleteAccount(actor, target) {
+  if (target.id === actor.id || target.role === 'SUPER_ADMIN') return false;
+  if (target.role === ROLE_ADMIN) return isSuperAdmin(actor.role);
+  return true;
+}
 
 function toPublicUser(row) {
   return {
@@ -357,7 +384,7 @@ router.delete('/users/:id', async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
   const user = rows[0];
   if (!user) return res.status(404).json({ error: 'User not found' });
-  if (user.role === 'ADMIN') return res.status(400).json({ error: 'Cannot delete an admin user' });
+  if (!canDeleteAccount(req.user, user)) return res.status(400).json({ error: 'Cannot delete an admin user' });
   const result = await deleteUserIfUnused(req.params.id);
   if (!result.ok) {
     return res.status(409).json({ error: deleteBlockedMessage(result.blockers), code: 'USER_HAS_HISTORY', blockers: result.blockers });
@@ -374,7 +401,7 @@ router.delete('/users/:id/force', async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
   const user = rows[0];
   if (!user) return res.status(404).json({ error: 'User not found' });
-  if (user.role === 'ADMIN') return res.status(400).json({ error: 'Cannot delete an admin user' });
+  if (!canDeleteAccount(req.user, user)) return res.status(400).json({ error: 'Cannot delete an admin user' });
   await forceDeleteUser(req.params.id);
   await logAudit(req.user, 'USER_FORCE_DELETE', req.params.id, { username: user.username, role: user.role });
   res.json({ ok: true });
@@ -387,6 +414,10 @@ router.post('/users/:id/credit', async (req, res) => {
   }
   const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: 'User not found' });
+  // An admin never gives credit to an admin account (not even their own): that comes from the super admin.
+  if (isAdminRole(rows[0].role) && !isSuperAdmin(req.user.role)) {
+    return res.status(403).json({ error: 'Only the super admin can give credit to an admin' });
+  }
   await pool.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [amount, req.params.id]);
   const { rows: updated } = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
   await logAudit(req.user, 'BALANCE_CREDIT', req.params.id, { amount, username: rows[0].username });
@@ -398,8 +429,11 @@ router.post('/users/:id/reset-password', async (req, res) => {
   if (!password || password.length < 6) {
     return res.status(400).json({ error: 'password must be at least 6 characters' });
   }
-  const { rows } = await pool.query('SELECT id FROM users WHERE id = $1', [req.params.id]);
+  const { rows } = await pool.query('SELECT id, role FROM users WHERE id = $1', [req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: 'User not found' });
+  if (isAdminRole(rows[0].role) && rows[0].id !== req.user.id && !isSuperAdmin(req.user.role)) {
+    return res.status(403).json({ error: 'Only the super admin can reset an admin password' });
+  }
   const hash = await bcrypt.hash(password, 10);
   await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, req.params.id]);
   await logAudit(req.user, 'PASSWORD_RESET', req.params.id, {});
@@ -445,6 +479,68 @@ router.get('/bets', async (req, res) => {
     user: userById.get(b.user_id) || null,
   }));
   res.json({ bets: withDetails, total: countRows[0].count, limit, offset });
+});
+
+// --- SUPER ADMIN ---------------------------------------------------------------
+
+// Create an admin account.
+router.post('/admins', requireSuperAdmin, async (req, res) => {
+  const { name, username, password, balance } = req.body || {};
+  if (!name || !username || !password) return res.status(400).json({ error: 'name, username, and password are required' });
+  if (String(password).length < 6) return res.status(400).json({ error: 'password must be at least 6 characters' });
+  const { rows: existing } = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
+  if (existing[0]) return res.status(409).json({ error: 'Username already taken' });
+  const id = randomUUID();
+  const hash = await bcrypt.hash(password, 10);
+  await pool.query(
+    `INSERT INTO users (id, name, username, password_hash, balance, role, avatar, created_at)
+     VALUES ($1,$2,$3,$4,$5,'ADMIN','',$6)`,
+    [id, name, username, hash, Math.max(0, Number(balance) || 0), Date.now()],
+  );
+  const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+  await logAudit(req.user, 'ADMIN_CREATE', id, { username });
+  res.status(201).json({ admin: toPublicUser(rows[0]) });
+});
+
+// Give credit to an admin (recorded in the ledger as SUPER_TO_ADMIN, like the admin -> agent credit).
+router.post('/admins/:id/credit', requireSuperAdmin, async (req, res) => {
+  const { amount } = req.body || {};
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+    return res.status(400).json({ error: 'amount must be a positive number' });
+  }
+  const { rows } = await pool.query(`SELECT * FROM users WHERE id = $1 AND role = 'ADMIN'`, [req.params.id]);
+  if (!rows[0]) return res.status(404).json({ error: 'Admin not found' });
+  const result = await transferBalance({
+    actorId: req.user.id, sourceId: null, targetId: req.params.id,
+    amount, type: 'SUPER_TO_ADMIN', reference: rows[0].username,
+  });
+  await logAudit(req.user, 'ADMIN_CREDIT', req.params.id, { amount, username: rows[0].username });
+  res.json({ balance: result.targetAfter });
+});
+
+// Erase any ticket (open, live, settled, void ...). By default the money is put back as if the
+// ticket had never been placed; ?adjust=0 erases the ticket and leaves every balance as it is.
+router.delete('/bets/:id', requireSuperAdmin, async (req, res) => {
+  const adjust = !['0', 'false'].includes(String(req.query.adjust || '').toLowerCase());
+  const { rows } = await pool.query('SELECT * FROM bets WHERE id = $1', [req.params.id]);
+  const bet = rows[0];
+  if (!bet) return res.status(404).json({ error: 'Bet not found' });
+  const delta = adjust ? betBalanceReversal(bet) : 0;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    if (delta !== 0) await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [delta, bet.user_id]);
+    await client.query('DELETE FROM bet_selections WHERE bet_id = $1', [bet.id]);
+    await client.query('DELETE FROM bets WHERE id = $1', [bet.id]);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+  await logAudit(req.user, 'BET_DELETE', bet.id, { userId: bet.user_id, stake: bet.stake, wasStatus: bet.status, adjust, balanceChange: delta });
+  res.json({ ok: true, balanceChange: delta });
 });
 
 router.post('/bets/:id/cancel', async (req, res) => {
