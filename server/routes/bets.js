@@ -5,6 +5,7 @@ import { requireAuth } from './auth.js';
 import { resolveCurrentSelection, mapEventToMatch, isStaleLive } from '../oddsUtils.js';
 import { getBetBlockReason, describeBlockReason, nextEventKind, eventOrderOrdinal, isLiveCornerMarket } from '../marketRules.js';
 import { readNextEventCounters, readLiveCorners } from '../matchSettlement.js';
+import { findCorrelatedSelections } from '../ticketCorrelation.js';
 import { findConflictingSelection, validateStakeAmount, getCancelBlockReason, isLiveEventLocked } from '../betValidation.js';
 import { getLiveDetailAgeMs, isLiveDetailStale } from '../liveDetailPlan.js';
 import { wrap } from '../asyncHandler.js';
@@ -146,6 +147,7 @@ router.post('/', wrap(async (req, res) => {
   let totalOdds = 1;
   let inPlay = false;
   const verifiedSelections = [];
+  const correlationInput = [];
   // Collected across ALL selections instead of returning on the first one
   // found (the previous behavior): for an accumulator, if 2-3 prices moved
   // at once, a client that resubmits after fixing selection #1 would just
@@ -290,6 +292,17 @@ router.post('/', wrap(async (req, res) => {
     }
     totalOdds *= currentOdds;
     verifiedSelections.push({ ...sel, odds: currentOdds });
+    correlationInput.push({ matchId: sel.matchId, marketId: sel.marketId, marketName: current.marketName, optionName: current.selectionName || sel.selectionName, home: matchRow.home_team, away: matchRow.away_team });
+  }
+
+  // Same-match selections with the same logic (4+ with 1+/2+/3+, 1 & 2+ with 0-3, 1 with 1X ...)
+  // are refused: one outcome decides or overlaps the other.
+  const correlated = findCorrelatedSelections(correlationInput);
+  if (correlated) {
+    return fail(400, {
+      error: `Këto zgjedhje janë të lidhura me njëra-tjetrën (e njëjta logjikë) dhe nuk lejohen në të njëjtin kupon: "${correlated.first.marketName} - ${correlated.first.optionName}" dhe "${correlated.second.marketName} - ${correlated.second.optionName}". Zgjidh vetëm njërën.`,
+      code: 'CORRELATED_SELECTIONS',
+    });
   }
 
   if (oddsChanges.length > 0) {
