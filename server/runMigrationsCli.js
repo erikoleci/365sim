@@ -2,6 +2,7 @@
 // Useful for running a migration manually/in CI before a deploy, separate
 // from the automatic run that also happens on every server boot
 // (see server.js).
+import 'dotenv/config';
 import { pool } from './db.js';
 import { runMigrations } from './migrate.js';
 

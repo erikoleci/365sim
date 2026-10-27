@@ -1,4 +1,5 @@
 // npm run super-admin -- <username> <password> [name]
+import 'dotenv/config';
 import { pool } from './db.js';
 import { ensureSuperAdmin } from './superAdmin.js';
 
