@@ -67,3 +67,38 @@ describe('findCorrelatedSelections', () => {
     expect(findCorrelatedSelections([s('m1', 'a', 'Gola Aziatik', 'Mbi 2.25'), s('m1', 'm1-totals', 'Totali i golave', 'Mbi 1.5')])?.family).toBe('goals');
   });
 });
+
+describe('the provider\'s own markets follow the same logic rule', () => {
+  const S = (marketName, optionName, extra = {}) => ({ matchId: 'm1', marketId: 'mk-' + marketName, marketName, optionName, home: 'Udinese', away: 'AC Milan', startTime: '2026-10-27T18:00:00Z', ...extra });
+  const blocked = (...sels) => Boolean(findCorrelatedSelections(sels));
+
+  it('team goal counts (1 Gol / 2 Gola / 3+ Gola) cannot sit with each other or with goal totals', () => {
+    expect(blocked(S('Nr-Gola Pritesi', '3+ Gola'), S('Nr-Gola Udhetuesi', '3+ Gola'))).toBe(true);
+    expect(blocked(S('Nr-Gola Pritesi', '1 Gol'), S('Numri i Golave në Ndeshje', 'Lart 2.5'))).toBe(true);
+    expect(blocked(S('Nr-Gola Pritesi', '0 Gola'), S('Gol Jo Gol Live', '1'))).toBe(true);
+  });
+  it('result & goals / result & both-teams-score / result at minute N share the result family', () => {
+    expect(blocked(S('Rezultat Final/Gol-Gol', '1|G'), S('Rezultat Final', '1'))).toBe(true);
+    expect(blocked(S('RF-60Min', '1'), S('Rezultat Final', '1'))).toBe(true);
+    expect(blocked(S('Rezultati Final Gola 3+', '2|3+'), S('Rezultati Final Gola 4+', '1|4+'))).toBe(true);
+  });
+  it('goal before minute N and scoring in a half are scoring / goal facts', () => {
+    expect(blocked(S('Goli i Dyte Shenohet perpara min. 60:00', 'Po'), S('Numri i Golave në Ndeshje', 'Lart 1.5'))).toBe(true);
+    expect(blocked(S('Shenon Pritesi ne P2', 'Po'), S('Nr-Gola Pritesi', '0 Gola'))).toBe(true);
+  });
+  it('next goal / corner / card belong to scoring / corners / cards', () => {
+    expect(blocked(S('Goli i radhës', '1'), S('Shenon golin e dyte (skuadra)', '1'))).toBe(true);
+    expect(blocked(S('Korneri i radhës', '1'), S('Korne Totali', '5+'))).toBe(true);
+    expect(blocked(S('Godet kornen e fundit', '1'), S('Korneri i radhës', '2'))).toBe(true);
+    expect(blocked(S('Kartoni i radhës', '1'), S('Merr kartonin e pare', '2'))).toBe(true);
+  });
+  it('independent facts still go together, and so do different matches', () => {
+    expect(blocked(S('Shenon Pritesi ne P2', 'Po'), S('Rezultat Final', '1'))).toBe(false);        // scoring vs result
+    expect(blocked(S('Nr-Gola Pritesi', '1 Gol'), S('Korne Totali', '5+'))).toBe(false);           // goals vs corners
+    expect(blocked(S('Godet kornen e fundit', '1'), S('Numri i Golave në Ndeshje', 'Lart 2.5'))).toBe(false);
+    expect(blocked(S('Nr-Gola Pritesi', '3+ Gola'), S('Nr-Gola Pritesi', '3+ Gola', { matchId: 'm2', home: 'Roma', away: 'Lazio' }))).toBe(false);
+  });
+  it('"3+ Gola" / "1 Gol" options count as goal numbers in a generic goals market', () => {
+    expect(blocked(S('Gola', '1 Gol'), S('Golat', '3+ Gola'))).toBe(true);
+  });
+});

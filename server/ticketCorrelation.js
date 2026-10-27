@@ -11,12 +11,13 @@
 // "Same match" = same id OR same two teams starting within 24 h (the provider can list one
 // real match under two ids).
 
-import { classifyMarket } from './marketRules.js';
+import { classifyMarket, nextEventKind, eventOrderOrdinal } from './marketRules.js';
+import { parseProviderMarket } from './providerMarkets.js';
 import { normMarketText as norm } from './marketPeriods.js';
 
 const RESULT_WORDS = /rezultat|1x2|dopio|shans|fitues|fiton|\b1\b|\b2\b/;
 const GOAL_WORDS = /gol|total|numri|mbi|nen|over|under|lart|poshte/;
-const GOAL_COUNT_OPTION = /^\d+\s*\+$|^\d+\s*-\s*\d+$|^(mbi|nen|over|under|lart|poshte)[\s-]*\d/;
+const GOAL_COUNT_OPTION = /^\d+\s*\+(\s*gol[a]?)?$|^\d+\s*gol[a]?$|^\d+\s*-\s*\d+$|^(mbi|nen|over|under|lart|poshte)[\s-]*\d/;
 // who scores / in which order / clean sheets: all about the same scoring facts
 const SCORING_WORDS = /shenon|shenojne|pa pesuar|clean sheet|goli i (pare|fundit|dyte)|gola i (pare|fundit|dyte)/;
 const QUALIFY_WORDS = /kualifik|kalon ne|fiton ne|avancon|promovon/;
@@ -28,6 +29,25 @@ export function selectionFamilies({ marketId, marketName, optionName, home, away
   const c = classifyMarket(marketId, marketName, { home, away });
   const name = norm(marketName);
   const fam = new Set();
+  // The provider's own markets (Nr-Gola, Rezultat Final/Gol-Gol, RF-60Min, "Goli ... perpara min. N", ...):
+  // each one is about the same goals / result / scoring facts as the standard markets.
+  const spec = parseProviderMarket(name);
+  if (spec) {
+    switch (spec.type) {
+      case 'team_goals': fam.add('goals'); fam.add('scoring'); break;        // a team's goal count
+      case 'team_scores': fam.add('scoring'); break;                         // a team scores in a half
+      case 'btts_half': fam.add('btts'); fam.add('scoring'); break;
+      case 'result_btts': fam.add('result'); fam.add('btts'); fam.add('scoring'); break;
+      case 'goal_before': fam.add('goals'); fam.add('scoring'); break;       // the k-th goal before minute N
+      case 'rf_at': fam.add('result'); break;                                // the result at minute N
+      case 'result_goals': fam.add('result'); fam.add('goals'); break;       // result & goals N+
+    }
+  }
+  // next goal / corner / card, and the provider's first / second goal, first / last corner, first card
+  const ev = nextEventKind(marketName) || (eventOrderOrdinal(marketName) || {}).kind;
+  if (ev === 'goal') fam.add('scoring');
+  else if (ev === 'corner') fam.add('corners');
+  else if (ev === 'card') fam.add('cards');
   switch (c.kind) {
     case 'totals': case 'team_totals': case 'odd_even': fam.add('goals'); break;
     case 'result': case 'double_chance': case 'dnb': case 'handicap': case 'htft': fam.add('result'); break;
