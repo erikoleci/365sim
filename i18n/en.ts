@@ -112,7 +112,7 @@ export const enCore: Record<string, string> = {
   'Fundi i pjesës së parë': 'End of first half',
   'Fundi i kohës rregullt': 'End of regular time',
   '⚽ Gol': '⚽ Goal',
-  '🟨 Kartion i verdh': '🟨 Yellow card',
+  '🟨 Karton i verdhë': '🟨 Yellow card',
   '🟥 Karton i kuq': '🟥 Red card',
   '🔄 Nderrim': '🔄 Substitution',
   '🚩 Korne': '🚩 Corner',
