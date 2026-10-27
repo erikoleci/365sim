@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { readGitVersion } from './gitVersion.js';
 import express from 'express';
 // MUST be imported before any router: patches Express 4 so a rejected
 // promise inside an `async (req, res) => {...}` route handler is forwarded
@@ -199,11 +200,14 @@ process.on('uncaughtException', (err) => {
 // not a trip through the Render dashboard/logs -- which matters because the
 // catalogue filter and its boot-time purges only run once, at startup: a
 // process that never restarted after a code change has applied neither.
+const version = readGitVersion(path.join(__dirname, '..'));
+const bootedAt = new Date().toISOString();
 app.get('/api/health', (req, res) => res.status(dbReady ? 200 : 503).json({
   ok: true,
   db: dbReady ? 'up' : 'down',
-  commit: process.env.RENDER_GIT_COMMIT || null,
-  branch: process.env.RENDER_GIT_BRANCH || null,
+  commit: version.commit,
+  branch: version.branch,
+  startedAt: bootedAt,
 }));
 
 // Mobile-friendly, no-login diagnostic: open this URL directly in any
@@ -249,8 +253,8 @@ if (fs.existsSync(distPath)) {
 
 async function start() {
   console.log(
-    '[boot] commit=' + (process.env.RENDER_GIT_COMMIT || 'unknown') +
-    ' branch=' + (process.env.RENDER_GIT_BRANCH || 'unknown') +
+    '[boot] commit=' + (version.commit || 'unknown') +
+    ' branch=' + (version.branch || 'unknown') +
     ' service=' + (process.env.RENDER_SERVICE_NAME || 'unknown')
   );
   if (process.env.DATABASE_URL) {
