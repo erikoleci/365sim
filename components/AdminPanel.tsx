@@ -80,6 +80,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
     }
   };
 
+  // Subtract: the same amount, negative (an admin's credit goes back to the super admin / to the giver).
+  const executeSubtractCredit = (id: string) => {
+    const amount = Math.abs(parseFloat(creditAmounts[id]));
+    if (amount) {
+      onAddCredit(id, -amount);
+      setCreditAmounts(prev => ({ ...prev, [id]: '' }));
+    }
+  };
+
   // Helper to calculate user statistics
   const getUserStats = (userId: string) => {
     const userBets = allBets.filter(b => b.userId === userId);
@@ -363,6 +372,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                               className="bg-brand-accent text-brand-bg font-bold px-2 py-1 rounded text-xs hover:opacity-90"
                             >
                               Add
+                            </button>
+                            <button
+                              onClick={() => executeSubtractCredit(u.id)}
+                              className="bg-red-600 text-white font-bold px-2 py-1 rounded text-xs hover:opacity-90"
+                            >
+                              {t('Zbrit')}
                             </button>
                           </div>
                           )}

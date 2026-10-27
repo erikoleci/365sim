@@ -85,7 +85,7 @@ describe('access', () => {
 describe('credit', () => {
   it('an admin gives credit to a user, but never to an admin or to himself', async () => {
     expect((await call('POST', '/users/user-1/credit', ADMIN, { amount: 25 })).status).toBe(200);
-    expect(mocks.users.get('user-1').balance).toBe(35);
+    expect(mocks.calls.transfers).toEqual([expect.objectContaining({ sourceId: 'admin-1', targetId: 'user-1', amount: 25, type: 'ADMIN_TO_USER' })]);
     expect((await call('POST', '/users/admin-1/credit', ADMIN, { amount: 25 })).status).toBe(403); // himself
     expect((await call('POST', '/users/admin-2/credit', ADMIN, { amount: 25 })).status).toBe(403); // another admin
     expect((await call('POST', '/users/super-1/credit', ADMIN, { amount: 25 })).status).toBe(403);
@@ -98,6 +98,12 @@ describe('credit', () => {
     expect((await call('POST', '/admins/admin-1/credit', ADMIN, { amount: 500 })).status).toBe(403);
     expect((await call('POST', '/admins/user-1/credit', SUPER, { amount: 5 })).status).toBe(404); // only admin accounts
     expect((await call('POST', '/admins/admin-1/credit', SUPER, { amount: -5 })).status).toBe(400);
+  });
+  it('the super admin takes credit back from an admin; an admin cannot', async () => {
+    expect((await call('POST', '/admins/admin-1/debit', SUPER, { amount: 40 })).status).toBe(200);
+    expect(mocks.calls.transfers).toEqual([expect.objectContaining({ sourceId: 'admin-1', targetId: 'super-1', amount: 40, type: 'ADMIN_TO_SUPER' })]);
+    expect((await call('POST', '/admins/admin-1/debit', ADMIN, { amount: 40 })).status).toBe(403);
+    expect((await call('POST', '/admins/admin-1/debit', SUPER, { amount: -5 })).status).toBe(400);
   });
   it('the super admin can also use the generic credit on anyone', async () => {
     expect((await call('POST', '/users/admin-1/credit', SUPER, { amount: 10 })).status).toBe(200);

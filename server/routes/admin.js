@@ -136,8 +136,17 @@ router.post('/users', async (req, res) => {
   await pool.query(
     `INSERT INTO users (id, name, username, password_hash, balance, role, avatar, created_at)
      VALUES ($1,$2,$3,$4,$5,'USER',$6,$7)`,
-    [id, name, username, hash, Number(balance) || 0, '', Date.now()]
+    [id, name, username, hash, isSuperAdmin(req.user.role) ? (Number(balance) || 0) : 0, '', Date.now()]
   );
+  if (!isSuperAdmin(req.user.role) && Number(balance) > 0) {
+    try {
+      await transferBalance({ actorId: req.user.id, sourceId: req.user.id, targetId: id, amount: Number(balance), type: 'ADMIN_TO_USER', reference: username });
+    } catch (err) {
+      await pool.query('DELETE FROM users WHERE id = $1', [id]);
+      if (err.message === 'Insufficient balance') return res.status(400).json({ error: 'Kredia jote ka mbaruar: prit që super admini të të shtojë kredi' });
+      throw err;
+    }
+  }
 
   const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
   await logAudit(req.user, 'USER_CREATE', id, { username, balance: Number(balance) || 0 });
@@ -418,7 +427,22 @@ router.post('/users/:id/credit', async (req, res) => {
   if (isAdminRole(rows[0].role) && !isSuperAdmin(req.user.role)) {
     return res.status(403).json({ error: 'Only the super admin can give credit to an admin' });
   }
-  await pool.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [amount, req.params.id]);
+  if (!isSuperAdmin(req.user.role)) {
+    // A normal admin does not create money: what he gives (or takes back) moves between HIS balance
+    // (given by the super admin) and the account. When his credit runs out he waits for the super admin.
+    try {
+      await transferBalance(amount > 0
+        ? { actorId: req.user.id, sourceId: req.user.id, targetId: req.params.id, amount, type: 'ADMIN_TO_USER', reference: rows[0].username }
+        : { actorId: req.user.id, sourceId: req.params.id, targetId: req.user.id, amount: -amount, type: 'USER_TO_ADMIN', reference: rows[0].username });
+    } catch (err) {
+      if (err.message === 'Insufficient balance') {
+        return res.status(400).json({ error: amount > 0 ? 'Kredia jote ka mbaruar: prit që super admini të të shtojë kredi' : 'Ky llogari nuk ka aq kredi' });
+      }
+      throw err;
+    }
+  } else {
+    await pool.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [amount, req.params.id]);
+  }
   const { rows: updated } = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
   await logAudit(req.user, 'BALANCE_CREDIT', req.params.id, { amount, username: rows[0].username });
   res.json({ user: toPublicUser(updated[0]) });
@@ -516,6 +540,27 @@ router.post('/admins/:id/credit', requireSuperAdmin, async (req, res) => {
   });
   await logAudit(req.user, 'ADMIN_CREDIT', req.params.id, { amount, username: rows[0].username });
   res.json({ balance: result.targetAfter });
+});
+
+// Take credit back from an admin (it returns to the super admin's balance; ledger ADMIN_TO_SUPER).
+router.post('/admins/:id/debit', requireSuperAdmin, async (req, res) => {
+  const { amount } = req.body || {};
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+    return res.status(400).json({ error: 'amount must be a positive number' });
+  }
+  const { rows } = await pool.query(`SELECT * FROM users WHERE id = $1 AND role = 'ADMIN'`, [req.params.id]);
+  if (!rows[0]) return res.status(404).json({ error: 'Admin not found' });
+  try {
+    const result = await transferBalance({
+      actorId: req.user.id, sourceId: req.params.id, targetId: req.user.id,
+      amount, type: 'ADMIN_TO_SUPER', reference: rows[0].username,
+    });
+    await logAudit(req.user, 'ADMIN_DEBIT', req.params.id, { amount, username: rows[0].username });
+    res.json({ balance: result.sourceAfter });
+  } catch (err) {
+    if (err.message === 'Insufficient balance') return res.status(400).json({ error: 'Admini ka më pak kredi se kjo shumë' });
+    throw err;
+  }
 });
 
 // Erase any ticket (open, live, settled, void ...). By default the money is put back as if the

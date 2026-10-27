@@ -326,6 +326,10 @@ export async function adminCreateAdmin(a: { name: string; username: string; pass
   return request<{ admin: User }>('/admin/admins', { method: 'POST', body: JSON.stringify(a) });
 }
 
+export async function adminDebitAdmin(adminId: string, amount: number) {
+  return request<{ balance: number }>(`/admin/admins/${adminId}/debit`, { method: 'POST', body: JSON.stringify({ amount }) });
+}
+
 export async function adminCreditAdmin(adminId: string, amount: number) {
   return request<{ balance: number }>(`/admin/admins/${adminId}/credit`, { method: 'POST', body: JSON.stringify({ amount }) });
 }
