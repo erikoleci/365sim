@@ -596,8 +596,12 @@ router.get('/market-coverage', async (req, res) => {
     let match;
     try { match = mapEventToMatch(row); } catch { continue; }
     for (const mk of match.markets || []) {
-      const cur = board.get(mk.name) || { name: mk.name, id: mk.id, matches: 0, samples: [] };
+      const cur = board.get(mk.name) || { name: mk.name, id: mk.id, matches: 0, live: 0, liveOpen: 0, samples: [] };
       cur.matches += 1;
+      if (row.status === 'LIVE') {
+        cur.live += 1;
+        if ((mk.options || []).some((o) => !o.suspended && o.odds > 0)) cur.liveOpen += 1;
+      }
       for (const o of mk.options || []) { if (cur.samples.length < 4 && o && o.name != null && !cur.samples.includes(String(o.name))) cur.samples.push(String(o.name)); }
       board.set(mk.name, cur);
     }

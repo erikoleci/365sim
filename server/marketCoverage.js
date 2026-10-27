@@ -10,11 +10,13 @@ export function buildCoverageReport(entries) {
   for (const e of entries) {
     const name = String(e.name || '').trim();
     if (!name) continue;
-    const cur = byName.get(name) || { name, id: e.id || null, matches: 0, legs: 0, pending: 0, samples: [] };
+    const cur = byName.get(name) || { name, id: e.id || null, matches: 0, legs: 0, pending: 0, live: 0, liveOpen: 0, samples: [] };
     for (const smp of e.samples || []) {
       if (cur.samples.length < 4 && smp != null && !cur.samples.includes(String(smp))) cur.samples.push(String(smp));
     }
     cur.matches += Number(e.matches || 0);
+    cur.live += Number(e.live || 0);
+    cur.liveOpen += Number(e.liveOpen || 0);
     cur.legs += Number(e.legs || 0);
     cur.pending += Number(e.pending || 0);
     byName.set(name, cur);
@@ -43,6 +45,7 @@ export function formatCoverageText(report) {
   const fmt = (r) => `- ${r.name} | bileta: ${r.legs} (hapur: ${r.pending}) | ndeshje në tabelë: ${r.matches} | opsione p.sh.: ${(r.samples || []).join(' ; ')}`;
   const without = report.markets.filter((r) => !r.autoSettles);
   const withRule = report.markets.filter((r) => r.autoSettles);
+  const liveMarkets = report.markets.filter((r) => r.live > 0).sort((a, b) => b.live - a.live || a.name.localeCompare(b.name));
   return [
     `TREGJE GJITHSEJ: ${report.summary.markets} | ME RREGULL: ${report.summary.autoSettled} | PA RREGULL: ${report.summary.withoutRule}`,
     '',
@@ -51,5 +54,10 @@ export function formatCoverageText(report) {
     '',
     '=== ME RREGULL ===',
     withRule.map((r) => `- ${r.name}${(r.samples || []).length ? ' | ' + r.samples.join(' ; ') : ''}`).join('\n') || '(asnjë)',
+    '',
+    // What the live matches actually carry right now and whether it is open or closed (hidden from the
+    // page) -- the place to look when a live market "does not show up".
+    '=== TREGJET E NDESHJEVE LIVE (sa ndeshje live e kanë | sa e kanë të hapur) ===',
+    liveMarkets.map((r) => `- ${r.name} | live: ${r.live} | hapur: ${r.liveOpen}${r.liveOpen === 0 ? ' (MBYLLUR live: nuk shfaqet)' : ''} | ${(r.samples || []).join(' ; ')}`).join('\n') || '(asnjë ndeshje live)',
   ].join('\n');
 }

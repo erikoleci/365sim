@@ -64,3 +64,17 @@ describe('BET_REQUIRE_SETTLEMENT_RULE', () => {
     expect(getBetBlockReason(upcoming, { id: 'x', name: 'Rezultat Final' }, { id: '1', name: '1' })).toBeNull();
   });
 });
+
+describe('coverage text: live markets section', () => {
+  it('lists the markets live matches carry and flags the ones closed live', async () => {
+    const { buildCoverageReport, formatCoverageText } = await import('../server/marketCoverage.js');
+    const report = buildCoverageReport([
+      { name: 'Rezultat Final', matches: 5, live: 3, liveOpen: 3, samples: ['1', 'X', '2'] },
+      { name: 'Korneri i Radhës', matches: 2, live: 2, liveOpen: 0, samples: ['1', '2'] },
+    ]);
+    const text = formatCoverageText(report);
+    expect(text).toContain('TREGJET E NDESHJEVE LIVE');
+    expect(text).toMatch(/- Rezultat Final \| live: 3 \| hapur: 3 \|/);
+    expect(text).toMatch(/- Korneri i Radhës \| live: 2 \| hapur: 0 \(MBYLLUR live: nuk shfaqet\)/);
+  });
+});
