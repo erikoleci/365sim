@@ -94,7 +94,18 @@ describe('Gara e Korneve (race to N corners)', () => {
     expect(parseCornerRaceOption('7 Vina', 'Chile', 'Vina')).toEqual({ n: 7, side: 'AWAY' });
     expect(parseCornerRaceOption('X 9', 'Chile', 'Vina')).toEqual({ n: 9, side: 'NONE' });
     expect(parseCornerRaceOption('Chile', 'Chile', 'Vina')).toBeNull();
-    expect(parseCornerRaceOption('1 5', 'Chile', 'Vina')).toBeNull();
+    // the provider's own layout (screenshot): rows 5 / 7 / 9, columns "Universidad de Chile | X | Everton de Vina"
+    const U = 'Universidad de Chile'; const E = 'Everton de Vina';
+    expect(parseCornerRaceOption('Universidad de Chile 5', U, E)).toEqual({ n: 5, side: 'HOME' });
+    expect(parseCornerRaceOption('9 - Everton de Vina', U, E)).toEqual({ n: 9, side: 'AWAY' });
+    expect(parseCornerRaceOption('X 7', U, E)).toEqual({ n: 7, side: 'NONE' });
+    // provider style 1 / X / 2 + the line, either order
+    expect(parseCornerRaceOption('1 5', U, E)).toEqual({ n: 5, side: 'HOME' });
+    expect(parseCornerRaceOption('7 X', U, E)).toEqual({ n: 7, side: 'NONE' });
+    expect(parseCornerRaceOption('2|9', U, E)).toEqual({ n: 9, side: 'AWAY' });
+    expect(parseCornerRaceOption('1 2', U, E)).toBeNull(); // ambiguous
+    expect(parseCornerRaceOption('5', U, E)).toBeNull(); // no side
+    expect(parseCornerRaceOption('Zenit 2 5', 'Zenit 2', 'Vina')).toEqual({ n: 5, side: 'HOME' }); // team name with a digit
   });
   it('open while nobody reached N, closed when somebody did', () => {
     expect(race('Chile 7', { home: 4, away: 3 })).toBeNull();

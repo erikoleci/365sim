@@ -404,20 +404,31 @@ export const isNthCornerMarket = (name) => { const o = eventOrderOrdinal(name); 
 // Markets whose in-play check needs the live corner counter (bets.js attaches it and applies the corner lock).
 export const isLiveCornerMarket = (name) => isLiveCornerTotals(name) || isCornerRace(name) || isNthCornerMarket(name);
 
-// "Gara e Korneve" option text -> { n, side: 'HOME' | 'AWAY' | 'NONE' } or null. The line N is the only
-// number in the text; the rest must be a team name or X / draw / neither. Anything else is not guessed.
+// "Gara e Korneve" option text -> { n, side: 'HOME' | 'AWAY' | 'NONE' } or null. Read from the provider's table
+// (rows = the line 5 / 7 / 9, columns = home team | X | away team), so every spelling of "side + line" is accepted:
+//   "Universidad de Chile 5", "7 Everton de Vina", "X 9", "1 5", "5 - 1", "2|7", "5 X"
+// The line N is the only number besides a 1 / 2 side marker. A text that cannot be read with certainty
+// (two numbers that could be either, an unknown word) is NOT guessed: the market stays closed.
 export function parseCornerRaceOption(text, home, away) {
-  const t = norm(text);
-  const nums = t.match(/\d+/g);
-  if (!nums || nums.length !== 1) return null;
-  const n = Number(nums[0]);
-  if (!Number.isFinite(n) || n < 1) return null;
-  const rest = t.replace(/\d+/, ' ').replace(/[|()\-:,]/g, ' ').replace(/\s+/g, ' ').trim();
-  if (!rest) return null;
-  if (home && rest === norm(home)) return { n, side: 'HOME' };
-  if (away && rest === norm(away)) return { n, side: 'AWAY' };
-  if (/^(x|draw|barazim|asnje|neither|none)$/.test(rest)) return { n, side: 'NONE' };
-  return null;
+  let s = norm(text);
+  const nh = home ? norm(home) : ''; const na = away ? norm(away) : '';
+  let side = null;
+  const inH = nh && s.includes(nh); const inA = na && s.includes(na);
+  if (inH && inA) return null;
+  if (inH) { side = 'HOME'; s = s.replace(nh, ' '); } else if (inA) { side = 'AWAY'; s = s.replace(na, ' '); }
+  const tokens = s.replace(/[|()\-:,]/g, ' ').split(/\s+/).filter(Boolean);
+  const isNum = (t) => /^\d+$/.test(t);
+  const NONE_WORD = /^(x|draw|barazim|asnje|neither|none)$/;
+  const done = (n, sd) => (Number.isFinite(n) && n >= 1 ? { n, side: sd } : null);
+  if (side) return tokens.length === 1 && isNum(tokens[0]) ? done(Number(tokens[0]), side) : null;
+  if (tokens.length !== 2) return null;
+  const [a, b] = tokens;
+  const asSide = (t) => (t === '1' ? 'HOME' : t === '2' ? 'AWAY' : NONE_WORD.test(t) ? 'NONE' : null);
+  const first = asSide(a) && isNum(b) ? { side: asSide(a), n: Number(b) } : null; // "1 5" / "X 7"
+  const second = asSide(b) && isNum(a) ? { side: asSide(b), n: Number(a) } : null; // "5 1" / "7 X"
+  if (first && second) return null; // "1 2": could be either way round
+  const r = first || second;
+  return r ? done(r.n, r.side) : null;
 }
 
 function cornersFreshAndEarly(row) {

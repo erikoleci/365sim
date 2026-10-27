@@ -5,11 +5,12 @@ import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
+import { readLiveCorners } from '../matchSettlement.js';
 import { settleMatch, recomputeBetStatus, settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult, explainSettleBlock } from '../matchSettlement.js';
 import { missedLiveCycles } from '../london365/liveState.js';
 import { logAudit } from '../auditLog.js';
 import { buildCoverageReport, formatCoverageText } from '../marketCoverage.js';
-import { settlementRuleRequired } from '../marketRules.js';
+import { settlementRuleRequired, getBetBlockReason } from '../marketRules.js';
 import { getFeedKeySamples } from '../feedKeySampler.js';
 import { getRecentErrors } from '../recentErrors.js';
 import { getUnmappedVcReport } from '../vcDeltaSampler.js';
@@ -615,6 +616,45 @@ router.get('/market-coverage', async (req, res) => {
 // Unknown provider action codes (VC) with the counters that moved alongside them: helps label new ones.
 router.get('/unmapped-vc', (req, res) => {
   res.json({ now: new Date().toISOString(), codes: getUnmappedVcReport() });
+});
+
+// Why are the corner markets (or the "Kornet" tab) missing on a match? For every match whose team name
+// contains ?q= (default: the live ones) it shows the live corner counter (value, age, fresh?), whether the
+// provider sent any corner market at all, and for each corner option the exact reason it is open / closed.
+// Example: /api/admin/corner-diagnose?q=Agniputhra
+router.get('/corner-diagnose', async (req, res) => {
+  const q = String(req.query.q || '').trim().toLowerCase();
+  const { rows } = await pool.query(
+    `SELECT * FROM matches_cache
+      WHERE ($1 = '' AND (status = 'LIVE' OR live_status IS NOT NULL) AND result_home IS NULL)
+         OR ($1 <> '' AND (lower(home_team) LIKE '%' || $1 || '%' OR lower(away_team) LIKE '%' || $1 || '%' OR id = $1))
+      ORDER BY start_time DESC LIMIT 6`,
+    [q]
+  );
+  const now = Date.now();
+  const out = [];
+  for (const r of rows) {
+    const { rows: st } = await pool.query('SELECT corners_home, corners_away, updated_at FROM live_statistics WHERE match_id = $1', [r.id]);
+    const lc = await readLiveCorners(pool, r.id, now);
+    if (lc) r.live_corners = lc;
+    const m = mapEventToMatch(r);
+    const cornerMarkets = m.markets.filter((x) => /korn|corner/i.test(x.name));
+    out.push({
+      id: r.id, match: r.home_team + ' v ' + r.away_team, status: m.status, liveStatus: r.live_status, minute: r.live_minute,
+      liveCorners: st[0] ? {
+        home: st[0].corners_home, away: st[0].corners_away,
+        ageSeconds: st[0].updated_at == null ? null : Math.round((now - Number(st[0].updated_at)) / 1000),
+        fresh: Boolean(lc && lc.fresh),
+      } : 'no live_statistics row (the live detail feed is not delivering counters for this match)',
+      categories: [...new Set(m.markets.map((x) => x.category || 'other'))],
+      providerSentCornerMarkets: cornerMarkets.length,
+      cornerMarkets: cornerMarkets.map((x) => ({
+        name: x.name, category: x.category || 'other',
+        options: x.options.map((o) => ({ name: o.name, odds: o.odds, closed: getBetBlockReason(r, { id: x.id, name: x.name }, { id: o.id, name: o.name }) || false })),
+      })),
+    });
+  }
+  res.json({ now: new Date(now).toISOString(), matches: out });
 });
 
 router.get('/recent-errors', (req, res) => {
