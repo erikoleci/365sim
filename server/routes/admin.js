@@ -120,7 +120,9 @@ router.get('/users', async (req, res) => {
     pool.query('SELECT * FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2', [limit, offset]),
     pool.query('SELECT COUNT(*)::int AS count FROM users'),
   ]);
-  res.json({ users: users.map(toPublicUser), total: countRows[0].count, limit, offset });
+  // A normal admin never sees the super admin account (nor its balance).
+  const visible = isSuperAdmin(req.user.role) ? users : users.filter((u) => u.role !== 'SUPER_ADMIN');
+  res.json({ users: visible.map(toPublicUser), total: countRows[0].count - (users.length - visible.length), limit, offset });
 });
 
 router.post('/users', async (req, res) => {
@@ -907,7 +909,10 @@ router.get('/dashboard/kpi', async (req, res) => {
 
 router.get('/audit-log', async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 200, 500);
-  const { rows } = await pool.query('SELECT * FROM audit_log ORDER BY created_at DESC LIMIT $1', [limit]);
+  // Whatever the super admin does (credit, debit ...) is not shown to a normal admin.
+  const { rows } = isSuperAdmin(req.user.role)
+    ? await pool.query('SELECT * FROM audit_log ORDER BY created_at DESC LIMIT $1', [limit])
+    : await pool.query(`SELECT * FROM audit_log WHERE actor_id NOT IN (SELECT id FROM users WHERE role = 'SUPER_ADMIN') ORDER BY created_at DESC LIMIT $1`, [limit]);
   res.json({ entries: rows });
 });
 

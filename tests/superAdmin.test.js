@@ -82,6 +82,16 @@ describe('access', () => {
   });
 });
 
+describe('visibility', () => {
+  it('a normal admin never sees the super admin account; the super admin sees everyone', async () => {
+    const asAdmin = (await (await call('GET', '/users', ADMIN)).json()).users.map((u) => u.id);
+    expect(asAdmin).not.toContain('super-1');
+    expect(asAdmin).toContain('admin-1');
+    const asSuper = (await (await call('GET', '/users', SUPER)).json()).users.map((u) => u.id);
+    expect(asSuper).toContain('super-1');
+  });
+});
+
 describe('credit', () => {
   it('an admin gives credit to a user, but never to an admin or to himself', async () => {
     expect((await call('POST', '/users/user-1/credit', ADMIN, { amount: 25 })).status).toBe(200);
