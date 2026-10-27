@@ -1,4 +1,4 @@
-import { reconcileEvents } from '../eventReconcile.js';
+import { reconcileEvents, annotateHalves } from '../eventReconcile.js';
 import express from 'express';
 import { queryWithRetry } from '../db.js';
 import { mapEventToMatch } from '../oddsUtils.js';
@@ -234,19 +234,27 @@ router.get('/:id/live-detail', wrap(async (req, res) => {
       'SELECT minute, type, team, player, detail, created_at FROM match_events WHERE match_id = $1 ORDER BY created_at ASC',
       [req.params.id]
     ),
-    queryWithRetry('SELECT home_team, away_team, live_minute, live_home_score, live_away_score, status, live_minute_updated_at FROM matches_cache WHERE id = $1', [req.params.id]),
+    queryWithRetry('SELECT home_team, away_team, live_minute, live_home_score, live_away_score, status, live_minute_updated_at, ht_home, ht_at FROM matches_cache WHERE id = $1', [req.params.id]),
   ]);
   const cache = cacheRows[0];
   const lastUpdated = statsRows[0] ? Number(statsRows[0].updated_at) : null;
   const statistics = buildLiveStatistics(statsRows[0] || null, cache || null, Date.now(), STATS_STALE_MS);
-  const shownEvents = cache
+  const reconciled = cache
     ? reconcileEvents(eventRows, {
         homeTeam: cache.home_team, awayTeam: cache.away_team,
         homeScore: cache.live_home_score, awayScore: cache.live_away_score,
         cardsHome: statsRows[0]?.cards_home, cardsAway: statsRows[0]?.cards_away,
       })
     : eventRows;
-  res.json({ statistics, events: shownEvents, last_updated: lastUpdated });
+  // Each event carries the half it was played in (first-half stoppage time is still half 1).
+  const shownEvents = cache
+    ? annotateHalves(reconciled, {
+        htAt: cache.ht_at,
+        htKnown: cache.ht_home != null || cache.ht_at != null,
+        isLive: cache.status === 'LIVE',
+      })
+    : reconciled;
+  res.json({ statistics, events: shownEvents, halfTimeAt: cache?.ht_at != null ? Number(cache.ht_at) : null, last_updated: lastUpdated });
 }));
 
 router.get('/:id', wrap(async (req, res) => {

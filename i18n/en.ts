@@ -111,7 +111,7 @@ export const enCore: Record<string, string> = {
   "Ende s'ka ngjarje të regjistruara.": 'No events recorded yet.',
   'Fundi i pjesës së parë': 'End of first half',
   '⚽ Gol': '⚽ Goal',
-  '🟨 Kartion i verdh': '🟨 Yellow card',
+  '🟨 Karton i verdhë': '🟨 Yellow card',
   '🟥 Karton i kuq': '🟥 Red card',
   '🔄 Nderrim': '🔄 Substitution',
   '🚩 Korne': '🚩 Corner',

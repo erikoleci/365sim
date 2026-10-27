@@ -13,7 +13,9 @@ describe('captureHalfTimeScore', () => {
     await captureHalfTimeScore('l365-1', 2, 1);
     expect(queries).toHaveLength(1);
     expect(queries[0].sql).toMatch(/ht_home IS NULL/);
-    expect(queries[0].params).toEqual(['l365-1', 2, 1]);
+    expect(queries[0].params.slice(0, 3)).toEqual(['l365-1', 2, 1]);
+    expect(queries[0].sql).toMatch(/ht_at = \$4/); // whistle time, so 45+2' events stay first half
+    expect(Number.isFinite(queries[0].params[3])).toBe(true);
   });
   it('the ~1/sec HT ticks do not touch the database again', async () => {
     for (let i = 0; i < 50; i++) await captureHalfTimeScore('l365-1', 2, 1);

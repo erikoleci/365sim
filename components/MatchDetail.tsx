@@ -83,7 +83,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
   // never looks frozen on whatever minute it happened to load at (e.g. "93'"
   // sitting still) between the 15s poll/socket refreshes.
   const [activeTab, setActiveTab] = useState<string>('All');
-  const [liveDetail, setLiveDetail] = useState<{ statistics: LiveStatistics | null; events: MatchEvent[] } | null>(null);
+  const [liveDetail, setLiveDetail] = useState<{ statistics: LiveStatistics | null; events: MatchEvent[]; halfTimeAt?: number | null } | null>(null);
   const [liveDetailLoading, setLiveDetailLoading] = useState(false);
   const [cardFlash, setCardFlash] = useState<{ kind: 'YELLOW_CARD' | 'RED_CARD'; team: 'home' | 'away' } | null>(null);
   // The provider rarely sends statistics (possession, shots, corners, xG...). When none arrived
@@ -187,6 +187,14 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
   // while the first half is still being played.
   const firstHalfDividerAt = useMemo(() => {
     const evs = liveDetail?.events ?? [];
+    // The server marks each event with its half (stoppage time such as a corner at 47' is still
+    // half 1), so the divider follows the real whistle, not the minute number.
+    if (evs.some((e) => e.half != null)) {
+      const reachedSecond = isHalftime(match) || isFinished || liveDetail?.halfTimeAt != null || evs.some((e) => e.half === 2);
+      if (!reachedSecond || !evs.some((e) => e.half === 1)) return null;
+      const at = evs.findIndex((e) => e.half === 2);
+      return at === -1 ? evs.length : at;
+    }
     const minuteNow = Number(liveDetail?.statistics?.minute ?? String(match.currentMinute ?? '').match(/^\d+/)?.[0] ?? NaN);
     const reachedSecondHalf = isHalftime(match) || isFinished || (Number.isFinite(minuteNow) && minuteNow > 45) || evs.some((e) => e.minute != null && e.minute > 45);
     if (!reachedSecondHalf || !evs.some((e) => e.minute != null && e.minute <= 45)) return null;
@@ -385,7 +393,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
                   <div className="text-center text-brand-yellow text-xs font-bold py-2">{t('Fundi i pjesës së parë')}</div>
                 )}
                 <div className="flex items-center gap-3 bg-[#333] rounded px-3 py-2">
-                  <span className="text-brand-yellow font-mono text-xs w-8 shrink-0">{ev.minute != null ? `${ev.minute}'` : '-'}</span>
+                  <span className="text-brand-yellow font-mono text-xs w-10 shrink-0">{ev.minute == null ? '-' : ev.half === 1 && ev.minute > 45 ? `45+${ev.minute - 45}'` : `${ev.minute}'`}</span>
                   <span className="text-white text-xs flex-1">{EVENT_LABELS[ev.type] ? t(EVENT_LABELS[ev.type]) : ev.type}</span>
                   {ev.team && <span className="text-brand-textMuted text-[10px]">{ev.team}</span>}
                   {ev.player && <span className="text-brand-textMuted text-[10px]">{ev.player}</span>}

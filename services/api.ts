@@ -182,9 +182,12 @@ export interface MatchEvent {
   player: string | null;
   detail: string | null;
   created_at: number;
+  // Half the event was played in (set by the server). First-half stoppage time (45+2') is
+  // half 1 even though its minute is above 45. Absent for old matches without a stored whistle.
+  half?: 1 | 2;
 }
 
-export async function fetchMatchLiveDetail(matchId: string): Promise<{ statistics: LiveStatistics | null; events: MatchEvent[] }> {
+export async function fetchMatchLiveDetail(matchId: string): Promise<{ statistics: LiveStatistics | null; events: MatchEvent[]; halfTimeAt?: number | null }> {
   return request(`/matches/${matchId}/live-detail`);
 }
 

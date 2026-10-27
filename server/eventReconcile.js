@@ -7,6 +7,24 @@
 //   events : rows from match_events, oldest first
 //   totals : { homeTeam, awayTeam, homeScore, awayScore, cardsHome, cardsAway }
 //            any null/undefined total means "unknown" -> no trimming for it
+// Marks every event with the half it was played in, so the list never guesses from the minute
+// (a corner at 47' in first-half stoppage time is NOT a second-half event).
+//   htAt     : epoch ms the half-time whistle was first seen (matches_cache.ht_at), or null
+//   htKnown  : half time already stored for the match (ht_home/ht_away or ht_at set)
+//   isLive   : the match is LIVE right now
+// Before the whistle (live, no half-time stored) every event is first half. After it, an event
+// is first half when it was written before the whistle. Without a usable whistle time (old
+// matches, finished matches with no capture) `half` stays undefined and the client falls back
+// to its minute rule.
+export function annotateHalves(events, { htAt, htKnown, isLive } = {}) {
+  const at = htAt != null && Number.isFinite(Number(htAt)) ? Number(htAt) : null;
+  return (events || []).map((ev) => {
+    if (at != null) return { ...ev, half: Number(ev.created_at) < at ? 1 : 2 };
+    if (!htKnown && isLive) return { ...ev, half: 1 };
+    return ev;
+  });
+}
+
 export function reconcileEvents(events, totals) {
   const { homeTeam, awayTeam, homeScore, awayScore, cardsHome, cardsAway } = totals || {};
   const left = {

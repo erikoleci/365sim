@@ -274,6 +274,8 @@ export async function initDb() {
   // HT (see halfTime.js). Lets first/second-half markets be settled automatically.
   await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS ht_home INTEGER;`);
   await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS ht_away INTEGER;`);
+  // Moment (epoch ms) the half-time whistle was first seen -- also in migrations/0008.
+  await pool.query(`ALTER TABLE matches_cache ADD COLUMN IF NOT EXISTS ht_at BIGINT;`);
   // Added by migrations/0002 too (IF NOT EXISTS makes both safe). It has to exist HERE as well:
   // initDb() runs before the migrations, and the UPDATE below read it, so a brand-new database
   // (e.g. the local Postgres of the docker setup) failed to initialise at this very statement.

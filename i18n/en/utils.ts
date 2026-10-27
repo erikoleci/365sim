@@ -145,7 +145,7 @@ export const enUtils: Record<string, string> = {
   'Sulm i rezikshem': 'Dangerous attack',
   'Pozicion jashte loje': 'Offside',
   'Nderrim': 'Substitution',
-  'Kartion i verdh': 'Yellow card',
+  'Karton i verdhë': 'Yellow card',
   'Arbitri shikon VAR': 'VAR check',
   'Pushim': 'Half-time',
   'Gol': 'Goal',

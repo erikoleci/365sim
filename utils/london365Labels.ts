@@ -21,7 +21,7 @@ export const LONDON365_EVENT_LABELS: Record<string, string> = {
   Pozicion_jashte_loje: 'Pozicion jashte loje',
   Gol: 'Gol',
   Nderrim: 'Nderrim',
-  Karton_i_verdhe: 'Kartion i verdh',
+  Karton_i_verdhe: 'Karton i verdhë',
   Karton_i_kuq: 'Karton i kuq',
   VAR: 'Arbitri shikon VAR',
 };

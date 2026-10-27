@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reconcileEvents } from '../server/eventReconcile.js';
+import { reconcileEvents, annotateHalves } from '../server/eventReconcile.js';
 
 const base = { homeTeam: 'Zaglebie Lubin II', awayTeam: 'Gornik Polkowice' };
 const g = (minute, team) => ({ minute, type: 'GOAL', team });
@@ -32,5 +32,21 @@ describe('reconcileEvents duplicates', () => {
       { minute: 15, type: 'YELLOW_CARD', team: 'away', detail: '1' },
     ];
     expect(reconcileEvents(evs, {}).map((e) => e.type + e.detail)).toEqual(['CORNER1', 'CORNER2', 'YELLOW_CARD1']);
+  });
+});
+
+describe('annotateHalves', () => {
+  const ev = (minute, created_at) => ({ minute, type: 'CORNER', team: 'away', created_at });
+  it('before the whistle (live, no half-time stored) every event is first half, even 47\'', () => {
+    const out = annotateHalves([ev(45, 100), ev(47, 200)], { htAt: null, htKnown: false, isLive: true });
+    expect(out.map((e) => e.half)).toEqual([1, 1]);
+  });
+  it('after the whistle the split follows when the event was written, not its minute', () => {
+    const out = annotateHalves([ev(45, 100), ev(47, 200), ev(46, 900), ev(47, 950)], { htAt: 500, htKnown: true, isLive: true });
+    expect(out.map((e) => e.half)).toEqual([1, 1, 2, 2]);
+  });
+  it('leaves half undefined when the whistle time is unknown (legacy / finished without capture)', () => {
+    expect(annotateHalves([ev(47, 200)], { htAt: null, htKnown: true, isLive: false })[0].half).toBeUndefined();
+    expect(annotateHalves([ev(47, 200)], { htAt: null, htKnown: false, isLive: false })[0].half).toBeUndefined();
   });
 });
