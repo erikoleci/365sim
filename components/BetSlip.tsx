@@ -154,9 +154,9 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
 
                     {hasConflicts && (
                         <div className="bg-red-900/30 border border-red-700/50 rounded-lg p-2.5 text-xs">
-                            <p className="text-red-300 font-bold mb-0.5">Zgjedhjet nuk mund të kombinohen</p>
+                            <p className="text-red-300 font-bold mb-0.5">{t('Zgjedhjet nuk mund të kombinohen')}</p>
                             <p className="text-red-200/80 leading-snug">
-                                Disa zgjedhje të së njëjtës ndeshje janë të lidhura logjikisht me njëra-tjetrën (njëra vendos ose mbulon tjetrën), ndaj kuota totale do të ishte e gabuar. Hiq njërën nga zgjedhjet e shënuara me të kuqe për të vendosur biletën.
+                                {t('Disa zgjedhje të së njëjtës ndeshje janë të lidhura logjikisht me njëra-tjetrën (njëra vendos ose mbulon tjetrën), ndaj kuota totale do të ishte e gabuar. Hiq njërën nga zgjedhjet e shënuara me të kuqe për të vendosur biletën.')}
                             </p>
                         </div>
                     )}
@@ -173,7 +173,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                                  <div className="text-xs text-brand-textMuted italic truncate"><MatchupLabel home={sel.matchHome} away={sel.matchAway} /></div>
                                  {conflicts.has(legKey(sel)) && (
                                      <div className="text-[11px] text-red-300 mt-1 leading-snug">
-                                         Lidhet me: {(conflicts.get(legKey(sel)) || []).map((o) => `${o.marketName} - ${o.selectionName}`).join(', ')}
+                                         {t('Lidhet me: {list}', { list: (conflicts.get(legKey(sel)) || []).map((o) => `${o.marketName} - ${o.selectionName}`).join(', ') })}
                                      </div>
                                  )}
                                  <div className="text-right mt-1 tabular-nums">
@@ -235,7 +235,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                                 {changedSelections.length > 0 ? t('Prano Ndryshimet & Vendos') : t('Vendos Biletën')}
                             </button>
                             {hasConflicts && (
-                                <p className="text-red-400 text-xs text-center mt-2">Hiq zgjedhjet e lidhura për të vendosur biletën</p>
+                                <p className="text-red-400 text-xs text-center mt-2">{t('Hiq zgjedhjet e lidhura për të vendosur biletën')}</p>
                             )}
                             {!isValidStake && stake && stakeNum > userBalance && (
                                 <p className="text-red-400 text-xs text-center mt-2">{t('Fonde të pamjaftueshme')}</p>
