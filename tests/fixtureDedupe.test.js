@@ -63,6 +63,21 @@ describe('dedupeMatches - same fixture under two provider ids', () => {
   });
 });
 
+describe('dedupeMatches - locked pre-match odds must not hide the live prices', () => {
+  const locked = (n) => Array.from({ length: n }, (_, i) => ({ id: 'o' + i, odds: 1, suspended: true }));
+  it('keeps the in-play record (open prices) over a pre-match record whose prices are all locked', () => {
+    const pre = base({ id: 'l365-5253660', homeTeam: 'Gamba Osaka', awayTeam: 'Buriram United', markets: [{ options: locked(3) }] });
+    const live = base({ id: 'l365-5257837', homeTeam: 'Gamba Osaka', awayTeam: 'Buriram United', markets: [{ options: opt(3) }],
+      liveHomeScore: 0, liveAwayScore: 1, currentMinute: '45:00', currentMinuteUpdatedAt: 1793184598082, liveStatus: 'HT' });
+    for (const order of [[pre, live], [live, pre]]) {
+      const [m] = dedupeMatches(order);
+      expect(m.id).toBe('l365-5257837');
+      expect(m.markets[0].options.every((o) => !o.suspended)).toBe(true);
+      expect(m.liveHomeScore).toBe(0);
+    }
+  });
+});
+
 describe('fixture identity - similar team names must not merge different fixtures', () => {
   it("a men's match is not merged with the women's / youth / reserve match of the same clubs", () => {
     const men = base({ id: 'l365-1', homeTeam: 'Chelsea', awayTeam: 'Bournemouth', liveHomeScore: 5, liveAwayScore: 1 });

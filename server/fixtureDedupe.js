@@ -24,6 +24,15 @@ function outcomeCount(m) {
   return n;
 }
 
+// Options that can actually be bet on right now (not locked/suspended). A pre-match catalogue row of a
+// game that already started keeps every market at 1.00 (locked), while the in-play row carries the real
+// prices -- the locked row must not win just because it lists as many (or more) markets.
+function openOutcomeCount(m) {
+  let n = 0;
+  for (const mk of m.markets || []) for (const o of mk.options || []) if (!o.suspended) n++;
+  return n;
+}
+
 export function normTeam(s) {
   return String(s || '')
     .toLowerCase()
@@ -151,9 +160,10 @@ export function dedupeMatches(list, onMerge) {
   return groups.map((g) => {
     let best = g.candidates[0];
     for (const c of g.candidates) {
-      const cs = outcomeCount(c);
-      const bs = outcomeCount(best);
-      if (cs > bs) best = c;
+      const co = openOutcomeCount(c);
+      const bo = openOutcomeCount(best);
+      if (co !== bo) { if (co > bo) best = c; continue; }
+      if (outcomeCount(c) > outcomeCount(best)) best = c;
     }
     best = { ...best };
     for (const c of g.candidates) {
