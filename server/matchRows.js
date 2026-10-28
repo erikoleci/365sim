@@ -30,13 +30,20 @@ export async function fetchMatchRowsPrioritized(query, columns, maxPages, nowMs 
   const seen = new Set();
   const maxRows = Math.max(1, maxPages) * PAGE_SIZE; // the cap protects memory, so it counts REAL rows
   let truncated = false;
+  // The page is picked on the light columns only (id, start_time); the heavy raw_json projection
+  // (a jsonb parse of every row) then runs for just the 200 rows of that page. With the projection in
+  // the same SELECT as LIMIT/OFFSET, every row skipped by OFFSET was parsed too, so the cost of
+  // paging grew with the square of the page count.
   const sql = `SELECT ${columns}
        FROM matches_cache
-       WHERE id LIKE 'l365-%'
-         AND start_time_tz(start_time) >= $1::timestamptz
-         AND start_time_tz(start_time) < $2::timestamptz
-       ORDER BY start_time ASC, id ASC
-       LIMIT $3 OFFSET $4`;
+       WHERE id IN (
+         SELECT id FROM matches_cache
+          WHERE id LIKE 'l365-%'
+            AND start_time_tz(start_time) >= $1::timestamptz
+            AND start_time_tz(start_time) < $2::timestamptz
+          ORDER BY start_time ASC, id ASC
+          LIMIT $3 OFFSET $4)
+       ORDER BY start_time ASC, id ASC`;
   for (const seg of prioritySegments(nowMs)) {
     let page = 0;
     let segmentDone = false;

@@ -38,8 +38,8 @@ services:
       # Katalogu pa kufizime: çdo vend, çdo ligë (përfshirë divizionet e dyta dhe ligat rajonale), çdo ndeshje.
       # Pa këtë, aplikohen parazgjedhjet: vetëm 5 vende, vetëm ligat kryesore, pa divizione të dyta.
       LONDON365_ALL_MATCHES: "1"
-      # /api/matches: faqe me 200 rreshta -> 1000 faqe = 200 000 rreshta (parazgjedhja 30 faqe = 6000 rreshta pret ndeshje)
-      MATCHES_PAGE_HARD_CAP: "1000"
+      # /api/matches: faqe me 200 rreshta -> 40 faqe = 8 000 rreshta (1000 faqe e bënte listën 17-30 s dhe jepte 503; parazgjedhja është 30)
+      MATCHES_PAGE_HARD_CAP: "40"
       # Ndeshjet live mbahen sa i ka feed-i (parazgjedhja 4 orë i heq ato që feed-i i braktis)
       LIVE_MAX_AGE_HOURS: "24"
       # Më shumë rreshta paralelë për sinkronizimin live kur ka shumë ndeshje; pool-i i DB duhet të jetë >= rreshtat
