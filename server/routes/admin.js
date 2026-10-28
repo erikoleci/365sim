@@ -17,6 +17,7 @@ import { getUnmappedVcReport } from '../vcDeltaSampler.js';
 import { mapEventToMatch } from '../oddsUtils.js';
 
 import { transferBalance } from '../ledger.js';
+import { getTicketDeletionAllowed, setTicketDeletionAllowed } from '../appSettings.js';
 import { isAdminRole, isSuperAdmin, ROLE_ADMIN } from '../roles.js';
 import { importLondon365, getLondon365Status, getLondon365CountryDebug } from '../london365.js';
 import { monthRange } from './agent.js';
@@ -36,6 +37,15 @@ function requireSuperAdmin(req, res, next) {
 }
 
 router.use(requireAuth, requireAdmin);
+
+// Markets, the odds feed and every settlement tool belong to the super admin only. A normal admin keeps users,
+// agents, credit, the profit / loss figures and the ticket list; everything below answers him 403.
+// (requireSuperAdmin is a function declaration, so it is available here.)
+for (const path of [
+  '/london365', '/bet-selections', '/matches', '/pending-legs', '/legs', '/market-coverage', '/unmapped-vc',
+  '/corner-diagnose', '/recent-errors', '/vc-codes', '/provider-labels', '/feed-keys', '/settle-diagnose',
+  '/bets/settle-stuck', '/risk',
+]) router.use(path, requireSuperAdmin);
 
 // What to add to the player's balance so the ticket is as if it had never been placed:
 // open / lost -> the stake comes back; won -> the winnings are taken back; void (already refunded) -> nothing.
@@ -591,20 +601,23 @@ router.delete('/bets/:id', requireSuperAdmin, async (req, res) => {
 });
 
 router.post('/bets/:id/cancel', async (req, res) => {
-  const { rows } = await pool.query('SELECT * FROM bets WHERE id = $1', [req.params.id]);
-  const bet = rows[0];
-  if (!bet) return res.status(404).json({ error: 'Bet not found' });
-
+  if (!isSuperAdmin(req.user.role) && !(await getTicketDeletionAllowed())) {
+    return res.status(403).json({ error: 'Fshirja e biletave është çaktivizuar nga super admini', code: 'TICKET_DELETE_DISABLED' });
+  }
   const client = await pool.connect();
+  let bet;
+  let delta = 0;
   try {
     await client.query('BEGIN');
-    // Refund stake only if it hasn't already been paid out as a win
-    if (bet.status !== 'WON') {
-      await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [bet.stake, bet.user_id]);
-    } else {
-      // Was a win already credited (stake + winnings) — claw back the net winnings paid out
-      await client.query('UPDATE users SET balance = balance - $1 WHERE id = $2', [bet.potential_return - bet.stake, bet.user_id]);
-    }
+    // Lock the ticket: a settlement running at the same moment can no longer change its status between
+    // the read and the refund.
+    const { rows } = await client.query('SELECT * FROM bets WHERE id = $1 FOR UPDATE', [req.params.id]);
+    bet = rows[0];
+    if (!bet) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Bet not found' }); }
+    // Put the money back as if the ticket had never been placed (PENDING / LOST: the stake; WON: the winnings
+    // are taken back; VOID: it was refunded already, nothing to give twice).
+    delta = betBalanceReversal(bet);
+    if (delta !== 0) await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [delta, bet.user_id]);
     await client.query('DELETE FROM bet_selections WHERE bet_id = $1', [bet.id]);
     await client.query('DELETE FROM bets WHERE id = $1', [bet.id]);
     await client.query('COMMIT');
@@ -614,7 +627,7 @@ router.post('/bets/:id/cancel', async (req, res) => {
   } finally {
     client.release();
   }
-  await logAudit(req.user, 'BET_CANCEL', bet.id, { userId: bet.user_id, stake: bet.stake, wasStatus: bet.status });
+  await logAudit(req.user, 'BET_CANCEL', bet.id, { userId: bet.user_id, stake: bet.stake, wasStatus: bet.status, balanceChange: delta });
   res.json({ ok: true });
 });
 
@@ -886,7 +899,26 @@ router.get('/risk/exposure', async (req, res) => {
   res.json({ exposure: rows });
 });
 
+// What a normal admin sees of the business: profit, loss and how many tickets are open / won / lost.
+//   profit = stakes of lost tickets          loss = what the won tickets pay out beyond the stake
+// The super admin gets the full picture (turnover, open liability, users) on top.
 router.get('/dashboard/kpi', async (req, res) => {
+  const { rows: agg } = await pool.query(
+    `SELECT COALESCE(SUM(CASE WHEN status = 'LOST' THEN stake ELSE 0 END), 0) AS profit,
+            COALESCE(SUM(CASE WHEN status = 'WON' THEN potential_return - stake ELSE 0 END), 0) AS loss,
+            COUNT(*) FILTER (WHERE status = 'PENDING')::int AS tickets_open,
+            COUNT(*) FILTER (WHERE status = 'WON')::int AS tickets_won,
+            COUNT(*) FILTER (WHERE status = 'LOST')::int AS tickets_lost
+       FROM bets`
+  );
+  const profit = Number(agg[0].profit);
+  const loss = Number(agg[0].loss);
+  const basic = {
+    profit, loss, net: profit - loss,
+    ticketsOpen: agg[0].tickets_open, ticketsWon: agg[0].tickets_won, ticketsLost: agg[0].tickets_lost,
+  };
+  if (!isSuperAdmin(req.user.role)) return res.json(basic);
+
   const { rows: pending } = await pool.query(
     `SELECT COALESCE(SUM(stake),0) AS turnover, COALESCE(SUM(potential_return),0) AS liability, COUNT(*)::int AS open_bets
      FROM bets WHERE status = 'PENDING'`
@@ -899,12 +931,26 @@ router.get('/dashboard/kpi', async (req, res) => {
   const { rows: users } = await pool.query(`SELECT COUNT(*)::int AS c FROM users`);
   const ggr = Number(settled[0].turnover) - Number(settled[0].paid_out); // Gross Gaming Revenue = stakes in - payouts out
   res.json({
+    ...basic,
     turnover: Number(pending[0].turnover) + Number(settled[0].turnover),
     openLiability: Number(pending[0].liability),
     openBets: pending[0].open_bets,
     ggr,
     totalUsers: users[0].c,
   });
+});
+
+// Switch: may normal admins delete tickets? Everybody reads it (the panel hides the button), only the super
+// admin changes it.
+router.get('/settings', async (req, res) => {
+  res.json({ ticketDeletionAllowed: await getTicketDeletionAllowed() });
+});
+router.put('/settings/ticket-deletion', requireSuperAdmin, async (req, res) => {
+  const { allowed } = req.body || {};
+  if (typeof allowed !== 'boolean') return res.status(400).json({ error: 'allowed must be true or false' });
+  await setTicketDeletionAllowed(allowed);
+  await logAudit(req.user, 'SETTING_TICKET_DELETION', null, { allowed });
+  res.json({ ticketDeletionAllowed: allowed });
 });
 
 router.get('/audit-log', async (req, res) => {

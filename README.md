@@ -205,6 +205,15 @@ Crests are local files in `public/team-logos/<country>/<club>.webp` plus an `ind
 and erasing any ticket (`DELETE /api/admin/bets/:id`, `?adjust=0` leaves the balances alone). An admin can
 no longer give credit to an admin account, not even his own.
 
+**What a normal admin sees.** Users, agents and credit, the **profit / loss / net** figures with the number of
+open, won and lost tickets (`GET /api/admin/dashboard/kpi`), the ticket list and the audit log. Markets, the odds
+feed and every settlement tool (market report, pending legs, manual settle, exposure, diagnostics) are the super
+admin's: those routes answer a normal admin `403`.
+
+**Ticket deletion switch.** `PUT /api/admin/settings/ticket-deletion {allowed:true|false}` (super admin only; the
+button is on the Tickets tab) allows or forbids normal admins to delete tickets (`403 TICKET_DELETE_DISABLED`).
+Stored in `kv_store` (`ticket_deletion_allowed`), on by default. The super admin can always delete.
+
 No password is stored in the repo. Create the account with either:
 
 - environment on server start (created only when missing): `SUPER_ADMIN_USERNAME`, `SUPER_ADMIN_PASSWORD` (min. 6 chars), optional `SUPER_ADMIN_NAME`

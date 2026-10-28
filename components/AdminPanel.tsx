@@ -30,6 +30,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
   const [kpi, setKpi] = useState<api.AdminDashboardKpi | null>(null);
   const [exposure, setExposure] = useState<api.AdminExposureRow[]>([]);
   const [dashboardLoading, setDashboardLoading] = useState(false);
+  // Super admin's switch: may normal admins delete tickets? (everybody reads it, only the super admin changes it)
+  const [ticketDeletionAllowed, setTicketDeletionAllowed] = useState(true);
+  const [settingBusy, setSettingBusy] = useState(false);
+  useEffect(() => { api.adminFetchSettings().then((r) => setTicketDeletionAllowed(r.ticketDeletionAllowed)).catch(() => {}); }, []);
+  const toggleTicketDeletion = async () => {
+    setSettingBusy(true);
+    try { setTicketDeletionAllowed((await api.adminSetTicketDeletion(!ticketDeletionAllowed)).ticketDeletionAllowed); }
+    catch (e: any) { alert(e.message || 'Failed to change the setting'); }
+    finally { setSettingBusy(false); }
+  };
+  const canDeleteTickets = viewerIsSuper || ticketDeletionAllowed;
 
   useEffect(() => {
     if (activeTab === 'audit') {
@@ -41,7 +52,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
     }
     if (activeTab === 'dashboard') {
       setDashboardLoading(true);
-      Promise.all([api.adminFetchDashboardKpi(), api.adminFetchExposure()])
+      // markets / exposure are the super admin's: a normal admin only gets the profit / loss figures
+      Promise.all([api.adminFetchDashboardKpi(), viewerIsSuper ? api.adminFetchExposure() : Promise.resolve([] as api.AdminExposureRow[])])
         .then(([k, e]) => { setKpi(k); setExposure(e); })
         .catch(() => { setKpi(null); setExposure([]); })
         .finally(() => setDashboardLoading(false));
@@ -186,6 +198,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
         >
           Audit Log
         </button>
+        {viewerIsSuper && (<>
         <button
           onClick={() => setActiveTab('markets')}
           className={`px-6 py-3 text-sm font-bold whitespace-nowrap ${activeTab === 'markets' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
@@ -198,6 +211,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
         >
           Pezull
         </button>
+        </>)}
       </div>
 
       <div className="p-6">
@@ -213,29 +227,57 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
               <div className="text-brand-textMuted text-sm">Failed to load dashboard data.</div>
             ) : (
               <>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                {/* Fitimet / humbjet / bileta: what every admin sees */}
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   <div className="bg-brand-bg border border-brand-divider rounded p-4">
-                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">GGR</div>
-                    <div className={`text-xl font-bold ${kpi.ggr >= 0 ? 'text-brand-accent' : 'text-red-400'}`}>{kpi.ggr.toFixed(2)} L</div>
+                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">{t('Fitimet')}</div>
+                    <div className="text-xl font-bold text-brand-accent">{kpi.profit.toFixed(2)} L</div>
                   </div>
                   <div className="bg-brand-bg border border-brand-divider rounded p-4">
-                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">Turnover (Total)</div>
-                    <div className="text-xl font-bold text-white">{kpi.turnover.toFixed(2)} L</div>
+                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">{t('Humbjet')}</div>
+                    <div className="text-xl font-bold text-red-400">{kpi.loss.toFixed(2)} L</div>
                   </div>
                   <div className="bg-brand-bg border border-brand-divider rounded p-4">
-                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">Open Liability</div>
-                    <div className="text-xl font-bold text-brand-yellow">{kpi.openLiability.toFixed(2)} L</div>
+                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">{t('Rezultati Neto')}</div>
+                    <div className={`text-xl font-bold ${kpi.net >= 0 ? 'text-brand-accent' : 'text-red-400'}`}>{kpi.net.toFixed(2)} L</div>
                   </div>
                   <div className="bg-brand-bg border border-brand-divider rounded p-4">
-                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">Open Bets</div>
-                    <div className="text-xl font-bold text-white">{kpi.openBets}</div>
+                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">{t('Bileta të hapura')}</div>
+                    <div className="text-xl font-bold text-brand-yellow">{kpi.ticketsOpen}</div>
                   </div>
                   <div className="bg-brand-bg border border-brand-divider rounded p-4">
-                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">Total Users</div>
-                    <div className="text-xl font-bold text-white">{kpi.totalUsers}</div>
+                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">{t('Bileta të fituara')}</div>
+                    <div className="text-xl font-bold text-white">{kpi.ticketsWon}</div>
+                  </div>
+                  <div className="bg-brand-bg border border-brand-divider rounded p-4">
+                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">{t('Bileta të humbura')}</div>
+                    <div className="text-xl font-bold text-white">{kpi.ticketsLost}</div>
                   </div>
                 </div>
 
+                {/* The rest of the business is the super admin's */}
+                {viewerIsSuper && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-brand-bg border border-brand-divider rounded p-4">
+                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">GGR</div>
+                    <div className={`text-xl font-bold ${(kpi.ggr ?? 0) >= 0 ? 'text-brand-accent' : 'text-red-400'}`}>{(kpi.ggr ?? 0).toFixed(2)} L</div>
+                  </div>
+                  <div className="bg-brand-bg border border-brand-divider rounded p-4">
+                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">Turnover (Total)</div>
+                    <div className="text-xl font-bold text-white">{(kpi.turnover ?? 0).toFixed(2)} L</div>
+                  </div>
+                  <div className="bg-brand-bg border border-brand-divider rounded p-4">
+                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">Open Liability</div>
+                    <div className="text-xl font-bold text-brand-yellow">{(kpi.openLiability ?? 0).toFixed(2)} L</div>
+                  </div>
+                  <div className="bg-brand-bg border border-brand-divider rounded p-4">
+                    <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">Total Users</div>
+                    <div className="text-xl font-bold text-white">{kpi.totalUsers ?? 0}</div>
+                  </div>
+                </div>
+                )}
+
+                {viewerIsSuper && (
                 <div>
                   <h3 className="text-brand-yellow font-bold uppercase text-xs tracking-wider mb-3">Top Exposure (highest house liability, PENDING bets)</h3>
                   {exposure.length === 0 ? (
@@ -267,6 +309,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                     </div>
                   )}
                 </div>
+                )}
               </>
             )}
           </div>
@@ -413,7 +456,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
             {/* Global Tickets Table */}
             <div className="flex justify-between items-center mb-4">
                <h3 className="text-brand-yellow font-bold uppercase text-xs tracking-wider">Global Ticket History</h3>
-               <div className="text-xs text-brand-textMuted">Total Bets: {allBets.length}</div>
+               <div className="flex items-center gap-3">
+                 {viewerIsSuper && (
+                   <button
+                     onClick={toggleTicketDeletion}
+                     disabled={settingBusy}
+                     className={`text-xs font-bold px-3 py-1.5 rounded border disabled:opacity-50 ${ticketDeletionAllowed ? 'bg-brand-accent/20 text-brand-accent border-brand-accent' : 'bg-red-900/40 text-red-300 border-red-700'}`}
+                   >
+                     {ticketDeletionAllowed ? t('Fshirja e biletave nga adminët: LEJUAR') : t('Fshirja e biletave nga adminët: NDALUAR')}
+                   </button>
+                 )}
+                 {!canDeleteTickets && <span className="text-xs text-red-300">{t('Fshirja e biletave është çaktivizuar nga super admini')}</span>}
+                 <div className="text-xs text-brand-textMuted">Total Bets: {allBets.length}</div>
+               </div>
             </div>
             
             <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
@@ -475,12 +530,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                                         </span>
                                     </td>
                                     <td className="p-3 text-right">
+                                        {canDeleteTickets && (
                                         <button 
                                             onClick={(e) => { e.stopPropagation(); onCancelBet(bet.id, 'ADMIN'); }}
                                             className="text-red-400 hover:text-white bg-red-900/30 hover:bg-red-900 px-2 py-1 rounded text-xs transition-colors"
                                         >
                                             Delete
                                         </button>
+                                        )}
                                     </td>
                                 </tr>
                             );

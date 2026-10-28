@@ -1,4 +1,4 @@
-import { isAdminRole } from './utils/roles';
+import { isAdminRole, isSuperAdminRole } from './utils/roles';
 import React, { useCallback, useEffect, useMemo, useRef, useState, startTransition } from 'react';
 import Navbar from './components/Navbar';
 import MatchDetail from './components/MatchDetail';
@@ -110,7 +110,7 @@ const App: React.FC = () => {
   const rowActions: MatchRowActions = useMemo(() => ({
     onBetClick: slip.toggleSelection,
     onOpenDetail: (match) => openMatchById(match.id),
-    isAdmin: isAdminRole(currentUser?.role),
+    isAdmin: isSuperAdminRole(currentUser?.role), // manual settle / simulate on a match: super admin only
     onSettleMatch: admin.settleMatch,
     simulatingMatchId: admin.simulatingMatchId,
     selectedIds: slip.selectedIds,

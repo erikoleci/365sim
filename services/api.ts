@@ -298,11 +298,19 @@ export async function adminFetchAuditLog(): Promise<any[]> {
 }
 
 export interface AdminDashboardKpi {
-  turnover: number;
-  openLiability: number;
-  openBets: number;
-  ggr: number;
-  totalUsers: number;
+  // everybody: profit (stakes of lost tickets), loss (what won tickets pay beyond the stake), net, ticket counts
+  profit: number;
+  loss: number;
+  net: number;
+  ticketsOpen: number;
+  ticketsWon: number;
+  ticketsLost: number;
+  // super admin only
+  turnover?: number;
+  openLiability?: number;
+  openBets?: number;
+  ggr?: number;
+  totalUsers?: number;
 }
 export async function adminFetchDashboardKpi() {
   return request<AdminDashboardKpi>('/admin/dashboard/kpi');
@@ -313,6 +321,14 @@ export interface AdminExposureRow {
   market_id: string; market_name: string; selection_id: string; selection_name: string;
   ticket_count: number; total_exposure: number;
 }
+export async function adminFetchSettings() {
+  return request<{ ticketDeletionAllowed: boolean }>('/admin/settings');
+}
+/** Super admin: allow or forbid normal admins to delete tickets. */
+export async function adminSetTicketDeletion(allowed: boolean) {
+  return request<{ ticketDeletionAllowed: boolean }>('/admin/settings/ticket-deletion', { method: 'PUT', body: JSON.stringify({ allowed }) });
+}
+
 export async function adminFetchExposure() {
   const data = await request<{ exposure: AdminExposureRow[] }>('/admin/risk/exposure');
   return data.exposure;

@@ -8,9 +8,10 @@ import jwt from 'jsonwebtoken';
 const mocks = vi.hoisted(() => {
   const users = new Map();
   const bets = new Map();
-  const calls = { transfers: [], queries: [] };
+  const calls = { transfers: [], queries: [], audit: [] };
+  const kv = new Map();
   function reset() {
-    users.clear(); bets.clear(); calls.transfers = []; calls.queries = [];
+    users.clear(); bets.clear(); kv.clear(); calls.transfers = []; calls.queries = []; calls.audit = [];
     users.set('super-1', { id: 'super-1', username: 'boss', role: 'SUPER_ADMIN', is_active: true, balance: 0 });
     users.set('admin-1', { id: 'admin-1', username: 'admin1', role: 'ADMIN', is_active: true, balance: 100 });
     users.set('admin-2', { id: 'admin-2', username: 'admin2', role: 'ADMIN', is_active: true, balance: 100 });
@@ -30,16 +31,25 @@ const mocks = vi.hoisted(() => {
     if (s.startsWith('SELECT id FROM users WHERE username = $1')) { const r = [...users.values()].find((u) => u.username === params[0]); return { rows: r ? [{ id: r.id }] : [] }; }
     if (s.startsWith('UPDATE users SET balance = balance + $1 WHERE id = $2')) { users.get(params[1]).balance += params[0]; return { rows: [] }; }
     if (s.startsWith('INSERT INTO users')) { users.set(params[0], { id: params[0], name: params[1], username: params[2], role: 'ADMIN', is_active: true, balance: params[4] }); return { rows: [] }; }
+    if (s.startsWith('SELECT value FROM kv_store WHERE key = $1')) return { rows: kv.has(params[0]) ? [{ value: kv.get(params[0]) }] : [] };
+    if (s.startsWith('INSERT INTO kv_store')) { kv.set(params[0], params[1]); return { rows: [] }; }
+    if (s.startsWith("SELECT COALESCE(SUM(CASE WHEN status = 'LOST'")) return { rows: [{ profit: '100', loss: '30', tickets_open: 2, tickets_won: 3, tickets_lost: 4 }] };
+    if (s.startsWith('SELECT COALESCE(SUM(stake),0) AS turnover, COALESCE(SUM(potential_return),0) AS liability')) return { rows: [{ turnover: '50', liability: '200', open_bets: 2 }] };
+    if (s.startsWith("SELECT COALESCE(SUM(stake),0) AS turnover, COALESCE(SUM(CASE WHEN status = 'WON' THEN potential_return")) return { rows: [{ turnover: '500', paid_out: '350' }] };
+    if (s.startsWith('SELECT COUNT(*)::int AS c FROM users')) return { rows: [{ c: users.size }] };
     if (s.startsWith('SELECT * FROM bets WHERE id = $1')) { const b = bets.get(params[0]); return { rows: b ? [b] : [] }; }
     if (s.startsWith('DELETE FROM bets WHERE id = $1')) { bets.delete(params[0]); return { rows: [] }; }
     if (s.startsWith('SELECT * FROM users ORDER BY created_at')) return { rows: [...users.values()] };
     if (s.startsWith('SELECT COUNT(*)::int AS count FROM users')) return { rows: [{ count: users.size }] };
-    if (s.startsWith('INSERT INTO audit_log') || s === 'BEGIN' || s === 'COMMIT' || s === 'ROLLBACK' || s.startsWith('DELETE FROM bet_selections')) return { rows: [] };
+    if (s.startsWith('INSERT INTO audit_log')) { calls.audit.push({ actor_id: params[0], action: params[2] }); return { rows: [] }; }
+    if (s.startsWith('SELECT * FROM audit_log ORDER BY')) return { rows: calls.audit };
+    if (s.startsWith('SELECT * FROM audit_log WHERE actor_id NOT IN')) return { rows: calls.audit.filter((a) => users.get(a.actor_id)?.role !== 'SUPER_ADMIN') };
+    if (s === 'BEGIN' || s === 'COMMIT' || s === 'ROLLBACK' || s.startsWith('DELETE FROM bet_selections')) return { rows: [] };
     throw new Error('unmocked query: ' + s);
   }
   const client = { query, release() {} };
   const pool = { query, connect: async () => client };
-  return { users, bets, calls, reset, pool };
+  return { users, bets, kv, calls, reset, pool };
 });
 
 vi.mock('../server/db.js', () => ({ default: mocks.pool, pool: mocks.pool }));
@@ -191,5 +201,82 @@ describe('creating the super admin (env / command line)', () => {
     expect((await ensureSuperAdmin(fake, { username: 'old-admin', password: 'secret1' })).status).toBe('username-taken');
     expect((await ensureSuperAdmin(fake, { username: 'old-admin', password: 'secret1', onlyIfMissing: false })).status).toBe('updated');
     expect(rows[1].role).toBe('SUPER_ADMIN');
+  });
+});
+
+
+describe('markets and settlement tools are the super admin\'s', () => {
+  const PATHS = [
+    ['GET', '/market-coverage'], ['GET', '/pending-legs'], ['POST', '/legs/settle'], ['PATCH', '/bet-selections/1'],
+    ['POST', '/matches/m1/settle'], ['GET', '/risk/exposure'], ['GET', '/london365/status'], ['POST', '/london365/import'],
+    ['GET', '/unmapped-vc'], ['GET', '/corner-diagnose'], ['GET', '/recent-errors'], ['GET', '/vc-codes'],
+    ['GET', '/provider-labels'], ['GET', '/feed-keys'], ['GET', '/settle-diagnose'], ['POST', '/bets/settle-stuck'],
+  ];
+  it('a normal admin gets 403 on every one of them, an agent and a user too', async () => {
+    for (const [m, path] of PATHS) {
+      const body = m === 'GET' ? undefined : {};
+      expect((await call(m, path, ADMIN, body)).status, m + ' ' + path).toBe(403);
+      expect((await call(m, path, ['agent-1', 'AGENT'], body)).status, m + ' ' + path).toBe(403);
+    }
+  });
+  it('what a normal admin keeps still works', async () => {
+    expect((await call('GET', '/users', ADMIN)).status).toBe(200);
+    expect((await call('GET', '/dashboard/kpi', ADMIN)).status).toBe(200);
+    expect((await call('GET', '/audit-log', ADMIN)).status).toBe(200);
+    expect((await call('GET', '/settings', ADMIN)).status).toBe(200);
+  });
+});
+
+describe('dashboard figures', () => {
+  it('a normal admin only gets profit, loss, net and the ticket counts', async () => {
+    const k = await (await call('GET', '/dashboard/kpi', ADMIN)).json();
+    expect(k).toEqual({ profit: 100, loss: 30, net: 70, ticketsOpen: 2, ticketsWon: 3, ticketsLost: 4 });
+  });
+  it('the super admin gets those plus the full picture', async () => {
+    const k = await (await call('GET', '/dashboard/kpi', SUPER)).json();
+    expect(k).toMatchObject({ profit: 100, loss: 30, net: 70, ticketsOpen: 2, ticketsWon: 3, ticketsLost: 4, turnover: 550, openLiability: 200, openBets: 2, ggr: 150 });
+    expect(k.totalUsers).toBeGreaterThan(0);
+  });
+});
+
+describe('ticket deletion switch', () => {
+  it('on by default: an admin deletes a ticket (stake back), everybody reads the switch', async () => {
+    expect((await (await call('GET', '/settings', ADMIN)).json()).ticketDeletionAllowed).toBe(true);
+    const res = await call('POST', '/bets/bet-pending/cancel', ADMIN);
+    expect(res.status).toBe(200);
+    expect(mocks.bets.has('bet-pending')).toBe(false);
+    expect(mocks.users.get('user-1').balance).toBe(20);        // stake of 10 back
+  });
+  it('only the super admin flips it, and then admins can no longer delete', async () => {
+    expect((await call('PUT', '/settings/ticket-deletion', ADMIN, { allowed: false })).status).toBe(403);
+    expect((await call('PUT', '/settings/ticket-deletion', SUPER, { allowed: 'no' })).status).toBe(400);
+    const off = await call('PUT', '/settings/ticket-deletion', SUPER, { allowed: false });
+    expect(off.status).toBe(200);
+    expect((await off.json()).ticketDeletionAllowed).toBe(false);
+    expect((await (await call('GET', '/settings', ADMIN)).json()).ticketDeletionAllowed).toBe(false);
+    const blocked = await call('POST', '/bets/bet-pending/cancel', ADMIN);
+    expect(blocked.status).toBe(403);
+    expect((await blocked.json()).code).toBe('TICKET_DELETE_DISABLED');
+    expect(mocks.bets.has('bet-pending')).toBe(true);
+    expect(mocks.users.get('user-1').balance).toBe(10);        // nothing moved
+    // the super admin always can (his own delete route, and the admin route too)
+    expect((await call('DELETE', '/bets/bet-pending', SUPER)).status).toBe(200);
+    // and turning it back on gives the admins their button again
+    await call('PUT', '/settings/ticket-deletion', SUPER, { allowed: true });
+    expect((await call('POST', '/bets/bet-won/cancel', ADMIN)).status).toBe(200);
+  });
+  it('the switch is logged, but the super admin\'s entry is not shown to admins', async () => {
+    await call('PUT', '/settings/ticket-deletion', SUPER, { allowed: false });
+    expect(mocks.calls.audit.some((a) => a.action === 'SETTING_TICKET_DELETION' && a.actor_id === 'super-1')).toBe(true);
+    const forAdmin = (await (await call('GET', '/audit-log', ADMIN)).json()).entries;
+    expect(forAdmin.some((e) => e.action === 'SETTING_TICKET_DELETION')).toBe(false);
+  });
+  it('an admin deleting a ticket takes back winnings, and a refunded (VOID) ticket does not refund twice', async () => {
+    expect((await call('POST', '/bets/bet-won/cancel', ADMIN)).status).toBe(200);
+    expect(mocks.users.get('user-1').balance).toBe(-10);       // 10 - (30 - 10) winnings taken back
+    mocks.users.get('user-1').balance = 10;
+    expect((await call('POST', '/bets/bet-void/cancel', ADMIN)).status).toBe(200);
+    expect(mocks.users.get('user-1').balance).toBe(10);        // it was refunded already: nothing added again
+    expect((await call('POST', '/bets/nope/cancel', ADMIN)).status).toBe(404);
   });
 });
