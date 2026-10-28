@@ -27,7 +27,12 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet,
 }) => {
   const { t } = useI18n();
-  const [tab, setTab] = useState<'reports' | 'monthly' | 'manage'>('reports');
+  const isSuper = currentUser.role === 'SUPER_ADMIN';
+  const [tab, setTab] = useState<'reports' | 'admins' | 'monthly' | 'manage'>('reports');
+  // Super admin only: what every admin did, and the tickets of the admin he opened.
+  const [adminsReport, setAdminsReport] = useState<api.AdminsReport | null>(null);
+  const [openAdminId, setOpenAdminId] = useState<string | null>(null);
+  const [openAdminBets, setOpenAdminBets] = useState<any[] | null>(null);
   const [overview, setOverview] = useState<api.AdminOverview | null>(null);
   const [agents, setAgents] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
@@ -62,6 +67,19 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
     if (tab !== 'monthly') return;
     api.adminFetchMonthlyReport(monthInput || undefined).then(setMonthly).catch((e) => console.error(e));
   }, [tab, monthInput]);
+
+  useEffect(() => {
+    if (tab !== 'admins' || !isSuper) return;
+    setAdminsReport(null);
+    api.adminFetchAdminsReport(monthInput || undefined).then(setAdminsReport).catch((e) => console.error(e));
+  }, [tab, monthInput, isSuper]);
+
+  const toggleAdminTickets = async (adminId: string) => {
+    if (openAdminId === adminId) { setOpenAdminId(null); setOpenAdminBets(null); return; }
+    setOpenAdminId(adminId);
+    setOpenAdminBets(null);
+    try { setOpenAdminBets(await api.adminFetchBetsOfAdmin(adminId)); } catch (e) { console.error(e); setOpenAdminBets([]); }
+  };
 
   const toggleAgent = async (agentId: string) => {
     if (expandedAgent === agentId) { setExpandedAgent(null); return; }
@@ -136,13 +154,13 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
       </header>
 
       <nav className="flex gap-1 px-4 pt-3 border-b border-[#333]">
-        {(['reports', 'monthly', 'manage'] as const).map((tabKey) => (
+        {(isSuper ? ['reports', 'admins', 'monthly', 'manage'] as const : ['reports', 'monthly', 'manage'] as const).map((tabKey) => (
           <button
             key={tabKey}
             onClick={() => setTab(tabKey)}
             className={`px-4 py-2 text-sm font-bold rounded-t uppercase tracking-wide ${tab === tabKey ? 'bg-brand-panel text-brand-yellow border border-b-0 border-[#444]' : 'text-brand-textMuted hover:text-white'}`}
           >
-            {tabKey === 'reports' ? t('Raporte') : tabKey === 'monthly' ? t('Raporti Mujor') : t('Menaxho')}
+            {tabKey === 'reports' ? t('Raporte') : tabKey === 'admins' ? t('Adminët') : tabKey === 'monthly' ? t('Raporti Mujor') : t('Menaxho')}
           </button>
         ))}
       </nav>
@@ -282,6 +300,104 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
           </div>
         )}
 
+        {tab === 'admins' && isSuper && (
+          <div className="bg-brand-panel border border-[#444] rounded p-4">
+            <div className="flex items-center gap-2 mb-4">
+              <label className="text-xs text-brand-textMuted">{t('Muaji:')}</label>
+              <input type="month" value={monthInput} onChange={(e) => setMonthInput(e.target.value)} className="input w-40" />
+            </div>
+            {!adminsReport ? (
+              <div className="text-sm text-brand-textMuted">{t('Duke ngarkuar...')}</div>
+            ) : (() => {
+              const rows = adminsReport.admins;
+              const sum = (k: 'tickets' | 'turnover' | 'wins' | 'losses') => rows.reduce((a, r) => a + Number(r[k] || 0), 0) + Number(adminsReport.unowned[k] || 0);
+              const net = sum('losses') - sum('wins');
+              return (
+                <>
+                  <div className="text-xs text-brand-textMuted mb-2">{t('Muaji: {month}', { month: adminsReport.month })}</div>
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+                    <KpiCard label={t('Kupona')} value={String(sum('tickets'))} />
+                    <KpiCard label={t('Xhiro (vënë)')} value={money(sum('turnover'))} />
+                    <KpiCard label={t('Kanë fituar bastorët')} value={money(sum('wins'))} positive />
+                    <KpiCard label={t('Kanë humbur bastorët')} value={money(sum('losses'))} positive={false} />
+                    <KpiCard label={t('Neto (fitimi yt)')} value={money(net)} positive={net >= 0} />
+                  </div>
+                  <div className="overflow-x-auto"><table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-brand-textMuted text-left border-b border-[#444]">
+                        <th className="py-1.5 pr-2">Admin</th>
+                        <th className="py-1.5 pr-2">{t('Kredia')}</th>
+                        <th className="py-1.5 pr-2">{t('Agjente')}</th>
+                        <th className="py-1.5 pr-2">{t('Usera')}</th>
+                        <th className="py-1.5 pr-2">{t('Kupona')}</th>
+                        <th className="py-1.5 pr-2">{t('Fituar')}</th>
+                        <th className="py-1.5 pr-2">{t('Humbur')}</th>
+                        <th className="py-1.5 pr-2">{t('Xhiro')}</th>
+                        <th className="py-1.5 pr-2">{t('Kanë fituar')}</th>
+                        <th className="py-1.5 pr-2">{t('Kanë humbur')}</th>
+                        <th className="py-1.5 pr-2">{t('Neto')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r) => (
+                        <React.Fragment key={r.id}>
+                          <tr className="border-b border-[#333] cursor-pointer hover:bg-brand-bg/50" onClick={() => toggleAdminTickets(r.id)}>
+                            <td className="py-1.5 pr-2">{r.name} <span className="text-brand-textMuted">@{r.username}</span></td>
+                            <td className="py-1.5 pr-2">{money(r.balance)}</td>
+                            <td className="py-1.5 pr-2">{r.agents}</td>
+                            <td className="py-1.5 pr-2">{r.users}</td>
+                            <td className="py-1.5 pr-2">{r.tickets}</td>
+                            <td className="py-1.5 pr-2 text-green-400">{r.won_tickets}</td>
+                            <td className="py-1.5 pr-2 text-red-400">{r.lost_tickets}</td>
+                            <td className="py-1.5 pr-2">{money(r.turnover)}</td>
+                            <td className="py-1.5 pr-2 text-green-400">{money(r.wins)}</td>
+                            <td className="py-1.5 pr-2 text-red-400">{money(r.losses)}</td>
+                            <td className={'py-1.5 pr-2 font-bold ' + (r.netResult >= 0 ? 'text-green-400' : 'text-red-400')}>{money(r.netResult)}</td>
+                          </tr>
+                          {openAdminId === r.id && (
+                            <tr><td colSpan={11} className="bg-brand-bg/40 p-3">
+                              {!openAdminBets ? (
+                                <div className="text-brand-textMuted">{t('Duke ngarkuar...')}</div>
+                              ) : openAdminBets.length === 0 ? (
+                                <div className="text-brand-textMuted">{t("S'ka kupona.")}</div>
+                              ) : (
+                                <div className="overflow-x-auto"><table className="w-full text-xs">
+                                  <thead><tr className="text-brand-textMuted text-left">
+                                    <th className="py-1 pr-2">{t('Data')}</th><th className="py-1 pr-2">User</th><th className="py-1 pr-2">{t('Vënë')}</th><th className="py-1 pr-2">{t('Statusi')}</th><th className="py-1 pr-2">{t('Fitim i mundshëm')}</th>
+                                  </tr></thead>
+                                  <tbody>
+                                    {openAdminBets.map((b: any) => (
+                                      <tr key={b.id} className="border-t border-[#333]">
+                                        <td className="py-1 pr-2">{new Date(Number(b.created_at)).toLocaleString(getLocale())}</td>
+                                        <td className="py-1 pr-2">{b.user?.username || '-'}</td>
+                                        <td className="py-1 pr-2">{money(b.stake)}</td>
+                                        <td className={'py-1 pr-2 font-bold ' + (b.status === 'WON' ? 'text-green-400' : b.status === 'LOST' ? 'text-red-400' : 'text-brand-yellow')}>{b.status}</td>
+                                        <td className="py-1 pr-2">{money(b.potential_return)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table></div>
+                              )}
+                            </td></tr>
+                          )}
+                        </React.Fragment>
+                      ))}
+                      {rows.length === 0 && (
+                        <tr><td colSpan={11} className="py-4 text-center text-brand-textMuted">{t("S'ka admina.")}</td></tr>
+                      )}
+                    </tbody>
+                  </table></div>
+                  {(adminsReport.unowned.users > 0 || adminsReport.unowned.tickets > 0) && (
+                    <div className="mt-3 text-xs text-brand-textMuted">
+                      {t('Pa pronar (asnjë admin): {users} usera, {tickets} kupona, xhiro {turnover}', { users: adminsReport.unowned.users, tickets: adminsReport.unowned.tickets, turnover: money(adminsReport.unowned.turnover) })}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        )}
+
         {tab === 'monthly' && (
           <div className="bg-brand-panel border border-[#444] rounded p-4">
             <div className="flex items-center gap-2 mb-4">
@@ -296,7 +412,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                   {t('Muaji: {month} - {agents} agjente, {users} usera', { month: monthly.month, agents: monthly.totals.totalAgents, users: monthly.totals.totalUsers })}
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
-                  <KpiCard label={t('Kupona')} value={String(monthly.totals.totalTickets)} />
+                  <KpiCard label={t('Kupona')} value={monthly.totals.totalTickets + ' (' + (monthly.totals.wonTickets ?? 0) + ' ' + t('fituar') + ' / ' + (monthly.totals.lostTickets ?? 0) + ' ' + t('humbur') + ')'} />
                   <KpiCard label={t('Xhiro')} value={money(monthly.totals.turnover)} />
                   <KpiCard label={t('Fitime')} value={money(monthly.totals.wins)} positive />
                   <KpiCard label={t('Humbje')} value={money(monthly.totals.losses)} positive={false} />
@@ -320,7 +436,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                       <tr key={a.id} className="border-b border-[#333]">
                         <td className="py-1.5 pr-2">{a.name} <span className="text-brand-textMuted">@{a.username}</span></td>
                         <td className="py-1.5 pr-2">{a.total_users}</td>
-                        <td className="py-1.5 pr-2">{a.tickets}</td>
+                        <td className="py-1.5 pr-2">{a.tickets} <span className="text-brand-textMuted">({a.won_tickets}/{a.lost_tickets})</span></td>
                         <td className="py-1.5 pr-2">{money(a.turnover)}</td>
                         <td className="py-1.5 pr-2 text-green-400">{money(a.wins)}</td>
                         <td className="py-1.5 pr-2 text-red-400">{money(a.losses)}</td>
@@ -330,6 +446,18 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                         </td>
                       </tr>
                     ))}
+                    {monthly.direct && (monthly.direct.total_users > 0 || monthly.direct.tickets > 0) && (
+                      <tr className="border-b border-[#333]">
+                        <td className="py-1.5 pr-2 text-brand-textMuted">{t('Userat direkt (pa agjent)')}</td>
+                        <td className="py-1.5 pr-2">{monthly.direct.total_users}</td>
+                        <td className="py-1.5 pr-2">{monthly.direct.tickets} <span className="text-brand-textMuted">({monthly.direct.won_tickets}/{monthly.direct.lost_tickets})</span></td>
+                        <td className="py-1.5 pr-2">{money(monthly.direct.turnover)}</td>
+                        <td className="py-1.5 pr-2 text-green-400">{money(monthly.direct.wins)}</td>
+                        <td className="py-1.5 pr-2 text-red-400">{money(monthly.direct.losses)}</td>
+                        <td className="py-1.5 pr-2">{money(monthly.direct.pending)}</td>
+                        <td className="py-1.5 pr-2">-</td>
+                      </tr>
+                    )}
                     {monthly.agents.length === 0 && (
                       <tr><td colSpan={8} className="py-4 text-center text-brand-textMuted">{t("S'ka te dhena per kete muaj.")}</td></tr>
                     )}

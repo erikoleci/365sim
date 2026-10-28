@@ -8,10 +8,10 @@ import jwt from 'jsonwebtoken';
 const mocks = vi.hoisted(() => {
   const users = new Map();
   const bets = new Map();
-  const calls = { transfers: [], queries: [], audit: [] };
+  const calls = { transfers: [], queries: [], audit: [], report: [] };
   const kv = new Map();
   function reset() {
-    users.clear(); bets.clear(); kv.clear(); calls.transfers = []; calls.queries = []; calls.audit = [];
+    users.clear(); bets.clear(); kv.clear(); calls.transfers = []; calls.queries = []; calls.audit = []; calls.report = [];
     users.set('super-1', { id: 'super-1', username: 'boss', role: 'SUPER_ADMIN', is_active: true, balance: 0 });
     users.set('admin-1', { id: 'admin-1', username: 'admin1', role: 'ADMIN', is_active: true, balance: 100 });
     users.set('admin-2', { id: 'admin-2', username: 'admin2', role: 'ADMIN', is_active: true, balance: 100 });
@@ -27,6 +27,15 @@ const mocks = vi.hoisted(() => {
   async function query(sql, params = []) {
     const s = String(sql).replace(/\s+/g, ' ').trim();
     calls.queries.push(s);
+    // --- reports ---
+    const zeros = { tickets: 0, turnover: '0', wins: '0', losses: '0', pending: '0', won_tickets: 0, lost_tickets: 0, pending_tickets: 0 };
+    if (s.startsWith("SELECT (SELECT COUNT(*)::int FROM users a WHERE a.role = 'AGENT'")) { calls.report.push({ q: 'monthly', params }); return { rows: [{ total_agents: 1, total_users: 2, tickets: 5, turnover: '100', wins: '30', losses: '60', pending: '10', won_tickets: 2, lost_tickets: 2, pending_tickets: 1 }] }; }
+    if (s.startsWith('SELECT a.id, a.name, a.username, a.commission_rate,')) return { rows: [] };
+    if (s.startsWith('SELECT COUNT(DISTINCT u.id)::int AS total_users,')) return { rows: [{ total_users: 0, ...zeros }] };
+    if (s.startsWith('SELECT a.id, a.name, a.username, a.balance,')) return { rows: [{ id: 'admin-1', name: 'A1', username: 'admin1', balance: '40', agents: 1, users: 2, tickets: 5, turnover: '100', wins: '30', losses: '60', pending: '10', won_tickets: 2, lost_tickets: 2, pending_tickets: 1 }] };
+    if (s.startsWith('SELECT COUNT(DISTINCT u.id)::int AS users,')) return { rows: [{ users: 0, ...zeros }] };
+    if (s.startsWith('SELECT * FROM bets WHERE ($3::text IS NULL')) { calls.report.push({ q: 'bets', params }); return { rows: [] }; }
+    if (s.startsWith('SELECT COUNT(*)::int AS count FROM bets WHERE')) return { rows: [{ count: 0 }] };
     // --- ownership (users.admin_id): who may see / manage which row ---
     if (s.startsWith('SELECT * FROM users WHERE ($3::text IS NULL OR admin_id = $3 OR id = $3)')) return { rows: [...users.values()].filter((u) => params[2] == null || u.admin_id === params[2] || u.id === params[2]) };
     if (s.startsWith('SELECT COUNT(*)::int AS count FROM users WHERE ($1::text IS NULL OR admin_id = $1 OR id = $1)')) return { rows: [{ count: [...users.values()].filter((u) => params[0] == null || u.admin_id === params[0] || u.id === params[0]).length }] };
@@ -143,6 +152,36 @@ describe('every admin owns his own agents and users', () => {
     expect(await ids(ADMIN)).toEqual(['admin-1']);
     expect((await call('PATCH', '/agents/agent-1/admin', SUPER, { adminId: null })).status).toBe(200); // unowned again
     expect(await ids(['admin-2', 'ADMIN'])).toEqual(['admin-2', 'agent-2', 'user-2']);
+  });
+});
+
+describe('what each admin did (super admin) and what an admin sees of his own people', () => {
+  it('the per-admin report is the super admin\'s alone and nets losses minus wins', async () => {
+    expect((await call('GET', '/reports/admins', ADMIN)).status).toBe(403);
+    const res = await call('GET', '/reports/admins', SUPER);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.admins).toHaveLength(1);
+    expect(body.admins[0]).toMatchObject({ id: 'admin-1', tickets: 5, won_tickets: 2, lost_tickets: 2, turnover: '100', netResult: 30 }); // 60 lost - 30 won
+    expect(body.unowned).toMatchObject({ users: 0, netResult: 0 });
+  });
+  it('the monthly report is limited to the admin\'s own people and counts won / lost tickets', async () => {
+    const asAdmin = await (await call('GET', '/reports/monthly', ADMIN)).json();
+    expect(mocks.calls.report.find((r) => r.q === 'monthly').params[2]).toBe('admin-1');
+    expect(asAdmin.totals).toMatchObject({ totalTickets: 5, wonTickets: 2, lostTickets: 2, pendingTickets: 1, netResult: 30 });
+    mocks.calls.report = [];
+    await call('GET', '/reports/monthly', SUPER);
+    expect(mocks.calls.report.find((r) => r.q === 'monthly').params[2]).toBeNull();
+  });
+  it('tickets: an admin always gets his own people\'s; only the super admin can ask for one admin\'s (?adminId)', async () => {
+    await call('GET', '/bets?adminId=admin-2', ADMIN);
+    expect(mocks.calls.report.find((r) => r.q === 'bets').params[2]).toBe('admin-1'); // the query parameter is ignored for him
+    mocks.calls.report = [];
+    await call('GET', '/bets?adminId=admin-2', SUPER);
+    expect(mocks.calls.report.find((r) => r.q === 'bets').params[2]).toBe('admin-2');
+    mocks.calls.report = [];
+    await call('GET', '/bets', SUPER);
+    expect(mocks.calls.report.find((r) => r.q === 'bets').params[2]).toBeNull(); // everything
   });
 });
 

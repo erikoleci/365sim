@@ -494,9 +494,31 @@ export async function agentDeleteUser(userId: string) {
 
 export interface AdminMonthlyReport {
   month: string;
-  totals: { totalAgents: number; totalUsers: number; totalTickets: number; turnover: number; wins: number; losses: number; pending: number; netResult: number };
-  agents: { id: string; name: string; username: string; total_users: number; tickets: number; turnover: number; wins: number; losses: number; pending: number; commission_rate: number; netResult: number; commissionRate: number; commissionOwed: number }[];
+  totals: { totalAgents: number; totalUsers: number; totalTickets: number; turnover: number; wins: number; losses: number; pending: number; wonTickets: number; lostTickets: number; pendingTickets: number; netResult: number };
+  // users that belong to the admin directly (no agent in between)
+  direct: { total_users: number; tickets: number; won_tickets: number; lost_tickets: number; pending_tickets: number; turnover: number; wins: number; losses: number; pending: number; netResult: number };
+  agents: { id: string; name: string; username: string; total_users: number; tickets: number; won_tickets: number; lost_tickets: number; pending_tickets: number; turnover: number; wins: number; losses: number; pending: number; commission_rate: number; netResult: number; commissionRate: number; commissionOwed: number }[];
 }
+// Super admin: what every admin did in the month (credit, agents, users, tickets, turnover, won / lost, net).
+export interface AdminMoneyRow {
+  tickets: number; won_tickets: number; lost_tickets: number; pending_tickets: number;
+  turnover: number; wins: number; losses: number; pending: number; netResult: number;
+}
+export interface AdminsReport {
+  month: string;
+  admins: (AdminMoneyRow & { id: string; name: string; username: string; balance: number; agents: number; users: number })[];
+  unowned: AdminMoneyRow & { users: number };
+}
+export async function adminFetchAdminsReport(month?: string) {
+  const q = month ? `?month=${encodeURIComponent(month)}` : '';
+  return request<AdminsReport>(`/admin/reports/admins${q}`);
+}
+// Super admin: the tickets of ONE admin's agents and users, newest first.
+export async function adminFetchBetsOfAdmin(adminId: string, limit = 100) {
+  const data = await request<{ bets: any[] }>(`/admin/bets?adminId=${encodeURIComponent(adminId)}&limit=${limit}`);
+  return data.bets;
+}
+
 export async function adminFetchMonthlyReport(month?: string) {
   const q = month ? `?month=${encodeURIComponent(month)}` : '';
   return request<AdminMonthlyReport>(`/admin/reports/monthly${q}`);

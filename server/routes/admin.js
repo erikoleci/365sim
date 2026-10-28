@@ -225,33 +225,40 @@ router.get('/agents', async (req, res) => {
 // Monthly report: totals across the agents+users in scope combined (all of them for the super admin, only
 // the admin's own for a normal admin), plus a per-agent breakdown for that month (spec: "OWNER MONTHLY SUMMARY"
 // + "Agent Breakdown"). Reuses the same month-boundary helper as the Agent's own monthly report for consistency.
+// How the money columns are counted (all over the tickets PLACED in the month, void tickets left out):
+//   turnover = sum of the stakes of every ticket            wins   = what the WON tickets paid beyond the stake
+//   losses   = the stakes of the LOST tickets               pending = stakes still on open tickets
+//   netResult = losses - wins  -> the house's profit (positive) or loss (negative) on the settled tickets
+const TICKET_SUMS = `COUNT(b.id)::int AS tickets,
+            COALESCE(SUM(b.stake), 0) AS turnover,
+            COALESCE(SUM(CASE WHEN b.status = 'WON' THEN b.potential_return - b.stake ELSE 0 END), 0) AS wins,
+            COALESCE(SUM(CASE WHEN b.status = 'LOST' THEN b.stake ELSE 0 END), 0) AS losses,
+            COALESCE(SUM(CASE WHEN b.status = 'PENDING' THEN b.stake ELSE 0 END), 0) AS pending,
+            COUNT(b.id) FILTER (WHERE b.status = 'WON')::int AS won_tickets,
+            COUNT(b.id) FILTER (WHERE b.status = 'LOST')::int AS lost_tickets,
+            COUNT(b.id) FILTER (WHERE b.status = 'PENDING')::int AS pending_tickets`;
+
+// Monthly report: totals over ALL the users in scope (the admin's own, also the ones he created directly
+// without an agent; everything for the super admin), a per-agent breakdown, and one line for the users that
+// have no agent. Reuses the same month-boundary helper as the Agent's own monthly report for consistency.
 router.get('/reports/monthly', async (req, res) => {
   const { rangeStart, rangeEnd, label } = monthRange(req.query.month);
   const scope = scopeOf(req.user);
 
   const { rows: totalsRows } = await pool.query(
-    `SELECT COUNT(DISTINCT a.id)::int AS total_agents,
-            COUNT(DISTINCT u.id)::int AS total_users,
-            COALESCE(COUNT(b.id), 0)::int AS total_tickets,
-            COALESCE(SUM(b.stake), 0) AS turnover,
-            COALESCE(SUM(CASE WHEN b.status = 'WON' THEN b.potential_return - b.stake ELSE 0 END), 0) AS wins,
-            COALESCE(SUM(CASE WHEN b.status = 'LOST' THEN b.stake ELSE 0 END), 0) AS losses,
-            COALESCE(SUM(CASE WHEN b.status = 'PENDING' THEN b.stake ELSE 0 END), 0) AS pending
-     FROM users a
-     LEFT JOIN users u ON u.agent_id = a.id
-     LEFT JOIN bets b ON b.user_id = u.id AND b.created_at >= $1 AND b.created_at < $2
-     WHERE a.role = 'AGENT' AND ($3::text IS NULL OR a.admin_id = $3)`,
+    `SELECT (SELECT COUNT(*)::int FROM users a WHERE a.role = 'AGENT' AND ($3::text IS NULL OR a.admin_id = $3)) AS total_agents,
+            (SELECT COUNT(*)::int FROM users x WHERE x.role = 'USER' AND ($3::text IS NULL OR x.admin_id = $3)) AS total_users,
+            ${TICKET_SUMS}
+     FROM bets b
+     JOIN users u ON u.id = b.user_id
+     WHERE b.created_at >= $1 AND b.created_at < $2 AND ($3::text IS NULL OR u.admin_id = $3)`,
     [rangeStart, rangeEnd, scope]
   );
 
   const { rows: perAgent } = await pool.query(
     `SELECT a.id, a.name, a.username, a.commission_rate,
             COUNT(DISTINCT u.id)::int AS total_users,
-            COALESCE(COUNT(b.id), 0)::int AS tickets,
-            COALESCE(SUM(b.stake), 0) AS turnover,
-            COALESCE(SUM(CASE WHEN b.status = 'WON' THEN b.potential_return - b.stake ELSE 0 END), 0) AS wins,
-            COALESCE(SUM(CASE WHEN b.status = 'LOST' THEN b.stake ELSE 0 END), 0) AS losses,
-            COALESCE(SUM(CASE WHEN b.status = 'PENDING' THEN b.stake ELSE 0 END), 0) AS pending
+            ${TICKET_SUMS}
      FROM users a
      LEFT JOIN users u ON u.agent_id = a.id
      LEFT JOIN bets b ON b.user_id = u.id AND b.created_at >= $1 AND b.created_at < $2
@@ -261,14 +268,27 @@ router.get('/reports/monthly', async (req, res) => {
     [rangeStart, rangeEnd, scope]
   );
 
+  const { rows: directRows } = await pool.query(
+    `SELECT COUNT(DISTINCT u.id)::int AS total_users,
+            ${TICKET_SUMS}
+     FROM users u
+     LEFT JOIN bets b ON b.user_id = u.id AND b.created_at >= $1 AND b.created_at < $2
+     WHERE u.role = 'USER' AND u.agent_id IS NULL AND ($3::text IS NULL OR u.admin_id = $3)`,
+    [rangeStart, rangeEnd, scope]
+  );
+
   const t = totalsRows[0];
+  const d = directRows[0];
   res.json({
     month: label,
     totals: {
-      totalAgents: t.total_agents, totalUsers: t.total_users, totalTickets: t.total_tickets,
+      totalAgents: t.total_agents, totalUsers: t.total_users, totalTickets: t.tickets,
       turnover: t.turnover, wins: t.wins, losses: t.losses, pending: t.pending,
+      wonTickets: t.won_tickets, lostTickets: t.lost_tickets, pendingTickets: t.pending_tickets,
       netResult: Number(t.losses) - Number(t.wins),
     },
+    // Users that belong to the admin directly (no agent in between).
+    direct: { ...d, netResult: Number(d.losses) - Number(d.wins) },
     // commissionOwed: this agent's share of the house's net result (GGR)
     // for the month, at their configured commission_rate. Only accrues on
     // a positive net result (house won overall) -- a losing month owes no
@@ -285,6 +305,36 @@ router.get('/reports/monthly', async (req, res) => {
       };
     }),
   });
+});
+
+// SUPER ADMIN: what every admin did in the month -- his credit, how many agents / users he has, how many
+// tickets they placed, the turnover, what the players won and lost, and the admin's net result (netResult =
+// losses - wins). `unowned` are the users nobody owns yet. Same counting rules as above.
+router.get('/reports/admins', requireSuperAdmin, async (req, res) => {
+  const { rangeStart, rangeEnd, label } = monthRange(req.query.month);
+  const { rows } = await pool.query(
+    `SELECT a.id, a.name, a.username, a.balance,
+            (SELECT COUNT(*)::int FROM users x WHERE x.admin_id = a.id AND x.role = 'AGENT') AS agents,
+            (SELECT COUNT(*)::int FROM users x WHERE x.admin_id = a.id AND x.role = 'USER') AS users,
+            ${TICKET_SUMS}
+     FROM users a
+     LEFT JOIN users u ON u.admin_id = a.id AND u.role = 'USER'
+     LEFT JOIN bets b ON b.user_id = u.id AND b.created_at >= $1 AND b.created_at < $2
+     WHERE a.role = 'ADMIN'
+     GROUP BY a.id
+     ORDER BY turnover DESC`,
+    [rangeStart, rangeEnd]
+  );
+  const { rows: unownedRows } = await pool.query(
+    `SELECT COUNT(DISTINCT u.id)::int AS users,
+            ${TICKET_SUMS}
+     FROM users u
+     LEFT JOIN bets b ON b.user_id = u.id AND b.created_at >= $1 AND b.created_at < $2
+     WHERE u.role = 'USER' AND u.admin_id IS NULL`,
+    [rangeStart, rangeEnd]
+  );
+  const withNet = (r) => ({ ...r, netResult: Number(r.losses) - Number(r.wins) });
+  res.json({ month: label, admins: rows.map(withNet), unowned: withNet(unownedRows[0]) });
 });
 
 router.post('/agents', async (req, res) => {
@@ -513,7 +563,8 @@ router.get('/bets', async (req, res) => {
   // arbitrary slice. A normal admin only gets the tickets of his own users.
   const limit = Math.min(Number(req.query.limit) || 500, 500);
   const offset = Math.max(Number(req.query.offset) || 0, 0);
-  const scope = scopeOf(req.user);
+  // The super admin may look at the tickets of ONE admin's people: ?adminId=...
+  const scope = isSuperAdmin(req.user.role) && req.query.adminId ? String(req.query.adminId) : scopeOf(req.user);
   const [{ rows: bets }, { rows: countRows }] = await Promise.all([
     pool.query(
       `SELECT * FROM bets WHERE ($3::text IS NULL OR user_id IN (SELECT id FROM users WHERE admin_id = $3))
