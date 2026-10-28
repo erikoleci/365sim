@@ -7,7 +7,6 @@ interface Props {
   myBets: Bet[];
   userBalance: number;
   betError: string | null;
-  slipNotice?: string | null;
   isMobileSlipOpen: boolean;
   onOpenMobileSlip: () => void;
   onCloseMobileSlip: () => void;
@@ -22,17 +21,12 @@ const ErrorBanner: React.FC<{ message: string | null }> = ({ message }) =>
     <div className="bg-red-900/30 border-b border-red-900/50 text-red-300 text-xs p-2 text-center">{message}</div>
   ) : null;
 
-const NoticeBanner: React.FC<{ message?: string | null }> = ({ message }) =>
-  message ? (
-    <div className="bg-yellow-900/30 border-b border-yellow-700/50 text-yellow-200 text-xs p-2 text-center">{message}</div>
-  ) : null;
-
 /**
  * The bet slip: a sticky column on desktop, and on phones a floating button with the selection
  * count that opens the slip full screen (it has its own address, /kuponi).
  */
 const BetSlipPanels: React.FC<Props> = ({
-  selections, myBets, userBalance, betError, slipNotice, isMobileSlipOpen, onOpenMobileSlip, onCloseMobileSlip,
+  selections, myBets, userBalance, betError, isMobileSlipOpen, onOpenMobileSlip, onCloseMobileSlip,
   onRemoveSelection, onClearAll, onPlaceBet, onCancelBet,
 }) => {
   const slip = (
@@ -51,7 +45,6 @@ const BetSlipPanels: React.FC<Props> = ({
     <>
       <aside className="w-80 hidden md:flex flex-col flex-shrink-0">
         <div className="bg-brand-panel rounded overflow-hidden shadow-sm flex-1 max-h-[calc(100vh-100px)] sticky top-20">
-          <NoticeBanner message={slipNotice} />
           <ErrorBanner message={betError} />
           {slip}
         </div>
@@ -81,8 +74,7 @@ const BetSlipPanels: React.FC<Props> = ({
               <button onClick={onCloseMobileSlip} className="text-white font-bold p-2">Close &times;</button>
             </div>
             <div className="flex-1 overflow-hidden">
-              <NoticeBanner message={slipNotice} />
-          <ErrorBanner message={betError} />
+              <ErrorBanner message={betError} />
               {slip}
             </div>
           </div>

@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { BetSelectionItem, Bet, BetStatus } from '../types';
 import { useI18n } from '../i18n';
 import MatchupLabel from './MatchupLabel';
 import TicketDetailModal, { TicketView } from './TicketDetailModal';
+import { findSlipConflicts, legKey } from '../utils/betSlipRules';
 
 interface BetSlipProps {
   selections: BetSelectionItem[];
@@ -44,11 +45,15 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
   const potentialReturn = (parseFloat(stake || '0') * totalOdds).toFixed(2);
   const stakeNum = parseFloat(stake || '0');
   const hasValidDecimals = Math.round(stakeNum * 100) / 100 === stakeNum;
-  const isValidStake = stakeNum >= MIN_STAKE && stakeNum <= userBalance && hasValidDecimals;
+  // Legs of the same match that follow the same logic (1+ / 2+ / 3+ / 4+ goals, "1-3 goals" with 2+,
+  // 1 with 1X ...) cannot be combined: they are flagged and the ticket is blocked until one is removed.
+  const conflicts = useMemo(() => findSlipConflicts(selections), [selections]);
+  const hasConflicts = conflicts.size > 0;
+  const isValidStake = stakeNum >= MIN_STAKE && stakeNum <= userBalance && hasValidDecimals && !hasConflicts;
   const changedSelections = selections.filter((s) => typeof s.previousOdds === 'number');
 
   const handlePlaceBetClick = () => {
-    if (!stake || !isValidStake) return;
+    if (!stake || !isValidStake || hasConflicts) return;
     setShowConfirm(true);
   };
 
@@ -147,9 +152,18 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                         </div>
                     )}
 
+                    {hasConflicts && (
+                        <div className="bg-red-900/30 border border-red-700/50 rounded-lg p-2.5 text-xs">
+                            <p className="text-red-300 font-bold mb-0.5">Zgjedhjet nuk mund të kombinohen</p>
+                            <p className="text-red-200/80 leading-snug">
+                                Disa zgjedhje të së njëjtës ndeshje janë të lidhura logjikisht me njëra-tjetrën (njëra vendos ose mbulon tjetrën), ndaj kuota totale do të ishte e gabuar. Hiq njërën nga zgjedhjet e shënuara me të kuqe për të vendosur biletën.
+                            </p>
+                        </div>
+                    )}
+
                     {/* List of Selections — numbered, since accumulator legs are a real sequence on the ticket */}
                     {selections.map((sel, idx) => (
-                        <div key={`${sel.matchId}-${sel.marketId}-${sel.selectionId}`} className={`bg-brand-bg rounded-lg relative group flex animate-slip-in ${sel.previousOdds != null ? 'ring-1 ring-amber-500/60' : ''}`}>
+                        <div key={`${sel.matchId}-${sel.marketId}-${sel.selectionId}`} className={`bg-brand-bg rounded-lg relative group flex animate-slip-in ${conflicts.has(legKey(sel)) ? 'ring-1 ring-red-500/70' : sel.previousOdds != null ? 'ring-1 ring-amber-500/60' : ''}`}>
                              <div className="w-6 flex-shrink-0 bg-brand-yellow/90 text-brand-bg font-extrabold text-xs flex items-center justify-center rounded-l-lg">
                                 {idx + 1}
                              </div>
@@ -157,6 +171,11 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                                  <div className="font-bold text-brand-text truncate">{sel.selectionName}</div>
                                  <div className="text-xs text-brand-textMuted truncate">{sel.marketName}</div>
                                  <div className="text-xs text-brand-textMuted italic truncate"><MatchupLabel home={sel.matchHome} away={sel.matchAway} /></div>
+                                 {conflicts.has(legKey(sel)) && (
+                                     <div className="text-[11px] text-red-300 mt-1 leading-snug">
+                                         Lidhet me: {(conflicts.get(legKey(sel)) || []).map((o) => `${o.marketName} - ${o.selectionName}`).join(', ')}
+                                     </div>
+                                 )}
                                  <div className="text-right mt-1 tabular-nums">
                                      {sel.previousOdds != null && (
                                          <span className="text-brand-textMuted line-through mr-1.5">@{sel.previousOdds.toFixed(2)}</span>
@@ -215,6 +234,9 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                             >
                                 {changedSelections.length > 0 ? t('Prano Ndryshimet & Vendos') : t('Vendos Biletën')}
                             </button>
+                            {hasConflicts && (
+                                <p className="text-red-400 text-xs text-center mt-2">Hiq zgjedhjet e lidhura për të vendosur biletën</p>
+                            )}
                             {!isValidStake && stake && stakeNum > userBalance && (
                                 <p className="text-red-400 text-xs text-center mt-2">{t('Fonde të pamjaftueshme')}</p>
                             )}
