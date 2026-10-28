@@ -250,6 +250,7 @@ const App: React.FC = () => {
             myBets={myBets}
             userBalance={currentUser.balance}
             betError={slip.betError}
+            slipNotice={slip.slipNotice}
             isMobileSlipOpen={nav.isMobileSlipOpen}
             onOpenMobileSlip={() => nav.setIsMobileSlipOpen(true)}
             onCloseMobileSlip={nav.goBack}
