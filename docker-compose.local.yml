@@ -35,6 +35,17 @@ services:
       JWT_SECRET: ${JWT_SECRET:?vendos JWT_SECRET në .env.local}
       DATABASE_URL: postgresql://sim365:${POSTGRES_PASSWORD}@db:5432/sim365?sslmode=disable
       LONDON365_ENABLED: "1"
+      # Katalogu pa kufizime: çdo vend, çdo ligë (përfshirë divizionet e dyta dhe ligat rajonale), çdo ndeshje.
+      # Pa këtë, aplikohen parazgjedhjet: vetëm 5 vende, vetëm ligat kryesore, pa divizione të dyta.
+      LONDON365_ALL_MATCHES: "1"
+      # /api/matches: faqe me 200 rreshta -> 1000 faqe = 200 000 rreshta (parazgjedhja 30 faqe = 6000 rreshta pret ndeshje)
+      MATCHES_PAGE_HARD_CAP: "1000"
+      # Ndeshjet live mbahen sa i ka feed-i (parazgjedhja 4 orë i heq ato që feed-i i braktis)
+      LIVE_MAX_AGE_HOURS: "24"
+      # Më shumë rreshta paralelë për sinkronizimin live kur ka shumë ndeshje; pool-i i DB duhet të jetë >= rreshtat
+      LONDON365_LIVE_CONCURRENCY: "20"
+      LONDON365_LIVE_CONCURRENCY_MAX: "60"
+      PG_POOL_MAX: "40"
       # Only markets the system can settle by itself are offered (no ticket can be accepted that nobody can close).
       BET_REQUIRE_SETTLEMENT_RULE: "1"
     ports:
