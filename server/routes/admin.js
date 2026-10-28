@@ -1010,16 +1010,10 @@ router.put('/settings/ticket-deletion', requireSuperAdmin, async (req, res) => {
   res.json({ ticketDeletionAllowed: allowed });
 });
 
-router.get('/audit-log', async (req, res) => {
+// The log of actions is the super admin's alone: a normal admin never sees it (403).
+router.get('/audit-log', requireSuperAdmin, async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 200, 500);
-  // A normal admin sees only what he and his own agents / users did; what the super admin (or another
-  // admin's people) do is not shown to him.
-  const { rows } = isSuperAdmin(req.user.role)
-    ? await pool.query('SELECT * FROM audit_log ORDER BY created_at DESC LIMIT $1', [limit])
-    : await pool.query(
-      `SELECT * FROM audit_log WHERE actor_id IN (SELECT id FROM users WHERE admin_id = $2 OR id = $2) ORDER BY created_at DESC LIMIT $1`,
-      [limit, req.user.id]
-    );
+  const { rows } = await pool.query('SELECT * FROM audit_log ORDER BY created_at DESC LIMIT $1', [limit]);
   res.json({ entries: rows });
 });
 

@@ -43,7 +43,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
   const canDeleteTickets = viewerIsSuper || ticketDeletionAllowed;
 
   useEffect(() => {
-    if (activeTab === 'audit') {
+    if (viewerIsSuper && activeTab === 'audit') {
       setAuditLoading(true);
       api.adminFetchAuditLog()
         .then(setAuditEntries)
@@ -192,12 +192,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
         >
           All Tickets ({allBets.length})
         </button>
-        <button
-          onClick={() => setActiveTab('audit')}
-          className={`px-6 py-3 text-sm font-bold ${activeTab === 'audit' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
-        >
-          Audit Log
-        </button>
+        {viewerIsSuper && (
+          <button
+            onClick={() => setActiveTab('audit')}
+            className={`px-6 py-3 text-sm font-bold ${activeTab === 'audit' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
+          >
+            Audit Log
+          </button>
+        )}
         {viewerIsSuper && (<>
         <button
           onClick={() => setActiveTab('markets')}

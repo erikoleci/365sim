@@ -67,7 +67,7 @@ Hapi faqen te `http://localhost:5173`.
 Përveç The Odds API, aplikacioni mund të ushqehet plotësisht nga **LondonPro365** — një burim i të dhënave sportive që ofron çdo sport, kampionat, ndeshje, treg, koeficient, rezultat live dhe përditësime në lojë. Të dhënat konvertohen në formatin kanonik *The Odds API* dhe ruhen në `matches_cache`, kështu që listimi, detaji i ndeshjes, verifikimi i kuotave, historiku i kuotave dhe settlement-i funksionojnë mbi to pa ndryshime.
 
 - **Import në sfond**: çdo 10 minuta (i kufizuar nga `LONDON365_IMPORT_THROTTLE_MS`) tërhiqet i gjithë katalogu — sporte → kampionate → ndeshje → çdo treg/koeficient (modaliteti `--full` përmes endpoint-it `prematchgame`).
-- **Live sync (REST)**: çdo 30 sekonda (`LONDON365_LIVE_INTERVAL_MS`) përditësohen rezultatet, minuta dhe lëvizjet e kuotave në lojë — ky mbetet si rrjet mbrojtës kur socket-i bie.
+- **Live sync (REST)**: çdo 20 sekonda (`LONDON365_LIVE_INTERVAL_MS`) përditësohen rezultatet, minuta dhe lëvizjet e kuotave në lojë — ky mbetet si rrjet mbrojtës kur socket-i bie.
 - **Live feed (Socket.IO nativ)**: klienti `server/london365Socket.js` (socket.io-client 2.4) lidhet me `LONDON365_SOCKET` në dhomat `inplay` dhe `prematch-games`, dhe përpunon ngjarjet `new-coefs`, `new-game`, `new-live-game`, `delete-live-game` dhe `delete-live-coef` për përditësime në nën-sekondë. Të gjitha shkruhen në `matches_cache`, `odds_history`, `match_events` dhe `live_statistics`, pastaj shtyhen te klientët me WebSocket (`odds changed`, `goal`). Golat deduplikohen nga ndryshimi i rezultatit të ruajtur, dhe përgjigjet e paplotë të provider-it nuk e mbivendosin kurrë katalogun më të plotë të ruajtur.
 - **Mbrojtje nga race conditions**: një write-lock serializon importin në sfond, polling-un live dhe shkrimet nga socket-i që të mos konkurojnë për të njëjtën rresht.
 - **Fallback automatik**: kur nuk ka `ODDS_API_KEY`, API-ja e ndeshjeve i shërben ndeshjet e importuara nga LondonPro365.
@@ -85,7 +85,7 @@ LONDON365_API=https://eccoplay365.com
 LONDON365_SPORTS=1               # csv i ID-ve të sporteve (1 = Futboll)
 LONDON365_LEAGUES=0              # kufi kampionatesh për sport, 0 = të gjitha
 LONDON365_FULL=1                 # 1 = tërhiq çdo treg përmes detail endpoint
-LONDON365_LIVE_INTERVAL_MS=30000
+LONDON365_LIVE_INTERVAL_MS=20000
 LONDON365_IMPORT_THROTTLE_MS=600000
 LONDON365_SOCKET=https://ecco.socketi355.com:1440
 LONDON365_SOCKET_ENABLED=1       # 0 = vetëm polling REST, pa socket

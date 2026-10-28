@@ -37,7 +37,6 @@ const mocks = vi.hoisted(() => {
     if (s.startsWith('SELECT admin_id FROM users WHERE id = $1')) { const r = users.get(params[0]); return { rows: r ? [{ admin_id: r.admin_id ?? null }] : [] }; }
     if (s.startsWith('UPDATE users SET admin_id = NULL WHERE admin_id = $1')) { for (const u of users.values()) if (u.admin_id === params[0]) u.admin_id = null; return { rows: [] }; }
     if (s.startsWith('UPDATE users SET admin_id = $1 WHERE id = $2 OR agent_id = $2')) { let n = 0; for (const u of users.values()) if (u.id === params[1] || u.agent_id === params[1]) { u.admin_id = params[0]; n++; } return { rows: [], rowCount: n }; }
-    if (s.startsWith('SELECT * FROM audit_log WHERE actor_id IN (SELECT id FROM users WHERE admin_id = $2 OR id = $2)')) return { rows: calls.audit.filter((a) => { const u = users.get(a.actor_id); return u && (u.admin_id === params[1] || u.id === params[1]); }) };
     if (s.startsWith('SELECT id, role, is_active FROM users WHERE id = $1')) { const r = users.get(params[0]); return { rows: r ? [r] : [] }; }
     if (s.startsWith('SELECT * FROM users WHERE id = $1 AND role = \'ADMIN\'')) { const r = users.get(params[0]); return { rows: r?.role === 'ADMIN' ? [r] : [] }; }
     if (s.startsWith('SELECT * FROM users WHERE id = $1') || s.startsWith('SELECT id, role FROM users WHERE id = $1')) { const r = users.get(params[0]); return { rows: r ? [r] : [] }; }
@@ -56,7 +55,6 @@ const mocks = vi.hoisted(() => {
     if (s.startsWith('SELECT COUNT(*)::int AS count FROM users')) return { rows: [{ count: users.size }] };
     if (s.startsWith('INSERT INTO audit_log')) { calls.audit.push({ actor_id: params[0], action: params[2] }); return { rows: [] }; }
     if (s.startsWith('SELECT * FROM audit_log ORDER BY')) return { rows: calls.audit };
-    if (s.startsWith('SELECT * FROM audit_log WHERE actor_id NOT IN')) return { rows: calls.audit.filter((a) => users.get(a.actor_id)?.role !== 'SUPER_ADMIN') };
     if (s === 'BEGIN' || s === 'COMMIT' || s === 'ROLLBACK' || s.startsWith('DELETE FROM bet_selections')) return { rows: [] };
     throw new Error('unmocked query: ' + s);
   }
@@ -270,7 +268,6 @@ describe('markets and settlement tools are the super admin\'s', () => {
   it('what a normal admin keeps still works', async () => {
     expect((await call('GET', '/users', ADMIN)).status).toBe(200);
     expect((await call('GET', '/dashboard/kpi', ADMIN)).status).toBe(200);
-    expect((await call('GET', '/audit-log', ADMIN)).status).toBe(200);
     expect((await call('GET', '/settings', ADMIN)).status).toBe(200);
   });
 });
@@ -313,11 +310,12 @@ describe('ticket deletion switch', () => {
     await call('PUT', '/settings/ticket-deletion', SUPER, { allowed: true });
     expect((await call('POST', '/bets/bet-won/cancel', ADMIN)).status).toBe(200);
   });
-  it('the switch is logged, but the super admin\'s entry is not shown to admins', async () => {
+  it('the switch is logged; the log itself is the super admin\'s alone (an admin gets 403)', async () => {
     await call('PUT', '/settings/ticket-deletion', SUPER, { allowed: false });
     expect(mocks.calls.audit.some((a) => a.action === 'SETTING_TICKET_DELETION' && a.actor_id === 'super-1')).toBe(true);
-    const forAdmin = (await (await call('GET', '/audit-log', ADMIN)).json()).entries;
-    expect(forAdmin.some((e) => e.action === 'SETTING_TICKET_DELETION')).toBe(false);
+    expect((await call('GET', '/audit-log', ADMIN)).status).toBe(403);
+    const forSuper = (await (await call('GET', '/audit-log', SUPER)).json()).entries;
+    expect(forSuper.some((e) => e.action === 'SETTING_TICKET_DELETION')).toBe(true);
   });
   it('an admin deleting a ticket takes back winnings, and a refunded (VOID) ticket does not refund twice', async () => {
     expect((await call('POST', '/bets/bet-won/cancel', ADMIN)).status).toBe(200);
