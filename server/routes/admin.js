@@ -19,6 +19,7 @@ import { mapEventToMatch } from '../oddsUtils.js';
 import { transferBalance } from '../ledger.js';
 import { getTicketDeletionAllowed, setTicketDeletionAllowed } from '../appSettings.js';
 import { isAdminRole, isSuperAdmin, ROLE_ADMIN } from '../roles.js';
+import { scopeOf, ownsRow } from '../adminScope.js';
 import { importLondon365, getLondon365Status, getLondon365CountryDebug } from '../london365.js';
 import { monthRange } from './agent.js';
 import { deleteUserIfUnused, deleteBlockedMessage, forceDeleteUser } from '../userDeletion.js';
@@ -47,6 +48,10 @@ for (const path of [
   '/bets/settle-stuck', '/risk',
 ]) router.use(path, requireSuperAdmin);
 
+// Every agent and user belongs to one admin (users.admin_id). A normal admin only sees and manages his own;
+// the super admin sees everything. scopeOf() is the SQL parameter ("$n::text IS NULL OR admin_id = $n"),
+// ownsRow() the check on one row. A row that is not his answers 404, so nothing leaks about other admins' accounts.
+
 // What to add to the player's balance so the ticket is as if it had never been placed:
 // open / lost -> the stake comes back; won -> the winnings are taken back; void (already refunded) -> nothing.
 export function betBalanceReversal(bet) {
@@ -71,7 +76,7 @@ function toPublicUser(row) {
   return {
     id: row.id, name: row.name, username: row.username,
     balance: row.balance, role: row.role, avatar: row.avatar,
-    isActive: row.is_active, agentId: row.agent_id,
+    isActive: row.is_active, agentId: row.agent_id, adminId: row.admin_id ?? null,
     // Only meaningful for AGENT rows; present (as 0) for USER/ADMIN too so
     // the shape is consistent, since the frontend types this as a single
     // PublicUser regardless of role.
@@ -126,9 +131,14 @@ router.get('/users', async (req, res) => {
   // guessing whether more rows exist past the 1000-row cap.
   const limit = Math.min(Number(req.query.limit) || 1000, 1000);
   const offset = Math.max(Number(req.query.offset) || 0, 0);
+  const scope = scopeOf(req.user);
+  // A normal admin sees his own account plus the agents and users that belong to him, nobody else's.
   const [{ rows: users }, { rows: countRows }] = await Promise.all([
-    pool.query('SELECT * FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2', [limit, offset]),
-    pool.query('SELECT COUNT(*)::int AS count FROM users'),
+    pool.query(
+      'SELECT * FROM users WHERE ($3::text IS NULL OR admin_id = $3 OR id = $3) ORDER BY created_at DESC LIMIT $1 OFFSET $2',
+      [limit, offset, scope]
+    ),
+    pool.query('SELECT COUNT(*)::int AS count FROM users WHERE ($1::text IS NULL OR admin_id = $1 OR id = $1)', [scope]),
   ]);
   // A normal admin never sees the super admin account (nor its balance).
   const visible = isSuperAdmin(req.user.role) ? users : users.filter((u) => u.role !== 'SUPER_ADMIN');
@@ -145,10 +155,11 @@ router.post('/users', async (req, res) => {
 
   const id = randomUUID();
   const hash = await bcrypt.hash(password, 10);
+  // The new user belongs to the admin who creates him (the super admin's own users stay unowned).
   await pool.query(
-    `INSERT INTO users (id, name, username, password_hash, balance, role, avatar, created_at)
-     VALUES ($1,$2,$3,$4,$5,'USER',$6,$7)`,
-    [id, name, username, hash, isSuperAdmin(req.user.role) ? (Number(balance) || 0) : 0, '', Date.now()]
+    `INSERT INTO users (id, name, username, password_hash, balance, role, avatar, admin_id, created_at)
+     VALUES ($1,$2,$3,$4,$5,'USER',$6,$7,$8)`,
+    [id, name, username, hash, isSuperAdmin(req.user.role) ? (Number(balance) || 0) : 0, '', isSuperAdmin(req.user.role) ? null : req.user.id, Date.now()]
   );
   if (!isSuperAdmin(req.user.role) && Number(balance) > 0) {
     try {
@@ -168,25 +179,25 @@ router.post('/users', async (req, res) => {
 // --- AGENTS (Owner manages the Agent tier; existing /users endpoints above
 // are untouched and keep creating plain USER rows exactly as before) ---
 
-// System-wide snapshot for the Owner dashboard: counts + money totals only
-// (no per-user drill-down here — that's /agents/:id/performance below, or
-// the existing GET /users for a flat list). This is what "Owner sees only
-// reports" maps to: aggregate numbers, not a sportsbook UI.
+// Snapshot for the dashboard: counts + money totals only (no per-user drill-down here — that's
+// /agents/:id/performance below, or the existing GET /users for a flat list). A normal admin gets the
+// numbers of HIS agents and their users; the super admin gets the whole system.
 router.get('/overview', async (req, res) => {
+  const scope = [scopeOf(req.user)];
   const [agentsCount, usersCount, betsAgg] = await Promise.all([
     pool.query(`SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE is_active)::int AS active,
                         COALESCE(SUM(balance), 0) AS total_balance
-                 FROM users WHERE role = 'AGENT'`),
+                 FROM users WHERE role = 'AGENT' AND ($1::text IS NULL OR admin_id = $1)`, scope),
     pool.query(`SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE is_active)::int AS active,
                         COALESCE(SUM(balance), 0) AS total_balance
-                 FROM users WHERE role = 'USER'`),
+                 FROM users WHERE role = 'USER' AND ($1::text IS NULL OR admin_id = $1)`, scope),
     pool.query(`SELECT COUNT(*)::int AS total_tickets,
                         COALESCE(SUM(stake), 0) AS turnover,
                         COALESCE(SUM(CASE WHEN status = 'WON' THEN potential_return - stake ELSE 0 END), 0) AS wins,
                         COALESCE(SUM(CASE WHEN status = 'LOST' THEN stake ELSE 0 END), 0) AS losses,
                         COALESCE(SUM(CASE WHEN status = 'PENDING' THEN stake ELSE 0 END), 0) AS pending,
                         COUNT(*) FILTER (WHERE status = 'PENDING')::int AS pending_tickets
-                 FROM bets`),
+                 FROM bets WHERE ($1::text IS NULL OR user_id IN (SELECT id FROM users WHERE admin_id = $1))`, scope),
   ]);
   res.json({
     agents: { total: agentsCount.rows[0].total, active: agentsCount.rows[0].active, totalBalance: agentsCount.rows[0].total_balance },
@@ -204,16 +215,19 @@ router.get('/overview', async (req, res) => {
 });
 
 router.get('/agents', async (req, res) => {
-  const { rows } = await pool.query(`SELECT * FROM users WHERE role = 'AGENT' ORDER BY created_at DESC`);
+  const { rows } = await pool.query(
+    `SELECT * FROM users WHERE role = 'AGENT' AND ($1::text IS NULL OR admin_id = $1) ORDER BY created_at DESC`,
+    [scopeOf(req.user)]
+  );
   res.json({ agents: rows.map(toPublicUser) });
 });
 
-// System-wide monthly report: totals across ALL agents+users combined, plus
-// a per-agent breakdown for that month (spec: "OWNER MONTHLY SUMMARY" +
-// "Agent Breakdown"). Reuses the same month-boundary helper as the Agent's
-// own monthly report for consistency.
+// Monthly report: totals across the agents+users in scope combined (all of them for the super admin, only
+// the admin's own for a normal admin), plus a per-agent breakdown for that month (spec: "OWNER MONTHLY SUMMARY"
+// + "Agent Breakdown"). Reuses the same month-boundary helper as the Agent's own monthly report for consistency.
 router.get('/reports/monthly', async (req, res) => {
   const { rangeStart, rangeEnd, label } = monthRange(req.query.month);
+  const scope = scopeOf(req.user);
 
   const { rows: totalsRows } = await pool.query(
     `SELECT COUNT(DISTINCT a.id)::int AS total_agents,
@@ -226,8 +240,8 @@ router.get('/reports/monthly', async (req, res) => {
      FROM users a
      LEFT JOIN users u ON u.agent_id = a.id
      LEFT JOIN bets b ON b.user_id = u.id AND b.created_at >= $1 AND b.created_at < $2
-     WHERE a.role = 'AGENT'`,
-    [rangeStart, rangeEnd]
+     WHERE a.role = 'AGENT' AND ($3::text IS NULL OR a.admin_id = $3)`,
+    [rangeStart, rangeEnd, scope]
   );
 
   const { rows: perAgent } = await pool.query(
@@ -241,10 +255,10 @@ router.get('/reports/monthly', async (req, res) => {
      FROM users a
      LEFT JOIN users u ON u.agent_id = a.id
      LEFT JOIN bets b ON b.user_id = u.id AND b.created_at >= $1 AND b.created_at < $2
-     WHERE a.role = 'AGENT'
+     WHERE a.role = 'AGENT' AND ($3::text IS NULL OR a.admin_id = $3)
      GROUP BY a.id
      ORDER BY turnover DESC`,
-    [rangeStart, rangeEnd]
+    [rangeStart, rangeEnd, scope]
   );
 
   const t = totalsRows[0];
@@ -274,7 +288,7 @@ router.get('/reports/monthly', async (req, res) => {
 });
 
 router.post('/agents', async (req, res) => {
-  const { name, username, password, balance } = req.body || {};
+  const { name, username, password, balance, adminId } = req.body || {};
   if (!name || !username || !password) {
     return res.status(400).json({ error: 'name, username, and password are required' });
   }
@@ -283,6 +297,15 @@ router.post('/agents', async (req, res) => {
 
   const { rows: existingRows } = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
   if (existingRows[0]) return res.status(409).json({ error: 'Username already taken' });
+
+  // The new agent belongs to the admin who creates him. The super admin may name the admin (adminId) or leave
+  // the agent unowned, to assign later with PATCH /agents/:id/admin.
+  let ownerAdminId = isSuperAdmin(req.user.role) ? null : req.user.id;
+  if (isSuperAdmin(req.user.role) && adminId) {
+    const { rows: adminRows } = await pool.query(`SELECT id FROM users WHERE id = $1 AND role = 'ADMIN'`, [adminId]);
+    if (!adminRows[0]) return res.status(400).json({ error: 'adminId is not an admin account' });
+    ownerAdminId = adminRows[0].id;
+  }
 
   const { rows: ownerRows } = await pool.query('SELECT balance FROM users WHERE id = $1', [req.user.id]);
   if (startBalance > 0 && (!ownerRows[0] || ownerRows[0].balance < startBalance)) {
@@ -298,9 +321,9 @@ router.post('/agents', async (req, res) => {
   // already does in agent.js. A raw `balance = $N` in the INSERT would
   // create money the ledger never sees, breaking Owner's own reports.
   await pool.query(
-    `INSERT INTO users (id, name, username, password_hash, balance, role, avatar, created_at)
-     VALUES ($1,$2,$3,$4,0,'AGENT',$5,$6)`,
-    [id, name, username, hash, '', Date.now()]
+    `INSERT INTO users (id, name, username, password_hash, balance, role, avatar, admin_id, created_at)
+     VALUES ($1,$2,$3,$4,0,'AGENT',$5,$6,$7)`,
+    [id, name, username, hash, '', ownerAdminId, Date.now()]
   );
 
   if (startBalance > 0) {
@@ -316,22 +339,21 @@ router.post('/agents', async (req, res) => {
 });
 
 // Set/update an agent's commission rate (% of their users' net gaming
-// result the platform owes them). Owner-only, like every other /agents
-// route in this file (see requireAdmin at the top of the router).
+// result the platform owes them). A normal admin can only do it for his own agents.
 router.patch('/agents/:id/commission', async (req, res) => {
   const rate = Number(req.body?.commissionRate);
   if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
     return res.status(400).json({ error: 'commissionRate must be a number between 0 and 100' });
   }
-  const { rows } = await pool.query(`SELECT id FROM users WHERE id = $1 AND role = 'AGENT'`, [req.params.id]);
-  if (!rows[0]) return res.status(404).json({ error: 'Agent not found' });
+  const { rows } = await pool.query(`SELECT id, admin_id FROM users WHERE id = $1 AND role = 'AGENT'`, [req.params.id]);
+  if (!rows[0] || !ownsRow(req.user, rows[0])) return res.status(404).json({ error: 'Agent not found' });
 
   await pool.query('UPDATE users SET commission_rate = $1 WHERE id = $2', [rate, req.params.id]);
   await logAudit(req.user, 'AGENT_COMMISSION_SET', req.params.id, { commissionRate: rate });
   res.json({ ok: true, commissionRate: rate });
 });
 
-// Top up an EXISTING agent's balance out of the Owner's own balance. There
+// Top up an EXISTING agent's balance out of the admin's own balance. There
 // was previously no way to do this after agent creation — funding only
 // happened once, at creation time.
 router.post('/agents/:id/credit', async (req, res) => {
@@ -340,7 +362,7 @@ router.post('/agents/:id/credit', async (req, res) => {
     return res.status(400).json({ error: 'amount must be a positive number' });
   }
   const { rows } = await pool.query(`SELECT * FROM users WHERE id = $1 AND role = 'AGENT'`, [req.params.id]);
-  if (!rows[0]) return res.status(404).json({ error: 'Agent not found' });
+  if (!rows[0] || !ownsRow(req.user, rows[0])) return res.status(404).json({ error: 'Agent not found' });
 
   try {
     const result = await transferBalance({
@@ -355,7 +377,7 @@ router.post('/agents/:id/credit', async (req, res) => {
   }
 });
 
-// Withdraw funds back from an agent into the Owner's own balance (the
+// Withdraw funds back from an agent into the admin's own balance (the
 // reverse of the above) — mirrors the existing Agent -> User debit route.
 router.post('/agents/:id/debit', async (req, res) => {
   const { amount } = req.body || {};
@@ -363,7 +385,7 @@ router.post('/agents/:id/debit', async (req, res) => {
     return res.status(400).json({ error: 'amount must be a positive number' });
   }
   const { rows } = await pool.query(`SELECT * FROM users WHERE id = $1 AND role = 'AGENT'`, [req.params.id]);
-  if (!rows[0]) return res.status(404).json({ error: 'Agent not found' });
+  if (!rows[0] || !ownsRow(req.user, rows[0])) return res.status(404).json({ error: 'Agent not found' });
 
   try {
     const result = await transferBalance({
@@ -382,7 +404,7 @@ router.post('/agents/:id/debit', async (req, res) => {
 // breakdown the agent itself sees in GET /api/agent/performance.
 router.get('/agents/:id/performance', async (req, res) => {
   const { rows: agentRows } = await pool.query(`SELECT * FROM users WHERE id = $1 AND role = 'AGENT'`, [req.params.id]);
-  if (!agentRows[0]) return res.status(404).json({ error: 'Agent not found' });
+  if (!agentRows[0] || !ownsRow(req.user, agentRows[0])) return res.status(404).json({ error: 'Agent not found' });
 
   const { rows } = await pool.query(
     `SELECT u.id, u.name, u.username, u.balance, u.is_active,
@@ -404,12 +426,14 @@ router.get('/agents/:id/performance', async (req, res) => {
 router.delete('/users/:id', async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
   const user = rows[0];
-  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (!user || !ownsRow(req.user, user)) return res.status(404).json({ error: 'User not found' });
   if (!canDeleteAccount(req.user, user)) return res.status(400).json({ error: 'Cannot delete an admin user' });
   const result = await deleteUserIfUnused(req.params.id);
   if (!result.ok) {
     return res.status(409).json({ error: deleteBlockedMessage(result.blockers), code: 'USER_HAS_HISTORY', blockers: result.blockers });
   }
+  // A deleted admin leaves his agents and users unowned (only the super admin sees them until he reassigns them).
+  if (user.role === ROLE_ADMIN) await pool.query('UPDATE users SET admin_id = NULL WHERE admin_id = $1', [req.params.id]);
   await logAudit(req.user, 'USER_DELETE', req.params.id, { username: user.username });
   res.json({ ok: true });
 });
@@ -421,9 +445,10 @@ router.delete('/users/:id', async (req, res) => {
 router.delete('/users/:id/force', async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
   const user = rows[0];
-  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (!user || !ownsRow(req.user, user)) return res.status(404).json({ error: 'User not found' });
   if (!canDeleteAccount(req.user, user)) return res.status(400).json({ error: 'Cannot delete an admin user' });
   await forceDeleteUser(req.params.id);
+  if (user.role === ROLE_ADMIN) await pool.query('UPDATE users SET admin_id = NULL WHERE admin_id = $1', [req.params.id]);
   await logAudit(req.user, 'USER_FORCE_DELETE', req.params.id, { username: user.username, role: user.role });
   res.json({ ok: true });
 });
@@ -439,6 +464,8 @@ router.post('/users/:id/credit', async (req, res) => {
   if (isAdminRole(rows[0].role) && !isSuperAdmin(req.user.role)) {
     return res.status(403).json({ error: 'Only the super admin can give credit to an admin' });
   }
+  // ... and never to an agent or user that belongs to another admin.
+  if (!ownsRow(req.user, rows[0])) return res.status(404).json({ error: 'User not found' });
   if (!isSuperAdmin(req.user.role)) {
     // A normal admin does not create money: what he gives (or takes back) moves between HIS balance
     // (given by the super admin) and the account. When his credit runs out he waits for the super admin.
@@ -465,11 +492,13 @@ router.post('/users/:id/reset-password', async (req, res) => {
   if (!password || password.length < 6) {
     return res.status(400).json({ error: 'password must be at least 6 characters' });
   }
-  const { rows } = await pool.query('SELECT id, role FROM users WHERE id = $1', [req.params.id]);
+  const { rows } = await pool.query('SELECT id, role, admin_id FROM users WHERE id = $1', [req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: 'User not found' });
   if (isAdminRole(rows[0].role) && rows[0].id !== req.user.id && !isSuperAdmin(req.user.role)) {
     return res.status(403).json({ error: 'Only the super admin can reset an admin password' });
   }
+  // An admin resets his own password or the ones of his agents / users, nobody else's.
+  if (rows[0].id !== req.user.id && !ownsRow(req.user, rows[0])) return res.status(404).json({ error: 'User not found' });
   const hash = await bcrypt.hash(password, 10);
   await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, req.params.id]);
   await logAudit(req.user, 'PASSWORD_RESET', req.params.id, {});
@@ -481,12 +510,20 @@ router.post('/users/:id/reset-password', async (req, res) => {
 router.get('/bets', async (req, res) => {
   // Capped for the same reason as /users above — most-recent-first so an
   // admin scanning bet history always sees the newest tickets, not an
-  // arbitrary slice.
+  // arbitrary slice. A normal admin only gets the tickets of his own users.
   const limit = Math.min(Number(req.query.limit) || 500, 500);
   const offset = Math.max(Number(req.query.offset) || 0, 0);
+  const scope = scopeOf(req.user);
   const [{ rows: bets }, { rows: countRows }] = await Promise.all([
-    pool.query('SELECT * FROM bets ORDER BY created_at DESC LIMIT $1 OFFSET $2', [limit, offset]),
-    pool.query('SELECT COUNT(*)::int AS count FROM bets'),
+    pool.query(
+      `SELECT * FROM bets WHERE ($3::text IS NULL OR user_id IN (SELECT id FROM users WHERE admin_id = $3))
+        ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+      [limit, offset, scope]
+    ),
+    pool.query(
+      `SELECT COUNT(*)::int AS count FROM bets WHERE ($1::text IS NULL OR user_id IN (SELECT id FROM users WHERE admin_id = $1))`,
+      [scope]
+    ),
   ]);
 
   // Batch both lookups instead of running 2 queries per bet (N+1).
@@ -575,6 +612,21 @@ router.post('/admins/:id/debit', requireSuperAdmin, async (req, res) => {
   }
 });
 
+// Hand an agent (and every user he has) over to another admin, or to nobody (adminId null / missing).
+router.patch('/agents/:id/admin', requireSuperAdmin, async (req, res) => {
+  const adminId = req.body?.adminId ?? null;
+  if (adminId !== null && typeof adminId !== 'string') return res.status(400).json({ error: 'adminId must be a string or null' });
+  const { rows: agentRows } = await pool.query(`SELECT id, username FROM users WHERE id = $1 AND role = 'AGENT'`, [req.params.id]);
+  if (!agentRows[0]) return res.status(404).json({ error: 'Agent not found' });
+  if (adminId !== null) {
+    const { rows: adminRows } = await pool.query(`SELECT id FROM users WHERE id = $1 AND role = 'ADMIN'`, [adminId]);
+    if (!adminRows[0]) return res.status(400).json({ error: 'adminId is not an admin account' });
+  }
+  const { rowCount } = await pool.query('UPDATE users SET admin_id = $1 WHERE id = $2 OR agent_id = $2', [adminId, req.params.id]);
+  await logAudit(req.user, 'AGENT_REASSIGN', req.params.id, { username: agentRows[0].username, adminId, rows: rowCount });
+  res.json({ ok: true, adminId, rows: rowCount });
+});
+
 // Erase any ticket (open, live, settled, void ...). By default the money is put back as if the
 // ticket had never been placed; ?adjust=0 erases the ticket and leaves every balance as it is.
 router.delete('/bets/:id', requireSuperAdmin, async (req, res) => {
@@ -614,6 +666,9 @@ router.post('/bets/:id/cancel', async (req, res) => {
     const { rows } = await client.query('SELECT * FROM bets WHERE id = $1 FOR UPDATE', [req.params.id]);
     bet = rows[0];
     if (!bet) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Bet not found' }); }
+    // A normal admin only deletes tickets of his own users.
+    const { rows: ownerRows } = await client.query('SELECT admin_id FROM users WHERE id = $1', [bet.user_id]);
+    if (!ownsRow(req.user, ownerRows[0])) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Bet not found' }); }
     // Put the money back as if the ticket had never been placed (PENDING / LOST: the stake; WON: the winnings
     // are taken back; VOID: it was refunded already, nothing to give twice).
     delta = betBalanceReversal(bet);
@@ -899,9 +954,10 @@ router.get('/risk/exposure', async (req, res) => {
   res.json({ exposure: rows });
 });
 
-// What a normal admin sees of the business: profit, loss and how many tickets are open / won / lost.
+// What a normal admin sees of the business: profit, loss and how many tickets are open / won / lost,
+// for HIS agents' users only.
 //   profit = stakes of lost tickets          loss = what the won tickets pay out beyond the stake
-// The super admin gets the full picture (turnover, open liability, users) on top.
+// The super admin gets the full picture (turnover, open liability, users) on top, over the whole system.
 router.get('/dashboard/kpi', async (req, res) => {
   const { rows: agg } = await pool.query(
     `SELECT COALESCE(SUM(CASE WHEN status = 'LOST' THEN stake ELSE 0 END), 0) AS profit,
@@ -909,7 +965,8 @@ router.get('/dashboard/kpi', async (req, res) => {
             COUNT(*) FILTER (WHERE status = 'PENDING')::int AS tickets_open,
             COUNT(*) FILTER (WHERE status = 'WON')::int AS tickets_won,
             COUNT(*) FILTER (WHERE status = 'LOST')::int AS tickets_lost
-       FROM bets`
+       FROM bets WHERE ($1::text IS NULL OR user_id IN (SELECT id FROM users WHERE admin_id = $1))`,
+    [scopeOf(req.user)]
   );
   const profit = Number(agg[0].profit);
   const loss = Number(agg[0].loss);
@@ -955,10 +1012,14 @@ router.put('/settings/ticket-deletion', requireSuperAdmin, async (req, res) => {
 
 router.get('/audit-log', async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 200, 500);
-  // Whatever the super admin does (credit, debit ...) is not shown to a normal admin.
+  // A normal admin sees only what he and his own agents / users did; what the super admin (or another
+  // admin's people) do is not shown to him.
   const { rows } = isSuperAdmin(req.user.role)
     ? await pool.query('SELECT * FROM audit_log ORDER BY created_at DESC LIMIT $1', [limit])
-    : await pool.query(`SELECT * FROM audit_log WHERE actor_id NOT IN (SELECT id FROM users WHERE role = 'SUPER_ADMIN') ORDER BY created_at DESC LIMIT $1`, [limit]);
+    : await pool.query(
+      `SELECT * FROM audit_log WHERE actor_id IN (SELECT id FROM users WHERE admin_id = $2 OR id = $2) ORDER BY created_at DESC LIMIT $1`,
+      [limit, req.user.id]
+    );
   res.json({ entries: rows });
 });
 

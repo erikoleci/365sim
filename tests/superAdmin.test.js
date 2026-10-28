@@ -15,8 +15,10 @@ const mocks = vi.hoisted(() => {
     users.set('super-1', { id: 'super-1', username: 'boss', role: 'SUPER_ADMIN', is_active: true, balance: 0 });
     users.set('admin-1', { id: 'admin-1', username: 'admin1', role: 'ADMIN', is_active: true, balance: 100 });
     users.set('admin-2', { id: 'admin-2', username: 'admin2', role: 'ADMIN', is_active: true, balance: 100 });
-    users.set('agent-1', { id: 'agent-1', username: 'agent1', role: 'AGENT', is_active: true, balance: 50 });
-    users.set('user-1', { id: 'user-1', username: 'user1', role: 'USER', is_active: true, balance: 10 });
+    users.set('agent-1', { id: 'agent-1', username: 'agent1', role: 'AGENT', is_active: true, balance: 50, admin_id: 'admin-1' });
+    users.set('user-1', { id: 'user-1', username: 'user1', role: 'USER', is_active: true, balance: 10, agent_id: 'agent-1', admin_id: 'admin-1' });
+    users.set('agent-2', { id: 'agent-2', username: 'agent2', role: 'AGENT', is_active: true, balance: 50, admin_id: 'admin-2' });
+    users.set('user-2', { id: 'user-2', username: 'user2', role: 'USER', is_active: true, balance: 10, agent_id: 'agent-2', admin_id: 'admin-2' });
     bets.set('bet-pending', { id: 'bet-pending', user_id: 'user-1', stake: 10, potential_return: 30, status: 'PENDING' });
     bets.set('bet-won', { id: 'bet-won', user_id: 'user-1', stake: 10, potential_return: 30, status: 'WON' });
     bets.set('bet-void', { id: 'bet-void', user_id: 'user-1', stake: 10, potential_return: 30, status: 'VOID' });
@@ -25,6 +27,17 @@ const mocks = vi.hoisted(() => {
   async function query(sql, params = []) {
     const s = String(sql).replace(/\s+/g, ' ').trim();
     calls.queries.push(s);
+    // --- ownership (users.admin_id): who may see / manage which row ---
+    if (s.startsWith('SELECT * FROM users WHERE ($3::text IS NULL OR admin_id = $3 OR id = $3)')) return { rows: [...users.values()].filter((u) => params[2] == null || u.admin_id === params[2] || u.id === params[2]) };
+    if (s.startsWith('SELECT COUNT(*)::int AS count FROM users WHERE ($1::text IS NULL OR admin_id = $1 OR id = $1)')) return { rows: [{ count: [...users.values()].filter((u) => params[0] == null || u.admin_id === params[0] || u.id === params[0]).length }] };
+    if (s.startsWith("SELECT id, admin_id FROM users WHERE id = $1 AND role = 'AGENT'")) { const r = users.get(params[0]); return { rows: r?.role === 'AGENT' ? [{ id: r.id, admin_id: r.admin_id ?? null }] : [] }; }
+    if (s.startsWith("SELECT id, username FROM users WHERE id = $1 AND role = 'AGENT'")) { const r = users.get(params[0]); return { rows: r?.role === 'AGENT' ? [{ id: r.id, username: r.username }] : [] }; }
+    if (s.startsWith("SELECT id FROM users WHERE id = $1 AND role = 'ADMIN'")) { const r = users.get(params[0]); return { rows: r?.role === 'ADMIN' ? [{ id: r.id }] : [] }; }
+    if (s.startsWith('SELECT id, role, admin_id FROM users WHERE id = $1')) { const r = users.get(params[0]); return { rows: r ? [{ id: r.id, role: r.role, admin_id: r.admin_id ?? null }] : [] }; }
+    if (s.startsWith('SELECT admin_id FROM users WHERE id = $1')) { const r = users.get(params[0]); return { rows: r ? [{ admin_id: r.admin_id ?? null }] : [] }; }
+    if (s.startsWith('UPDATE users SET admin_id = NULL WHERE admin_id = $1')) { for (const u of users.values()) if (u.admin_id === params[0]) u.admin_id = null; return { rows: [] }; }
+    if (s.startsWith('UPDATE users SET admin_id = $1 WHERE id = $2 OR agent_id = $2')) { let n = 0; for (const u of users.values()) if (u.id === params[1] || u.agent_id === params[1]) { u.admin_id = params[0]; n++; } return { rows: [], rowCount: n }; }
+    if (s.startsWith('SELECT * FROM audit_log WHERE actor_id IN (SELECT id FROM users WHERE admin_id = $2 OR id = $2)')) return { rows: calls.audit.filter((a) => { const u = users.get(a.actor_id); return u && (u.admin_id === params[1] || u.id === params[1]); }) };
     if (s.startsWith('SELECT id, role, is_active FROM users WHERE id = $1')) { const r = users.get(params[0]); return { rows: r ? [r] : [] }; }
     if (s.startsWith('SELECT * FROM users WHERE id = $1 AND role = \'ADMIN\'')) { const r = users.get(params[0]); return { rows: r?.role === 'ADMIN' ? [r] : [] }; }
     if (s.startsWith('SELECT * FROM users WHERE id = $1') || s.startsWith('SELECT id, role FROM users WHERE id = $1')) { const r = users.get(params[0]); return { rows: r ? [r] : [] }; }
@@ -102,6 +115,39 @@ describe('visibility', () => {
   });
 });
 
+describe('every admin owns his own agents and users', () => {
+  it('a normal admin sees himself, his agents and their users, nobody else; the super admin sees everyone', async () => {
+    const ids = async (as) => (await (await call('GET', '/users', as)).json()).users.map((u) => u.id).sort();
+    expect(await ids(ADMIN)).toEqual(['admin-1', 'agent-1', 'user-1']);
+    expect(await ids(['admin-2', 'ADMIN'])).toEqual(['admin-2', 'agent-2', 'user-2']);
+    const all = await ids(SUPER);
+    for (const id of ['super-1', 'admin-1', 'admin-2', 'agent-1', 'agent-2', 'user-1', 'user-2']) expect(all).toContain(id);
+  });
+  it('an admin cannot touch another admin\'s agent, user or ticket (404), but can touch his own', async () => {
+    expect((await call('POST', '/agents/agent-2/credit', ADMIN, { amount: 5 })).status).toBe(404);
+    expect((await call('POST', '/agents/agent-2/debit', ADMIN, { amount: 5 })).status).toBe(404);
+    expect((await call('PATCH', '/agents/agent-2/commission', ADMIN, { commissionRate: 5 })).status).toBe(404);
+    expect((await call('GET', '/agents/agent-2/performance', ADMIN)).status).toBe(404);
+    expect((await call('POST', '/users/user-2/credit', ADMIN, { amount: 5 })).status).toBe(404);
+    expect((await call('POST', '/users/user-2/reset-password', ADMIN, { password: 'newpass1' })).status).toBe(404);
+    expect((await call('DELETE', '/users/user-2', ADMIN)).status).toBe(404);
+    mocks.bets.set('bet-other', { id: 'bet-other', user_id: 'user-2', stake: 5, potential_return: 10, status: 'PENDING' });
+    expect((await call('POST', '/bets/bet-other/cancel', ADMIN)).status).toBe(404);
+    expect(mocks.bets.has('bet-other')).toBe(true);
+    expect((await call('POST', '/users/user-1/credit', ADMIN, { amount: 5 })).status).toBe(200); // his own
+  });
+  it('only the super admin hands an agent (with his users) over to another admin', async () => {
+    expect((await call('PATCH', '/agents/agent-1/admin', ADMIN, { adminId: 'admin-2' })).status).toBe(403);
+    expect((await call('PATCH', '/agents/agent-1/admin', SUPER, { adminId: 'user-1' })).status).toBe(400); // not an admin
+    expect((await call('PATCH', '/agents/agent-1/admin', SUPER, { adminId: 'admin-2' })).status).toBe(200);
+    const ids = async (as) => (await (await call('GET', '/users', as)).json()).users.map((u) => u.id).sort();
+    expect(await ids(['admin-2', 'ADMIN'])).toEqual(['admin-2', 'agent-1', 'agent-2', 'user-1', 'user-2']);
+    expect(await ids(ADMIN)).toEqual(['admin-1']);
+    expect((await call('PATCH', '/agents/agent-1/admin', SUPER, { adminId: null })).status).toBe(200); // unowned again
+    expect(await ids(['admin-2', 'ADMIN'])).toEqual(['admin-2', 'agent-2', 'user-2']);
+  });
+});
+
 describe('credit', () => {
   it('an admin gives credit to a user, but never to an admin or to himself', async () => {
     expect((await call('POST', '/users/user-1/credit', ADMIN, { amount: 25 })).status).toBe(200);
@@ -142,11 +188,13 @@ describe('admin accounts', () => {
     expect((await call('POST', '/admins', SUPER, { ...body, username: 'x', password: '123' })).status).toBe(400);
   });
   it('only the super admin deletes an admin; nobody deletes a super admin or himself', async () => {
-    expect((await call('DELETE', '/users/admin-2', ADMIN)).status).toBe(400);
-    expect((await call('DELETE', '/users/admin-2/force', ADMIN)).status).toBe(400);
+    expect((await call('DELETE', '/users/admin-2', ADMIN)).status).toBe(404); // another admin's account is not even visible to him
+    expect((await call('DELETE', '/users/admin-2/force', ADMIN)).status).toBe(404);
+    expect((await call('DELETE', '/users/admin-1', ADMIN)).status).toBe(404); // himself: not one of "his" rows, and an admin is never deleted by an admin
     expect((await call('DELETE', '/users/admin-1', SUPER)).status).toBe(200);
     expect((await call('DELETE', '/users/super-1', SUPER)).status).toBe(400);
-    expect((await call('DELETE', '/users/user-1', ['admin-2', 'ADMIN'])).status).toBe(200); // normal users: unchanged
+    expect((await call('DELETE', '/users/user-1', ['admin-2', 'ADMIN'])).status).toBe(404); // another admin's user
+    expect((await call('DELETE', '/users/user-2', ['admin-2', 'ADMIN'])).status).toBe(200); // his own user
   });
   it('an admin cannot reset another admin\'s password', async () => {
     expect((await call('POST', '/users/admin-2/reset-password', ADMIN, { password: 'newpass1' })).status).toBe(403);

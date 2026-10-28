@@ -6,6 +6,7 @@ import { diffOddsChanges } from '../oddsUtils.js';
 import { shouldRecordOddsHistory } from '../oddsHistoryPolicy.js';
 import { bump } from '../feedStats.js';
 import { pushOddsChanged } from '../ws.js';
+import { noteMatchChanged } from '../matchChanges.js';
 import { trackGame, noteMatchStatus, setLiveRow } from '../liveTracker.js';
 import { captureHalfTimeScore, captureRegularTimeScore } from '../halfTime.js';
 import { isHalfTimeLatched } from '../halfTimeLatch.js';
@@ -200,6 +201,8 @@ export async function upsertMatch(ev, league, status, liveScores, liveInfo, leag
       );
     }
 
+    // A new match, a status change (UPCOMING -> LIVE ...) or the first clock reading: tell the browsers (see matchChanges.js).
+    if (!unchanged && (!existing || existing.status !== eff.status || (existing.live_minute == null && eff.live_minute != null))) noteMatchChanged(ev.id);
     // Keep the in-memory view in step with what the row now holds.
     trackGame(ev.id);
     noteMatchStatus(ev.id, eff.status);

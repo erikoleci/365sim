@@ -9,6 +9,7 @@ import { buildLiveStatistics } from '../liveDetail.js';
 import { summarizeLiveHealth } from '../liveHealth.js';
 import { fetchMatchRowsPrioritized, PAGE_SIZE } from '../matchRows.js';
 import { readLiveCorners } from '../matchSettlement.js';
+import { getChangesSince } from '../matchChanges.js';
 
 const router = express.Router();
 
@@ -193,6 +194,32 @@ router.get('/', wrap(async (req, res) => {
   matchesResponseCache.set(cacheKey, { body, computedAt: Date.now() });
   res.json(body);
 }));
+
+// Only what changed since the browser's last look: a new match, a match that went live, a first clock reading.
+// The server pushes MATCHES_CHANGED over the WebSocket; the browser then asks for just those matches (a few KB)
+// instead of downloading the whole list again. since < 0 only reports the current position (no matches).
+const CHANGES_WINDOW_BACK_MS = 2 * 24 * 3600 * 1000;
+const CHANGES_WINDOW_FWD_MS = 21 * 24 * 3600 * 1000;
+router.get('/changes', wrap(async (req, res) => {
+  const info = getChangesSince(Number(req.query.since), String(req.query.boot || ''));
+  const reply = { boot: info.boot, seq: info.seq, full: info.full, matches: [] };
+  if (info.full || !info.ids.length) return res.json(reply);
+  const { rows } = await queryWithRetry(`SELECT ${MATCH_COLUMNS_LIST} FROM matches_cache WHERE id = ANY($1::text[])`, [info.ids]);
+  const now = Date.now();
+  for (const r of rows) {
+    const start = Date.parse(r.start_time);
+    const inWindow = r.status === 'LIVE' || (Number.isFinite(start) && start > now - CHANGES_WINDOW_BACK_MS && start < now + CHANGES_WINDOW_FWD_MS);
+    if (!inWindow) continue;
+    try { reply.matches.push(mapEventToMatch(r)); } catch (err) { console.error(`[matches] skipped unreadable changed row ${r && r.id}: ${err && err.message}`); }
+  }
+  res.json(reply);
+}));
+
+// The import is throttled (IMPORT_THROTTLE_MS) and used to start only when somebody asked for the list. With the
+// browsers now fed by pushes, nobody asks that often, so tick here: a new match gets imported (and pushed) on time.
+setInterval(() => {
+  try { Promise.resolve(ensureLondon365Import()).catch(() => {}); } catch { /* the throttle reports its own problems */ }
+}, 30000).unref?.();
 
 router.get('/live-health', wrap(async (_req, res) => {
   const { rows } = await queryWithRetry(

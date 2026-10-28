@@ -15,7 +15,7 @@ const mocks = vi.hoisted(function () {
   function reset() {
     users.clear();
     users.set('owner-1', { id: 'owner-1', username: 'owner', role: 'ADMIN', is_active: true, commission_rate: 0 });
-    users.set('agent-1', { id: 'agent-1', username: 'agent1', role: 'AGENT', is_active: true, commission_rate: 10 });
+    users.set('agent-1', { id: 'agent-1', username: 'agent1', role: 'AGENT', is_active: true, commission_rate: 10, admin_id: 'owner-1' });
     users.set('user-1', { id: 'user-1', username: 'user1', role: 'USER', is_active: true, agent_id: 'agent-1', commission_rate: 0 });
   }
   reset();
@@ -25,6 +25,10 @@ const mocks = vi.hoisted(function () {
     if (s.startsWith('SELECT id, role, is_active FROM users WHERE id = $1')) {
       const row = users.get(params[0]);
       return Promise.resolve({ rows: row ? [row] : [] });
+    }
+    if (s.startsWith(`SELECT id, admin_id FROM users WHERE id = $1 AND role = 'AGENT'`)) {
+      const row = users.get(params[0]);
+      return Promise.resolve({ rows: row?.role === 'AGENT' ? [{ id: row.id, admin_id: row.admin_id ?? null }] : [] });
     }
     if (s.startsWith(`SELECT id FROM users WHERE id = $1 AND role = 'AGENT'`)) {
       const row = users.get(params[0]);

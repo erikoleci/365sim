@@ -117,9 +117,9 @@ export const SORT_PRIORITY_COUNTRIES = PRIORITY_COUNTRIES.size
 // leagues — checked first in the priority comparator below.
 export const TOP_PRIORITY_COUNTRIES = new Set(['international', 'uefa', 'world', 'europe']);
 export const FULL_DETAIL = (process.env.LONDON365_FULL || '1') === '1';
-export const LIVE_INTERVAL_MS = Math.max(10000, Number(process.env.LONDON365_LIVE_INTERVAL_MS || 30000));
-export const IMPORT_THROTTLE_MS = Number(process.env.LONDON365_IMPORT_THROTTLE_MS || 600000);
-export const DETAIL_DELAY_MS = Math.max(0, Number(process.env.LONDON365_DETAIL_DELAY_MS || 150));
+export const LIVE_INTERVAL_MS = Math.max(10000, Number(process.env.LONDON365_LIVE_INTERVAL_MS || 10000));
+export const IMPORT_THROTTLE_MS = Number(process.env.LONDON365_IMPORT_THROTTLE_MS || 120000);
+export const DETAIL_DELAY_MS = Math.max(0, Number(process.env.LONDON365_DETAIL_DELAY_MS || 50));
 // How many games' detail fetches run in flight at once (each still paced by
 // its own DETAIL_DELAY_MS). Default 4 — a meaningful speedup over strictly
 // sequential without meaningfully raising per-provider request rate (this

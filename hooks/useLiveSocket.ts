@@ -123,12 +123,41 @@ export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadM
       });
     };
 
+    // New match / match went live / first clock reading: fetch ONLY those matches (a few KB) instead of the whole
+    // list. The first call just learns the server position; a restarted server or a big gap means one full reload.
+    let changesBoot = '';
+    let changesSeq = -1;
+    let changesBusy = false;
+    let changesAgain = false;
+    const mergeChanged = (current: Match[], incoming: Match[]): Match[] => {
+      const byId = new Map(incoming.map((m) => [m.id, m]));
+      const known = new Set(current.map((m) => m.id));
+      const merged = current.map((m) => byId.get(m.id) ?? m);
+      for (const m of incoming) if (!known.has(m.id)) merged.push(m);
+      return merged;
+    };
+    const syncChanges = async () => {
+      if (changesBusy) { changesAgain = true; return; }
+      changesBusy = true;
+      try {
+        do {
+          changesAgain = false;
+          const r = await api.fetchMatchChanges(changesSeq, changesBoot);
+          changesBoot = r.boot;
+          changesSeq = r.seq;
+          if (r.full) reloadMatches();
+          else if (r.matches.length) setMatches((current) => mergeChanged(current, r.matches));
+        } while (changesAgain && !cancelled);
+      } catch { /* the slow reload in useMatchesFeed is the safety net */ } finally { changesBusy = false; }
+    };
+
     const handleMessage = (msg: any) => {
       // One frame with the newest tick of many matches (server-side coalescing).
       if (msg.type === 'LIVE_TICKS' && Array.isArray(msg.ticks)) {
         for (const tick of msg.ticks) if (tick && tick.matchId) queueTick(tick);
         return;
       }
+      if (msg.type === 'MATCHES_CHANGED') { syncChanges(); return; }
       if (!msg.matchId) return;
       // Buffered ticks are older than this message: apply them first so a stale tick can never
       // overwrite what this message is about to set.
@@ -185,6 +214,7 @@ export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadM
         if (token) socket!.send(JSON.stringify({ type: 'auth', token }));
         socket!.send(JSON.stringify({ type: 'subscribe', topic: 'live' }));
         socket!.send(JSON.stringify({ type: 'subscribe', topic: 'odds' }));
+        syncChanges();
       };
       socket.onmessage = (event) => {
         lastMessageAt = Date.now();
