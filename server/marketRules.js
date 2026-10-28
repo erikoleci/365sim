@@ -117,7 +117,7 @@ export function classifyMarket(marketId, marketName, { home, away } = {}) {
   for (const prefix of TOTAL_GOALS_PREFIXES) {
     if (home && base === `${prefix} ${norm(home)}`) return { kind: 'team_totals', period, side: 'home' };
     if (away && base === `${prefix} ${norm(away)}`) return { kind: 'team_totals', period, side: 'away' };
-    if (['shtepiaku', 'vendasi', 'shtepise', 'home', 'host'].some((w) => base === `${prefix} ${w}`)) return { kind: 'team_totals', period, side: 'home' };
+    if (['pritesi', 'shtepiaku', 'vendasi', 'shtepise', 'home', 'host'].some((w) => base === `${prefix} ${w}`)) return { kind: 'team_totals', period, side: 'home' };
     if (['udhetuesi', 'mysafiri', 'mysafir', 'vizitori', 'vizitor', 'away', 'guest'].some((w) => base === `${prefix} ${w}`)) return { kind: 'team_totals', period, side: 'away' };
   }
   if (/\b(tek|odd)\b/.test(full) && /\b(cift|even)\b/.test(full)) return { kind: 'odd_even', period };

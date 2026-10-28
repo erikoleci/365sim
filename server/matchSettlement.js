@@ -64,7 +64,7 @@ function splitCombo(leg) {
 }
 
 // "Shtëpiaku" / "Udhëtuesi" are how the feed names the home / away side in team-total markets.
-const HOME_SIDE_WORDS = ['shtepiaku', 'vendasi', 'shtepise', 'home', 'host'];
+const HOME_SIDE_WORDS = ['pritesi', 'shtepiaku', 'vendasi', 'shtepise', 'home', 'host'];
 const AWAY_SIDE_WORDS = ['udhetuesi', 'mysafiri', 'mysafir', 'vizitori', 'vizitor', 'away', 'guest'];
 // "0-4", "2-3" (inclusive), "5+", "+5", "3" (exactly 3), "-2" (at most 2) -> [lo, hi]; anything else -> null
 function goalCountRange(selection) {
@@ -451,12 +451,19 @@ function sideOfSelection(leg) {
   const name = norm(leg.selection_name);
   if (id === 'HOME' || id === '1' || name === '1' || (leg.match_home && name === norm(leg.match_home))) return 'HOME';
   if (id === 'AWAY' || id === '2' || name === '2' || (leg.match_away && name === norm(leg.match_away))) return 'AWAY';
-  if (id === 'DRAW' || id === 'X' || name === 'x') return 'DRAW';
+  if (id === 'DRAW' || id === 'X' || name === 'x' || name === 'barazim' || name === 'draw') return 'DRAW';
   return null;
 }
 
 function parseHandicap(leg) {
-  const text = String(leg.selection_name || leg.selection_id || '');
+  // the board prints a missing point as "(undefined)": that is the same option as "1 -0.25"
+  const text = String(leg.selection_name || leg.selection_id || '').replace(/\s*\(\s*undefined\s*\)\s*$/i, '');
+  // "1 -0.25" / "2 +1": own side + its line (as in the asian handicap markets)
+  const plain = text.trim().match(/^([12])\s*([+-]?\d+(?:[.,]\d+)?)$/);
+  if (plain) {
+    const point = parseFloat(plain[2].replace(',', '.'));
+    return Math.abs(point * 4 - Math.round(point * 4)) > 1e-9 ? null : { side: plain[1] === '1' ? 'HOME' : 'AWAY', point };
+  }
   const m = text.trim().match(/^(.*?)\s*\(\s*([+-]?\d+(?:[.,]\d+)?)\s*\)\s*$/);
   if (!m) return null;
   const point = parseFloat(m[2].replace(',', '.'));

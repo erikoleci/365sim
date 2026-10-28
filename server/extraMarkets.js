@@ -14,6 +14,7 @@ const norm = (s) => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,
 const fin = (v) => (v == null || v === '' ? NaN : Number(v));
 
 const resultOf = (h, a) => (h > a ? '1' : h < a ? '2' : 'X');
+const WORD_RESULT = { home: '1', draw: 'X', away: '2' };
 const won = (b) => (b ? 'WON' : 'LOST');
 const yesNo = (sel) => (/^(po|yes|gol)$/.test(sel) ? true : /^(jo|no|jogol)$/.test(sel) ? false : null);
 
@@ -206,6 +207,12 @@ const RULES = [
   // ("1/1 & 3", "2-X/0-1", "1-1 2+"): all three must be right.
   [/^halftime\/fulltime & exact goals$/, (m, sel, c) => {
     const s = finalScore(c); const h = halves(c); if (!s || !h) return null;
+    // The feed's own spelling: "<goals> <half-time>/<full-time>" with words: "0 Draw/Draw", "1 Draw/Home", "3+ Home/Home"
+    const w = sel.match(/^(\d+)(\+?)\s+(home|draw|away)\s*\/\s*(home|draw|away)$/);
+    if (w) {
+      const total = s.home + s.away; const n = Number(w[1]);
+      return won(resultOf(h.h1.home, h.h1.away) === WORD_RESULT[w[3]] && resultOf(s.home, s.away) === WORD_RESULT[w[4]] && (w[2] ? total >= n : total === n));
+    }
     // "1/1 & 3", "2-X/0-1", "1-1 2+", "x-2/+3": the pair first, then the goal count in any accepted spelling
     const o = sel.match(/^([1x2])\s*[-\/]\s*([1x2])\s*(?:&|\/|_|-|\s)\s*(.+)$/);
     const r = o && rangeOf(o[3]);
@@ -215,6 +222,9 @@ const RULES = [
   // "RP1/RP2 & Gol/JoGol": result of the first half, result of the second half, and both teams to score.
   [/^rp1\/rp2 & gol\/jogol$/, (m, sel, c) => {
     const s = finalScore(c); const h = halves(c); if (!s || !h) return null;
+    // The feed's options are "GG / JG": both teams score in the first half (GG) or not (JG), then the same for the second half
+    const gg = sel.match(/^(gg|jg)\s*\/\s*(gg|jg)$/);
+    if (gg) return won((h.h1.home > 0 && h.h1.away > 0) === (gg[1] === 'gg') && (h.h2.home > 0 && h.h2.away > 0) === (gg[2] === 'gg'));
     const o = sel.match(/^([1x2])\s*[-\/]\s*([1x2])\s*(?:&|\/|_|-|\s)\s*(gol|jogol)$/);
     if (!o) return null;
     return won(resultOf(h.h1.home, h.h1.away) === o[1].toUpperCase() && resultOf(h.h2.home, h.h2.away) === o[2].toUpperCase() && (s.home > 0 && s.away > 0) === (o[3] === 'gol'));
@@ -227,6 +237,32 @@ const RULES = [
     if (!Number.isFinite(h) || !Number.isFinite(a) || h < 0 || a < 0) return null;
     const n = m[1] === 'home' ? h : m[1] === 'away' ? a : h + a;
     return won((n > 0) === y);
+  }],
+
+  // "Dopio Shans & Gol/JGol": options "X2_Gol", "1X_JoGol": the double chance and both teams to score.
+  [/^dopio shans & gol\/j(?:o)?gol$/, (m, sel, c) => {
+    const s = finalScore(c); const p = sel.match(/^(1x|x2|12)_(gol|jogol)$/); if (!s || !p) return null;
+    return won(dcWon(p[1], resultOf(s.home, s.away)) === 'WON' && (s.home > 0 && s.away > 0) === (p[2] === 'gol'));
+  }],
+  // "Double chance (match) & 1st half both teams score": "HomeDraw / Yes": the double chance is read on the
+  // final result, both teams to score on the named half.
+  [/^double chance \(match\) & (1st|2nd) half both teams score$/, (m, sel, c) => {
+    const s = finalScore(c); const h = halves(c); if (!s || !h) return null;
+    const p = sel.replace(/\s+/g, '').match(/^(homedraw|drawhome|awaydraw|drawaway|homeaway|awayhome)\/(yes|no)$/);
+    if (!p) return null;
+    const dc = /home/.test(p[1]) && /draw/.test(p[1]) ? '1X' : /away/.test(p[1]) && /draw/.test(p[1]) ? 'X2' : '12';
+    const part = m[1] === '1st' ? h.h1 : h.h2;
+    return won(dc.includes(resultOf(s.home, s.away)) && (part.home > 0 && part.away > 0) === (p[2] === 'yes'));
+  }],
+  // "Home no bet" / "Away no bet": the named side's win refunds the stake; the options are the other two
+  // results ("Away no bet": 1 or X), which win when they happen and lose otherwise.
+  [/^(home|away) no bet$/, (m, sel, c) => {
+    const s = finalScore(c); if (!s || !/^[12x]$/.test(sel)) return null;
+    const refunded = m[1] === 'home' ? '1' : '2';
+    const res = resultOf(s.home, s.away);
+    // The refunded side itself is not an option on the board; kept as the plain draw-no-bet reading it always had.
+    if (sel.toUpperCase() === refunded) return res === 'X' ? 'VOID' : won(res === refunded);
+    return res === refunded ? 'VOID' : won(sel.toUpperCase() === res);
   }],
 
   // ---- bookings (see the note at COUNT_SCHEMES) ----

@@ -51,6 +51,21 @@ Një opsion nuk mbetet më pezull vetëm sepse është shkruar ndryshe. Çdo for
 
 Rregulla të sigurisë: një numër i vetëm (`1`, `2`) te një treg anësor (p.sh. "cila skuadër ka më shumë korne") nuk lexohet kurrë si numër; `Mbi 9` mbetet vijë Lart/Poshtë, jo numër. Ç'nuk njihet kthehet pezull si më parë.
 
+## A3. Etiketat e vërteta të tabelës (nga raporti i tregjeve) që mbeteshin pezull
+
+| Tregu | Opsionet | Leximi |
+|---|---|---|
+| Rezultat Final | `Barazim` | barazim (më parë njihej vetëm `X`/`DRAW`) |
+| Numri i Golave Pritesi | `Lart 1.5`... | gola të shtëpiakut (më parë vetëm Udhëtuesi funksiononte) |
+| Handikap | `1 -0.25`, `2 +1`, `... (undefined)` | ekipi i vet + vija e tij |
+| Home no bet / Away no bet | `X`, `2` / `1`, `X` | fitorja e ekipit të emërtuar rimburson; dy opsionet e tjera fitojnë ose humbin |
+| Halftime/fulltime & exact goals | `0 Draw/Draw`, `1 Draw/Home`, `3+ Home/Home` | gola saktësisht N (ose N+), rezultati në pushim / në fund |
+| Double chance (match) & 1st / 2nd half both teams score | `HomeDraw / Yes` | dopio shans mbi rezultatin final dhe Gol/JoGol në atë pjesë |
+| RP1/RP2 & Gol/JoGol | `GG / JG` | të dy shënojnë në pjesën 1 (GG) ose jo (JG), pastaj e njëjta për pjesën 2 |
+| Dopio Shans & Gol/JGol | `X2_Gol`, `1X_JoGol` | dopio shans dhe Gol/JoGol në ndeshje |
+
+**Ende pa rregull të sigurt** (leximi nuk është konfirmuar, mbeten pezull): `Overtime & goal`, `Rezultat Final me Kartona` dhe `Rezultat i P1 me kartona` (opsionet janë vetëm 1/X/2, jo "1 & Lart 3.5" siç pritej).
+
 ## B. Vijat aziatike (pagesa e plotë) — implementuar + testuar + prova me Postgres
 
 Handikap Aziatik (ndeshje, pjesa 1, pjesa 2), Handikap - Pjesa 1, Lart/Poshtë Gola Aziatikë (ndeshje, pjesa 1, pjesa 2), si dhe tregu i zakonshëm Handikap.

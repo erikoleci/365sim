@@ -144,3 +144,64 @@ describe('combinations with a double chance', () => {
     ['Dopio Shans & Numri i Golave', 'x2 & -2', 'LOST'], ['Dopio Shans dhe Numri i Golave', 'x2 / 2-3', 'WON'],
   ])('%s | %s -> %s', (market, sel, expected) => expect(determineLegOutcome(leg(market, sel), c)).toBe(expected));
 });
+
+// ---- option labels exactly as the live board prints them (from the market report) ----
+describe('real feed labels that used to stay PENDING', () => {
+  const L = (market_name, sel) => ({ market_id: 'x_m1', market_name, selection_id: sel, selection_name: sel, match_home: 'SS Lazio', match_away: 'FC Sudtirol Bolzano' });
+  const run = (market, sel, ht, ft) => determineLegOutcome(L(market, sel), ctxOf(ht, ft));
+
+  it('Rezultat Final | Barazim', () => {
+    expect(run('Rezultat Final', 'Barazim', [0, 0], [1, 1])).toBe('WON');
+    expect(run('Rezultat Final', 'Barazim', [0, 0], [2, 1])).toBe('LOST');
+  });
+
+  it('Numri i Golave Pritesi (home) like Udhetuesi (away)', () => {
+    expect(run('Numri i Golave Pritesi', 'Lart 1.5', [0, 0], [2, 0])).toBe('WON');
+    expect(run('Numri i Golave Pritesi', 'Poshte 1.5', [0, 0], [2, 0])).toBe('LOST');
+    expect(run('Numri i Golave Udhetuesi', 'Lart 0.5', [0, 0], [2, 0])).toBe('LOST');
+  });
+
+  it('plain Handikap "1 -0.5" / "2 +1" / "(undefined)"', () => {
+    expect(run('Handikap', '1 -0.5', [0, 0], [1, 0])).toBe('WON');
+    expect(run('Handikap', '1 -0.5 (undefined)', [0, 0], [0, 0])).toBe('LOST');
+    expect(run('Handikap', '2 -0.5', [0, 0], [0, 1])).toBe('WON');
+    expect(run('Handikap', '2 +1', [0, 0], [1, 1])).toBe('WON');
+    expect(run('Handikap', '1 -1', [0, 0], [1, 0])).toBe('VOID');
+  });
+
+  describe('Home / Away no bet: the named side winning refunds', () => {
+    it.each([
+      ['Away no bet', '1', [2, 0], 'WON'], ['Away no bet', '1', [1, 1], 'LOST'], ['Away no bet', '1', [0, 1], 'VOID'],
+      ['Away  no bet', 'X', [1, 1], 'WON'], ['Away no bet', 'X', [2, 0], 'LOST'], ['Away no bet', 'X', [0, 3], 'VOID'],
+      ['Home  no bet', 'X', [0, 0], 'WON'], ['Home no bet', 'X', [0, 2], 'LOST'], ['Home no bet', 'X', [2, 0], 'VOID'],
+      ['Home no bet', '2', [0, 2], 'WON'], ['Home no bet', '2', [1, 1], 'LOST'], ['Home no bet', '2', [3, 0], 'VOID'],
+    ])('%s | %s at %j -> %s', (market, sel, ft, expected) => expect(run(market, sel, [0, 0], ft)).toBe(expected));
+  });
+
+  describe('Halftime/fulltime & exact goals "1 Draw/Home"', () => {
+    it.each([
+      ['0 Draw/Draw', [0, 0], [0, 0], 'WON'], ['1 Draw/Home', [0, 0], [1, 0], 'WON'], ['1 Draw/Home', [0, 0], [2, 0], 'LOST'],
+      ['1 Home/Home', [1, 0], [1, 0], 'WON'], ['1 Draw/Away', [0, 0], [0, 1], 'WON'], ['1 Draw/Away', [0, 1], [0, 1], 'LOST'],
+      ['3+ Home/Home', [1, 0], [3, 0], 'WON'], ['3+ Home/Home', [1, 0], [2, 0], 'LOST'],
+    ])('%s | ht %j ft %j -> %s', (sel, ht, ft, expected) => expect(run('Halftime/fulltime & exact goals', sel, ht, ft)).toBe(expected));
+  });
+
+  describe('Double chance (match) & 1st / 2nd half both teams score', () => {
+    // 0-0 at the break, 2-2 final: second half 2-2 (both scored), first half none
+    it.each([
+      ['1st', 'HomeDraw / Yes', 'LOST'], ['1st', 'HomeDraw / No', 'WON'], ['1st', 'HomeAway / No', 'LOST'], ['1st', 'HomeAway / Yes', 'LOST'],
+      ['2nd', 'HomeDraw / Yes', 'WON'], ['2nd', 'HomeDraw / No', 'LOST'], ['2nd', 'HomeAway / Yes', 'LOST'], ['2nd', 'DrawAway / Yes', 'WON'],
+    ])('%s half | %s -> %s', (half, sel, expected) => expect(run(`Double chance (match) & ${half} half both teams score`, sel, [0, 0], [2, 2])).toBe(expected));
+  });
+
+  describe('RP1/RP2 & Gol/JoGol with GG / JG', () => {
+    // first half 1-1 (both scored), second half 0-1 (not both) -> GG / JG
+    it.each([['GG / JG', 'WON'], ['GG / GG', 'LOST'], ['JG / GG', 'LOST'], ['JG/ JG', 'LOST']])('%s -> %s', (sel, expected) =>
+      expect(run('RP1/RP2 & Gol/JoGol', sel, [1, 1], [1, 2])).toBe(expected));
+  });
+
+  describe('Dopio Shans & Gol/JGol "X2_Gol"', () => {
+    it.each([['X2_Gol', [1, 1], 'WON'], ['X2_JoGol', [0, 2], 'WON'], ['1X_Gol', [2, 2], 'WON'], ['1X_JoGol', [2, 0], 'WON'], ['12_Gol', [1, 1], 'LOST'], ['X2_Gol', [2, 0], 'LOST']])(
+      '%s at %j -> %s', (sel, ft, expected) => expect(run('Dopio Shans & Gol/JGol', sel, [0, 0], ft)).toBe(expected));
+  });
+});
