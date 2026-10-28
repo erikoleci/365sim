@@ -10,7 +10,7 @@ import { forgetLiveState } from '../london365GameDetails.js';
 import { unsubscribeGameDetails } from '../london365Socket.js';
 import { canSettleFromLiveScore, settleMatch, explainSettleBlock } from '../matchSettlement.js';
 import { LIVE_INTERVAL_MS, ENABLED, DETAIL_DELAY_MS, sleep, SPORTS_RAW } from './config.js';
-import { ensureMarketNamesLoaded, fetchLiveRows, parseOddString, hydrateRowNames, buildEvent } from './markets.js';
+import { ensureMarketNamesLoaded, fetchLiveRows, parseOddString, usableLiveOdds, buildEvent } from './markets.js';
 import { resolveSports, api } from './api.js';
 import { leagueById, resolveLeagueByName } from './leagueRegistry.js';
 import { isAllowedByCountryFilter } from './leagueRules.js';
@@ -219,7 +219,7 @@ export async function syncLondon365LiveOnce() {
           }
         }
         if (!rows.length) rows = parseOddString(g.odd);
-        const odds = hydrateRowNames(rows.filter(function (o) { return o ? !Number.isNaN(o.coef) : false; }));
+        const odds = usableLiveOdds(rows, g.odd);
         // A live match whose markets are all locked/suspended has NO odds rows
         // (the site shows padlocks). It used to be skipped here, so its score,
         // clock and status froze at the first value. Only skip when there is

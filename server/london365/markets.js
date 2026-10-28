@@ -22,6 +22,15 @@ export function parseOddString(s) {
     };
   }).filter(Boolean);
 }
+// Odds of a live game: the detail rows when they carry any usable coefficient, else the packed odds
+// of the list (placeholders of 1.00 = locked are not offered). The detail endpoint sometimes answers
+// with a single empty row for a game whose list still carries real prices (observed: 2.1 / 4 / 2.875
+// in the list, "detail rows=1" and no odds at all on the site).
+export function usableLiveOdds(rows, packed) {
+  const fromRows = hydrateRowNames((rows || []).filter(function (o) { return o ? !Number.isNaN(o.coef) : false; }));
+  if (fromRows.length) return fromRows;
+  return hydrateRowNames(parseOddString(packed).filter(function (o) { return o.coef > 1; }));
+}
 // Decode the HTML entities the provider embeds in market names. Built with
 // String.fromCharCode so no raw ampersand appears in this source file.
 export function decodeMarketName(s) {
