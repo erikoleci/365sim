@@ -8,6 +8,7 @@
 // is guessed: a missing half-time score / counter, an unknown option or a quarter line gives null.
 
 import { asianHandicapOutcome, asianTotalOutcome } from './asianLines.js';
+import { parseCountSelection, parseDoubleChance } from './selectionParse.js';
 
 const norm = (s) => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 const fin = (v) => (v == null || v === '' ? NaN : Number(v));
@@ -28,17 +29,16 @@ function ouOutcome(o, value) {
   if (value === o.line) return 'VOID';
   return won(o.over ? value > o.line : value < o.line);
 }
-function rangeOf(sel) {
-  let m = sel.match(/^(\d+)\s*[-\u2013]\s*(\d+)$/);
-  if (m) return [Number(m[1]), Number(m[2])];
-  m = sel.match(/^(\d+)\s*\+$/);
-  if (m) return [Number(m[1]), Infinity];
-  m = sel.match(/^(\d+)$/);
-  return m ? [Number(m[1]), Number(m[1])] : null;
-}
+// "2-3", "5+", "+5", "3" (exactly 3), "-2" (at most 2) -> [lo, hi] | null
+const rangeOf = (sel) => parseCountSelection(sel);
 const inRange = (v, r) => !!r && Number.isFinite(v) && v >= r[0] && v <= r[1];
 const scoreOf = (t) => { const m = t.match(/^(\d+)\s*[:-]\s*(\d+)$/); return m ? [Number(m[1]), Number(m[2])] : null; };
-const dcWon = (set, res) => (/^(1x|x2|12|1|x|2)$/.test(set) ? won(set.toUpperCase().includes(res)) : null);
+// A 1 / X / 2 or a double chance ("1x", "x-2", "Barazim ose 2", "Alpha ose Barazim") against a result.
+const dcWon = (sel, res, leg) => {
+  if (/^[12x]$/.test(sel)) return won(sel.toUpperCase() === res);
+  const dc = parseDoubleChance(sel, { home: leg && leg.match_home, away: leg && leg.match_away });
+  return dc ? won(dc.includes(res)) : null;
+};
 
 function halves(c) {
   const { homeScore: fh, awayScore: fa, htHome, htAway } = c;
@@ -141,9 +141,9 @@ const RULES = [
   [/^tek\/cift pjesa e ([12])\w*$/, (m, sel, c) => { const p = half(c, m[1]); if (!p || !/^(tek|cift)$/.test(sel)) return null; return won(((p.home + p.away) % 2 === 1) === (sel === 'tek')); }],
 
   // ---- results ----
-  [/^(home|away|any team) to win$/, (m, sel, c) => { const s = finalScore(c); return s ? dcWon(sel, resultOf(s.home, s.away)) : null; }],
-  [/^dopio shans - pjesa ([12])\w*$/, (m, sel, c) => { const p = half(c, m[1]); return p ? dcWon(sel, resultOf(p.home, p.away)) : null; }],
-  [/^dopio ?shans live$/, (m, sel, c) => { const s = finalScore(c); return s ? dcWon(sel, resultOf(s.home, s.away)) : null; }],
+  [/^(home|away|any team) to win$/, (m, sel, c, leg) => { const s = finalScore(c); return s ? dcWon(sel, resultOf(s.home, s.away), leg) : null; }],
+  [/^dopio shans - pjesa ([12])\w*$/, (m, sel, c, leg) => { const p = half(c, m[1]); return p ? dcWon(sel, resultOf(p.home, p.away), leg) : null; }],
+  [/^dopio ?shans live$/, (m, sel, c, leg) => { const s = finalScore(c); return s ? dcWon(sel, resultOf(s.home, s.away), leg) : null; }],
   [/^rezultati i pjeses se dyte$/, (m, sel, c) => { const p = half(c, 2); return p && /^[1x2]$/.test(sel) ? won(resultOf(p.home, p.away) === sel.toUpperCase()) : null; }],
   [/^(barazim|fiton pritesi|fiton udhetuesi) ose (0-2 ?gola|3\+|gol\/jogol)$/, (m, sel, c) => {
     const s = finalScore(c); const y = yesNo(sel); if (!s || y === null) return null;
@@ -153,10 +153,11 @@ const RULES = [
     const second = m[2] === '3+' ? total >= 3 : m[2] === 'gol/jogol' ? s.home > 0 && s.away > 0 : total <= 2;
     return won((first || second) === y);
   }],
-  [/^dopio shans me kombinime$/, (m, sel, c) => {
-    const s = finalScore(c); const p = sel.match(/^(1x|x2|12)_(.+)$/); if (!s || !p) return null;
+  // "1X_0-1", "x2_+3", "X2 & 3+", "1x/2-3": the double chance and the goal range must both hold.
+  [/^dopio shans me kombinime$/, (m, sel, c, leg) => {
+    const s = finalScore(c); const p = sel.match(/^(1x|x1|x2|2x|12|21)\s*(?:_|&|\/|\+|-|\bdhe\b|\s)\s*(.+)$/); if (!s || !p) return null;
     const r = rangeOf(p[2]); if (!r) return null;
-    return won(dcWon(p[1], resultOf(s.home, s.away)) === 'WON' && inRange(s.home + s.away, r));
+    return won(dcWon(p[1], resultOf(s.home, s.away), leg) === 'WON' && inRange(s.home + s.away, r));
   }],
   [/^rezultat final\/gol-jo gol$/, (m, sel, c) => {
     const s = finalScore(c); const p = sel.match(/^([1x2])\/(gol|jogol)$/); if (!s || !p) return null;
@@ -205,8 +206,9 @@ const RULES = [
   // ("1/1 & 3", "2-X/0-1", "1-1 2+"): all three must be right.
   [/^halftime\/fulltime & exact goals$/, (m, sel, c) => {
     const s = finalScore(c); const h = halves(c); if (!s || !h) return null;
-    const o = sel.match(/^([1x2])\s*[-\/]\s*([1x2])\s*(?:&|\/|_|-|\s)\s*(\d+(?:\s*-\s*\d+|\s*\+)?)$/);
-    const r = o && rangeOf(o[3].replace(/\s+/g, ''));
+    // "1/1 & 3", "2-X/0-1", "1-1 2+", "x-2/+3": the pair first, then the goal count in any accepted spelling
+    const o = sel.match(/^([1x2])\s*[-\/]\s*([1x2])\s*(?:&|\/|_|-|\s)\s*(.+)$/);
+    const r = o && rangeOf(o[3]);
     if (!o || !r) return null;
     return won(resultOf(h.h1.home, h.h1.away) === o[1].toUpperCase() && resultOf(s.home, s.away) === o[2].toUpperCase() && inRange(s.home + s.away, r));
   }],

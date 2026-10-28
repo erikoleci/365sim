@@ -34,6 +34,23 @@ Gjendja e secilit treg nga raporti i adminit ("Tregjet"). Katër nivele, sipas k
 | Godet kornen e parë / të fundit; Merr kartonin e parë | renditja e ngjarjeve, vetëm kur numri i ngjarjeve përputhet me numëruesin dhe nuk ka barazim kohe |
 | Home/Away/Draw or any clean sheet | **Yes = rezultati OR ndonjëra skuadër pa pësuar gol; No = e kundërta** (sipas specifikimit; i pa verifikuar me feed) |
 
+## A2. Formatet e opsioneve që lexohen (një parser i përbashkët: `server/selectionParse.js`)
+
+Një opsion nuk mbetet më pezull vetëm sepse është shkruar ndryshe. Çdo format më poshtë jep gjithmonë fitore ose humbje (testet në `tests/selectionFormats.test.js` kalojnë mbi 10 000 kombinime):
+
+| Familja | Formatet e pranuara | Kuptimi |
+|---|---|---|
+| Numër (gola, korne, karton) | `10+`, `+10`, `10 +`, `>=10`, `10 e më shumë`, `10 or more`, `3+ gola` | të paktën 10 |
+| | `9` (te tregjet "Shuma / Totali / Numri") | saktësisht 9 |
+| | `0-8`, `2 – 3`, `2 deri 3` | nga-deri (përfshirë skajet) |
+| | `-8`, `8-`, `<=8`, `8 e më pak`, `max 8` | më së shumti 8 |
+| Dopio Shans | `X2`, `x2`, `2X`, `x-2`, `x/2`, `Barazim ose 2`, `Fiton Udhëtuesi ose Barazim`, `Beta ose Barazim`, `Alpha_or_Draw` | barazim ose fiton ekipi i dytë (analoge për `1X` dhe `12`) |
+| 45/90 (pushim/fund) | `x-2`, `X/2`, `x 2`, `x\|2`, `Barazim/2` | rezultati në minutën 45 dhe rezultati në minutën 90 |
+| 45/90 + gola | `x-2/+3`, `x-2/3+`, `x/2/+3`, `x-2 & 3 e më shumë` në tregjet `45/90 & Numri i Golave`, `& Gola`, `& Totali`, `dhe Numri i Golave`, `45/90 Pjesë Gola` | `x` në pushim, `2` në fund dhe 3 ose më shumë gola gjithsej |
+| Dopio Shans + gola | `x2_3+`, `x2_+3`, `X2 & 3+`, `1x/2-3` | të dyja kushtet duhet të plotësohen |
+
+Rregulla të sigurisë: një numër i vetëm (`1`, `2`) te një treg anësor (p.sh. "cila skuadër ka më shumë korne") nuk lexohet kurrë si numër; `Mbi 9` mbetet vijë Lart/Poshtë, jo numër. Ç'nuk njihet kthehet pezull si më parë.
+
 ## B. Vijat aziatike (pagesa e plotë) — implementuar + testuar + prova me Postgres
 
 Handikap Aziatik (ndeshje, pjesa 1, pjesa 2), Handikap - Pjesa 1, Lart/Poshtë Gola Aziatikë (ndeshje, pjesa 1, pjesa 2), si dhe tregu i zakonshëm Handikap.

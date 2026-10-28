@@ -27,6 +27,10 @@ import { normMarketText as norm, splitPeriod, PERIOD_BASE_ALIASES, isPastFirstHa
 // what each market is, so these sets live in exactly one place.
 // 'totali' / 'total' are the short names used inside combination markets ("Rezultat Final & Totali").
 export const TOTAL_GOALS_PREFIXES = ['numri i golave ne ndeshje', 'numri i golave', 'totali i golave', 'total goals', 'golat ne ndeshje', 'totali', 'total'];
+// Other names the feed uses for "how many goals in the match" (options "0-1", "2-3", "4+", "+3", "3" ...).
+// Kept apart from TOTAL_GOALS_PREFIXES: that list is also used as a prefix for team-total names, and a
+// bare "gola" prefix would swallow unrelated names such as "Gola i pare ne pjesen e pare".
+export const GOAL_COUNT_ALIASES = new Set(['gola', 'golat', 'gola totale', 'golat totale', 'numri total i golave', 'shuma e golave', 'shuma totale e golave', 'sasia e golave', 'sasia e golave ne ndeshje', 'total gola', 'goals', 'match goals']);
 export const H2H_NAMES = new Set(['rezultat final', 'rezultati final', '1x2', 'rezultati i ndeshjes', 'fituesi i ndeshjes']);
 export const BTTS_NAMES = new Set(['gol/jogol', 'gol-jogol', 'gol / jogol', 'gol jo gol live', 'te dy skuadrat shenojne', 'both teams to score']);
 export const DOUBLE_CHANCE_NAMES = new Set(['dopioshans live', 'dopioshans', 'dopio shans', 'double chance', 'shans i dyfishte']);
@@ -109,7 +113,7 @@ export function classifyMarket(marketId, marketName, { home, away } = {}) {
   if (BTTS_NAMES.has(base)) return { kind: 'btts', period };
   if (DOUBLE_CHANCE_NAMES.has(base)) return { kind: 'double_chance', period };
   if (/\b(no bet|draw no bet)\b|barazimi = rimbursim|^fitore ?\/ ?fitore$/.test(full)) return { kind: 'dnb', period };
-  if (TOTAL_GOALS_PREFIXES.includes(base)) return { kind: 'totals', period };
+  if (TOTAL_GOALS_PREFIXES.includes(base) || GOAL_COUNT_ALIASES.has(base)) return { kind: 'totals', period };
   for (const prefix of TOTAL_GOALS_PREFIXES) {
     if (home && base === `${prefix} ${norm(home)}`) return { kind: 'team_totals', period, side: 'home' };
     if (away && base === `${prefix} ${norm(away)}`) return { kind: 'team_totals', period, side: 'away' };

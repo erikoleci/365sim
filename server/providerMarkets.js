@@ -40,8 +40,8 @@ const yesNo = (sel) => (/^(po|yes)$/.test(sel) ? true : /^(jo|no)$/.test(sel) ? 
 
 // goals of one team for "Nr-Gola": the option is "0 Gola", "1 Gol", "2 Gola", "3+ Gola"
 export function teamGoalsOption(sel) {
-  const m = String(sel || '').match(/^(\d+)(\+?)\s*gol/);
-  return m ? { n: Number(m[1]), plus: m[2] === '+' } : null;
+  const m = String(sel || '').match(/^(\+?)(\d+)(\+?)\s*gol/); // "3+ Gola" and "+3 Gola"
+  return m ? { n: Number(m[2]), plus: m[1] === '+' || m[3] === '+' } : null;
 }
 
 // ctx: { homeScore, awayScore, htHome, htAway, goalTimeline }

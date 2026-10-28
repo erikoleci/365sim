@@ -6,9 +6,10 @@ import { ticketOutcome } from './ticketOutcome.js';
 import {
   TOTAL_GOALS_PREFIXES, H2H_NAMES, BTTS_NAMES, DOUBLE_CHANCE_NAMES, CORRECT_SCORE_NAMES, HANDICAP_NAMES, parseOverUnder,
   STATS_UNDECIDABLE, EVENT_ORDER_RE, FIRST_TEAM_TO_SCORE_NAMES, LAST_TEAM_TO_SCORE_NAMES, FIRST_GOAL_NAMES, LAST_GOAL_NAMES, BOTH_HALVES_NAMES, GOAL_ORDER_NAMES, FIRST_GOAL_H1_NAMES,
-  nextEventKind, CORNER_ORDINALS, isCornerRace, parseCornerRaceOption,
+  nextEventKind, CORNER_ORDINALS, isCornerRace, parseCornerRaceOption, GOAL_COUNT_ALIASES,
 } from './marketRules.js';
 import { parseProviderMarket, providerOutcome, goalTimelineFromRows } from './providerMarkets.js';
+import { parseCountSelection, inCountRange, parseDoubleChance, parseHalfFull } from './selectionParse.js';
 
 // ---- first / second half markets ------------------------------------------
 // "Rezultati Pjesa e Parë", "Numri i Golave në Pjesën e Dytë", "1X2 1st Half" ...
@@ -26,16 +27,31 @@ const HTFT_NAMES = new Set(['45/90', '45 / 90', '45/90 min', '45/90 minuta', 'pu
 
 // "Rezultat Final & Totali" + "1 & Lart 2.5"  ->  two single legs. Only when market
 // and selection split into the same number (2-3) of parts, otherwise not a combo.
+// The same combination can be named "45/90 & Numri i Golave", "45/90 dhe Gola", "45/90 Pjese Gola",
+// "Pushim/Fund + Totali": rewritten to the "A & B" form so one rule reads them all.
+const HTFT_GOALS_NAME = /^(45\s*\/\s*90|pushim\s*\/\s*fund|ht\s*\/\s*ft)\s*(?:&|\+|dhe|e|-|\/)?\s*(?:pjese\s+)?(?:gola|golat|numri i golave|sasia e golave|totali|total)$/;
+function comboText(text) {
+  const t = String(text || '').replace(/&amp;/g, '&');
+  if (t.includes('&')) return t;
+  const n = norm(t);
+  const h = n.match(HTFT_GOALS_NAME);
+  if (h) return `${h[1].replace(/\s+/g, '')} & numri i golave`;
+  return t.replace(/\s+dhe\s+/gi, ' & '); // "A dhe B" is "A & B"
+}
 function splitCombo(leg) {
   // the provider sometimes sends the HTML entity ("Rezultat Final &amp; Totali")
-  const marketParts = String(leg.market_name || '').replace(/&amp;/g, '&').split(/\s*&\s*/);
-  const selection = String(leg.selection_name || leg.selection_id || '').replace(/&amp;/g, '&');
+  const marketParts = comboText(leg.market_name).split(/\s*&\s*/);
+  const selection = String(leg.selection_name || leg.selection_id || '').replace(/&amp;/g, '&').replace(/\s+dhe\s+/gi, ' & ');
   let selectionParts = selection.split(/\s*&\s*/);
   // Some markets write the parts of one combined selection with "/" instead of "&":
   // "Rezultat Final & Numri i Golave" -> "X/5+", "45/90 & Numri i Golave" -> "2-X/0-4".
   if (marketParts.length >= 2 && selectionParts.length !== marketParts.length) {
     const slashed = selection.split(/\s*\/\s*/);
     if (slashed.length === marketParts.length) selectionParts = slashed;
+    // "x/2/+3": the 45/90 pair itself is written with a slash, so the option splits in one part too many
+    else if (marketParts.length === 2 && slashed.length === 3 && HTFT_NAMES.has(norm(marketParts[0])) && /^[12x]$/i.test(slashed[0]) && /^[12x]$/i.test(slashed[1])) {
+      selectionParts = [`${slashed[0]}-${slashed[1]}`, slashed[2]];
+    }
   }
   if (marketParts.length < 2 || marketParts.length > 3 || marketParts.length !== selectionParts.length) return null;
   return marketParts.map((m, i) => ({
@@ -50,13 +66,9 @@ function splitCombo(leg) {
 // "Shtëpiaku" / "Udhëtuesi" are how the feed names the home / away side in team-total markets.
 const HOME_SIDE_WORDS = ['shtepiaku', 'vendasi', 'shtepise', 'home', 'host'];
 const AWAY_SIDE_WORDS = ['udhetuesi', 'mysafiri', 'mysafir', 'vizitori', 'vizitor', 'away', 'guest'];
-// "0-4", "2-3" (inclusive) or "5+" -> [lo, hi]; anything else -> null
+// "0-4", "2-3" (inclusive), "5+", "+5", "3" (exactly 3), "-2" (at most 2) -> [lo, hi]; anything else -> null
 function goalCountRange(selection) {
-  const t = norm(selection);
-  let m = t.match(/^(\d+)\s*[-\u2013\u2014]\s*(\d+)$/);
-  if (m) return [Number(m[1]), Number(m[2])];
-  m = t.match(/^(\d+)\s*\+$/);
-  return m ? [Number(m[1]), Infinity] : null;
+  return parseCountSelection(selection);
 }
 
 // "In which half will there be more corners / cards / goals": Pj1 | Pj2 | equal.
@@ -428,13 +440,9 @@ function overUnderOutcome(side, point, goals) {
   return null;
 }
 
-// "1X" / "x2" / "1-2" / "1/X" -> canonical "1X" | "X2" | "12" | null
-function normDoubleChance(text) {
-  const t = String(text ?? '').toUpperCase().replace(/[\s/\-_]/g, '');
-  if (t === '1X' || t === 'X1') return '1X';
-  if (t === 'X2' || t === '2X') return 'X2';
-  if (t === '12' || t === '21') return '12';
-  return null;
+// "1X" / "x2" / "1-2" / "1/X" / "Barazim ose 2" / "Alpha ose Barazim" / "Alpha_or_Draw" -> '1X' | 'X2' | '12' | null
+function normDoubleChance(text, leg) {
+  return parseDoubleChance(text, { home: leg && leg.match_home, away: leg && leg.match_away });
 }
 
 // Which side a "home / away" style selection refers to, or null.
@@ -469,6 +477,8 @@ function parseHandicap(leg) {
 // or undefined when we have no counters for the match -- then the leg stays PENDING.
 // cards = yellow + red per team (how the feed counts them); booking-points, "red card"
 // and first-half corner/card markets are NOT decided here (no data), they stay PENDING.
+const COUNT_MARKET = /\b(shuma|totali|total|numri|sasia|sakte|exact)\b/;
+const SIDE_MARKET = /1x2|\bfituesi\b|\bme shume\b|\bmore\b|\bcili\b|\bcila\b/;
 function statsOutcome(leg, marketName, stats, { home, away }) {
   const isCorners = /korn|corner/.test(marketName);
   const isCards = /karton|\bcards?\b|booking/.test(marketName);
@@ -488,12 +498,12 @@ function statsOutcome(leg, marketName, stats, { home, away }) {
   const text = norm(leg.selection_name || leg.selection_id);
   const ou = parseOverUnder(leg.selection_id) || parseOverUnder(leg.selection_name);
   if (ou) return overUnderOutcome(ou.side, ou.point, total);
-  let m = text.match(/^sakte\s+(\d+)$/); // "Sakte 10" = exactly 10 (Lart/Poshtë Korne Totali)
-  if (m) return total === Number(m[1]) ? 'WON' : 'LOST';
-  m = text.match(/^(\d+)\s*\+$/); // "5+" = at least 5
-  if (m) return total >= Number(m[1]) ? 'WON' : 'LOST';
-  m = text.match(/^(\d+)\s*[-\u2013]\s*(\d+)$/); // "3-5"
-  if (m) return total >= Number(m[1]) && total <= Number(m[2]) ? 'WON' : 'LOST';
+  const exact = text.match(/^(?:sakte|exact)\s+(\d+)$/); // "Sakte 10" = exactly 10 (Lart/Poshtë Korne Totali)
+  if (exact) return total === Number(exact[1]) ? 'WON' : 'LOST';
+  // "5+" / "+5" / "5 e me shume" (at least 5), "3-5", "-2" (at most 2). A bare "9" (exactly 9) is a count
+  // only in a total / exact-count market: in a side market the options "1" / "2" name a team.
+  const range = parseCountSelection(text);
+  if (range && (/^\d+$/.test(text) ? COUNT_MARKET.test(rest) && !SIDE_MARKET.test(rest) : true)) return inCountRange(total, range) ? 'WON' : 'LOST';
   if ((kind === 'red' || kind === 'yellow') && /^(po|yes|jo|no)$/.test(text)) { // "Karton i kuq" Po/Jo
     const yes = text === 'po' || text === 'yes';
     return (total > 0) === yes ? 'WON' : 'LOST';
@@ -505,12 +515,7 @@ function statsOutcome(leg, marketName, stats, { home, away }) {
 // least 6 in the second (each side is "N+" or "N-M"). Needs the half-time counter snapshot.
 function cornersP1P2Outcome(leg, stats, htStats) {
   const text = norm(leg.selection_name || leg.selection_id);
-  const part = (t) => {
-    let m = t.trim().match(/^(\d+)\s*\+$/);
-    if (m) return [Number(m[1]), Infinity];
-    m = t.trim().match(/^(\d+)\s*[-\u2013\u2014]\s*(\d+)$/);
-    return m ? [Number(m[1]), Number(m[2])] : null;
-  };
+  const part = (t) => parseCountSelection(t);
   const halves = text.split('|');
   if (halves.length !== 2) return null;
   const r1 = part(halves[0]); const r2 = part(halves[1]);
@@ -575,10 +580,10 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
 
   // ---- half-time / full-time double: "Pushim/Fund" -> "1/2" ----
   if (HTFT_NAMES.has(marketName)) {
-    const m = String(leg.selection_name || leg.selection_id).trim().toLowerCase().match(/^([12x])\s*[\/-]\s*([12x])$/);
+    const m = parseHalfFull(leg.selection_name || leg.selection_id, { home: leg.match_home, away: leg.match_away });
     if (!m || !hasScore || !Number.isFinite(htHome) || !Number.isFinite(htAway)) return null;
     const sign = (h, a) => (h > a ? '1' : a > h ? '2' : 'x');
-    return sign(htHome, htAway) === m[1] && sign(homeScore, awayScore) === m[2] ? 'WON' : 'LOST';
+    return sign(htHome, htAway) === m[0] && sign(homeScore, awayScore) === m[1] ? 'WON' : 'LOST'; // m = [half-time, full-time]
   }
 
   // First goal of the first half: no goal before the break -> "None 1"; otherwise the first goal of the
@@ -708,7 +713,7 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
   }
 
   if (DOUBLE_CHANCE_NAMES.has(marketName) || marketId.endsWith('-double_chance')) {
-    const dc = normDoubleChance(leg.selection_id) || normDoubleChance(leg.selection_name);
+    const dc = normDoubleChance(leg.selection_name, leg) || normDoubleChance(leg.selection_id, leg);
     if (!dc) return null;
     const ok = dc === '1X' ? winner !== 'AWAY' : dc === 'X2' ? winner !== 'HOME' : winner !== 'DRAW';
     return ok ? 'WON' : 'LOST';
@@ -722,7 +727,7 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
   }
 
   // Total goals of the whole match
-  if (TOTAL_GOALS_PREFIXES.includes(marketName)) {
+  if (TOTAL_GOALS_PREFIXES.includes(marketName) || GOAL_COUNT_ALIASES.has(marketName)) {
     const parsed = parseOverUnder(leg.selection_id) || parseOverUnder(leg.selection_name);
     if (parsed) return overUnderOutcome(parsed.side, parsed.point, totalGoals);
     const range = goalCountRange(leg.selection_name || leg.selection_id); // "0-4", "2-3", "5+"
