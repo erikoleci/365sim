@@ -74,7 +74,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
              <div className="text-right leading-tight">
                 <div className="text-white font-bold hidden md:block">{currentUser.name}</div>
                 <div className="text-brand-yellow font-bold whitespace-nowrap">
-                  {currentUser.balance.toFixed(2)} <span className="hidden md:inline">L</span>
+                  {currentUser.balance.toFixed(2)} L
                 </div>
                 <div className="text-brand-yellow font-bold whitespace-nowrap text-[11px] md:text-xs">
                   {(currentUser.balanceEur ?? 0).toFixed(2)} €

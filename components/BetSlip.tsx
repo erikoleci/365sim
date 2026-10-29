@@ -230,7 +230,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                                             onClick={() => setCurrency(c)}
                                             className={`flex-1 py-1.5 tabular-nums ${currency === c ? 'bg-brand-yellow text-brand-bg' : 'bg-brand-panel text-brand-textMuted hover:text-white'}`}
                                         >
-                                            {c === 'EUR' ? `€ ${userBalanceEur.toFixed(2)}` : `L ${userBalance.toFixed(2)}`}
+                                            {c === 'EUR' ? `${userBalanceEur.toFixed(2)} €` : `${userBalance.toFixed(2)} L`}
                                         </button>
                                     ))}
                                 </div>
