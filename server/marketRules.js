@@ -70,6 +70,10 @@ const isNoSideOption = (o) => /^(x|draw|barazim)$/.test(norm(o && (o.name ?? o.i
 export const isUnofferedEventOrderOption = (marketName, o) => EVENT_ORDER_RE.test(norm(marketName)) && isNoSideOption(o);
 export const GOAL_ORDER_NAMES = new Set([...FIRST_TEAM_TO_SCORE_NAMES, ...LAST_TEAM_TO_SCORE_NAMES, ...FIRST_GOAL_NAMES, ...LAST_GOAL_NAMES]);
 export const HANDICAP_NAMES = new Set(['handikap', 'hendikep', 'handicap', 'handikap ne ndeshje', 'hendikep ne ndeshje']);
+// "Handikap Aziatik" (+ "Pjesa 1-rë" / "Pjesa 2-të": splitPeriod leaves the ordinal suffix "re" / "te" behind).
+// Like the plain handicap it cannot be decided before the end by the score alone, so it is open in play;
+// it is settled from the final / half score by extraMarkets.js + asianLines.js (quarter lines included).
+export const ASIAN_HANDICAP_RE = /^handikap aziatik(?: (?:re|te))?$/;
 
 // Parses "Lart 1.5" / "Mbi 2,5" / "Over-2.5" / "Poshtë 3.5" / "Under 0.5".
 export function parseOverUnder(text) {
@@ -119,7 +123,7 @@ export function classifyMarket(marketId, marketName, { home, away } = {}) {
   if (/\b(tek|odd)\b/.test(full) && /\b(cift|even)\b/.test(full)) return { kind: 'odd_even', period };
   if ((FIRST_TEAM_TO_SCORE_NAMES.has(base) || LAST_TEAM_TO_SCORE_NAMES.has(base)) && !period) return { kind: 'first_scorer', period };
   if (CORRECT_SCORE_NAMES.has(base)) return { kind: 'correct_score', period };
-  if (HANDICAP_NAMES.has(base)) return { kind: 'handicap', period };
+  if (HANDICAP_NAMES.has(base) || ASIAN_HANDICAP_RE.test(base)) return { kind: 'handicap', period };
   return { kind: 'other', period };
 }
 
@@ -377,6 +381,7 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
         if (ctSpec) return cornerTotalsReason(sel, row, ctSpec, now);
         if (isCornerRace(market.name)) return cornerRaceReason(sel, row);
       }
+      if (c.kind === 'cards' && market && isLiveCardTotals(market.name)) return cardTotalsReason(sel, row);
       const spec = parseProviderMarket(norm(market && market.name));
       if (spec) return providerLiveReason(spec, sel, row, now);
       return allowUnverified === true ? null : NOT_VERIFIABLE;
@@ -431,12 +436,40 @@ export function parseCornerRaceOption(text, home, away) {
   return r ? done(r.n, r.side) : null;
 }
 
-function cornersFreshAndEarly(row) {
-  const lc = row.live_corners;
-  if (!lc || !lc.fresh || !Number.isFinite(lc.home) || !Number.isFinite(lc.away)) return null;
+// A live counter ({ home, away, fresh }) that may be trusted right now: delivered recently, and the match is
+// not so close to the end that the bettor could already know the final count.
+function liveCounterFreshAndEarly(counter, row) {
+  if (!counter || !counter.fresh || !Number.isFinite(counter.home) || !Number.isFinite(counter.away)) return null;
   const minute = parseInt(String(row.live_minute || ''), 10);
   if (!Number.isFinite(minute) || minute >= LAST_EVENT_CUTOFF_MINUTE) return null; // the end is too close
-  return lc;
+  return counter;
+}
+const cornersFreshAndEarly = (row) => liveCounterFreshAndEarly(row.live_corners, row);
+
+// ---- card markets in play -----------------------------------------------------------------
+// Same idea as the corner totals: the live feed keeps the card counters current (YC1/YC2/RC1/RC2 ->
+// live_statistics.cards_home/away = yellow + red per team), so the plain card COUNT totals are open in
+// play while that counter is fresh and the option is not already decided. Callers attach the counter
+// as row.live_cards = { home, away, fresh } (readLiveCards in matchSettlement.js).
+//   * totals "Lart/Poshtë Kartona" / "Totali i kartonave" / "Kartona Mbi/Nen" (Lart N+.5 / Poshte N-.5 / Sakte N), full time
+// Everything else about cards stays closed in play: booking points (yellow 10 / red 25), team totals,
+// 1st / 2nd half (needs a half-time snapshot the settlement does not decide), Booking 1x2, red card Po/Jo ...
+const CARD_TOTALS_RE = /^(?:(?:lart|mbi) ?\/ ?(?:poshte|nen) kartona|kartona (?:lart|mbi) ?\/ ?(?:poshte|nen)|total(?:i)? (?:i )?kartona(?:ve)?|numri i kartonave)(?: totali)?$/;
+export const isLiveCardTotals = (name) => {
+  const { period, base } = splitPeriod(norm(name));
+  return !period && CARD_TOTALS_RE.test(base);
+};
+export const isLiveCardMarket = isLiveCardTotals;
+
+function cardTotalsReason(sel, row) {
+  const lc = liveCounterFreshAndEarly(row.live_cards, row);
+  if (!lc) return NOT_VERIFIABLE;
+  const total = lc.home + lc.away;
+  const ou = parseOverUnder(sel.id) || parseOverUnder(sel.name);
+  if (ou) return total > ou.point ? DECIDED : null; // Over already won / Under already lost
+  const m = norm(sel.name ?? sel.id).match(/^sakte\s+(\d+)$/);
+  if (m) return total > Number(m[1]) ? DECIDED : null; // exactly N is lost once there are more
+  return NOT_VERIFIABLE;
 }
 
 function cornerTotalsReason(sel, row, spec, now) {

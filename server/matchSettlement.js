@@ -315,6 +315,19 @@ export async function readLiveCorners(client, matchId, now = Date.now(), maxAgeM
     return { home, away, fresh: Number.isFinite(at) && now - at <= maxAgeMs };
   } catch { return null; }
 }
+// Live card counters (yellow + red per team, as the feed counts them) for the in-play card totals markets:
+// { home, away, fresh }. Same freshness rule as readLiveCorners.
+export async function readLiveCards(client, matchId, now = Date.now(), maxAgeMs = 60000) {
+  try {
+    const { rows } = await client.query('SELECT cards_home, cards_away, updated_at FROM live_statistics WHERE match_id = $1', [matchId]);
+    const r = rows[0];
+    if (!r) return null;
+    const home = numOrNaN(r.cards_home); const away = numOrNaN(r.cards_away);
+    if (!Number.isFinite(home) || !Number.isFinite(away)) return null;
+    const at = Number(r.updated_at);
+    return { home, away, fresh: Number.isFinite(at) && now - at <= maxAgeMs };
+  } catch { return null; }
+}
 const legSnapshot = (leg) => {
   let c = leg.placed_counts;
   if (typeof c === 'string') { try { c = JSON.parse(c); } catch { c = null; } }

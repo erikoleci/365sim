@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
-import { readLiveCorners } from '../matchSettlement.js';
+import { readLiveCorners, readLiveCards } from '../matchSettlement.js';
 import { settleMatch, recomputeBetStatus, settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult, explainSettleBlock } from '../matchSettlement.js';
 import { missedLiveCycles } from '../london365/liveState.js';
 import { logAudit } from '../auditLog.js';
@@ -903,8 +903,11 @@ router.get('/corner-diagnose', async (req, res) => {
     const { rows: st } = await pool.query('SELECT corners_home, corners_away, updated_at FROM live_statistics WHERE match_id = $1', [r.id]);
     const lc = await readLiveCorners(pool, r.id, now);
     if (lc) r.live_corners = lc;
+    const cc = await readLiveCards(pool, r.id, now);
+    if (cc) r.live_cards = cc;
     const m = mapEventToMatch(r);
-    const cornerMarkets = m.markets.filter((x) => /korn|corner/i.test(x.name));
+    // corner AND card markets: both are opened in play from their live counters
+    const cornerMarkets = m.markets.filter((x) => /korn|corner|karton|\bcards?\b/i.test(x.name));
     out.push({
       id: r.id, match: r.home_team + ' v ' + r.away_team, status: m.status, liveStatus: r.live_status, minute: r.live_minute,
       liveCorners: st[0] ? {

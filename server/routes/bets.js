@@ -3,8 +3,8 @@ import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { resolveCurrentSelection, mapEventToMatch, isStaleLive } from '../oddsUtils.js';
-import { getBetBlockReason, describeBlockReason, nextEventKind, eventOrderOrdinal, isLiveCornerMarket } from '../marketRules.js';
-import { readNextEventCounters, readLiveCorners } from '../matchSettlement.js';
+import { getBetBlockReason, describeBlockReason, nextEventKind, eventOrderOrdinal, isLiveCornerMarket, isLiveCardMarket } from '../marketRules.js';
+import { readNextEventCounters, readLiveCorners, readLiveCards } from '../matchSettlement.js';
 import { findCorrelatedSelections } from '../ticketCorrelation.js';
 import { findConflictingSelection, validateStakeAmount, getCancelBlockReason, isLiveEventLocked } from '../betValidation.js';
 import { getLiveDetailAgeMs, isLiveDetailStale } from '../liveDetailPlan.js';
@@ -15,6 +15,9 @@ import { noteBetOnMatches } from '../oddsHistoryPolicy.js';
 // nobody can bet on prices that have not caught up with what just happened. 0 = off.
 // After a corner, bets on the corner TOTALS wait this long (the counter and the odds need to catch up).
 const LIVE_CORNER_LOCK_MS = Math.max(0, Number(process.env.LIVE_BET_CORNER_LOCK_MS ?? 15000));
+// Yellow cards do not lock the whole match (only goals / red cards do), but the card totals are re-priced
+// by the provider right after each card, so betting on them pauses briefly after any card.
+const LIVE_CARD_LOCK_MS = Math.max(0, Number(process.env.LIVE_BET_CARD_LOCK_MS ?? 15000));
 const LIVE_EVENT_LOCK_MS = Math.max(0, Number(process.env.LIVE_BET_EVENT_LOCK_MS ?? 30000));
 const LIVE_BET_DELAY_MS = Math.max(0, Number(process.env.LIVE_BET_DELAY_MS ?? 5000));
 
@@ -215,6 +218,18 @@ router.post('/', wrap(async (req, res) => {
           if (isLiveEventLocked(matchRow, cRows[0]?.last_at, { lockMs: LIVE_CORNER_LOCK_MS })) {
             return fail(409, {
               error: `Betting on corner markets for ${matchRow.home_team} vs ${matchRow.away_team} is paused for a few seconds after a corner — odds are updating.`,
+              code: 'LIVE_EVENT_LOCK',
+            });
+          }
+        }
+      }
+      if (isLiveCardMarket(current.marketName)) {
+        matchRow.live_cards = await readLiveCards(pool, matchRow.id);
+        if (LIVE_CARD_LOCK_MS > 0) {
+          const { rows: kRows } = await pool.query("SELECT MAX(created_at) AS last_at FROM match_events WHERE match_id = $1 AND type IN ('YELLOW_CARD','RED_CARD')", [matchRow.id]);
+          if (isLiveEventLocked(matchRow, kRows[0]?.last_at, { lockMs: LIVE_CARD_LOCK_MS })) {
+            return fail(409, {
+              error: `Betting on card markets for ${matchRow.home_team} vs ${matchRow.away_team} is paused for a few seconds after a card — odds are updating.`,
               code: 'LIVE_EVENT_LOCK',
             });
           }

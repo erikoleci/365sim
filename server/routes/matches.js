@@ -8,7 +8,7 @@ import { dedupeMatches } from '../fixtureDedupe.js';
 import { buildLiveStatistics } from '../liveDetail.js';
 import { summarizeLiveHealth } from '../liveHealth.js';
 import { fetchMatchRowsPrioritized, PAGE_SIZE } from '../matchRows.js';
-import { readLiveCorners } from '../matchSettlement.js';
+import { readLiveCorners, readLiveCards } from '../matchSettlement.js';
 import { getChangesSince } from '../matchChanges.js';
 
 const router = express.Router();
@@ -284,6 +284,9 @@ router.get('/:id', wrap(async (req, res) => {
   if (rows[0].status === 'LIVE' || rows[0].live_status != null) {
     const lc = await readLiveCorners({ query: queryWithRetry }, rows[0].id);
     if (lc) rows[0].live_corners = lc;
+    // same for the card totals: open only while the live card counter is fresh
+    const cc = await readLiveCards({ query: queryWithRetry }, rows[0].id);
+    if (cc) rows[0].live_cards = cc;
   }
   res.json({ match: mapEventToMatch(rows[0]) });
 }));

@@ -9,6 +9,8 @@ import { LONDON365_EVENT_LABELS, LONDON365_STAT_LABELS } from '../utils/london36
 import { useI18n } from '../i18n';
 import TeamLogo from './TeamLogo';
 import { firstHalfDividerIndex, regularTimeDividerIndex, eventMinuteLabel } from '../utils/eventHalf';
+import { groupMarkets } from '../utils/marketTables';
+import type { MarketOption } from '../types';
 
 interface MatchDetailProps {
   match: Match;
@@ -222,10 +224,17 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
 
   // Closed (suspended) options and options without a price are not shown at all, and a market left
   // with nothing open disappears with them -- no lock icons, no greyed-out cells.
-  const filteredMarkets = match.markets
-    .filter(m => activeTab === 'All' || m.category === activeTab)
-    .map(m => ({ ...m, options: m.options.filter(o => !o.suspended && o.odds > 0) }))
-    .filter(m => m.options.length > 0);
+  const filteredMarkets = useMemo(
+    () => match.markets
+      .filter(m => activeTab === 'All' || m.category === activeTab)
+      .map(m => ({ ...m, options: m.options.filter(o => !o.suspended && o.odds > 0) }))
+      .filter(m => m.options.length > 0),
+    [match.markets, activeTab]
+  );
+
+  // Goals / corners / cards over-under lines, "Gara e Korneve" and the asian handicap come as ONE table
+  // each (a row per line) instead of one box per line -- see utils/marketTables.ts.
+  const blocks = useMemo(() => groupMarkets(filteredMarkets, match.homeTeam, match.awayTeam), [filteredMarkets, match.homeTeam, match.awayTeam]);
 
   const getButtonClass = (marketId: string, selectionId: string) => {
     const uniqueId = `${match.id}-${marketId}-${selectionId}`;
@@ -236,6 +245,28 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
     if (isFinished) return `${base} opacity-50 cursor-default bg-[#4a4a4a] text-brand-textMuted`;
     if (isSelected) return `${base} bg-brand-yellow text-brand-headerDark font-bold`;
     return `${base} bg-[#4a4a4a] hover:bg-[#565656] text-brand-text`;
+  };
+
+  // One clickable odds cell. `showName`: the option text in front of the price (plain boxes and the
+  // extras under a table); table cells show the price alone, or `label` + price (asian handicap line).
+  const renderOption = (marketId: string, opt: MarketOption, { showName = false, label }: { showName?: boolean; label?: string } = {}) => {
+    const isSelected = selectedIds.includes(`${match.id}-${marketId}-${opt.id}`);
+    const flash = oddsFlash.get(`${marketId}-${opt.id}`);
+    return (
+      <div
+        key={`${marketId}-${opt.id}`}
+        onClick={() => !isFinished && onBetClick(match, marketId, opt.id)}
+        className={getButtonClass(marketId, opt.id)}
+      >
+        {showName && <span className={`text-xs ${isSelected ? 'text-brand-headerDark' : 'text-brand-text'}`}><OptionName match={match} name={opt.name} tn={tn} /></span>}
+        {label && <span className={`text-xs ${isSelected ? 'text-brand-headerDark' : 'text-brand-text'}`}>{label}</span>}
+        <span className={`font-bold text-sm flex items-center gap-0.5 ${isSelected ? 'text-brand-headerDark' : 'text-brand-yellow'}`}>
+          {opt.odds.toFixed(2)}
+          {flash === 'up' && <span className="text-[10px] text-green-400">▲</span>}
+          {flash === 'down' && <span className="text-[10px] text-red-400">▼</span>}
+        </span>
+      </div>
+    );
   };
 
   return (
@@ -402,7 +433,39 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
         </div>
       ) : (
       <div className="p-2 space-y-2 overflow-y-auto flex-1 bg-[#282828]">
-        {filteredMarkets.map(market => {
+        {blocks.map(block => {
+            if (block.type === 'table') {
+                const { section } = block;
+                const cols = section.headers.length;
+                const gridCols = section.hasLabelColumn ? `3.5rem repeat(${cols}, minmax(0, 1fr))` : `repeat(${cols}, minmax(0, 1fr))`;
+                return (
+                <div key={section.key} className="overflow-hidden mb-2">
+                    <div className="bg-brand-header px-3 py-2 text-xs font-bold text-white">
+                        {tn(section.title)}
+                    </div>
+                    <div className="grid bg-[#3a3a3a] text-brand-textMuted text-[11px] font-bold text-center" style={{ gridTemplateColumns: gridCols }}>
+                        {section.hasLabelColumn && <div className="py-1.5" />}
+                        {section.headers.map((h, i) => <div key={i} className="py-1.5">{tn(h)}</div>)}
+                    </div>
+                    {section.rows.map((row, ri) => (
+                        <div key={ri} className="grid gap-px bg-brand-bg mt-px" style={{ gridTemplateColumns: gridCols }}>
+                            {section.hasLabelColumn && (
+                                <div className="flex items-center justify-center bg-[#3f3f3f] text-xs font-bold text-brand-text">{row.label}</div>
+                            )}
+                            {row.cells.map((cell, ci) => cell
+                                ? renderOption(cell.marketId, cell.option, { label: cell.label })
+                                : <div key={ci} className="bg-[#3f3f3f]" />)}
+                        </div>
+                    ))}
+                    {section.extras.length > 0 && (
+                        <div className="grid gap-px bg-brand-bg mt-px" style={{ gridTemplateColumns: `repeat(${Math.min(section.extras.length, 3)}, minmax(0, 1fr))` }}>
+                            {section.extras.map(cell => renderOption(cell.marketId, cell.option, { showName: true }))}
+                        </div>
+                    )}
+                </div>
+                );
+            }
+            const market = block.market;
             const cols = Math.min(market.options.length, 3) || 1;
             return (
             <div key={market.id} className="overflow-hidden mb-2">
@@ -413,24 +476,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
                     className="grid gap-px bg-brand-bg"
                     style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
                 >
-                    {market.options.map(opt => {
-                        const isSelected = selectedIds.includes(`${match.id}-${market.id}-${opt.id}`);
-                        const flash = oddsFlash.get(`${market.id}-${opt.id}`);
-                        return (
-                        <div
-                            key={opt.id}
-                            onClick={() => !isFinished && onBetClick(match, market.id, opt.id)}
-                            className={getButtonClass(market.id, opt.id)}
-                        >
-                            <span className={`text-xs ${isSelected ? 'text-brand-headerDark' : 'text-brand-text'}`}><OptionName match={match} name={opt.name} tn={tn} /></span>
-                            <span className={`font-bold text-sm flex items-center gap-0.5 ${isSelected ? 'text-brand-headerDark' : 'text-brand-yellow'}`}>
-                              {opt.odds.toFixed(2)}
-                              {flash === 'up' && <span className="text-[10px] text-green-400">▲</span>}
-                              {flash === 'down' && <span className="text-[10px] text-red-400">▼</span>}
-                            </span>
-                        </div>
-                        );
-                    })}
+                    {market.options.map(opt => renderOption(market.id, opt, { showName: true }))}
                 </div>
             </div>
             );
