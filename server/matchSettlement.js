@@ -4,7 +4,7 @@ import { extraMarketOutcome } from './extraMarkets.js';
 import { asianHandicapOutcome, asianTotalOutcome } from './asianLines.js';
 import { ticketOutcome } from './ticketOutcome.js';
 import {
-  TOTAL_GOALS_PREFIXES, H2H_NAMES, BTTS_NAMES, DOUBLE_CHANCE_NAMES, CORRECT_SCORE_NAMES, HANDICAP_NAMES, parseOverUnder,
+  goalCountOption, TOTAL_GOALS_PREFIXES, H2H_NAMES, BTTS_NAMES, DOUBLE_CHANCE_NAMES, CORRECT_SCORE_NAMES, HANDICAP_NAMES, parseOverUnder,
   STATS_UNDECIDABLE, EVENT_ORDER_RE, FIRST_TEAM_TO_SCORE_NAMES, LAST_TEAM_TO_SCORE_NAMES, FIRST_GOAL_NAMES, LAST_GOAL_NAMES, BOTH_HALVES_NAMES, GOAL_ORDER_NAMES, FIRST_GOAL_H1_NAMES,
   nextEventKind, CORNER_ORDINALS, isCornerRace, parseCornerRaceOption,
 } from './marketRules.js';
@@ -64,11 +64,8 @@ const HOME_SIDE_WORDS = ['shtepiaku', 'vendasi', 'shtepise', 'home', 'host'];
 const AWAY_SIDE_WORDS = ['udhetuesi', 'mysafiri', 'mysafir', 'vizitori', 'vizitor', 'away', 'guest'];
 // "0-4", "2-3" (inclusive) or "5+" -> [lo, hi]; anything else -> null
 function goalCountRange(selection) {
-  const t = norm(selection);
-  let m = t.match(/^(\d+)\s*[-\u2013\u2014]\s*(\d+)$/);
-  if (m) return [Number(m[1]), Number(m[2])];
-  m = t.match(/^(\d+)\s*\+$/);
-  return m ? [Number(m[1]), Infinity] : null;
+  const o = goalCountOption(selection); // "0-4", "2-3", "5+" or exactly "2"
+  return o ? [o.lo, o.hi] : null;
 }
 
 // "In which half will there be more corners / cards / goals": Pj1 | Pj2 | equal.

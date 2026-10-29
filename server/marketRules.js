@@ -295,6 +295,19 @@ const NO_PLAYER_DATA = 'NO_PLAYER_DATA';
 const NO_RULE = 'NO_SETTLEMENT_RULE';
 const DECIDED = 'OUTCOME_DECIDED';
 
+// A goal-count option of "Numri i Golave" (also per half): exactly N ("2"), a range ("1-2") or N or more
+// ("3+"). -> { lo, hi } (hi may be Infinity) or null. Only meaningful inside a goal-count market, where a
+// plain digit is a number of goals (not the side 1 / 2 of a 1X2).
+export function goalCountOption(selection) {
+  const t = norm(selection);
+  let m = t.match(/^(\d+)\s*[-\u2013\u2014]\s*(\d+)$/);
+  if (m) return { lo: Number(m[1]), hi: Number(m[2]) };
+  m = t.match(/^(\d+)\s*\+$/);
+  if (m) return { lo: Number(m[1]), hi: Infinity };
+  m = t.match(/^(\d+)$/);
+  return m ? { lo: Number(m[1]), hi: Number(m[1]) } : null;
+}
+
 // Why a bet on `selection` of `market` must be refused for this matches_cache row
 // right now, or null if it may be accepted.
 //   code: MATCH_FINISHED | FIRST_HALF_OVER | OUTCOME_DECIDED | NOT_VERIFIABLE_LIVE
@@ -354,6 +367,13 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
     case 'team_totals': {
       const ps = periodScore(row, c.period, now);
       const ou = parseOverUnder(sel.id) || parseOverUnder(sel.name);
+      // "Numri i Golave" options (exactly N / a-b / N+): lost once the goals pass the upper bound,
+      // won once an open-ended option (N+) is reached; open otherwise.
+      const gc = !ou && c.kind === 'totals' ? (goalCountOption(sel.name) || goalCountOption(sel.id)) : null;
+      if (ps && gc) {
+        const g = ps.h + ps.a;
+        return g > gc.hi || (gc.hi === Infinity && g >= gc.lo) ? DECIDED : null;
+      }
       if (!ps || !ou) return NOT_VERIFIABLE;
       const goals = c.kind === 'totals' ? ps.h + ps.a : c.side === 'home' ? ps.h : ps.a;
       // Over X: already won once goals pass X. Under X: already lost once goals pass X.

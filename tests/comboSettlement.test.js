@@ -55,3 +55,20 @@ describe('combination markets settle to WON or LOST (never left open / refunded)
     expect(determineLegOutcome(l, ctx)).toBe('WON');
   });
 });
+
+describe('"Numri i Golave" options: exactly N, a-b, N+ (full match and each half)', () => {
+  // FT 1-3 (4 goals); HT 1-0 -> first half 1 goal, second half 3 goals
+  const half = { ...ctx, htHome: 1, htAway: 0 };
+  const o = (m, s) => determineLegOutcome(leg(m, s), half);
+  it('settles exact numbers', () => {
+    expect(o('Numri i Golave', '4')).toBe('WON');
+    expect(o('Numri i Golave', '3')).toBe('LOST');
+    expect(o('Numri i Golave', '0')).toBe('LOST');
+    expect(o('Numri i Golave', '5+')).toBe('LOST');
+    expect(o('Numri i Golave', '3-4')).toBe('WON');
+    expect(o('Numri i Golave Pjesa I', '1')).toBe('WON');
+    expect(o('Numri i Golave Pjesa I', '0')).toBe('LOST');
+    expect(o('Numri i Golave Pjesa II', '3')).toBe('WON');
+    expect(o('Numri i Golave Pjesa II', '2')).toBe('LOST');
+  });
+});
