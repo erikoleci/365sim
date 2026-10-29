@@ -732,7 +732,8 @@ router.post('/bets/:id/cancel', async (req, res) => {
     // A normal admin only deletes tickets of his own users.
     const { rows: ownerRows } = await client.query('SELECT admin_id FROM users WHERE id = $1', [bet.user_id]);
     if (!ownsRow(req.user, ownerRows[0])) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Bet not found' }); }
-    if (bet.status === 'CANCELLED') { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Bileta është anuluar tashmë' }); }
+    // Only an open ticket can be cancelled: once it is won, lost, refunded or already cancelled it is final.
+    if (bet.status !== 'PENDING') { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Vetëm biletat e hapura mund të anulohen', code: 'BET_NOT_PENDING' }); }
     // Put the money back as if the ticket had never been placed (PENDING / LOST: the stake; WON: the winnings
     // are taken back; VOID: it was refunded already, nothing to give twice).
     delta = betBalanceReversal(bet);

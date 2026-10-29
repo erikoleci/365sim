@@ -262,7 +262,7 @@ describe('erasing tickets', () => {
   });
   it('only the super admin erases a ticket (any status), adjusting the balance by default', async () => {
     expect((await call('DELETE', '/bets/bet-pending', ADMIN)).status).toBe(403);
-    const res = await call('DELETE', '/bets/bet-pending', SUPER);
+    const res = await call('DELETE', '/bets/bet-void', SUPER);
     expect(res.status).toBe(200);
     expect((await res.json()).balanceChange).toBe(10);
     expect(mocks.bets.has('bet-pending')).toBe(false);
@@ -361,10 +361,10 @@ describe('ticket deletion switch', () => {
     expect(mocks.bets.has('bet-pending')).toBe(true);
     expect(mocks.users.get('user-1').balance).toBe(10);        // nothing moved
     // the super admin always can (his own delete route, and the admin route too)
-    expect((await call('DELETE', '/bets/bet-pending', SUPER)).status).toBe(200);
+    expect((await call('DELETE', '/bets/bet-void', SUPER)).status).toBe(200);
     // and turning it back on gives the admins their button again
     await call('PUT', '/settings/ticket-deletion', SUPER, { allowed: true });
-    expect((await call('POST', '/bets/bet-won/cancel', ADMIN)).status).toBe(200);
+    expect((await call('POST', '/bets/bet-pending/cancel', ADMIN)).status).toBe(200);
   });
   it('the switch is logged; the log itself is the super admin\'s alone (an admin gets 403)', async () => {
     await call('PUT', '/settings/ticket-deletion', SUPER, { allowed: false });
@@ -373,12 +373,15 @@ describe('ticket deletion switch', () => {
     const forSuper = (await (await call('GET', '/audit-log', SUPER)).json()).entries;
     expect(forSuper.some((e) => e.action === 'SETTING_TICKET_DELETION')).toBe(true);
   });
-  it('an admin deleting a ticket takes back winnings, and a refunded (VOID) ticket does not refund twice', async () => {
-    expect((await call('POST', '/bets/bet-won/cancel', ADMIN)).status).toBe(200);
-    expect(mocks.users.get('user-1').balance).toBe(-10);       // 10 - (30 - 10) winnings taken back
-    mocks.users.get('user-1').balance = 10;
-    expect((await call('POST', '/bets/bet-void/cancel', ADMIN)).status).toBe(200);
-    expect(mocks.users.get('user-1').balance).toBe(10);        // it was refunded already: nothing added again
+  it('only an open ticket can be cancelled: won, lost, refunded or already cancelled ones are final', async () => {
+    mocks.bets.set('bet-lost', { id: 'bet-lost', user_id: 'user-1', stake: 10, potential_return: 30, status: 'LOST' });
+    for (const id of ['bet-won', 'bet-lost', 'bet-void']) {
+      const res = await call('POST', `/bets/${id}/cancel`, ADMIN);
+      expect(res.status).toBe(400);
+      expect((await res.json()).code).toBe('BET_NOT_PENDING');
+      expect(mocks.bets.get(id).status).not.toBe('CANCELLED');
+    }
+    expect(mocks.users.get('user-1').balance).toBe(10);        // nothing moved
     expect((await call('POST', '/bets/nope/cancel', ADMIN)).status).toBe(404);
   });
 });
