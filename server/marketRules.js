@@ -382,6 +382,12 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
         if (isCornerRace(market.name)) return cornerRaceReason(sel, row);
       }
       if (c.kind === 'cards' && market && isLiveCardTotals(market.name)) return cardTotalsReason(sel, row);
+      if (market) {
+        const goalSpec = liveGoalLineSpec(market.name, { home: row.home_team, away: row.away_team });
+        if (goalSpec) return goalLineReason(goalSpec, sel, row, now);
+        if (isLiveBookingTotals(market.name)) return bookingTotalsReason(sel, row);
+        if (isLiveRedCardMarket(market.name)) return redCardReason(row);
+      }
       const spec = parseProviderMarket(norm(market && market.name));
       if (spec) return providerLiveReason(spec, sel, row, now);
       return allowUnverified === true ? null : NOT_VERIFIABLE;
@@ -459,7 +465,63 @@ export const isLiveCardTotals = (name) => {
   const { period, base } = splitPeriod(norm(name));
   return !period && CARD_TOTALS_RE.test(base);
 };
-export const isLiveCardMarket = isLiveCardTotals;
+
+// Booking totals ("Total bookings"): a card count (line under 10: yellow 1, red 1) or booking points (line 10
+// and over: yellow 10, red 25), the same units extraMarkets.js settles with. Full time only.
+const BOOKING_TOTALS_RE = /^total bookings$/;
+export const isLiveBookingTotals = (name) => {
+  const { period, base } = splitPeriod(norm(name));
+  return !period && BOOKING_TOTALS_RE.test(base);
+};
+// Red card Po / Jo ("Sending off", "Karton i kuq"), whole match, both teams: decided as soon as one is shown.
+const RED_CARD_RE = /^(?:sending off|karton i kuq)$/;
+export const isLiveRedCardMarket = (name) => {
+  const { period, base } = splitPeriod(norm(name));
+  return !period && RED_CARD_RE.test(base);
+};
+export const isLiveCardMarket = (name) => isLiveCardTotals(name) || isLiveBookingTotals(name) || isLiveRedCardMarket(name);
+
+function bookingTotalsReason(sel, row) {
+  const lc = liveCounterFreshAndEarly(row.live_cards, row);
+  if (!lc) return NOT_VERIFIABLE;
+  const { yellowHome, yellowAway, redHome, redAway } = lc;
+  if (![yellowHome, yellowAway, redHome, redAway].every((v) => Number.isFinite(v) && v >= 0)) return NOT_VERIFIABLE;
+  const ou = parseOverUnder(sel.id) || parseOverUnder(sel.name);
+  if (!ou) return NOT_VERIFIABLE;
+  const points = ou.point >= 10;
+  const value = points ? 10 * (yellowHome + yellowAway) + 25 * (redHome + redAway) : yellowHome + yellowAway + redHome + redAway;
+  return value > ou.point ? DECIDED : null;
+}
+
+function redCardReason(row) {
+  const lc = liveCounterFreshAndEarly(row.live_cards, row);
+  if (!lc) return NOT_VERIFIABLE;
+  if (!Number.isFinite(lc.redHome) || !Number.isFinite(lc.redAway)) return NOT_VERIFIABLE;
+  return lc.redHome + lc.redAway > 0 ? DECIDED : null; // a red card is out: Po is certain, Jo is lost
+}
+
+// ---- goal lines decided by the live score (half totals, team goals in a half, asian totals) ----
+//   "Sa gola shënohen në pjesën e 1 / 2"                 Lart / Poshtë N       (goals of the half)
+//   "Sa gola shënon Pritesi / Udhëtuesi në pjesën e 1 / 2"                       (goals of one team in the half)
+//   "Lart/Poshtë Gola Aziatikë" (+ "në pjesën N")        Lart / Poshtë N(.25)   (asian line: quarter lines allowed)
+// A line is closed as soon as the goals so far reach it (an asian line a quarter earlier, because a quarter line
+// already pays half at that point).
+export function liveGoalLineSpec(name, { home, away } = {}) {
+  const { period, base } = splitPeriod(norm(name));
+  let m = base.match(/^sa gola shenohen$/);
+  if (m && period) return { period, side: null, asian: false };
+  m = base.match(/^sa gola shenon (pritesi|udhetuesi)$/);
+  if (m && period) return { period, side: m[1] === 'pritesi' ? 'home' : 'away', asian: false };
+  if (/^lart ?\/ ?poshte gola aziatike?$/.test(base)) return { period, side: null, asian: true };
+  return null;
+}
+function goalLineReason(spec, sel, row, now) {
+  const ps = periodScore(row, spec.period, now);
+  const ou = parseOverUnder(sel.id) || parseOverUnder(sel.name);
+  if (!ps || !ou) return NOT_VERIFIABLE;
+  const goals = spec.side === 'home' ? ps.h : spec.side === 'away' ? ps.a : ps.h + ps.a;
+  return goals >= (spec.asian ? ou.point - 0.25 : ou.point + 0.5) ? DECIDED : null;
+}
 
 function cardTotalsReason(sel, row) {
   const lc = liveCounterFreshAndEarly(row.live_cards, row);

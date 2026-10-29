@@ -1,6 +1,7 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BetSelectionItem, Match, User } from '../types';
 import * as api from '../services/api';
+import { areCorrelated } from '../utils/betSlipRules';
 
 const BOOST_MULTIPLIER = 1.12;
 const selectionKey = (matchId: string, marketId: string, selectionId: string) => `${matchId}-${marketId}-${selectionId}`;
@@ -21,6 +22,16 @@ export function useBetSlip({ currentUser, setCurrentUser, onPlaced }: Options) {
   const [selections, setSelections] = useState<BetSelectionItem[]>([]);
   const [betError, setBetError] = useState<string | null>(null);
 
+  // Set when a pick is refused because it follows the same logic as a pick already on the slip.
+  const [blockedNotice, setBlockedNotice] = useState<{ list: string } | null>(null);
+  const selectionsRef = useRef<BetSelectionItem[]>([]);
+  selectionsRef.current = selections;
+  useEffect(() => {
+    if (!blockedNotice) return;
+    const timer = setTimeout(() => setBlockedNotice(null), 4500);
+    return () => clearTimeout(timer);
+  }, [blockedNotice]);
+
   const selectedIds = useMemo(() => selections.map((s) => selectionKey(s.matchId, s.marketId, s.selectionId)), [selections]);
 
   const toggleSelection = useCallback((match: Match, marketId: string, selectionId: string, boosted?: boolean) => {
@@ -30,14 +41,15 @@ export function useBetSlip({ currentUser, setCurrentUser, onPlaced }: Options) {
     if (!market || !option) return;
 
     const key = selectionKey(match.id, marketId, selectionId);
-    setSelections((prev) => {
-      if (prev.some((s) => selectionKey(s.matchId, s.marketId, s.selectionId) === key)) {
-        return prev.filter((s) => selectionKey(s.matchId, s.marketId, s.selectionId) !== key);
-      }
+    const prev = selectionsRef.current;
+    let next: BetSelectionItem[];
+    if (prev.some((s) => selectionKey(s.matchId, s.marketId, s.selectionId) === key)) {
+      next = prev.filter((s) => selectionKey(s.matchId, s.marketId, s.selectionId) !== key);
+    } else {
       // Selections of the SAME market of the SAME match exclude each other (picking "2" after "1"
       // drops "1": they can never both win).
       const others = prev.filter((s) => !(s.matchId === match.id && s.marketId === marketId));
-      return [...others, {
+      const picked: BetSelectionItem = {
         matchId: match.id,
         matchHome: match.homeTeam,
         matchAway: match.awayTeam,
@@ -48,8 +60,19 @@ export function useBetSlip({ currentUser, setCurrentUser, onPlaced }: Options) {
         odds: boosted ? Number((option.odds * BOOST_MULTIPLIER).toFixed(2)) : option.odds,
         status: 'PENDING' as any,
         boosted: !!boosted,
-      }];
-    });
+      };
+      // Same logic as a pick already on the slip (1+ and 2+ goals, Over 1.5 and Over 2.5, 1 and 1X ...):
+      // one decides or overlaps the other, so the pick is not added at all. The server refuses such
+      // tickets too (server/ticketCorrelation.js); this just stops them at the tap.
+      const tied = others.filter((o) => areCorrelated(o, picked));
+      if (tied.length) {
+        setBlockedNotice({ list: tied.map((o) => `${o.marketName} - ${o.selectionName}`).join(', ') });
+        return;
+      }
+      next = [...others, picked];
+    }
+    selectionsRef.current = next;
+    setSelections(next);
   }, [currentUser]);
 
   const removeSelection = useCallback((key: string) => {
@@ -87,5 +110,5 @@ export function useBetSlip({ currentUser, setCurrentUser, onPlaced }: Options) {
     }
   }, [currentUser, selections, setCurrentUser, onPlaced]);
 
-  return { selections, selectedIds, betError, toggleSelection, removeSelection, clearSelections, placeBet, reset: clearSelections };
+  return { selections, selectedIds, betError, blockedNotice, dismissBlockedNotice: () => setBlockedNotice(null), toggleSelection, removeSelection, clearSelections, placeBet, reset: clearSelections };
 }

@@ -62,3 +62,11 @@ describe('findSlipConflicts: tied legs of the same match are flagged, nothing is
     expect(findSlipConflicts([a]).size).toBe(0);
   });
 });
+
+describe('goal-count picks of one team clash with the match total', () => {
+  it('"Sa gola shënon Pritesi" Lart 1.5 with the total Lart 1.5 is flagged', () => {
+    const team = leg('t1', 'Sa gola shenon Pritesi ne pjesen e 2', 'Lart 1.5');
+    const total = leg('t2', 'Totali i golave', 'Mbi 1.5');
+    expect(flagged([team, total])).toEqual(keys(team, total));
+  });
+});

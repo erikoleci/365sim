@@ -319,13 +319,21 @@ export async function readLiveCorners(client, matchId, now = Date.now(), maxAgeM
 // { home, away, fresh }. Same freshness rule as readLiveCorners.
 export async function readLiveCards(client, matchId, now = Date.now(), maxAgeMs = 60000) {
   try {
-    const { rows } = await client.query('SELECT cards_home, cards_away, updated_at FROM live_statistics WHERE match_id = $1', [matchId]);
-    const r = rows[0];
+    let r;
+    try { // yellow / red columns are newer than cards_*: an old database only has the totals
+      ({ rows: [r] } = await client.query('SELECT cards_home, cards_away, yellow_home, yellow_away, red_home, red_away, updated_at FROM live_statistics WHERE match_id = $1', [matchId]));
+    } catch {
+      ({ rows: [r] } = await client.query('SELECT cards_home, cards_away, updated_at FROM live_statistics WHERE match_id = $1', [matchId]));
+    }
     if (!r) return null;
     const home = numOrNaN(r.cards_home); const away = numOrNaN(r.cards_away);
     if (!Number.isFinite(home) || !Number.isFinite(away)) return null;
     const at = Number(r.updated_at);
-    return { home, away, fresh: Number.isFinite(at) && now - at <= maxAgeMs };
+    return {
+      home, away, fresh: Number.isFinite(at) && now - at <= maxAgeMs,
+      // split by colour (NaN when the feed never delivered it: a missing value never counts as 0)
+      yellowHome: numOrNaN(r.yellow_home), yellowAway: numOrNaN(r.yellow_away), redHome: numOrNaN(r.red_home), redAway: numOrNaN(r.red_away),
+    };
   } catch { return null; }
 }
 const legSnapshot = (leg) => {

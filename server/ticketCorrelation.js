@@ -71,6 +71,9 @@ export function selectionFamilies({ marketId, marketName, optionName, home, away
       else if (/handikap|handicap/.test(name)) fam.add('result');
       else if (ASIAN_WORDS.test(name) && /gol/.test(name)) fam.add('goals');
       else if (/gol/.test(name) && GOAL_COUNT_OPTION.test(norm(optionName))) fam.add('goals');
+      // "Sa gola shënon Pritesi" Lart 1.5 is a scoring market AND a goal count: it must also clash with
+      // the match total goals (a team over 1.5 forces the total over 1.5)
+      if (!fam.has('goals') && /gol/.test(name) && GOAL_COUNT_OPTION.test(norm(optionName))) fam.add('goals');
   }
   return fam;
 }

@@ -52,7 +52,7 @@ describe('live card totals', () => {
 
   it('other card markets stay closed in play, and nothing changes before kick-off', () => {
     expect(reason(row(), 'Lart 1.5', 'Lart/Poshtë Kartona Skuadra 1')).toBe('NOT_VERIFIABLE_LIVE');
-    expect(reason(row(), 'Lart 40.5', 'Total bookings')).toBe('NOT_VERIFIABLE_LIVE');
+    expect(reason(row(), 'Lart 40.5', 'Pritesi Total Bookings')).toBe('NOT_VERIFIABLE_LIVE');
     const pre = row({ status: 'UPCOMING', live_status: null, start_time: new Date(NOW + 3600000).toISOString(), live_cards: undefined });
     expect(reason(pre, 'Lart 4.5')).toBeNull();
   });
@@ -78,7 +78,7 @@ describe('readLiveCards', () => {
   const client = (rows) => ({ query: async () => ({ rows }) });
   it('reports the counter with its freshness', async () => {
     const fresh = await readLiveCards(client([{ cards_home: 2, cards_away: 1, updated_at: NOW - 5000 }]), 'm', NOW);
-    expect(fresh).toEqual({ home: 2, away: 1, fresh: true });
+    expect(fresh).toMatchObject({ home: 2, away: 1, fresh: true });
     const stale = await readLiveCards(client([{ cards_home: 2, cards_away: 1, updated_at: NOW - 120000 }]), 'm', NOW);
     expect(stale.fresh).toBe(false);
   });
@@ -106,5 +106,47 @@ describe('Handikap Aziatik is open in play like the plain handicap', () => {
   });
   it('does not open the Asian TOTALS (they stay as before)', () => {
     expect(classifyMarket('x', 'Lart/Poshtë Gola Aziatike').kind).not.toBe('handicap');
+  });
+});
+
+describe('more markets open in play from live data', () => {
+  const R = (over = {}) => row({
+    live_cards: { home: 2, away: 1, fresh: true, yellowHome: 2, yellowAway: 1, redHome: 0, redAway: 0 },
+    live_home_score: 1, live_away_score: 0, ...over,
+  });
+  const g = (r, name, sel) => getBetBlockReason(r, { id: 'x', name }, S(sel), NOW);
+
+  it('asian goal totals: closed once the goals reach the line (a quarter line a quarter earlier)', () => {
+    expect(g(R(), 'Lart/Poshtë Gola Aziatike', 'Lart 2.5')).toBeNull();
+    expect(g(R({ live_home_score: 2, live_away_score: 1 }), 'Lart/Poshtë Gola Aziatike', 'Lart 2.5')).toBe('OUTCOME_DECIDED');
+    expect(g(R({ live_home_score: 2, live_away_score: 0 }), 'Lart/Poshtë Gola Aziatike', 'Lart 2.25')).toBe('OUTCOME_DECIDED');
+    expect(g(R({ live_home_score: 2, live_away_score: 0 }), 'Lart/Poshtë Gola Aziatike', 'Lart 2.75')).toBeNull();
+    expect(g(R(), 'Lart/Poshtë Gola Aziatike', 'Ndoshta')).toBe('NOT_VERIFIABLE_LIVE');
+  });
+
+  it('goals of the second half / of one team in the half', () => {
+    // 1-0 at the whistle (ht 1-0), now 2-0: second half has 1 goal
+    const r = R({ ht_home: 1, ht_away: 0, live_home_score: 2, live_away_score: 0, live_minute: '60:00' });
+    expect(g(r, 'Sa gola shënohen në pjesën e 2', 'Lart 0.5')).toBe('OUTCOME_DECIDED');
+    expect(g(r, 'Sa gola shënohen në pjesën e 2', 'Lart 1.5')).toBeNull();
+    expect(g(r, 'Sa gola shënon Pritesi në pjesën e 2', 'Lart 0.5')).toBe('OUTCOME_DECIDED');
+    expect(g(r, 'Sa gola shënon Udhëtuesi në pjesën e 2', 'Lart 0.5')).toBeNull();
+  });
+
+  it('red card Po/Jo: open while no red card, decided after one; needs a fresh counter', () => {
+    expect(g(R(), 'Sending off', 'Po')).toBeNull();
+    expect(g(R({ live_cards: { home: 3, away: 1, fresh: true, yellowHome: 2, yellowAway: 1, redHome: 1, redAway: 0 } }), 'Sending off', 'Jo')).toBe('OUTCOME_DECIDED');
+    expect(g(R({ live_cards: { home: 2, away: 1, fresh: true, yellowHome: NaN, yellowAway: NaN, redHome: NaN, redAway: NaN } }), 'Karton i kuq', 'Po')).toBe('NOT_VERIFIABLE_LIVE');
+    expect(g(R({ live_cards: undefined }), 'Sending off', 'Po')).toBe('NOT_VERIFIABLE_LIVE');
+    expect(g(R(), 'Home Sending off', 'Po')).toBe('NOT_VERIFIABLE_LIVE'); // team-only red card stays closed
+  });
+
+  it('total bookings: cards under 10, booking points from 10', () => {
+    expect(g(R(), 'Total bookings', 'Lart 3.5')).toBeNull();            // 3 cards
+    expect(g(R(), 'Total bookings', 'Lart 2.5')).toBe('OUTCOME_DECIDED');
+    expect(g(R(), 'Total bookings', 'Lart 40.5')).toBeNull();           // 30 points
+    expect(g(R(), 'Total bookings', 'Lart 29.5')).toBe('OUTCOME_DECIDED');
+    expect(g(R({ live_cards: { home: 2, away: 1, fresh: true, yellowHome: NaN, yellowAway: NaN, redHome: NaN, redAway: NaN } }), 'Total bookings', 'Lart 3.5')).toBe('NOT_VERIFIABLE_LIVE');
+    expect(g(R(), '1st half - Total bookings', 'Lart 1.5')).toBe('FIRST_HALF_OVER'); // halves stay closed (at 60')
   });
 });

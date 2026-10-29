@@ -61,6 +61,7 @@ export const enCore: Record<string, string> = {
   'Zgjedhjet nuk mund të kombinohen': "These selections can't be combined",
   'Disa zgjedhje të së njëjtës ndeshje janë të lidhura logjikisht me njëra-tjetrën (njëra vendos ose mbulon tjetrën), ndaj kuota totale do të ishte e gabuar. Hiq njërën nga zgjedhjet e shënuara me të kuqe për të vendosur biletën.': "Some selections from the same match are logically linked (one decides or covers the other), so the combined odds would be wrong. Remove one of the selections marked in red to place the bet.",
   'Lidhet me: {list}': 'Linked to: {list}',
+  'Nuk shtohet: ka të njëjtën logjikë me {list}': 'Not added: it follows the same logic as {list}',
   'Hiq zgjedhjet e lidhura për të vendosur biletën': 'Remove the linked selections to place the bet',
   'Kuotat ndryshuan ({n})': 'Odds changed ({n})',
   "Çmimi u përditësua më poshtë. Prano ndryshimet dhe vendos biletën sërish, ose hiqe zgjedhjen nëse s'e pranon.": "The price was updated below. Accept the changes and place your bet again, or remove the selection if you don't accept it.",
