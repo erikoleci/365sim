@@ -237,6 +237,7 @@ function mapServerBet(b: any): Bet {
     timestamp: Number(b.created_at),
     cancellable: b.cancellable === true,
     selections: (b.selections || []).map((s: any) => ({
+      id: s.id,
       matchId: s.match_id,
       matchHome: s.match_home,
       matchAway: s.match_away,
@@ -290,6 +291,15 @@ export async function adminResetPassword(userId: string, password: string) {
 export async function adminFetchAllBets(): Promise<any[]> {
   const data = await request<{ bets: any[] }>('/admin/bets');
   return data.bets.map((b) => ({ ...mapServerBet(b), user: b.user }));
+}
+
+export interface ResettleResult {
+  betId: string; userId: string; fromStatus: string; toStatus: string;
+  paidBefore: number; worthNow: number; delta: number; balanceBefore: number; balanceAfter: number; applied: boolean;
+}
+/** Super admin: re-decide an already closed ticket and put the player's balance right. dryRun only previews. */
+export async function adminResettleBet(betId: string, legs: { id: number; outcome: 'WON' | 'LOST' | 'VOID' }[], dryRun: boolean) {
+  return request<ResettleResult>(`/admin/bets/${betId}/resettle`, { method: 'POST', body: JSON.stringify({ legs, dryRun }) });
 }
 
 export async function adminFetchAuditLog(): Promise<any[]> {

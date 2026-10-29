@@ -1,5 +1,15 @@
 // English translations for the admin area, keyed by the exact Albanian source text.
 export const enAdmin: Record<string, string> = {
+  'Rishlyej biletën (super admin)': 'Re-settle ticket (super admin)',
+  'Zgjidh rezultatin e vërtetë të legëve që duhen ndryshuar. Balanca e përdoruesit korrigjohet me diferencën (p.sh. rimbursimi hiqet nëse bileta del e humbur).': "Pick the real result of the legs to change. The player's balance is corrected by the difference (e.g. the refund is taken back if the ticket turns out lost).",
+  'Zgjidh rezultatin e të paktën një legu': 'Pick the result of at least one leg',
+  'Pa ndryshim': 'No change',
+  'Fitues': 'Won',
+  'Humbës': 'Lost',
+  'Rimburso': 'Refund',
+  'Balanca e': 'Balance of',
+  'Shiko efektin': 'Preview effect',
+  'Konfirmo ndryshimin': 'Confirm change',
   'Krijimi i agjentit deshtoi': 'Failed to create agent',
   'Veprimi deshtoi': 'Action failed',
   'Komisioni duhet te jete nje numer 0-100': 'Commission must be a number between 0 and 100',

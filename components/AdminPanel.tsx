@@ -18,9 +18,11 @@ interface AdminPanelProps {
   onAddCredit: (userId: string, amount: number) => void;
   onResetPassword: (userId: string, newPass: string) => void;
   onCancelBet: (betId: string, origin: 'USER' | 'ADMIN') => void;
+  /** Reloads users and tickets after a ticket was re-settled. */
+  onReload?: () => void;
 }
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet, viewerRole }) => {
+const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet, onReload, viewerRole }) => {
   const viewerIsSuper = isSuperAdminRole(viewerRole);
   const { t, locale } = useI18n();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'tickets' | 'audit' | 'markets' | 'pending'>('dashboard');
@@ -583,7 +585,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
           </div>
         )}
       </div>
-      <TicketDetailModal ticket={openTicket} onClose={() => setOpenTicket(null)} />
+      <TicketDetailModal ticket={openTicket} onClose={() => setOpenTicket(null)} canResettle={viewerIsSuper} onResettled={onReload} />
     </div>
   );
 };

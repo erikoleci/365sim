@@ -9,6 +9,7 @@ import { readLiveCorners } from '../matchSettlement.js';
 import { settleMatch, recomputeBetStatus, settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult, explainSettleBlock } from '../matchSettlement.js';
 import { missedLiveCycles } from '../london365/liveState.js';
 import { logAudit } from '../auditLog.js';
+import { resettleBet, ResettleError } from '../resettle.js';
 import { buildCoverageReport, formatCoverageText } from '../marketCoverage.js';
 import { settlementRuleRequired, getBetBlockReason } from '../marketRules.js';
 import { getFeedKeySamples } from '../feedKeySampler.js';
@@ -665,6 +666,34 @@ router.patch('/bet-selections/:id', async (req, res) => {
 
   await logAudit(req.user, 'SELECTION_OVERRIDE', String(selection.id), { betId: selection.bet_id, status, matchId: selection.match_id });
   res.json({ ok: true });
+});
+
+// Re-decide a ticket that is ALREADY closed (e.g. legs the overdue rule refunded that the super admin now
+// knows lost) and put the player's balance right: what the ticket had paid is replaced by what it is now
+// worth, so a refund that should have been a loss is taken back. Body: { legs: [{ id, outcome }], dryRun? }.
+// dryRun:true changes nothing and returns the effect (ticket status and balance change) for confirmation.
+router.post('/bets/:id/resettle', requireSuperAdmin, async (req, res) => {
+  const { legs, dryRun } = req.body || {};
+  const preview = dryRun === true;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await resettleBet(client, req.params.id, legs, { dryRun: preview, actorId: req.user.id });
+    await client.query(preview ? 'ROLLBACK' : 'COMMIT');
+    if (!preview) {
+      await logAudit(req.user, 'BET_RESETTLE', req.params.id, {
+        userId: result.userId, fromStatus: result.fromStatus, toStatus: result.toStatus, paidBefore: result.paidBefore,
+        worthNow: result.worthNow, balanceChange: result.delta, legs: result.legs,
+      });
+    }
+    res.json(result);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (err instanceof ResettleError) return res.status(err.status).json({ error: err.message, code: err.code });
+    throw err;
+  } finally {
+    client.release();
+  }
 });
 
 // --- MATCH SETTLEMENT ---

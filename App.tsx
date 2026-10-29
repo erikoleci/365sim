@@ -135,6 +135,7 @@ const App: React.FC = () => {
         onAddCredit={admin.addCredit}
         onResetPassword={admin.resetPassword}
         onCancelBet={admin.cancelBet}
+        onReload={admin.reload}
       />
     );
   }

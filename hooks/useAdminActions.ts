@@ -142,5 +142,5 @@ export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reload
 
   const reset = useCallback(() => { setAdminUsers([]); setAdminAllBets([]); }, []);
 
-  return { adminUsers, adminAllBets, simulatingMatchId, createUser, deleteUser, addCredit, resetPassword, cancelBet, settleMatch, reset };
+  return { adminUsers, adminAllBets, simulatingMatchId, createUser, deleteUser, addCredit, resetPassword, cancelBet, settleMatch, reset, reload: loadAdminData };
 }

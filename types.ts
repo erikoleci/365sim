@@ -118,6 +118,8 @@ export enum BetStatus {
 }
 
 export interface BetSelectionItem {
+  /** Database id of the ticket leg (set on tickets read back from the server). */
+  id?: number;
   matchId: string;
   matchHome: string;
   matchAway: string;

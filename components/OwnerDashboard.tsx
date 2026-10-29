@@ -14,6 +14,8 @@ interface OwnerDashboardProps {
   onAddCredit: (userId: string, amount: number) => void;
   onResetPassword: (userId: string, newPass: string) => void;
   onCancelBet: (betId: string, origin: 'USER' | 'ADMIN') => void;
+  /** Reloads users and tickets (after a ticket was re-settled). */
+  onReload?: () => void;
 }
 
 const money = (n: number) => Number(n || 0).toLocaleString(getLocale(), { maximumFractionDigits: 2 });
@@ -24,7 +26,7 @@ const money = (n: number) => Number(n || 0).toLocaleString(getLocale(), { maximu
 // when actual changes (create agent, credit, reset password) are needed.
 const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   currentUser, onLogout, users, allBets,
-  onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet,
+  onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet, onReload,
 }) => {
   const { t } = useI18n();
   const [tab, setTab] = useState<'reports' | 'monthly' | 'manage'>('reports');
@@ -347,6 +349,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             onCreateUser={onCreateUser} onDeleteUser={onDeleteUser}
             onAddCredit={onAddCredit} onResetPassword={onResetPassword}
             onCancelBet={onCancelBet}
+            onReload={onReload}
           />
         )}
       </main>
