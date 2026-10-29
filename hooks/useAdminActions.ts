@@ -76,13 +76,13 @@ export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reload
     }
   };
 
-  const addCredit = async (userId: string, amount: number) => {
+  const addCredit = async (userId: string, amount: number, amountEur = 0) => {
     try {
       // credit for an admin account is the super admin's own route (ledger SUPER_TO_ADMIN)
       if (isSuper && adminUsers.find((u) => u.id === userId)?.role === UserRole.ADMIN) {
-        if (amount < 0) await api.adminDebitAdmin(userId, -amount); else await api.adminCreditAdmin(userId, amount);
+        if (amount < 0 || amountEur < 0) await api.adminDebitAdmin(userId, Math.abs(amount), Math.abs(amountEur)); else await api.adminCreditAdmin(userId, amount, amountEur);
       }
-      else await api.adminAddCredit(userId, amount);
+      else await api.adminAddCredit(userId, amount, amountEur);
       await loadAdminData();
       if (currentUser?.id === userId) setCurrentUser(await api.fetchCurrentUser());
     } catch (e: any) {

@@ -81,12 +81,12 @@ export function useBetSlip({ currentUser, setCurrentUser, onPlaced }: Options) {
 
   const clearSelections = useCallback(() => setSelections([]), []);
 
-  const placeBet = useCallback(async (stake: number, type: 'SINGLE' | 'ACCUMULATOR') => {
+  const placeBet = useCallback(async (stake: number, type: 'SINGLE' | 'ACCUMULATOR', currency: 'ALL' | 'EUR' = 'ALL') => {
     if (!currentUser || selections.length === 0) return;
     setBetError(null);
     try {
-      const result = await api.placeBet(stake, type, selections);
-      setCurrentUser((prev) => (prev ? { ...prev, balance: result.balance } : prev));
+      const result = await api.placeBet(stake, type, selections, currency);
+      setCurrentUser((prev) => (prev ? { ...prev, balance: result.balance, balanceEur: result.balanceEur } : prev));
       setSelections([]);
       await onPlaced();
     } catch (e: any) {

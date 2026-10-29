@@ -197,13 +197,14 @@ export async function fetchMatchLiveDetail(matchId: string): Promise<{ statistic
 
 // --- Bets ---
 
-export async function placeBet(stake: number, type: 'SINGLE' | 'ACCUMULATOR', selections: BetSelectionItem[]) {
-  return request<{ bet: { id: string; totalOdds: number; potentialReturn: number; stake: number }; balance: number }>(
+export async function placeBet(stake: number, type: 'SINGLE' | 'ACCUMULATOR', selections: BetSelectionItem[], currency: 'ALL' | 'EUR' = 'ALL') {
+  return request<{ bet: { id: string; totalOdds: number; potentialReturn: number; stake: number; currency?: 'ALL' | 'EUR' }; balance: number; balanceEur: number }>(
     '/bets',
     {
       method: 'POST',
       body: JSON.stringify({
         stake,
+        currency,
         type,
         selections: selections.map((s) => ({
           matchId: s.matchId,
@@ -226,8 +227,8 @@ export async function fetchMyBets(): Promise<Bet[]> {
   return data.bets.map(mapServerBet);
 }
 
-export async function cancelMyBet(betId: string): Promise<{ balance: number }> {
-  return request<{ ok: true; balance: number }>(`/bets/${betId}/cancel`, { method: 'POST' });
+export async function cancelMyBet(betId: string): Promise<{ balance: number; balanceEur: number }> {
+  return request<{ ok: true; balance: number; balanceEur: number }>(`/bets/${betId}/cancel`, { method: 'POST' });
 }
 
 function mapServerBet(b: any): Bet {
@@ -239,6 +240,7 @@ function mapServerBet(b: any): Bet {
     totalOdds: b.total_odds,
     potentialReturn: b.potential_return,
     status: b.status,
+    currency: b.currency === 'EUR' ? 'EUR' : 'ALL',
     timestamp: Number(b.created_at),
     cancellable: b.cancellable === true,
     selections: (b.selections || []).map((s: any) => ({
@@ -278,10 +280,16 @@ export async function adminForceDeleteUser(userId: string) {
   return request<{ ok: true }>(`/admin/users/${userId}/force`, { method: 'DELETE' });
 }
 
-export async function adminAddCredit(userId: string, amount: number) {
+/** Body of a credit/debit call: lek in `amount`, euro in `amountEur` (zero parts are left out). */
+const moneyBody = (amount: number, amountEur = 0) => JSON.stringify({
+  ...(amount ? { amount } : {}),
+  ...(amountEur ? { amountEur } : {}),
+});
+
+export async function adminAddCredit(userId: string, amount: number, amountEur = 0) {
   return request<{ user: User }>(`/admin/users/${userId}/credit`, {
     method: 'POST',
-    body: JSON.stringify({ amount }),
+    body: moneyBody(amount, amountEur),
   });
 }
 
@@ -347,12 +355,12 @@ export async function adminCreateAdmin(a: { name: string; username: string; pass
   return request<{ admin: User }>('/admin/admins', { method: 'POST', body: JSON.stringify(a) });
 }
 
-export async function adminDebitAdmin(adminId: string, amount: number) {
-  return request<{ balance: number }>(`/admin/admins/${adminId}/debit`, { method: 'POST', body: JSON.stringify({ amount }) });
+export async function adminDebitAdmin(adminId: string, amount: number, amountEur = 0) {
+  return request<{ balance: number; balanceEur: number }>(`/admin/admins/${adminId}/debit`, { method: 'POST', body: moneyBody(amount, amountEur) });
 }
 
-export async function adminCreditAdmin(adminId: string, amount: number) {
-  return request<{ balance: number }>(`/admin/admins/${adminId}/credit`, { method: 'POST', body: JSON.stringify({ amount }) });
+export async function adminCreditAdmin(adminId: string, amount: number, amountEur = 0) {
+  return request<{ balance: number; balanceEur: number }>(`/admin/admins/${adminId}/credit`, { method: 'POST', body: moneyBody(amount, amountEur) });
 }
 
 /** Super admin: erase any ticket (open, live or settled). adjust=false leaves all balances untouched. */
@@ -409,15 +417,15 @@ export async function adminCreateAgent(a: { name: string; username: string; pass
   return request<{ agent: User }>('/admin/agents', { method: 'POST', body: JSON.stringify(a) });
 }
 
-export async function adminCreditAgent(agentId: string, amount: number) {
-  return request<{ balance: number; ownerBalance: number }>(`/admin/agents/${agentId}/credit`, {
-    method: 'POST', body: JSON.stringify({ amount }),
+export async function adminCreditAgent(agentId: string, amount: number, amountEur = 0) {
+  return request<{ balance: number; balanceEur: number; ownerBalance: number; ownerBalanceEur: number }>(`/admin/agents/${agentId}/credit`, {
+    method: 'POST', body: moneyBody(amount, amountEur),
   });
 }
 
-export async function adminDebitAgent(agentId: string, amount: number) {
-  return request<{ balance: number; ownerBalance: number }>(`/admin/agents/${agentId}/debit`, {
-    method: 'POST', body: JSON.stringify({ amount }),
+export async function adminDebitAgent(agentId: string, amount: number, amountEur = 0) {
+  return request<{ balance: number; balanceEur: number; ownerBalance: number; ownerBalanceEur: number }>(`/admin/agents/${agentId}/debit`, {
+    method: 'POST', body: moneyBody(amount, amountEur),
   });
 }
 
@@ -428,7 +436,7 @@ export async function adminSetAgentCommission(agentId: string, commissionRate: n
 }
 
 export interface AgentUserPerformance {
-  id: string; name: string; username: string; balance: number; is_active: boolean;
+  id: string; name: string; username: string; balance: number; balanceEur?: number; is_active: boolean;
   tickets: number; turnover: number; wins: number; losses: number; pending: number;
 }
 export async function adminFetchAgentPerformance(agentId: string) {
@@ -449,12 +457,12 @@ export async function agentSetUserActive(userId: string, active: boolean) {
   return request<{ ok: true }>(`/agent/users/${userId}/active`, { method: 'PATCH', body: JSON.stringify({ active }) });
 }
 
-export async function agentCreditUser(userId: string, amount: number) {
-  return request<{ balance: number; agentBalance: number }>(`/agent/users/${userId}/credit`, { method: 'POST', body: JSON.stringify({ amount }) });
+export async function agentCreditUser(userId: string, amount: number, amountEur = 0) {
+  return request<{ balance: number; balanceEur: number; agentBalance: number; agentBalanceEur: number }>(`/agent/users/${userId}/credit`, { method: 'POST', body: moneyBody(amount, amountEur) });
 }
 
-export async function agentDebitUser(userId: string, amount: number) {
-  return request<{ balance: number; agentBalance: number }>(`/agent/users/${userId}/debit`, { method: 'POST', body: JSON.stringify({ amount }) });
+export async function agentDebitUser(userId: string, amount: number, amountEur = 0) {
+  return request<{ balance: number; balanceEur: number; agentBalance: number; agentBalanceEur: number }>(`/agent/users/${userId}/debit`, { method: 'POST', body: moneyBody(amount, amountEur) });
 }
 
 export interface AgentTicketSelection {

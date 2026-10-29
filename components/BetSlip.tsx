@@ -9,18 +9,25 @@ interface BetSlipProps {
   selections: BetSelectionItem[];
   onRemoveSelection: (uniqueId: string) => void;
   onClearAll: () => void;
-  onPlaceBet: (stake: number, type: 'SINGLE' | 'ACCUMULATOR') => void;
+  onPlaceBet: (stake: number, type: 'SINGLE' | 'ACCUMULATOR', currency: 'ALL' | 'EUR') => void;
   onCancelBet: (betId: string, origin: 'USER' | 'ADMIN') => void;
   userBalance: number;
+  userBalanceEur?: number;
   myBets: Bet[];
 }
 
-const MIN_STAKE = 10; // must match MIN_STAKE in server/routes/bets.js
-const MAX_STAKE = 1000000; // must match MAX_STAKE in server/routes/bets.js
-const MAX_POTENTIAL_RETURN = 1000000; // must match MAX_POTENTIAL_RETURN in server/routes/bets.js
+// Limits per wallet: must match the constants in server/routes/bets.js
+const LIMITS = {
+  ALL: { min: 10, maxStake: 1000000, maxReturn: 1000000, symbol: 'L' },
+  EUR: { min: 1, maxStake: 10000, maxReturn: 10000, symbol: '€' },
+} as const;
 
-const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClearAll, onPlaceBet, onCancelBet, userBalance, myBets }) => {
+const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClearAll, onPlaceBet, onCancelBet, userBalance, userBalanceEur = 0, myBets }) => {
   const { t, locale } = useI18n();
+  // A ticket is placed in ONE wallet: lek or euro.
+  const [currency, setCurrency] = useState<'ALL' | 'EUR'>('ALL');
+  const { min: MIN_STAKE, maxStake: MAX_STAKE, maxReturn: MAX_POTENTIAL_RETURN, symbol: sym } = LIMITS[currency];
+  const walletBalance = currency === 'EUR' ? userBalanceEur : userBalance;
   const [stake, setStake] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'slip' | 'mybets'>('slip');
   const [showConfirm, setShowConfirm] = useState(false);
@@ -55,7 +62,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
   // (the server refuses it as well, this just stops the player before the round trip).
   const exceedsMaxReturn = Number((stakeNum * totalOdds).toFixed(2)) > MAX_POTENTIAL_RETURN;
   const exceedsMaxStake = stakeNum > MAX_STAKE;
-  const isValidStake = stakeNum >= MIN_STAKE && stakeNum <= MAX_STAKE && stakeNum <= userBalance && hasValidDecimals && !hasConflicts && !exceedsMaxReturn;
+  const isValidStake = stakeNum >= MIN_STAKE && stakeNum <= MAX_STAKE && stakeNum <= walletBalance && hasValidDecimals && !hasConflicts && !exceedsMaxReturn;
   const changedSelections = selections.filter((s) => typeof s.previousOdds === 'number');
 
   const handlePlaceBetClick = () => {
@@ -64,7 +71,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
   };
 
   const confirmBet = () => {
-    onPlaceBet(parseFloat(stake), isAccumulator ? 'ACCUMULATOR' : 'SINGLE');
+    onPlaceBet(parseFloat(stake), isAccumulator ? 'ACCUMULATOR' : 'SINGLE', currency);
     setStake('');
     setShowConfirm(false);
   };
@@ -87,7 +94,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                   <div className="p-4">
                     <div className="flex justify-between mb-2 text-brand-textMuted text-xs">
                         <span>Stake</span>
-                        <span className="text-white font-bold tabular-nums">{parseFloat(stake).toFixed(2)} L</span>
+                        <span className="text-white font-bold tabular-nums">{parseFloat(stake).toFixed(2)} {sym}</span>
                     </div>
                     <div className="flex justify-between mb-3 text-brand-textMuted text-xs">
                         <span>{t('Kuota Totale')}</span>
@@ -96,7 +103,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                     <div className="border-t border-dashed border-brand-divider" />
                     <div className="flex justify-between pt-3">
                         <span className="text-brand-text">{t('Fitimi i Mundshëm')}</span>
-                        <span className="text-brand-accent font-bold text-base tabular-nums">{potentialReturn} L</span>
+                        <span className="text-brand-accent font-bold text-base tabular-nums">{potentialReturn} {sym}</span>
                     </div>
                   </div>
               </div>
@@ -214,9 +221,25 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                             )}
 
                             <div className="flex items-center gap-2 mb-2">
+                                <span className="text-brand-textMuted w-12">{t('Monedha')}</span>
+                                <div className="flex flex-1 rounded-lg overflow-hidden border border-brand-divider text-xs font-bold">
+                                    {(['ALL', 'EUR'] as const).map((c) => (
+                                        <button
+                                            key={c}
+                                            type="button"
+                                            onClick={() => setCurrency(c)}
+                                            className={`flex-1 py-1.5 tabular-nums ${currency === c ? 'bg-brand-yellow text-brand-bg' : 'bg-brand-panel text-brand-textMuted hover:text-white'}`}
+                                        >
+                                            {c === 'EUR' ? `€ ${userBalanceEur.toFixed(2)}` : `L ${userBalance.toFixed(2)}`}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 mb-2">
                                 <span className="text-brand-textMuted w-12">Stake</span>
                                 <div className="flex-1 relative">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-textMuted font-bold text-xs">L</span>
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-brand-textMuted font-bold text-xs">{sym}</span>
                                     <input
                                         type="number"
                                         inputMode="decimal"
@@ -230,7 +253,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
 
                             <div className="flex justify-between text-xs text-brand-textMuted mb-4">
                                 <span>{t('Fitimi i Mundshëm')}</span>
-                                <span className="text-brand-text font-bold tabular-nums">{potentialReturn} L</span>
+                                <span className="text-brand-text font-bold tabular-nums">{potentialReturn} {sym}</span>
                             </div>
 
                             <button
@@ -243,22 +266,22 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                             {hasConflicts && (
                                 <p className="text-red-400 text-xs text-center mt-2">{t('Hiq zgjedhjet e lidhura për të vendosur biletën')}</p>
                             )}
-                            {!isValidStake && stake && stakeNum > userBalance && (
+                            {!isValidStake && stake && stakeNum > walletBalance && (
                                 <p className="text-red-400 text-xs text-center mt-2">{t('Fonde të pamjaftueshme')}</p>
                             )}
                             {exceedsMaxStake && (
                                 <p className="text-red-400 text-xs text-center mt-2">
-                                    {t('Stake maksimal për një biletë është')} {MAX_STAKE.toLocaleString('en-US')} L
+                                    {t('Stake maksimal për një biletë është')} {MAX_STAKE.toLocaleString('en-US')} {sym}
                                 </p>
                             )}
                             {exceedsMaxReturn && !exceedsMaxStake && (
                                 <p className="text-red-400 text-xs text-center mt-2">
-                                    {t('Fitimi maksimal për një biletë është')} {MAX_POTENTIAL_RETURN.toLocaleString('en-US')} L. {t('Ul stake-un ose hiq zgjedhje.')}
+                                    {t('Fitimi maksimal për një biletë është')} {MAX_POTENTIAL_RETURN.toLocaleString('en-US')} {sym}. {t('Ul stake-un ose hiq zgjedhje.')}
                                 </p>
                             )}
-                            {!isValidStake && !exceedsMaxReturn && !exceedsMaxStake && stake && stakeNum <= userBalance && stakeNum > 0 && (
+                            {!isValidStake && !exceedsMaxReturn && !exceedsMaxStake && stake && stakeNum <= walletBalance && stakeNum > 0 && (
                                 <p className="text-red-400 text-xs text-center mt-2">
-                                    {!hasValidDecimals ? 'Maksimumi 2 shifra pas presjes' : `Stake minimal është ${MIN_STAKE} L`}
+                                    {!hasValidDecimals ? 'Maksimumi 2 shifra pas presjes' : `Stake minimal është ${MIN_STAKE} ${sym}`}
                                 </p>
                             )}
                         </div>
@@ -310,8 +333,8 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
 
                             <div className="flex justify-between items-center pt-1.5 border-t border-dashed border-brand-divider">
                                 <div>
-                                    <span className="font-bold text-white mr-2 tabular-nums">Stake: {bet.stake} L</span>
-                                    <span className="font-bold text-brand-yellow tabular-nums">Ret: {bet.potentialReturn.toFixed(2)} L</span>
+                                    <span className="font-bold text-white mr-2 tabular-nums">Stake: {bet.stake} {bet.currency === 'EUR' ? '€' : 'L'}</span>
+                                    <span className="font-bold text-brand-yellow tabular-nums">Ret: {bet.potentialReturn.toFixed(2)} {bet.currency === 'EUR' ? '€' : 'L'}</span>
                                 </div>
                                 {canCancel && (
                                     <button

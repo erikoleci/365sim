@@ -807,18 +807,19 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
 // could change with no trace. A failed ledger write fails (and rolls back) the whole
 // settlement, which the sweeps then retry: money must never move without a record.
 // type: 'BET_WIN_PAYOUT' | 'BET_VOID_REFUND'; reference: the bet id.
-async function creditWithLedger(client, userId, amount, type, betId) {
-  const { rows } = await client.query('SELECT balance FROM users WHERE id = $1 FOR UPDATE', [userId]);
+async function creditWithLedger(client, userId, amount, type, betId, currency = 'ALL') {
+  const col = currency === 'EUR' ? 'balance_eur' : 'balance';
+  const { rows } = await client.query(`SELECT ${col} FROM users WHERE id = $1 FOR UPDATE`, [userId]);
   if (!rows[0]) return; // user no longer exists: nothing to credit
-  const before = Number(rows[0].balance);
+  const before = Number(rows[0][col]);
   const after = Math.round((before + Number(amount)) * 100) / 100;
-  await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [amount, userId]);
+  await client.query(`UPDATE users SET ${col} = ${col} + $1 WHERE id = $2`, [amount, userId]);
   await client.query(
     `INSERT INTO transactions
       (actor_id, source_id, target_id, amount, type, reference,
-       source_balance_before, source_balance_after, target_balance_before, target_balance_after, created_at)
-     VALUES ($1,$1,$1,$2,$3,$4,$5,$6,$5,$6,$7)`,
-    [userId, amount, type, betId, before, after, Date.now()]
+       source_balance_before, source_balance_after, target_balance_before, target_balance_after, created_at, currency)
+     VALUES ($1,$1,$1,$2,$3,$4,$5,$6,$5,$6,$7,$8)`,
+    [userId, amount, type, betId, before, after, Date.now(), currency === 'EUR' ? 'EUR' : 'ALL']
   );
 }
 
@@ -851,16 +852,16 @@ export async function recomputeBetStatus(betId, client = pool) {
   if (nextStatus === 'WON' && outcome.payout != null) {
     // Some legs were refunded and/or half won / half lost: pay what the legs are really worth.
     await client.query('UPDATE bets SET status = $1, total_odds = $2, potential_return = $3 WHERE id = $4', [nextStatus, outcome.totalOdds, outcome.payout, betId]);
-    if (bet.status !== 'WON') await creditWithLedger(client, bet.user_id, outcome.payout, 'BET_WIN_PAYOUT', betId);
+    if (bet.status !== 'WON') await creditWithLedger(client, bet.user_id, outcome.payout, 'BET_WIN_PAYOUT', betId, bet.currency);
     return;
   }
 
   await client.query('UPDATE bets SET status = $1 WHERE id = $2', [nextStatus, betId]);
   if (nextStatus === 'WON' && bet.status !== 'WON') {
-    await creditWithLedger(client, bet.user_id, bet.potential_return, 'BET_WIN_PAYOUT', betId);
+    await creditWithLedger(client, bet.user_id, bet.potential_return, 'BET_WIN_PAYOUT', betId, bet.currency);
   }
   if (nextStatus === 'VOID' && bet.status !== 'VOID') {
-    await creditWithLedger(client, bet.user_id, bet.stake, 'BET_VOID_REFUND', betId);
+    await creditWithLedger(client, bet.user_id, bet.stake, 'BET_VOID_REFUND', betId, bet.currency);
   }
 }
 

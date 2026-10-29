@@ -71,6 +71,7 @@ export const enCore: Record<string, string> = {
   "Kuotë e vlerësuar (shumëzim i kuotave individuale) — asnjë provider nuk jep çmim të dedikuar SGM, kështu që ky kombinim s'e llogarit varësinë mes rezultateve në të njëjtën ndeshje.": "Estimated odds (the individual odds multiplied together) — no provider offers a dedicated SGM price, so this combination does not account for how outcomes in the same match depend on each other.",
   'Prano Ndryshimet & Vendos': 'Accept Changes & Place Bet',
   'Fonde të pamjaftueshme': 'Insufficient funds',
+  'Monedha': 'Currency',
   "Ende s'ke bileta": "You have no bets yet",
   'Biletat e vendosura shfaqen këtu, me statusin e tyre në kohë reale.': 'Placed bets appear here, with their status in real time.',
   'Hapur': 'Open',

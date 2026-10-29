@@ -16,7 +16,7 @@ import { getRecentErrors } from '../recentErrors.js';
 import { getUnmappedVcReport } from '../vcDeltaSampler.js';
 import { mapEventToMatch } from '../oddsUtils.js';
 
-import { transferBalance } from '../ledger.js';
+import { transferBalance, transferBalances, amountParts, readWallet, walletColumn } from '../ledger.js';
 import { getTicketDeletionAllowed, setTicketDeletionAllowed } from '../appSettings.js';
 import { isAdminRole, isSuperAdmin, ROLE_ADMIN } from '../roles.js';
 import { scopeOf, ownsRow } from '../adminScope.js';
@@ -75,7 +75,7 @@ function canDeleteAccount(actor, target) {
 function toPublicUser(row) {
   return {
     id: row.id, name: row.name, username: row.username,
-    balance: row.balance, role: row.role, avatar: row.avatar,
+    balance: row.balance, balanceEur: row.balance_eur ?? 0, role: row.role, avatar: row.avatar,
     isActive: row.is_active, agentId: row.agent_id, adminId: row.admin_id ?? null,
     // Only meaningful for AGENT rows; present (as 0) for USER/ADMIN too so
     // the shape is consistent, since the frontend types this as a single
@@ -313,7 +313,7 @@ router.get('/reports/monthly', async (req, res) => {
 router.get('/reports/admins', requireSuperAdmin, async (req, res) => {
   const { rangeStart, rangeEnd, label } = monthRange(req.query.month);
   const { rows } = await pool.query(
-    `SELECT a.id, a.name, a.username, a.balance,
+    `SELECT a.id, a.name, a.username, a.balance, a.balance_eur AS "balanceEur",
             (SELECT COUNT(*)::int FROM users x WHERE x.admin_id = a.id AND x.role = 'AGENT') AS agents,
             (SELECT COUNT(*)::int FROM users x WHERE x.admin_id = a.id AND x.role = 'USER') AS users,
             ${TICKET_SUMS}
@@ -407,20 +407,22 @@ router.patch('/agents/:id/commission', async (req, res) => {
 // was previously no way to do this after agent creation — funding only
 // happened once, at creation time.
 router.post('/agents/:id/credit', async (req, res) => {
-  const { amount } = req.body || {};
-  if (typeof amount !== 'number' || amount <= 0) {
+  const parts = amountParts(req.body);
+  if (!parts || parts.some((p) => p.amount <= 0)) {
     return res.status(400).json({ error: 'amount must be a positive number' });
   }
   const { rows } = await pool.query(`SELECT * FROM users WHERE id = $1 AND role = 'AGENT'`, [req.params.id]);
   if (!rows[0] || !ownsRow(req.user, rows[0])) return res.status(404).json({ error: 'Agent not found' });
 
   try {
-    const result = await transferBalance({
+    await transferBalances({
       actorId: req.user.id, sourceId: req.user.id, targetId: req.params.id,
-      amount, type: 'OWNER_TO_AGENT', reference: rows[0].username,
-    });
-    await logAudit(req.user, 'AGENT_CREDIT', req.params.id, { amount, username: rows[0].username });
-    res.json({ balance: result.targetAfter, ownerBalance: result.sourceAfter });
+      type: 'OWNER_TO_AGENT', reference: rows[0].username,
+    }, parts);
+    await logAudit(req.user, 'AGENT_CREDIT', req.params.id, { amounts: parts, username: rows[0].username });
+    const agent = await readWallet(req.params.id);
+    const owner = await readWallet(req.user.id);
+    res.json({ balance: agent.balance, balanceEur: agent.balanceEur, ownerBalance: owner.balance, ownerBalanceEur: owner.balanceEur });
   } catch (err) {
     if (err.message === 'Insufficient balance') return res.status(400).json({ error: 'Insufficient owner balance' });
     throw err;
@@ -430,20 +432,22 @@ router.post('/agents/:id/credit', async (req, res) => {
 // Withdraw funds back from an agent into the admin's own balance (the
 // reverse of the above) — mirrors the existing Agent -> User debit route.
 router.post('/agents/:id/debit', async (req, res) => {
-  const { amount } = req.body || {};
-  if (typeof amount !== 'number' || amount <= 0) {
+  const parts = amountParts(req.body);
+  if (!parts || parts.some((p) => p.amount <= 0)) {
     return res.status(400).json({ error: 'amount must be a positive number' });
   }
   const { rows } = await pool.query(`SELECT * FROM users WHERE id = $1 AND role = 'AGENT'`, [req.params.id]);
   if (!rows[0] || !ownsRow(req.user, rows[0])) return res.status(404).json({ error: 'Agent not found' });
 
   try {
-    const result = await transferBalance({
+    await transferBalances({
       actorId: req.user.id, sourceId: req.params.id, targetId: req.user.id,
-      amount, type: 'AGENT_TO_OWNER', reference: rows[0].username,
-    });
-    await logAudit(req.user, 'AGENT_DEBIT', req.params.id, { amount, username: rows[0].username });
-    res.json({ balance: result.sourceAfter, ownerBalance: result.targetAfter });
+      type: 'AGENT_TO_OWNER', reference: rows[0].username,
+    }, parts);
+    await logAudit(req.user, 'AGENT_DEBIT', req.params.id, { amounts: parts, username: rows[0].username });
+    const agent = await readWallet(req.params.id);
+    const owner = await readWallet(req.user.id);
+    res.json({ balance: agent.balance, balanceEur: agent.balanceEur, ownerBalance: owner.balance, ownerBalanceEur: owner.balanceEur });
   } catch (err) {
     if (err.message === 'Insufficient balance') return res.status(400).json({ error: 'Insufficient agent balance' });
     throw err;
@@ -457,7 +461,7 @@ router.get('/agents/:id/performance', async (req, res) => {
   if (!agentRows[0] || !ownsRow(req.user, agentRows[0])) return res.status(404).json({ error: 'Agent not found' });
 
   const { rows } = await pool.query(
-    `SELECT u.id, u.name, u.username, u.balance, u.is_active,
+    `SELECT u.id, u.name, u.username, u.balance, u.balance_eur AS "balanceEur", u.is_active,
             COALESCE(COUNT(b.id), 0)::int AS tickets,
             COALESCE(SUM(b.stake), 0) AS turnover,
             COALESCE(SUM(CASE WHEN b.status = 'WON' THEN b.potential_return - b.stake ELSE 0 END), 0) AS wins,
@@ -504,8 +508,9 @@ router.delete('/users/:id/force', async (req, res) => {
 });
 
 router.post('/users/:id/credit', async (req, res) => {
-  const { amount } = req.body || {};
-  if (typeof amount !== 'number' || amount === 0) {
+  // `amount` = lek, `amountEur` = euro: either or both, positive (give) or negative (take back).
+  const parts = amountParts(req.body, { signed: true });
+  if (!parts) {
     return res.status(400).json({ error: 'amount must be a non-zero number' });
   }
   const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
@@ -520,20 +525,25 @@ router.post('/users/:id/credit', async (req, res) => {
     // A normal admin does not create money: what he gives (or takes back) moves between HIS balance
     // (given by the super admin) and the account. When his credit runs out he waits for the super admin.
     try {
-      await transferBalance(amount > 0
-        ? { actorId: req.user.id, sourceId: req.user.id, targetId: req.params.id, amount, type: 'ADMIN_TO_USER', reference: rows[0].username }
-        : { actorId: req.user.id, sourceId: req.params.id, targetId: req.user.id, amount: -amount, type: 'USER_TO_ADMIN', reference: rows[0].username });
+      for (const p of parts) {
+        await transferBalance(p.amount > 0
+          ? { actorId: req.user.id, sourceId: req.user.id, targetId: req.params.id, amount: p.amount, currency: p.currency, type: 'ADMIN_TO_USER', reference: rows[0].username }
+          : { actorId: req.user.id, sourceId: req.params.id, targetId: req.user.id, amount: -p.amount, currency: p.currency, type: 'USER_TO_ADMIN', reference: rows[0].username });
+      }
     } catch (err) {
       if (err.message === 'Insufficient balance') {
-        return res.status(400).json({ error: amount > 0 ? 'Kredia jote ka mbaruar: prit që super admini të të shtojë kredi' : 'Ky llogari nuk ka aq kredi' });
+        return res.status(400).json({ error: parts.some((p) => p.amount > 0) ? 'Kredia jote ka mbaruar: prit që super admini të të shtojë kredi' : 'Ky llogari nuk ka aq kredi' });
       }
       throw err;
     }
   } else {
-    await pool.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [amount, req.params.id]);
+    // The super admin mints money: lek and euro in one statement.
+    const lek = parts.find((p) => p.currency === 'ALL')?.amount ?? 0;
+    const eur = parts.find((p) => p.currency === 'EUR')?.amount ?? 0;
+    await pool.query('UPDATE users SET balance = balance + $1, balance_eur = balance_eur + $2 WHERE id = $3', [lek, eur, req.params.id]);
   }
   const { rows: updated } = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
-  await logAudit(req.user, 'BALANCE_CREDIT', req.params.id, { amount, username: rows[0].username });
+  await logAudit(req.user, 'BALANCE_CREDIT', req.params.id, { amounts: parts, username: rows[0].username });
   res.json({ user: toPublicUser(updated[0]) });
 });
 
@@ -628,35 +638,37 @@ router.post('/admins', requireSuperAdmin, async (req, res) => {
 
 // Give credit to an admin (recorded in the ledger as SUPER_TO_ADMIN, like the admin -> agent credit).
 router.post('/admins/:id/credit', requireSuperAdmin, async (req, res) => {
-  const { amount } = req.body || {};
-  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+  const parts = amountParts(req.body);
+  if (!parts || parts.some((p) => p.amount <= 0)) {
     return res.status(400).json({ error: 'amount must be a positive number' });
   }
   const { rows } = await pool.query(`SELECT * FROM users WHERE id = $1 AND role = 'ADMIN'`, [req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: 'Admin not found' });
-  const result = await transferBalance({
+  await transferBalances({
     actorId: req.user.id, sourceId: null, targetId: req.params.id,
-    amount, type: 'SUPER_TO_ADMIN', reference: rows[0].username,
-  });
-  await logAudit(req.user, 'ADMIN_CREDIT', req.params.id, { amount, username: rows[0].username });
-  res.json({ balance: result.targetAfter });
+    type: 'SUPER_TO_ADMIN', reference: rows[0].username,
+  }, parts);
+  await logAudit(req.user, 'ADMIN_CREDIT', req.params.id, { amounts: parts, username: rows[0].username });
+  const admin = await readWallet(req.params.id);
+  res.json({ balance: admin.balance, balanceEur: admin.balanceEur });
 });
 
 // Take credit back from an admin (it returns to the super admin's balance; ledger ADMIN_TO_SUPER).
 router.post('/admins/:id/debit', requireSuperAdmin, async (req, res) => {
-  const { amount } = req.body || {};
-  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+  const parts = amountParts(req.body);
+  if (!parts || parts.some((p) => p.amount <= 0)) {
     return res.status(400).json({ error: 'amount must be a positive number' });
   }
   const { rows } = await pool.query(`SELECT * FROM users WHERE id = $1 AND role = 'ADMIN'`, [req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: 'Admin not found' });
   try {
-    const result = await transferBalance({
+    await transferBalances({
       actorId: req.user.id, sourceId: req.params.id, targetId: req.user.id,
-      amount, type: 'ADMIN_TO_SUPER', reference: rows[0].username,
-    });
-    await logAudit(req.user, 'ADMIN_DEBIT', req.params.id, { amount, username: rows[0].username });
-    res.json({ balance: result.sourceAfter });
+      type: 'ADMIN_TO_SUPER', reference: rows[0].username,
+    }, parts);
+    await logAudit(req.user, 'ADMIN_DEBIT', req.params.id, { amounts: parts, username: rows[0].username });
+    const admin = await readWallet(req.params.id);
+    res.json({ balance: admin.balance, balanceEur: admin.balanceEur });
   } catch (err) {
     if (err.message === 'Insufficient balance') return res.status(400).json({ error: 'Admini ka më pak kredi se kjo shumë' });
     throw err;
@@ -689,7 +701,7 @@ router.delete('/bets/:id', requireSuperAdmin, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    if (delta !== 0) await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [delta, bet.user_id]);
+    if (delta !== 0) await client.query(`UPDATE users SET ${walletColumn(bet.currency)} = ${walletColumn(bet.currency)} + $1 WHERE id = $2`, [delta, bet.user_id]);
     await client.query('DELETE FROM bet_selections WHERE bet_id = $1', [bet.id]);
     await client.query('DELETE FROM bets WHERE id = $1', [bet.id]);
     await client.query('COMMIT');
@@ -723,7 +735,7 @@ router.post('/bets/:id/cancel', async (req, res) => {
     // Put the money back as if the ticket had never been placed (PENDING / LOST: the stake; WON: the winnings
     // are taken back; VOID: it was refunded already, nothing to give twice).
     delta = betBalanceReversal(bet);
-    if (delta !== 0) await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [delta, bet.user_id]);
+    if (delta !== 0) await client.query(`UPDATE users SET ${walletColumn(bet.currency)} = ${walletColumn(bet.currency)} + $1 WHERE id = $2`, [delta, bet.user_id]);
     await client.query('DELETE FROM bet_selections WHERE bet_id = $1', [bet.id]);
     await client.query('DELETE FROM bets WHERE id = $1', [bet.id]);
     await client.query('COMMIT');

@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { logAudit } from '../auditLog.js';
-import { transferBalance } from '../ledger.js';
+import { transferBalance, transferBalances, amountParts, readWallet } from '../ledger.js';
 import { deleteUserIfUnused, deleteBlockedMessage } from '../userDeletion.js';
 
 const router = express.Router();
@@ -22,7 +22,7 @@ router.use(requireAuth, requireAgent);
 function toPublicUser(row) {
   return {
     id: row.id, name: row.name, username: row.username,
-    balance: row.balance, role: row.role, avatar: row.avatar,
+    balance: row.balance, balanceEur: row.balance_eur ?? 0, role: row.role, avatar: row.avatar,
     isActive: row.is_active, agentId: row.agent_id,
     commissionRate: row.commission_rate != null ? Number(row.commission_rate) : 0,
   };
@@ -140,44 +140,49 @@ router.delete('/users/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
-// Credit: Agent -> User (moves out of the agent's own balance).
+// Credit: Agent -> User (moves out of the agent's own balance). `amount` = lek, `amountEur` = euro;
+// send either or both and they move together in one transaction.
 router.post('/users/:id/credit', async (req, res) => {
-  const { amount } = req.body || {};
-  if (typeof amount !== 'number' || amount <= 0) {
+  const parts = amountParts(req.body);
+  if (!parts || parts.some((p) => p.amount <= 0)) {
     return res.status(400).json({ error: 'amount must be a positive number' });
   }
   const { rows } = await pool.query('SELECT * FROM users WHERE id = $1 AND agent_id = $2', [req.params.id, req.user.id]);
   if (!rows[0]) return res.status(404).json({ error: 'User not found' });
 
   try {
-    const result = await transferBalance({
+    await transferBalances({
       actorId: req.user.id, sourceId: req.user.id, targetId: req.params.id,
-      amount, type: 'AGENT_TO_USER', reference: rows[0].username,
-    });
-    await logAudit(req.user, 'AGENT_USER_CREDIT', req.params.id, { amount, username: rows[0].username });
-    res.json({ balance: result.targetAfter, agentBalance: result.sourceAfter });
+      type: 'AGENT_TO_USER', reference: rows[0].username,
+    }, parts);
+    await logAudit(req.user, 'AGENT_USER_CREDIT', req.params.id, { amounts: parts, username: rows[0].username });
+    const user = await readWallet(req.params.id);
+    const agent = await readWallet(req.user.id);
+    res.json({ balance: user.balance, balanceEur: user.balanceEur, agentBalance: agent.balance, agentBalanceEur: agent.balanceEur });
   } catch (err) {
     if (err.message === 'Insufficient balance') return res.status(400).json({ error: 'Insufficient agent balance' });
     throw err;
   }
 });
 
-// Debit: User -> Agent (withdraw funds back from a user into the agent's balance).
+// Debit: User -> Agent (withdraw funds back from a user into the agent's balance). Lek and/or euro.
 router.post('/users/:id/debit', async (req, res) => {
-  const { amount } = req.body || {};
-  if (typeof amount !== 'number' || amount <= 0) {
+  const parts = amountParts(req.body);
+  if (!parts || parts.some((p) => p.amount <= 0)) {
     return res.status(400).json({ error: 'amount must be a positive number' });
   }
   const { rows } = await pool.query('SELECT * FROM users WHERE id = $1 AND agent_id = $2', [req.params.id, req.user.id]);
   if (!rows[0]) return res.status(404).json({ error: 'User not found' });
 
   try {
-    const result = await transferBalance({
+    await transferBalances({
       actorId: req.user.id, sourceId: req.params.id, targetId: req.user.id,
-      amount, type: 'USER_TO_AGENT', reference: rows[0].username,
-    });
-    await logAudit(req.user, 'AGENT_USER_DEBIT', req.params.id, { amount, username: rows[0].username });
-    res.json({ balance: result.sourceAfter, agentBalance: result.targetAfter });
+      type: 'USER_TO_AGENT', reference: rows[0].username,
+    }, parts);
+    await logAudit(req.user, 'AGENT_USER_DEBIT', req.params.id, { amounts: parts, username: rows[0].username });
+    const user = await readWallet(req.params.id);
+    const agent = await readWallet(req.user.id);
+    res.json({ balance: user.balance, balanceEur: user.balanceEur, agentBalance: agent.balance, agentBalanceEur: agent.balanceEur });
   } catch (err) {
     if (err.message === 'Insufficient balance') return res.status(400).json({ error: 'Insufficient user balance' });
     throw err;

@@ -11,7 +11,7 @@ interface OwnerDashboardProps {
   allBets: Bet[];
   onCreateUser: (u: { name: string; username: string; password: string; balance: number; role: 'USER' | 'AGENT' | 'ADMIN' }) => void;
   onDeleteUser: (userId: string) => void;
-  onAddCredit: (userId: string, amount: number) => void;
+  onAddCredit: (userId: string, amount: number, amountEur?: number) => void;
   onResetPassword: (userId: string, newPass: string) => void;
   onCancelBet: (betId: string, origin: 'USER' | 'ADMIN') => void;
 }

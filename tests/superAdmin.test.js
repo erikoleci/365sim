@@ -50,6 +50,7 @@ const mocks = vi.hoisted(() => {
     if (s.startsWith('SELECT * FROM users WHERE id = $1 AND role = \'ADMIN\'')) { const r = users.get(params[0]); return { rows: r?.role === 'ADMIN' ? [r] : [] }; }
     if (s.startsWith('SELECT * FROM users WHERE id = $1') || s.startsWith('SELECT id, role FROM users WHERE id = $1')) { const r = users.get(params[0]); return { rows: r ? [r] : [] }; }
     if (s.startsWith('SELECT id FROM users WHERE username = $1')) { const r = [...users.values()].find((u) => u.username === params[0]); return { rows: r ? [{ id: r.id }] : [] }; }
+    if (s.startsWith('UPDATE users SET balance = balance + $1, balance_eur = balance_eur + $2 WHERE id = $3')) { users.get(params[2]).balance += params[0]; users.get(params[2]).balance_eur = (users.get(params[2]).balance_eur || 0) + params[1]; return { rows: [] }; }
     if (s.startsWith('UPDATE users SET balance = balance + $1 WHERE id = $2')) { users.get(params[1]).balance += params[0]; return { rows: [] }; }
     if (s.startsWith('INSERT INTO users')) { users.set(params[0], { id: params[0], name: params[1], username: params[2], role: 'ADMIN', is_active: true, balance: params[4] }); return { rows: [] }; }
     if (s.startsWith('SELECT value FROM kv_store WHERE key = $1')) return { rows: kv.has(params[0]) ? [{ value: kv.get(params[0]) }] : [] };
@@ -73,9 +74,22 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('../server/db.js', () => ({ default: mocks.pool, pool: mocks.pool }));
-vi.mock('../server/ledger.js', () => ({
-  transferBalance: async (args) => { mocks.calls.transfers.push(args); return { sourceAfter: null, targetAfter: 100 + args.amount }; },
-}));
+vi.mock('../server/ledger.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    // pure helpers stay real; only the database-touching functions are replaced
+    amountParts: actual.amountParts,
+    walletColumn: actual.walletColumn,
+    normalizeCurrency: actual.normalizeCurrency,
+    transferBalance: async (args) => { mocks.calls.transfers.push(args); return { sourceAfter: null, targetAfter: 100 + args.amount }; },
+    transferBalances: async (base, parts) => {
+      const out = {};
+      for (const p of parts) { mocks.calls.transfers.push({ ...base, amount: p.amount, currency: p.currency }); out[p.currency] = { sourceAfter: null, targetAfter: 100 + p.amount }; }
+      return out;
+    },
+    readWallet: async () => ({ balance: 100, balanceEur: 0 }),
+  };
+});
 vi.mock('../server/userDeletion.js', () => ({
   deleteUserIfUnused: async (id) => { mocks.users.delete(id); return { ok: true }; },
   forceDeleteUser: async (id) => { mocks.users.delete(id); },

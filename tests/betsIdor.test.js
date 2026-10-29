@@ -70,7 +70,7 @@ const mocks = vi.hoisted(function () {
     if (s.includes('INSERT INTO transactions')) {
       return Promise.resolve({ rows: [] });
     }
-    if (s.startsWith('SELECT balance FROM users WHERE id = $1')) {
+    if (s.startsWith('SELECT balance FROM users WHERE id = $1') || s.startsWith('SELECT balance, balance_eur FROM users WHERE id = $1')) {
       const row = users.get(params[0]);
       return Promise.resolve({ rows: row ? [{ balance: row.balance }] : [] });
     }

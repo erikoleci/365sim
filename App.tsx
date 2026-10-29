@@ -67,7 +67,7 @@ const App: React.FC = () => {
     onPlaced: useCallback(async () => { nav.setIsMobileSlipOpen(false); await loadMyBets(); }, [nav.setIsMobileSlipOpen, loadMyBets]),
   });
 
-  const applyBalance = useCallback((balance: number) => setCurrentUser((u) => withBalance(u, balance)), [setCurrentUser]);
+  const applyBalance = useCallback((balance: number, balanceEur?: number) => setCurrentUser((u) => withBalance(u, balance, balanceEur)), [setCurrentUser]);
   const admin = useAdminActions({
     currentUser,
     setCurrentUser,
@@ -253,6 +253,7 @@ const App: React.FC = () => {
             selections={slip.selections}
             myBets={myBets}
             userBalance={currentUser.balance}
+            userBalanceEur={currentUser.balanceEur ?? 0}
             betError={slip.betError}
             isMobileSlipOpen={nav.isMobileSlipOpen}
             onOpenMobileSlip={() => nav.setIsMobileSlipOpen(true)}

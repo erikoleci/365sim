@@ -10,6 +10,7 @@ import { findConflictingSelection, validateStakeAmount, getCancelBlockReason, is
 import { getLiveDetailAgeMs, isLiveDetailStale } from '../liveDetailPlan.js';
 import { wrap } from '../asyncHandler.js';
 import { noteBetOnMatches } from '../oddsHistoryPolicy.js';
+import { walletColumn, normalizeCurrency } from '../ledger.js';
 
 // After a goal / red card on a LIVE match, bets on it are refused for this long so
 // nobody can bet on prices that have not caught up with what just happened. 0 = off.
@@ -46,6 +47,12 @@ const MAX_POTENTIAL_RETURN = 1000000;
 // to unbounded payout if it hits — a real trading desk would hedge/adjust
 // odds instead; this is the simplest safety net for a simulator.
 const MAX_SELECTION_EXPOSURE = 5000000;
+// Euro tickets use their own limits (must match components/BetSlip.tsx). For the shared risk cap below a euro
+// counts as RISK_EUR_TO_ALL lek, so euro and lek tickets add up on the same scale.
+const MIN_STAKE_EUR = 1;
+const MAX_STAKE_EUR = 10000;
+const MAX_POTENTIAL_RETURN_EUR = 10000;
+const RISK_EUR_TO_ALL = 100;
 // How much worse the current odds are allowed to be vs. what the user saw
 // when they built the slip, before we reject instead of silently accepting
 // a worse price. 2% tolerance absorbs normal rounding/timing noise.
@@ -108,6 +115,9 @@ router.get('/', wrap(async (req, res) => {
 
 router.post('/', wrap(async (req, res) => {
   const { stake, selections } = req.body || {};
+  // The ticket is placed, refunded and paid out in ONE wallet: lek ('ALL', default) or euro ('EUR').
+  const currency = normalizeCurrency((req.body || {}).currency);
+  const wallet = walletColumn(currency);
   // Ticket type is derived from the selections, never trusted from the client.
   const ticketType = Array.isArray(selections) && selections.length > 1 ? 'ACCUMULATOR' : 'SINGLE';
 
@@ -117,7 +127,9 @@ router.post('/', wrap(async (req, res) => {
   if (selections.length > MAX_SELECTIONS_PER_TICKET) {
     return res.status(400).json({ error: `Maximum ${MAX_SELECTIONS_PER_TICKET} selections per ticket` });
   }
-  const stakeError = validateStakeAmount(stake, { min: MIN_STAKE, max: MAX_STAKE });
+  const stakeError = currency === 'EUR'
+    ? validateStakeAmount(stake, { min: MIN_STAKE_EUR, max: MAX_STAKE_EUR })
+    : validateStakeAmount(stake, { min: MIN_STAKE, max: MAX_STAKE });
   if (stakeError) {
     return res.status(400).json({ error: stakeError });
   }
@@ -139,7 +151,7 @@ router.post('/', wrap(async (req, res) => {
   const { rows: userRows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
   const user = userRows[0];
   if (!user) return res.status(404).json({ error: 'User not found' });
-  if (user.balance < stake) {
+  if (Number(user[wallet]) < stake) {
     return res.status(400).json({ error: 'Insufficient balance' });
   }
 
@@ -350,8 +362,9 @@ router.post('/', wrap(async (req, res) => {
 
   const betId = randomUUID();
   const potentialReturn = Number((stake * totalOdds).toFixed(2));
-  if (potentialReturn > MAX_POTENTIAL_RETURN) {
-    return res.status(400).json({ error: `Maximum potential payout is ${MAX_POTENTIAL_RETURN}. Reduce your stake or selections.` });
+  const maxReturn = currency === 'EUR' ? MAX_POTENTIAL_RETURN_EUR : MAX_POTENTIAL_RETURN;
+  if (potentialReturn > maxReturn) {
+    return res.status(400).json({ error: `Maximum potential payout is ${maxReturn}. Reduce your stake or selections.` });
   }
 
   const client = await pool.connect();
@@ -360,12 +373,12 @@ router.post('/', wrap(async (req, res) => {
     // Re-check balance inside the transaction to close the race window
     // between the SELECT above and this UPDATE (two simultaneous requests
     // from the same user could otherwise both pass the earlier check).
-    const { rows: lockedUser } = await client.query('SELECT balance FROM users WHERE id = $1 FOR UPDATE', [user.id]);
-    if (!lockedUser[0] || lockedUser[0].balance < stake) {
+    const { rows: lockedUser } = await client.query(`SELECT ${wallet} FROM users WHERE id = $1 FOR UPDATE`, [user.id]);
+    if (!lockedUser[0] || Number(lockedUser[0][wallet]) < stake) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Insufficient balance' });
     }
-    const balanceBefore = Number(lockedUser[0].balance);
+    const balanceBefore = Number(lockedUser[0][wallet]);
     const balanceAfter = Number((balanceBefore - stake).toFixed(2));
 
     // Risk Management: exposure check. It must run INSIDE the transaction and
@@ -379,31 +392,31 @@ router.post('/', wrap(async (req, res) => {
     }
     for (const sel of verifiedSelections) {
       const { rows: exposureRows } = await client.query(
-        `SELECT COALESCE(SUM(b.potential_return), 0) AS exposure
+        `SELECT COALESCE(SUM(b.potential_return * CASE WHEN b.currency = 'EUR' THEN ${RISK_EUR_TO_ALL} ELSE 1 END), 0) AS exposure
          FROM bet_selections bs JOIN bets b ON b.id = bs.bet_id
          WHERE bs.match_id = $1 AND bs.market_id = $2 AND bs.selection_id = $3 AND b.status = 'PENDING'`,
         [sel.matchId, sel.marketId, sel.selectionId]
       );
-      if (Number(exposureRows[0].exposure) + potentialReturn > MAX_SELECTION_EXPOSURE) {
+      if (Number(exposureRows[0].exposure) + potentialReturn * (currency === 'EUR' ? RISK_EUR_TO_ALL : 1) > MAX_SELECTION_EXPOSURE) {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: `This selection is temporarily limited due to high exposure. Try a smaller stake.` });
       }
     }
 
-    await client.query('UPDATE users SET balance = balance - $1 WHERE id = $2', [stake, user.id]);
+    await client.query(`UPDATE users SET ${wallet} = ${wallet} - $1 WHERE id = $2`, [stake, user.id]);
     await client.query(
-      `INSERT INTO bets (id, user_id, type, stake, total_odds, potential_return, status, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,'PENDING',$7)`,
-      [betId, user.id, ticketType, stake, totalOdds, potentialReturn, Date.now()]
+      `INSERT INTO bets (id, user_id, type, stake, total_odds, potential_return, status, created_at, currency)
+       VALUES ($1,$2,$3,$4,$5,$6,'PENDING',$7,$8)`,
+      [betId, user.id, ticketType, stake, totalOdds, potentialReturn, Date.now(), currency]
     );
     // Audit trail: the stake debit is recorded (reference = bet id) so the money
     // movement survives even if the ticket row is later cancelled/deleted.
     await client.query(
       `INSERT INTO transactions
         (actor_id, source_id, target_id, amount, type, reference,
-         source_balance_before, source_balance_after, target_balance_before, target_balance_after, created_at)
-       VALUES ($1,$1,$1,$2,'BET_STAKE',$3,$4,$5,$4,$5,$6)`,
-      [user.id, stake, betId, balanceBefore, balanceAfter, Date.now()]
+         source_balance_before, source_balance_after, target_balance_before, target_balance_after, created_at, currency)
+       VALUES ($1,$1,$1,$2,'BET_STAKE',$3,$4,$5,$4,$5,$6,$7)`,
+      [user.id, stake, betId, balanceBefore, balanceAfter, Date.now(), currency]
     );
     for (const sel of verifiedSelections) {
       // "Next goal / corner / card": remember the counter of that kind at this very moment
@@ -429,8 +442,9 @@ router.post('/', wrap(async (req, res) => {
 
   const { rows: updatedRows } = await pool.query('SELECT * FROM users WHERE id = $1', [user.id]);
   res.status(201).json({
-    bet: { id: betId, totalOdds, potentialReturn, stake },
+    bet: { id: betId, totalOdds, potentialReturn, stake, currency },
     balance: updatedRows[0].balance,
+    balanceEur: updatedRows[0].balance_eur,
   });
 }));
 
@@ -461,16 +475,17 @@ router.post('/:id/cancel', wrap(async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Only pending bets can be cancelled' });
     }
-    const { rows: lockedUser } = await client.query('SELECT balance FROM users WHERE id = $1 FOR UPDATE', [bet.user_id]);
-    const balanceBefore = Number(lockedUser[0].balance);
+    const betWallet = walletColumn(bet.currency);
+    const { rows: lockedUser } = await client.query(`SELECT ${betWallet} FROM users WHERE id = $1 FOR UPDATE`, [bet.user_id]);
+    const balanceBefore = Number(lockedUser[0][betWallet]);
     const balanceAfter = Number((balanceBefore + Number(bet.stake)).toFixed(2));
-    await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [bet.stake, bet.user_id]);
+    await client.query(`UPDATE users SET ${betWallet} = ${betWallet} + $1 WHERE id = $2`, [bet.stake, bet.user_id]);
     await client.query(
       `INSERT INTO transactions
         (actor_id, source_id, target_id, amount, type, reference,
-         source_balance_before, source_balance_after, target_balance_before, target_balance_after, created_at)
-       VALUES ($1,$1,$1,$2,'BET_CANCEL_REFUND',$3,$4,$5,$4,$5,$6)`,
-      [bet.user_id, bet.stake, bet.id, balanceBefore, balanceAfter, Date.now()]
+         source_balance_before, source_balance_after, target_balance_before, target_balance_after, created_at, currency)
+       VALUES ($1,$1,$1,$2,'BET_CANCEL_REFUND',$3,$4,$5,$4,$5,$6,$7)`,
+      [bet.user_id, bet.stake, bet.id, balanceBefore, balanceAfter, Date.now(), normalizeCurrency(bet.currency)]
     );
     await client.query('DELETE FROM bet_selections WHERE bet_id = $1', [bet.id]);
     await client.query('DELETE FROM bets WHERE id = $1', [bet.id]);
@@ -482,8 +497,8 @@ router.post('/:id/cancel', wrap(async (req, res) => {
     client.release();
   }
 
-  const { rows: userRows } = await pool.query('SELECT balance FROM users WHERE id = $1', [req.user.id]);
-  res.json({ ok: true, balance: userRows[0].balance });
+  const { rows: userRows } = await pool.query('SELECT balance, balance_eur FROM users WHERE id = $1', [req.user.id]);
+  res.json({ ok: true, balance: userRows[0].balance, balanceEur: userRows[0].balance_eur });
 }));
 
 export default router;

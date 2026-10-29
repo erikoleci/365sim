@@ -14,7 +14,7 @@ const statusColor: Record<string, string> = {
 
 interface AgentUsersPanelProps {
   currentUser: User;
-  onBalanceChanged?: (balance: number) => void;
+  onBalanceChanged?: (balance: number, balanceEur?: number) => void;
 }
 
 // Entirely self-contained: fetches its own data from /api/agent/* so it
@@ -37,6 +37,7 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
   const [newUser, setNewUser] = useState({ name: '', username: '', password: '', initialBalance: 0 });
 
   const [amountDraft, setAmountDraft] = useState<Record<string, string>>({});
+  const [amountEurDraft, setAmountEurDraft] = useState<Record<string, string>>({});
 
   const [monthly, setMonthly] = useState<api.AgentMonthlyReport | null>(null);
   const [monthInput, setMonthInput] = useState('');
@@ -57,7 +58,7 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
       const [meRes, perf] = await Promise.all([api.agentFetchMe(), api.agentFetchPerformance()]);
       setMe(meRes.agent);
       setUsers(perf);
-      if (onBalanceChangedRef.current) onBalanceChangedRef.current(meRes.agent.balance);
+      if (onBalanceChangedRef.current) onBalanceChangedRef.current(meRes.agent.balance, meRes.agent.balanceEur ?? 0);
     } catch (e: any) {
       setError(e.message || t('Ngarkimi deshtoi'));
     } finally {
@@ -98,12 +99,22 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
     }
   };
 
+  // Lek and euro can be given / taken back together: fill one box or both, then press the button once.
+  const readAmounts = (userId: string) => ({
+    lek: Number(amountDraft[userId]) || 0,
+    eur: Number(amountEurDraft[userId]) || 0,
+  });
+  const clearAmounts = (userId: string) => {
+    setAmountDraft((p) => ({ ...p, [userId]: '' }));
+    setAmountEurDraft((p) => ({ ...p, [userId]: '' }));
+  };
+
   const doCredit = async (userId: string) => {
-    const amount = Number(amountDraft[userId]);
-    if (!amount || amount <= 0) return;
+    const { lek, eur } = readAmounts(userId);
+    if (lek < 0 || eur < 0 || (!lek && !eur)) return;
     try {
-      await api.agentCreditUser(userId, amount);
-      setAmountDraft((p) => ({ ...p, [userId]: '' }));
+      await api.agentCreditUser(userId, lek, eur);
+      clearAmounts(userId);
       await load();
     } catch (err: any) {
       setError(err.message || t('Kredituar deshtoi'));
@@ -111,11 +122,11 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
   };
 
   const doDebit = async (userId: string) => {
-    const amount = Number(amountDraft[userId]);
-    if (!amount || amount <= 0) return;
+    const { lek, eur } = readAmounts(userId);
+    if (lek < 0 || eur < 0 || (!lek && !eur)) return;
     try {
-      await api.agentDebitUser(userId, amount);
-      setAmountDraft((p) => ({ ...p, [userId]: '' }));
+      await api.agentDebitUser(userId, lek, eur);
+      clearAmounts(userId);
       await load();
     } catch (err: any) {
       setError(err.message || t('Terheqja deshtoi'));
@@ -157,7 +168,7 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
         </div>
         {me && (
           <div className="text-xs text-brand-textMuted">
-            {t('Balanca ime:')} <span className="text-brand-yellow font-bold text-sm">{money(me.balance)}</span>
+            {t('Balanca ime:')} <span className="text-brand-yellow font-bold text-sm">{money(me.balance)} L · {money(me.balanceEur ?? 0)} €</span>
           </div>
         )}
       </div>
@@ -212,7 +223,7 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
                     </button>
 
                     <div className="flex items-center gap-3 text-xs">
-                      <span className="text-brand-yellow font-bold">{money(u.balance)}</span>
+                      <span className="text-brand-yellow font-bold">{money(u.balance)} L · {money(u.balanceEur ?? 0)} €</span>
                       <span title={t('Kupona')}>{t('Kupona: {n}', { n: u.tickets })}</span>
                       <span title={t('Xhiro')}>{t('Xhiro: {n}', { n: money(u.turnover) })}</span>
                       <span className="text-green-400" title={t('Fitime')}>+{money(u.wins)}</span>
@@ -222,9 +233,14 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
 
                     <div className="flex items-center gap-1">
                       <input
-                        type="number" placeholder={t('Shuma')} value={amountDraft[u.id] || ''}
+                        type="number" placeholder="L" value={amountDraft[u.id] || ''}
                         onChange={(e) => setAmountDraft((p) => ({ ...p, [u.id]: e.target.value }))}
                         className="input w-20"
+                      />
+                      <input
+                        type="number" placeholder="€" value={amountEurDraft[u.id] || ''}
+                        onChange={(e) => setAmountEurDraft((p) => ({ ...p, [u.id]: e.target.value }))}
+                        className="input w-16"
                       />
                       <button onClick={() => doCredit(u.id)} className="text-[10px] px-2 py-1.5 rounded bg-green-700 hover:bg-green-600 font-bold">{t('+ Krediton')}</button>
                       <button onClick={() => doDebit(u.id)} className="text-[10px] px-2 py-1.5 rounded bg-orange-700 hover:bg-orange-600 font-bold">{t('- Terheq')}</button>

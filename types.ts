@@ -11,6 +11,8 @@ export interface User {
   username: string;
   password: string;
   balance: number;
+  /** Euro wallet (the lek wallet is `balance`). */
+  balanceEur?: number;
   role: UserRole;
   avatar: string;
   isActive?: boolean;
@@ -146,6 +148,8 @@ export interface Bet {
   totalOdds: number;
   potentialReturn: number;
   status: BetStatus;
+  /** Wallet the ticket was placed in: 'ALL' = lek (default), 'EUR' = euro. */
+  currency?: 'ALL' | 'EUR';
   timestamp: number;
   // Server verdict: false for tickets placed live / on a match that has started.
   cancellable?: boolean;

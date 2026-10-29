@@ -15,7 +15,7 @@ interface AdminPanelProps {
   /** Role of whoever is looking at the panel (SUPER_ADMIN sees the extra controls). */
   viewerRole?: string;
   onDeleteUser: (userId: string) => void;
-  onAddCredit: (userId: string, amount: number) => void;
+  onAddCredit: (userId: string, amount: number, amountEur?: number) => void;
   onResetPassword: (userId: string, newPass: string) => void;
   onCancelBet: (betId: string, origin: 'USER' | 'ADMIN') => void;
 }
@@ -66,6 +66,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
   
   // Credit State
   const [creditAmounts, setCreditAmounts] = useState<Record<string, string>>({});
+  const [creditAmountsEur, setCreditAmountsEur] = useState<Record<string, string>>({});
 
   // Reset Password Modal State
   const [resetTarget, setResetTarget] = useState<{id: string, username: string} | null>(null);
@@ -84,20 +85,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
     setCreditAmounts(prev => ({ ...prev, [id]: val }));
   };
 
+  // Lek (L) and euro (€) go together: fill one box or both, then press Add / Zbrit once.
   const executeAddCredit = (id: string) => {
-    const amount = parseFloat(creditAmounts[id]);
-    if (amount) {
-      onAddCredit(id, amount);
+    const lek = parseFloat(creditAmounts[id]) || 0;
+    const eur = parseFloat(creditAmountsEur[id]) || 0;
+    if (lek || eur) {
+      onAddCredit(id, lek, eur);
       setCreditAmounts(prev => ({ ...prev, [id]: '' }));
+      setCreditAmountsEur(prev => ({ ...prev, [id]: '' }));
     }
   };
 
-  // Subtract: the same amount, negative (an admin's credit goes back to the super admin / to the giver).
+  // Subtract: the same amounts, negative (an admin's credit goes back to the super admin / to the giver).
   const executeSubtractCredit = (id: string) => {
-    const amount = Math.abs(parseFloat(creditAmounts[id]));
-    if (amount) {
-      onAddCredit(id, -amount);
+    const lek = Math.abs(parseFloat(creditAmounts[id]) || 0);
+    const eur = Math.abs(parseFloat(creditAmountsEur[id]) || 0);
+    if (lek || eur) {
+      onAddCredit(id, -lek, -eur);
       setCreditAmounts(prev => ({ ...prev, [id]: '' }));
+      setCreditAmountsEur(prev => ({ ...prev, [id]: '' }));
     }
   };
 
@@ -393,7 +399,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                             {u.role}
                           </span>
                         </td>
-                        <td className="p-3 font-mono text-brand-yellow font-bold">{u.balance.toFixed(2)} L</td>
+                        <td className="p-3 font-mono text-brand-yellow font-bold">{u.balance.toFixed(2)} L<br />{(u.balanceEur ?? 0).toFixed(2)} €</td>
                         
                         {/* Stats Columns */}
                         <td className="p-3 font-mono text-white">{stats.turnover.toFixed(2)} L</td>
@@ -408,9 +414,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                             <input 
                               type="number" 
                               className="w-20 bg-brand-bg border border-brand-divider rounded p-1 text-xs text-white"
-                              placeholder="Amount"
+                              placeholder="L"
                               value={creditAmounts[u.id] || ''}
                               onChange={(e) => handleCreditChange(u.id, e.target.value)}
+                            />
+                            <input
+                              type="number"
+                              className="w-16 bg-brand-bg border border-brand-divider rounded p-1 text-xs text-white"
+                              placeholder="€"
+                              value={creditAmountsEur[u.id] || ''}
+                              onChange={(e) => setCreditAmountsEur(prev => ({ ...prev, [u.id]: e.target.value }))}
                             />
                             <button 
                               onClick={() => executeAddCredit(u.id)}
