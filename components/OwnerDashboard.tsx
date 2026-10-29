@@ -3,6 +3,7 @@ import { User, Bet } from '../types';
 import * as api from '../services/api';
 import AdminPanel from './AdminPanel';
 import VcCodesPanel from './VcCodesPanel';
+import HierarchyPanel from './HierarchyPanel';
 import { useI18n, getLocale } from '../i18n';
 
 interface OwnerDashboardProps {
@@ -18,6 +19,8 @@ interface OwnerDashboardProps {
 }
 
 const money = (n: number) => Number(n || 0).toLocaleString(getLocale(), { maximumFractionDigits: 2 });
+// Lek and euro are always shown side by side and never added together: lek on the first line, euro under it.
+const dual = (lek: any, eur: any) => (<>{money(lek)} L<br />€{money(eur ?? 0)}</>);
 
 // Owner/Admin never places bets or plays casino — this is a standalone,
 // read-focused page: aggregate reports first, with the existing full
@@ -29,7 +32,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
 }) => {
   const { t } = useI18n();
   const isSuper = currentUser.role === 'SUPER_ADMIN';
-  const [tab, setTab] = useState<'reports' | 'admins' | 'monthly' | 'manage' | 'vc'>('reports');
+  const [tab, setTab] = useState<'reports' | 'admins' | 'hierarchy' | 'monthly' | 'manage' | 'vc'>('reports');
   // Super admin only: what every admin did, and the tickets of the admin he opened.
   const [adminsReport, setAdminsReport] = useState<api.AdminsReport | null>(null);
   const [openAdminId, setOpenAdminId] = useState<string | null>(null);
@@ -155,13 +158,13 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
       </header>
 
       <nav className="flex gap-1 px-4 pt-3 border-b border-[#333]">
-        {(isSuper ? ['reports', 'admins', 'monthly', 'manage', 'vc'] as const : ['reports', 'monthly', 'manage'] as const).map((tabKey) => (
+        {(isSuper ? ['reports', 'admins', 'hierarchy', 'monthly', 'manage', 'vc'] as const : ['reports', 'monthly', 'manage'] as const).map((tabKey) => (
           <button
             key={tabKey}
             onClick={() => setTab(tabKey)}
             className={`px-4 py-2 text-sm font-bold rounded-t uppercase tracking-wide ${tab === tabKey ? 'bg-brand-panel text-brand-yellow border border-b-0 border-[#444]' : 'text-brand-textMuted hover:text-white'}`}
           >
-            {tabKey === 'reports' ? t('Raporte') : tabKey === 'admins' ? t('Adminët') : tabKey === 'monthly' ? t('Raporti Mujor') : tabKey === 'vc' ? t('Kodet live') : t('Menaxho')}
+            {tabKey === 'reports' ? t('Raporte') : tabKey === 'admins' ? t('Adminët') : tabKey === 'hierarchy' ? t('Struktura') : tabKey === 'monthly' ? t('Raporti Mujor') : tabKey === 'vc' ? t('Kodet live') : t('Menaxho')}
           </button>
         ))}
       </nav>
@@ -175,13 +178,13 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
               <>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <KpiCard label={t('Agjente (aktive)')} value={overview.agents.total + ' (' + overview.agents.active + ')'} />
-                  <KpiCard label={t('Balanca e Agjenteve')} value={money(overview.agents.totalBalance)} />
+                  <KpiCard label={t('Balanca e Agjenteve')} value={money(overview.agents.totalBalance)} eur={money(overview.agents.totalBalanceEur)} />
                   <KpiCard label={t('Usera (aktive)')} value={overview.users.total + ' (' + overview.users.active + ')'} />
-                  <KpiCard label={t('Balanca e Userave')} value={money(overview.users.totalBalance)} />
+                  <KpiCard label={t('Balanca e Userave')} value={money(overview.users.totalBalance)} eur={money(overview.users.totalBalanceEur)} />
                   <KpiCard label={t('Kupona gjithsej')} value={String(overview.tickets.total)} />
-                  <KpiCard label={t('Xhiro (Turnover)')} value={money(overview.tickets.turnover)} />
-                  <KpiCard label="Pending" value={overview.tickets.pendingCount + ' (' + money(overview.tickets.pending) + ')'} />
-                  <KpiCard label={t('Rezultati Neto')} value={money(overview.netResult)} positive={overview.netResult >= 0} />
+                  <KpiCard label={t('Xhiro (Turnover)')} value={money(overview.tickets.turnover)} eur={money(overview.tickets.turnoverEur)} />
+                  <KpiCard label="Pending" value={overview.tickets.pendingCount + ' (' + money(overview.tickets.pending) + ')'} eur={money(overview.tickets.pendingEur)} />
+                  <KpiCard label={t('Rezultati Neto')} value={money(overview.netResult)} positive={overview.netResult >= 0} eur={money(overview.netResultEur)} eurPositive={overview.netResultEur >= 0} />
                 </div>
 
                 <div className="bg-brand-panel border border-[#444] rounded">
@@ -233,7 +236,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                               title={t('Terhiq fonde te balanca e Owner-it')}
                               className="text-xs px-2 py-1.5 rounded bg-red-800 hover:bg-red-700 font-bold disabled:opacity-50"
                             >−</button>
-                            <span className="text-brand-yellow font-bold w-20 text-right">{money(a.balance)}</span>
+                            <span className="text-brand-yellow font-bold w-28 text-right">{dual(a.balance, a.balanceEur)}</span>
                             <button onClick={() => toggleAgent(a.id)} className="text-brand-textMuted text-xs w-4">{expandedAgent === a.id ? '−' : '+'}</button>
                           </div>
                         </div>
@@ -277,12 +280,12 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                                   {agentDetail[a.id].map((u) => (
                                     <tr key={u.id} className="border-b border-[#333]">
                                       <td className="py-1.5 pr-2">{u.name} <span className="text-brand-textMuted">@{u.username}</span></td>
-                                      <td className="py-1.5 pr-2 text-brand-yellow">{money(u.balance)}</td>
+                                      <td className="py-1.5 pr-2 text-brand-yellow">{dual(u.balance, u.balanceEur)}</td>
                                       <td className="py-1.5 pr-2">{u.tickets}</td>
-                                      <td className="py-1.5 pr-2">{money(u.turnover)}</td>
-                                      <td className="py-1.5 pr-2 text-green-400">{money(u.wins)}</td>
-                                      <td className="py-1.5 pr-2 text-red-400">{money(u.losses)}</td>
-                                      <td className="py-1.5 pr-2">{money(u.pending)}</td>
+                                      <td className="py-1.5 pr-2">{dual(u.turnover, u.turnover_eur)}</td>
+                                      <td className="py-1.5 pr-2 text-green-400">{dual(u.wins, u.wins_eur)}</td>
+                                      <td className="py-1.5 pr-2 text-red-400">{dual(u.losses, u.losses_eur)}</td>
+                                      <td className="py-1.5 pr-2">{dual(u.pending, u.pending_eur)}</td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -311,17 +314,18 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
               <div className="text-sm text-brand-textMuted">{t('Duke ngarkuar...')}</div>
             ) : (() => {
               const rows = adminsReport.admins;
-              const sum = (k: 'tickets' | 'turnover' | 'wins' | 'losses') => rows.reduce((a, r) => a + Number(r[k] || 0), 0) + Number(adminsReport.unowned[k] || 0);
+              const sum = (k: 'tickets' | 'turnover' | 'wins' | 'losses' | 'turnover_eur' | 'wins_eur' | 'losses_eur') => rows.reduce((a, r) => a + Number(r[k] || 0), 0) + Number(adminsReport.unowned[k] || 0);
               const net = sum('losses') - sum('wins');
+              const netEur = sum('losses_eur') - sum('wins_eur');
               return (
                 <>
                   <div className="text-xs text-brand-textMuted mb-2">{t('Muaji: {month}', { month: adminsReport.month })}</div>
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
                     <KpiCard label={t('Kupona')} value={String(sum('tickets'))} />
-                    <KpiCard label={t('Xhiro (vënë)')} value={money(sum('turnover'))} />
-                    <KpiCard label={t('Kanë fituar bastorët')} value={money(sum('wins'))} positive />
-                    <KpiCard label={t('Kanë humbur bastorët')} value={money(sum('losses'))} positive={false} />
-                    <KpiCard label={t('Neto (fitimi yt)')} value={money(net)} positive={net >= 0} />
+                    <KpiCard label={t('Xhiro (vënë)')} value={money(sum('turnover'))} eur={money(sum('turnover_eur'))} />
+                    <KpiCard label={t('Kanë fituar bastorët')} value={money(sum('wins'))} positive eur={money(sum('wins_eur'))} />
+                    <KpiCard label={t('Kanë humbur bastorët')} value={money(sum('losses'))} positive={false} eur={money(sum('losses_eur'))} />
+                    <KpiCard label={t('Neto (fitimi yt)')} value={money(net)} positive={net >= 0} eur={money(netEur)} eurPositive={netEur >= 0} />
                   </div>
                   <div className="overflow-x-auto"><table className="w-full text-xs">
                     <thead>
@@ -344,16 +348,16 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                         <React.Fragment key={r.id}>
                           <tr className="border-b border-[#333] cursor-pointer hover:bg-brand-bg/50" onClick={() => toggleAdminTickets(r.id)}>
                             <td className="py-1.5 pr-2">{r.name} <span className="text-brand-textMuted">@{r.username}</span></td>
-                            <td className="py-1.5 pr-2">{money(r.balance)}</td>
+                            <td className="py-1.5 pr-2">{dual(r.balance, r.balanceEur)}</td>
                             <td className="py-1.5 pr-2">{r.agents}</td>
                             <td className="py-1.5 pr-2">{r.users}</td>
                             <td className="py-1.5 pr-2">{r.tickets}</td>
                             <td className="py-1.5 pr-2 text-green-400">{r.won_tickets}</td>
                             <td className="py-1.5 pr-2 text-red-400">{r.lost_tickets}</td>
-                            <td className="py-1.5 pr-2">{money(r.turnover)}</td>
-                            <td className="py-1.5 pr-2 text-green-400">{money(r.wins)}</td>
-                            <td className="py-1.5 pr-2 text-red-400">{money(r.losses)}</td>
-                            <td className={'py-1.5 pr-2 font-bold ' + (r.netResult >= 0 ? 'text-green-400' : 'text-red-400')}>{money(r.netResult)}</td>
+                            <td className="py-1.5 pr-2">{dual(r.turnover, r.turnover_eur)}</td>
+                            <td className="py-1.5 pr-2 text-green-400">{dual(r.wins, r.wins_eur)}</td>
+                            <td className="py-1.5 pr-2 text-red-400">{dual(r.losses, r.losses_eur)}</td>
+                            <td className={'py-1.5 pr-2 font-bold ' + (r.netResult >= 0 ? 'text-green-400' : 'text-red-400')}>{dual(r.netResult, r.netResultEur)}</td>
                           </tr>
                           {openAdminId === r.id && (
                             <tr><td colSpan={11} className="bg-brand-bg/40 p-3">
@@ -371,9 +375,9 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                                       <tr key={b.id} className="border-t border-[#333]">
                                         <td className="py-1 pr-2">{new Date(Number(b.created_at)).toLocaleString(getLocale())}</td>
                                         <td className="py-1 pr-2">{b.user?.username || '-'}</td>
-                                        <td className="py-1 pr-2">{money(b.stake)}</td>
+                                        <td className="py-1 pr-2">{b.currency === 'EUR' ? '€' + money(b.stake) : money(b.stake) + ' L'}</td>
                                         <td className={'py-1 pr-2 font-bold ' + (b.status === 'WON' ? 'text-green-400' : b.status === 'LOST' ? 'text-red-400' : 'text-brand-yellow')}>{b.status}</td>
-                                        <td className="py-1 pr-2">{money(b.potential_return)}</td>
+                                        <td className="py-1 pr-2">{b.currency === 'EUR' ? '€' + money(b.potential_return) : money(b.potential_return) + ' L'}</td>
                                       </tr>
                                     ))}
                                   </tbody>
@@ -390,7 +394,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                   </table></div>
                   {(adminsReport.unowned.users > 0 || adminsReport.unowned.tickets > 0) && (
                     <div className="mt-3 text-xs text-brand-textMuted">
-                      {t('Pa pronar (asnjë admin): {users} usera, {tickets} kupona, xhiro {turnover}', { users: adminsReport.unowned.users, tickets: adminsReport.unowned.tickets, turnover: money(adminsReport.unowned.turnover) })}
+                      {t('Pa pronar (asnjë admin): {users} usera, {tickets} kupona, xhiro {turnover}', { users: adminsReport.unowned.users, tickets: adminsReport.unowned.tickets, turnover: money(adminsReport.unowned.turnover) + ' L / €' + money(adminsReport.unowned.turnover_eur) })}
                     </div>
                   )}
                 </>
@@ -400,6 +404,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
         )}
 
         {tab === 'vc' && isSuper && <VcCodesPanel />}
+        {tab === 'hierarchy' && isSuper && <HierarchyPanel />}
 
         {tab === 'monthly' && (
           <div className="bg-brand-panel border border-[#444] rounded p-4">
@@ -416,10 +421,10 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
                   <KpiCard label={t('Kupona')} value={monthly.totals.totalTickets + ' (' + (monthly.totals.wonTickets ?? 0) + ' ' + t('fituar') + ' / ' + (monthly.totals.lostTickets ?? 0) + ' ' + t('humbur') + ')'} />
-                  <KpiCard label={t('Xhiro')} value={money(monthly.totals.turnover)} />
-                  <KpiCard label={t('Fitime')} value={money(monthly.totals.wins)} positive />
-                  <KpiCard label={t('Humbje')} value={money(monthly.totals.losses)} positive={false} />
-                  <KpiCard label={t('Neto')} value={money(monthly.totals.netResult)} positive={monthly.totals.netResult >= 0} />
+                  <KpiCard label={t('Xhiro')} value={money(monthly.totals.turnover)} eur={money(monthly.totals.turnoverEur)} />
+                  <KpiCard label={t('Fitime')} value={money(monthly.totals.wins)} positive eur={money(monthly.totals.winsEur)} />
+                  <KpiCard label={t('Humbje')} value={money(monthly.totals.losses)} positive={false} eur={money(monthly.totals.lossesEur)} />
+                  <KpiCard label={t('Neto')} value={money(monthly.totals.netResult)} positive={monthly.totals.netResult >= 0} eur={money(monthly.totals.netResultEur)} eurPositive={monthly.totals.netResultEur >= 0} />
                 </div>
                 <div className="overflow-x-auto"><table className="w-full text-xs">
                   <thead>
@@ -440,12 +445,12 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                         <td className="py-1.5 pr-2">{a.name} <span className="text-brand-textMuted">@{a.username}</span></td>
                         <td className="py-1.5 pr-2">{a.total_users}</td>
                         <td className="py-1.5 pr-2">{a.tickets} <span className="text-brand-textMuted">({a.won_tickets}/{a.lost_tickets})</span></td>
-                        <td className="py-1.5 pr-2">{money(a.turnover)}</td>
-                        <td className="py-1.5 pr-2 text-green-400">{money(a.wins)}</td>
-                        <td className="py-1.5 pr-2 text-red-400">{money(a.losses)}</td>
-                        <td className="py-1.5 pr-2">{money(a.pending)}</td>
+                        <td className="py-1.5 pr-2">{dual(a.turnover, a.turnover_eur)}</td>
+                        <td className="py-1.5 pr-2 text-green-400">{dual(a.wins, a.wins_eur)}</td>
+                        <td className="py-1.5 pr-2 text-red-400">{dual(a.losses, a.losses_eur)}</td>
+                        <td className="py-1.5 pr-2">{dual(a.pending, a.pending_eur)}</td>
                         <td className="py-1.5 pr-2 text-brand-yellow" title={t('{rate}% e rezultatit neto', { rate: a.commissionRate })}>
-                          {money(a.commissionOwed)}
+                          {dual(a.commissionOwed, a.commissionOwedEur)}
                         </td>
                       </tr>
                     ))}
@@ -454,10 +459,10 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                         <td className="py-1.5 pr-2 text-brand-textMuted">{t('Userat direkt (pa agjent)')}</td>
                         <td className="py-1.5 pr-2">{monthly.direct.total_users}</td>
                         <td className="py-1.5 pr-2">{monthly.direct.tickets} <span className="text-brand-textMuted">({monthly.direct.won_tickets}/{monthly.direct.lost_tickets})</span></td>
-                        <td className="py-1.5 pr-2">{money(monthly.direct.turnover)}</td>
-                        <td className="py-1.5 pr-2 text-green-400">{money(monthly.direct.wins)}</td>
-                        <td className="py-1.5 pr-2 text-red-400">{money(monthly.direct.losses)}</td>
-                        <td className="py-1.5 pr-2">{money(monthly.direct.pending)}</td>
+                        <td className="py-1.5 pr-2">{dual(monthly.direct.turnover, monthly.direct.turnover_eur)}</td>
+                        <td className="py-1.5 pr-2 text-green-400">{dual(monthly.direct.wins, monthly.direct.wins_eur)}</td>
+                        <td className="py-1.5 pr-2 text-red-400">{dual(monthly.direct.losses, monthly.direct.losses_eur)}</td>
+                        <td className="py-1.5 pr-2">{dual(monthly.direct.pending, monthly.direct.pending_eur)}</td>
                         <td className="py-1.5 pr-2">-</td>
                       </tr>
                     )}
@@ -487,10 +492,13 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   );
 };
 
-const KpiCard: React.FC<{ label: string; value: string; positive?: boolean }> = ({ label, value, positive }) => (
+const KpiCard: React.FC<{ label: string; value: string; positive?: boolean; eur?: string; eurPositive?: boolean }> = ({ label, value, positive, eur, eurPositive }) => (
   <div className="bg-brand-panel border border-[#444] rounded p-3">
     <div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">{label}</div>
-    <div className={'text-lg font-extrabold ' + (positive === undefined ? 'text-white' : positive ? 'text-green-400' : 'text-red-400')}>{value}</div>
+    <div className={'text-lg font-extrabold ' + (positive === undefined ? 'text-white' : positive ? 'text-green-400' : 'text-red-400')}>{value}{eur !== undefined && <span className="text-xs font-bold ml-1">L</span>}</div>
+    {eur !== undefined && (
+      <div className={'text-lg font-extrabold ' + ((eurPositive ?? positive) === undefined ? 'text-white' : (eurPositive ?? positive) ? 'text-green-400' : 'text-red-400')}>€{eur}</div>
+    )}
   </div>
 );
 

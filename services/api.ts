@@ -399,10 +399,11 @@ export async function adminSettleMatch(matchId: string, homeScore: number, awayS
 // --- Owner: Agent hierarchy (reports only, Owner never plays) ---
 
 export interface AdminOverview {
-  agents: { total: number; active: number; totalBalance: number };
-  users: { total: number; active: number; totalBalance: number };
-  tickets: { total: number; turnover: number; wins: number; losses: number; pending: number; pendingCount: number };
+  agents: { total: number; active: number; totalBalance: number; totalBalanceEur: number };
+  users: { total: number; active: number; totalBalance: number; totalBalanceEur: number };
+  tickets: { total: number; turnover: number; wins: number; losses: number; pending: number; turnoverEur: number; winsEur: number; lossesEur: number; pendingEur: number; pendingCount: number };
   netResult: number;
+  netResultEur: number;
 }
 export async function adminFetchOverview() {
   return request<AdminOverview>('/admin/overview');
@@ -438,6 +439,7 @@ export async function adminSetAgentCommission(agentId: string, commissionRate: n
 export interface AgentUserPerformance {
   id: string; name: string; username: string; balance: number; balanceEur?: number; is_active: boolean;
   tickets: number; turnover: number; wins: number; losses: number; pending: number;
+  turnover_eur?: number; wins_eur?: number; losses_eur?: number; pending_eur?: number;
 }
 export async function adminFetchAgentPerformance(agentId: string) {
   return request<{ agent: User; users: AgentUserPerformance[] }>(`/admin/agents/${agentId}/performance`);
@@ -502,19 +504,20 @@ export async function agentDeleteUser(userId: string) {
 
 export interface AdminMonthlyReport {
   month: string;
-  totals: { totalAgents: number; totalUsers: number; totalTickets: number; turnover: number; wins: number; losses: number; pending: number; wonTickets: number; lostTickets: number; pendingTickets: number; netResult: number };
+  totals: { totalAgents: number; totalUsers: number; totalTickets: number; turnover: number; wins: number; losses: number; pending: number; wonTickets: number; lostTickets: number; pendingTickets: number; netResult: number; turnoverEur: number; winsEur: number; lossesEur: number; pendingEur: number; netResultEur: number };
   // users that belong to the admin directly (no agent in between)
-  direct: { total_users: number; tickets: number; won_tickets: number; lost_tickets: number; pending_tickets: number; turnover: number; wins: number; losses: number; pending: number; netResult: number };
-  agents: { id: string; name: string; username: string; total_users: number; tickets: number; won_tickets: number; lost_tickets: number; pending_tickets: number; turnover: number; wins: number; losses: number; pending: number; commission_rate: number; netResult: number; commissionRate: number; commissionOwed: number }[];
+  direct: { total_users: number; tickets: number; won_tickets: number; lost_tickets: number; pending_tickets: number; turnover: number; wins: number; losses: number; pending: number; netResult: number; turnover_eur: number; wins_eur: number; losses_eur: number; pending_eur: number; netResultEur: number };
+  agents: { id: string; name: string; username: string; total_users: number; tickets: number; won_tickets: number; lost_tickets: number; pending_tickets: number; turnover: number; wins: number; losses: number; pending: number; commission_rate: number; netResult: number; commissionRate: number; commissionOwed: number; turnover_eur: number; wins_eur: number; losses_eur: number; pending_eur: number; netResultEur: number; commissionOwedEur: number }[];
 }
 // Super admin: what every admin did in the month (credit, agents, users, tickets, turnover, won / lost, net).
 export interface AdminMoneyRow {
   tickets: number; won_tickets: number; lost_tickets: number; pending_tickets: number;
   turnover: number; wins: number; losses: number; pending: number; netResult: number;
+  turnover_eur: number; wins_eur: number; losses_eur: number; pending_eur: number; netResultEur: number;
 }
 export interface AdminsReport {
   month: string;
-  admins: (AdminMoneyRow & { id: string; name: string; username: string; balance: number; agents: number; users: number })[];
+  admins: (AdminMoneyRow & { id: string; name: string; username: string; balance: number; balanceEur: number; agents: number; users: number })[];
   unowned: AdminMoneyRow & { users: number };
 }
 export async function adminFetchAdminsReport(month?: string) {
@@ -533,6 +536,18 @@ export interface VcCodesReport { now: string; unlabelled: VcCodeRow[]; labelled:
 export async function adminFetchVcCodes() { return request<VcCodesReport>('/admin/vc-codes'); }
 export interface ProviderLabelsReport { checked: string[]; errors: string[]; matches: { source: string; word: string; around: string; pairs: { code: string; text: string }[] }[] }
 export async function adminFetchProviderLabels() { return request<ProviderLabelsReport>('/admin/provider-labels'); }
+// Super admin: the whole tree (admin -> agents -> users, direct users, unowned), balances in lek and euro.
+export interface HierarchyUser { id: string; name: string; username: string; isActive: boolean; balance: number; balanceEur: number }
+export interface HierarchyAgent extends HierarchyUser { users: HierarchyUser[] }
+export interface HierarchyBranch { agents: HierarchyAgent[]; directUsers: HierarchyUser[] }
+export interface Hierarchy { admins: (HierarchyUser & HierarchyBranch)[]; unowned: HierarchyBranch }
+export async function adminFetchHierarchy() {
+  return request<Hierarchy>('/admin/hierarchy');
+}
+// Super admin: hand an agent (with all his users) or a single user to another admin (null = nobody).
+export async function adminMoveAccount(accountId: string, adminId: string | null, agentId: string | null = null) {
+  return request<{ ok: true }>(`/admin/accounts/${accountId}/admin`, { method: 'PATCH', body: JSON.stringify({ adminId, agentId }) });
+}
 
 export async function adminFetchMonthlyReport(month?: string) {
   const q = month ? `?month=${encodeURIComponent(month)}` : '';

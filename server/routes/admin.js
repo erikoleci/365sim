@@ -186,31 +186,26 @@ router.get('/overview', async (req, res) => {
   const scope = [scopeOf(req.user)];
   const [agentsCount, usersCount, betsAgg] = await Promise.all([
     pool.query(`SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE is_active)::int AS active,
-                        COALESCE(SUM(balance), 0) AS total_balance
+                        COALESCE(SUM(balance), 0) AS total_balance, COALESCE(SUM(balance_eur), 0) AS total_balance_eur
                  FROM users WHERE role = 'AGENT' AND ($1::text IS NULL OR admin_id = $1)`, scope),
     pool.query(`SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE is_active)::int AS active,
-                        COALESCE(SUM(balance), 0) AS total_balance
+                        COALESCE(SUM(balance), 0) AS total_balance, COALESCE(SUM(balance_eur), 0) AS total_balance_eur
                  FROM users WHERE role = 'USER' AND ($1::text IS NULL OR admin_id = $1)`, scope),
-    pool.query(`SELECT COUNT(*)::int AS total_tickets,
-                        COALESCE(SUM(stake), 0) AS turnover,
-                        COALESCE(SUM(CASE WHEN status = 'WON' THEN potential_return - stake ELSE 0 END), 0) AS wins,
-                        COALESCE(SUM(CASE WHEN status = 'LOST' THEN stake ELSE 0 END), 0) AS losses,
-                        COALESCE(SUM(CASE WHEN status = 'PENDING' THEN stake ELSE 0 END), 0) AS pending,
-                        COUNT(*) FILTER (WHERE status = 'PENDING')::int AS pending_tickets
-                 FROM bets WHERE status <> 'CANCELLED' AND ($1::text IS NULL OR user_id IN (SELECT id FROM users WHERE admin_id = $1))`, scope),
+    pool.query(`SELECT ${TICKET_SUMS}
+                 FROM bets b WHERE b.status <> 'CANCELLED' AND ($1::text IS NULL OR b.user_id IN (SELECT id FROM users WHERE admin_id = $1))`, scope),
   ]);
+  const t = withNet(betsAgg.rows[0]);
   res.json({
-    agents: { total: agentsCount.rows[0].total, active: agentsCount.rows[0].active, totalBalance: agentsCount.rows[0].total_balance },
-    users: { total: usersCount.rows[0].total, active: usersCount.rows[0].active, totalBalance: usersCount.rows[0].total_balance },
+    agents: { total: agentsCount.rows[0].total, active: agentsCount.rows[0].active, totalBalance: agentsCount.rows[0].total_balance, totalBalanceEur: agentsCount.rows[0].total_balance_eur },
+    users: { total: usersCount.rows[0].total, active: usersCount.rows[0].active, totalBalance: usersCount.rows[0].total_balance, totalBalanceEur: usersCount.rows[0].total_balance_eur },
     tickets: {
-      total: betsAgg.rows[0].total_tickets,
-      turnover: betsAgg.rows[0].turnover,
-      wins: betsAgg.rows[0].wins,
-      losses: betsAgg.rows[0].losses,
-      pending: betsAgg.rows[0].pending,
-      pendingCount: betsAgg.rows[0].pending_tickets,
+      total: t.tickets,
+      turnover: t.turnover, wins: t.wins, losses: t.losses, pending: t.pending,
+      turnoverEur: t.turnover_eur, winsEur: t.wins_eur, lossesEur: t.losses_eur, pendingEur: t.pending_eur,
+      pendingCount: t.pending_tickets,
     },
-    netResult: Number(betsAgg.rows[0].losses) - Number(betsAgg.rows[0].wins),
+    netResult: t.netResult,
+    netResultEur: t.netResultEur,
   });
 });
 
@@ -229,14 +224,25 @@ router.get('/agents', async (req, res) => {
 //   turnover = sum of the stakes of every ticket            wins   = what the WON tickets paid beyond the stake
 //   losses   = the stakes of the LOST tickets               pending = stakes still on open tickets
 //   netResult = losses - wins  -> the house's profit (positive) or loss (negative) on the settled tickets
+// Lek and euro are NEVER added together: every money column exists twice, once for the tickets staked in lek
+// (bets.currency = 'ALL', plain column names) and once for the tickets staked in euro (suffix _eur).
+const sumsIn = (cur, sfx) => `COALESCE(SUM(b.stake) FILTER (WHERE b.currency = '${cur}'), 0) AS turnover${sfx},
+            COALESCE(SUM(b.potential_return - b.stake) FILTER (WHERE b.currency = '${cur}' AND b.status = 'WON'), 0) AS wins${sfx},
+            COALESCE(SUM(b.stake) FILTER (WHERE b.currency = '${cur}' AND b.status = 'LOST'), 0) AS losses${sfx},
+            COALESCE(SUM(b.stake) FILTER (WHERE b.currency = '${cur}' AND b.status = 'PENDING'), 0) AS pending${sfx}`;
+const MONEY_SUMS = `${sumsIn('ALL', '')},
+            ${sumsIn('EUR', '_eur')}`;
 const TICKET_SUMS = `COUNT(b.id)::int AS tickets,
-            COALESCE(SUM(b.stake), 0) AS turnover,
-            COALESCE(SUM(CASE WHEN b.status = 'WON' THEN b.potential_return - b.stake ELSE 0 END), 0) AS wins,
-            COALESCE(SUM(CASE WHEN b.status = 'LOST' THEN b.stake ELSE 0 END), 0) AS losses,
-            COALESCE(SUM(CASE WHEN b.status = 'PENDING' THEN b.stake ELSE 0 END), 0) AS pending,
+            ${MONEY_SUMS},
             COUNT(b.id) FILTER (WHERE b.status = 'WON')::int AS won_tickets,
             COUNT(b.id) FILTER (WHERE b.status = 'LOST')::int AS lost_tickets,
             COUNT(b.id) FILTER (WHERE b.status = 'PENDING')::int AS pending_tickets`;
+// netResult = losses - wins (house profit when positive) -- one figure per currency.
+const withNet = (r) => ({
+  ...r,
+  netResult: Number(r.losses) - Number(r.wins),
+  netResultEur: Number(r.losses_eur) - Number(r.wins_eur),
+});
 
 // Monthly report: totals over ALL the users in scope (the admin's own, also the ones he created directly
 // without an agent; everything for the super admin), a per-agent breakdown, and one line for the users that
@@ -277,32 +283,25 @@ router.get('/reports/monthly', async (req, res) => {
     [rangeStart, rangeEnd, scope]
   );
 
-  const t = totalsRows[0];
-  const d = directRows[0];
+  const t = withNet(totalsRows[0]);
+  const d = withNet(directRows[0]);
   res.json({
     month: label,
     totals: {
       totalAgents: t.total_agents, totalUsers: t.total_users, totalTickets: t.tickets,
       turnover: t.turnover, wins: t.wins, losses: t.losses, pending: t.pending,
+      turnoverEur: t.turnover_eur, winsEur: t.wins_eur, lossesEur: t.losses_eur, pendingEur: t.pending_eur,
       wonTickets: t.won_tickets, lostTickets: t.lost_tickets, pendingTickets: t.pending_tickets,
-      netResult: Number(t.losses) - Number(t.wins),
+      netResult: t.netResult, netResultEur: t.netResultEur,
     },
     // Users that belong to the admin directly (no agent in between).
-    direct: { ...d, netResult: Number(d.losses) - Number(d.wins) },
-    // commissionOwed: this agent's share of the house's net result (GGR)
-    // for the month, at their configured commission_rate. Only accrues on
-    // a positive net result (house won overall) -- a losing month owes no
-    // negative commission back from the agent. Informational only; an
-    // Owner still pays it out via the existing agents/:id/credit endpoint.
-    agents: perAgent.map((a) => {
-      const netResult = Number(a.losses) - Number(a.wins);
+    direct: d,
+    // commissionOwed: the agent's share of the house's net result for the month, per currency (informational).
+    agents: perAgent.map((raw) => {
+      const a = withNet(raw);
       const commissionRate = Number(a.commission_rate);
-      return {
-        ...a,
-        netResult,
-        commissionRate,
-        commissionOwed: netResult > 0 ? Number((netResult * commissionRate / 100).toFixed(2)) : 0,
-      };
+      const owed = (net) => (net > 0 ? Number((net * commissionRate / 100).toFixed(2)) : 0);
+      return { ...a, commissionRate, commissionOwed: owed(a.netResult), commissionOwedEur: owed(a.netResultEur) };
     }),
   });
 });
@@ -333,7 +332,6 @@ router.get('/reports/admins', requireSuperAdmin, async (req, res) => {
      WHERE u.role = 'USER' AND u.admin_id IS NULL`,
     [rangeStart, rangeEnd]
   );
-  const withNet = (r) => ({ ...r, netResult: Number(r.losses) - Number(r.wins) });
   res.json({ month: label, admins: rows.map(withNet), unowned: withNet(unownedRows[0]) });
 });
 
@@ -463,10 +461,7 @@ router.get('/agents/:id/performance', async (req, res) => {
   const { rows } = await pool.query(
     `SELECT u.id, u.name, u.username, u.balance, u.balance_eur AS "balanceEur", u.is_active,
             COALESCE(COUNT(b.id), 0)::int AS tickets,
-            COALESCE(SUM(b.stake), 0) AS turnover,
-            COALESCE(SUM(CASE WHEN b.status = 'WON' THEN b.potential_return - b.stake ELSE 0 END), 0) AS wins,
-            COALESCE(SUM(CASE WHEN b.status = 'LOST' THEN b.stake ELSE 0 END), 0) AS losses,
-            COALESCE(SUM(CASE WHEN b.status = 'PENDING' THEN b.stake ELSE 0 END), 0) AS pending
+            ${MONEY_SUMS}
      FROM users u
      LEFT JOIN bets b ON b.user_id = u.id AND b.status <> 'CANCELLED'
      WHERE u.agent_id = $1
@@ -688,6 +683,58 @@ router.patch('/agents/:id/admin', requireSuperAdmin, async (req, res) => {
   const { rowCount } = await pool.query('UPDATE users SET admin_id = $1 WHERE id = $2 OR agent_id = $2', [adminId, req.params.id]);
   await logAudit(req.user, 'AGENT_REASSIGN', req.params.id, { username: agentRows[0].username, adminId, rows: rowCount });
   res.json({ ok: true, adminId, rows: rowCount });
+});
+
+// SUPER ADMIN: the whole tree -- every admin with his agents, every agent with his users, the users an admin
+// has directly, and the accounts nobody owns -- each with its balance in lek AND in euro.
+router.get('/hierarchy', requireSuperAdmin, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT id, name, username, role, is_active AS "isActive", admin_id AS "adminId", agent_id AS "agentId",
+            balance, balance_eur AS "balanceEur"
+     FROM users WHERE role IN ('ADMIN','AGENT','USER') ORDER BY name`
+  );
+  const node = (r) => ({ id: r.id, name: r.name, username: r.username, isActive: r.isActive, balance: Number(r.balance), balanceEur: Number(r.balanceEur) });
+  const agents = rows.filter((r) => r.role === 'AGENT');
+  const users = rows.filter((r) => r.role === 'USER');
+  const build = (adminId) => ({
+    agents: agents.filter((a) => (a.adminId ?? null) === adminId).map((a) => ({ ...node(a), users: users.filter((u) => u.agentId === a.id).map(node) })),
+    directUsers: users.filter((u) => !u.agentId && (u.adminId ?? null) === adminId).map(node),
+  });
+  res.json({
+    admins: rows.filter((r) => r.role === 'ADMIN').map((a) => ({ ...node(a), ...build(a.id) })),
+    unowned: build(null),
+  });
+});
+
+// Move an agent (with all his users) or a single user to another admin -- or to nobody (adminId null).
+// A user can also be placed under one of the target admin's agents (agentId); otherwise he becomes a direct
+// user of the admin. Past tickets stay with the user, so the reports follow him to the new admin.
+router.patch('/accounts/:id/admin', requireSuperAdmin, async (req, res) => {
+  const adminId = req.body?.adminId || null;
+  const agentId = req.body?.agentId || null;
+  if (adminId !== null && typeof adminId !== 'string') return res.status(400).json({ error: 'adminId must be a string or null' });
+  if (agentId !== null && typeof agentId !== 'string') return res.status(400).json({ error: 'agentId must be a string or null' });
+  const { rows: accRows } = await pool.query(`SELECT id, username, role, admin_id, agent_id FROM users WHERE id = $1 AND role IN ('AGENT','USER')`, [req.params.id]);
+  const acc = accRows[0];
+  if (!acc) return res.status(404).json({ error: 'Agent or user not found' });
+  if (adminId !== null) {
+    const { rows } = await pool.query(`SELECT id FROM users WHERE id = $1 AND role = 'ADMIN'`, [adminId]);
+    if (!rows[0]) return res.status(400).json({ error: 'adminId is not an admin account' });
+  }
+  if (acc.role === 'AGENT') {
+    if (agentId) return res.status(400).json({ error: 'An agent cannot be placed under another agent' });
+    const { rowCount } = await pool.query('UPDATE users SET admin_id = $1 WHERE id = $2 OR agent_id = $2', [adminId, acc.id]);
+    await logAudit(req.user, 'AGENT_REASSIGN', acc.id, { username: acc.username, from: acc.admin_id, to: adminId, rows: rowCount });
+    return res.json({ ok: true, adminId, rows: rowCount });
+  }
+  if (agentId) {
+    const { rows } = await pool.query(`SELECT admin_id FROM users WHERE id = $1 AND role = 'AGENT'`, [agentId]);
+    if (!rows[0]) return res.status(400).json({ error: 'agentId is not an agent account' });
+    if ((rows[0].admin_id ?? null) !== adminId) return res.status(400).json({ error: 'That agent does not belong to the chosen admin' });
+  }
+  await pool.query('UPDATE users SET admin_id = $1, agent_id = $2 WHERE id = $3', [adminId, agentId, acc.id]);
+  await logAudit(req.user, 'USER_REASSIGN', acc.id, { username: acc.username, fromAdmin: acc.admin_id, fromAgent: acc.agent_id, toAdmin: adminId, toAgent: agentId });
+  res.json({ ok: true, adminId, agentId, rows: 1 });
 });
 
 // Erase any ticket (open, live, settled, void ...). By default the money is put back as if the
@@ -1028,39 +1075,38 @@ router.get('/risk/exposure', async (req, res) => {
 // The super admin gets the full picture (turnover, open liability, users) on top, over the whole system.
 router.get('/dashboard/kpi', async (req, res) => {
   const { rows: agg } = await pool.query(
-    `SELECT COALESCE(SUM(CASE WHEN status = 'LOST' THEN stake ELSE 0 END), 0) AS profit,
-            COALESCE(SUM(CASE WHEN status = 'WON' THEN potential_return - stake ELSE 0 END), 0) AS loss,
-            COUNT(*) FILTER (WHERE status = 'PENDING')::int AS tickets_open,
-            COUNT(*) FILTER (WHERE status = 'WON')::int AS tickets_won,
-            COUNT(*) FILTER (WHERE status = 'LOST')::int AS tickets_lost
-       FROM bets WHERE status <> 'CANCELLED' AND ($1::text IS NULL OR user_id IN (SELECT id FROM users WHERE admin_id = $1))`,
+    `SELECT ${TICKET_SUMS}
+       FROM bets b WHERE b.status <> 'CANCELLED' AND ($1::text IS NULL OR b.user_id IN (SELECT id FROM users WHERE admin_id = $1))`,
     [scopeOf(req.user)]
   );
-  const profit = Number(agg[0].profit);
-  const loss = Number(agg[0].loss);
+  const g = withNet(agg[0]);
   const basic = {
-    profit, loss, net: profit - loss,
-    ticketsOpen: agg[0].tickets_open, ticketsWon: agg[0].tickets_won, ticketsLost: agg[0].tickets_lost,
+    profit: Number(g.losses), loss: Number(g.wins), net: g.netResult,
+    profitEur: Number(g.losses_eur), lossEur: Number(g.wins_eur), netEur: g.netResultEur,
+    ticketsOpen: g.pending_tickets, ticketsWon: g.won_tickets, ticketsLost: g.lost_tickets,
   };
   if (!isSuperAdmin(req.user.role)) return res.json(basic);
 
-  const { rows: pending } = await pool.query(
-    `SELECT COALESCE(SUM(stake),0) AS turnover, COALESCE(SUM(potential_return),0) AS liability, COUNT(*)::int AS open_bets
-     FROM bets WHERE status = 'PENDING'`
+  const { rows: money } = await pool.query(
+    `SELECT currency,
+            COALESCE(SUM(stake) FILTER (WHERE status = 'PENDING'),0) AS pending_stake,
+            COALESCE(SUM(potential_return) FILTER (WHERE status = 'PENDING'),0) AS liability,
+            COUNT(*) FILTER (WHERE status = 'PENDING')::int AS open_bets,
+            COALESCE(SUM(stake) FILTER (WHERE status IN ('WON','LOST')),0) AS settled_stake,
+            COALESCE(SUM(potential_return) FILTER (WHERE status = 'WON'),0) AS paid_out
+     FROM bets WHERE status <> 'CANCELLED' GROUP BY currency`
   );
-  const { rows: settled } = await pool.query(
-    `SELECT COALESCE(SUM(stake),0) AS turnover,
-            COALESCE(SUM(CASE WHEN status = 'WON' THEN potential_return ELSE 0 END),0) AS paid_out
-     FROM bets WHERE status IN ('WON','LOST')`
-  );
+  const by = (c) => money.find((r) => r.currency === c) || {};
+  const num = (v) => Number(v || 0);
   const { rows: users } = await pool.query(`SELECT COUNT(*)::int AS c FROM users`);
-  const ggr = Number(settled[0].turnover) - Number(settled[0].paid_out); // Gross Gaming Revenue = stakes in - payouts out
   res.json({
     ...basic,
-    turnover: Number(pending[0].turnover) + Number(settled[0].turnover),
-    openLiability: Number(pending[0].liability),
-    openBets: pending[0].open_bets,
-    ggr,
+    turnover: num(by('ALL').pending_stake) + num(by('ALL').settled_stake),
+    turnoverEur: num(by('EUR').pending_stake) + num(by('EUR').settled_stake),
+    openLiability: num(by('ALL').liability), openLiabilityEur: num(by('EUR').liability),
+    openBets: num(by('ALL').open_bets) + num(by('EUR').open_bets),
+    ggr: num(by('ALL').settled_stake) - num(by('ALL').paid_out), // stakes in - payouts out
+    ggrEur: num(by('EUR').settled_stake) - num(by('EUR').paid_out),
     totalUsers: users[0].c,
   });
 });
