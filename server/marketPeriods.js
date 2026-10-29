@@ -19,10 +19,12 @@ export function normMarketText(str) {
 
 // The provider names periods in several forms, all seen on real tickets:
 //   "Rezultati Pjesa e Parë", "Rezultati Pjesës së Parë" (genitive: pjesës + së),
-//   "Rezultati Pjesa I" / "Pjesa II" (Roman numerals), "1. pjesa", "1st Half".
+//   "Rezultati Pjesa I" / "Pjesa II" (Roman numerals), "1. pjesa", "1st Half",
+//   and the short forms of the provider's own labels: "Total Gola P1" / "P2", "Pj1", "1H"
+//   (but "P1+P2" / "P1/P2" = both halves together, which is no single period).
 // (input must be normalised: lowercase, no diacritics -> "pjeses se pare")
-export const FIRST_HALF_RE = /(?:\bne\s+)?(?:\bpjes(?:a|en|es|e)\s+(?:s?e\s+)?(?:pare|1|i)\b|\b1\.?\s*pjes(?:a|en|es|e)\b|\b(?:1st|first)\s+half\b|\bne\s+pushim\b)/;
-export const SECOND_HALF_RE = /(?:\bne\s+)?(?:\bpjes(?:a|en|es|e)\s+(?:s?e\s+)?(?:dyte|2|ii)\b|\b2\.?\s*pjes(?:a|en|es|e)\b|\b(?:2nd|second)\s+half\b)/;
+export const FIRST_HALF_RE = /(?:\bne\s+)?(?:\bpjes(?:a|en|es|e)\s+(?:s?e\s+)?(?:pare|1|i)\b|\b1\.?\s*pjes(?:a|en|es|e)\b|\b(?:1st|first)\s+half\b|\bne\s+pushim\b|\b(?:p|pj)\.?\s*1\b(?!\s*[+/&-]\s*(?:p|pj)\.?\s*2\b)|\b(?:1h|h1)\b(?!\s*[+/&-]\s*(?:2h|h2)\b))/;
+export const SECOND_HALF_RE = /(?:\bne\s+)?(?:\bpjes(?:a|en|es|e)\s+(?:s?e\s+)?(?:dyte|2|ii)\b|\b2\.?\s*pjes(?:a|en|es|e)\b|\b(?:2nd|second)\s+half\b|(?<!(?:p|pj)\.?\s*1\s*[+/&-]\s*)\b(?:p|pj)\.?\s*2\b|(?<!(?:1h|h1)\s*[+/&-]\s*)\b(?:2h|h2)\b)/;
 
 // Names that only make sense WITH a period phrase around them ("Rezultati Pjesa I").
 export const PERIOD_BASE_ALIASES = {
