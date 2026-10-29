@@ -16,6 +16,7 @@ interface BetSlipProps {
 }
 
 const MIN_STAKE = 10; // must match MIN_STAKE in server/routes/bets.js
+const MAX_POTENTIAL_RETURN = 1000000; // must match MAX_POTENTIAL_RETURN in server/routes/bets.js
 
 const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClearAll, onPlaceBet, onCancelBet, userBalance, myBets }) => {
   const { t, locale } = useI18n();
@@ -49,7 +50,10 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
   // 1 with 1X ...) cannot be combined: they are flagged and the ticket is blocked until one is removed.
   const conflicts = useMemo(() => findSlipConflicts(selections), [selections]);
   const hasConflicts = conflicts.size > 0;
-  const isValidStake = stakeNum >= MIN_STAKE && stakeNum <= userBalance && hasValidDecimals && !hasConflicts;
+  // A ticket whose possible payout is above MAX_POTENTIAL_RETURN is blocked here too
+  // (the server refuses it as well, this just stops the player before the round trip).
+  const exceedsMaxReturn = Number((stakeNum * totalOdds).toFixed(2)) > MAX_POTENTIAL_RETURN;
+  const isValidStake = stakeNum >= MIN_STAKE && stakeNum <= userBalance && hasValidDecimals && !hasConflicts && !exceedsMaxReturn;
   const changedSelections = selections.filter((s) => typeof s.previousOdds === 'number');
 
   const handlePlaceBetClick = () => {
@@ -240,7 +244,12 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                             {!isValidStake && stake && stakeNum > userBalance && (
                                 <p className="text-red-400 text-xs text-center mt-2">{t('Fonde të pamjaftueshme')}</p>
                             )}
-                            {!isValidStake && stake && stakeNum <= userBalance && stakeNum > 0 && (
+                            {exceedsMaxReturn && (
+                                <p className="text-red-400 text-xs text-center mt-2">
+                                    {t('Fitimi maksimal për një biletë është')} {MAX_POTENTIAL_RETURN.toLocaleString('en-US')} L. {t('Ul stake-un ose hiq zgjedhje.')}
+                                </p>
+                            )}
+                            {!isValidStake && !exceedsMaxReturn && stake && stakeNum <= userBalance && stakeNum > 0 && (
                                 <p className="text-red-400 text-xs text-center mt-2">
                                     {!hasValidDecimals ? 'Maksimumi 2 shifra pas presjes' : `Stake minimal është ${MIN_STAKE} L`}
                                 </p>
