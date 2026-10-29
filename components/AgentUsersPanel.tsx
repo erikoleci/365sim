@@ -34,7 +34,7 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
   const [tickets, setTickets] = useState<Record<string, api.AgentTicket[]>>({});
 
   const [showCreate, setShowCreate] = useState(false);
-  const [newUser, setNewUser] = useState({ name: '', username: '', password: '', initialBalance: 0 });
+  const [newUser, setNewUser] = useState({ name: '', username: '', password: '', initialBalance: 0, initialBalanceEur: 0 });
 
   const [amountDraft, setAmountDraft] = useState<Record<string, string>>({});
   const [amountEurDraft, setAmountEurDraft] = useState<Record<string, string>>({});
@@ -91,7 +91,7 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
     if (!newUser.name || !newUser.username || !newUser.password) return;
     try {
       await api.agentCreateUser(newUser);
-      setNewUser({ name: '', username: '', password: '', initialBalance: 0 });
+      setNewUser({ name: '', username: '', password: '', initialBalance: 0, initialBalanceEur: 0 });
       setShowCreate(false);
       await load();
     } catch (err: any) {
@@ -200,8 +200,11 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
               <label className="text-[10px] text-brand-textMuted uppercase flex flex-col gap-1">Password
                 <input type="password" value={newUser.password} onChange={(e) => setNewUser((p) => ({ ...p, password: e.target.value }))} className="input" />
               </label>
-              <label className="text-[10px] text-brand-textMuted uppercase flex flex-col gap-1">{t('Balanca fillestare')}
-                <input type="number" value={newUser.initialBalance} onChange={(e) => setNewUser((p) => ({ ...p, initialBalance: Number(e.target.value) }))} className="input" />
+              <label className="text-[10px] text-brand-textMuted uppercase flex flex-col gap-1">{t('Balanca fillestare')} (Lek)
+                <input type="number" min={0} value={newUser.initialBalance} onChange={(e) => setNewUser((p) => ({ ...p, initialBalance: Number(e.target.value) }))} className="input" />
+              </label>
+              <label className="text-[10px] text-brand-textMuted uppercase flex flex-col gap-1">{t('Balanca fillestare')} (Euro €)
+                <input type="number" min={0} value={newUser.initialBalanceEur} onChange={(e) => setNewUser((p) => ({ ...p, initialBalanceEur: Number(e.target.value) }))} className="input" />
               </label>
               <button type="submit" className="text-xs px-3 py-2 rounded bg-green-700 hover:bg-green-600 font-bold h-fit">{t('Krijo')}</button>
             </form>

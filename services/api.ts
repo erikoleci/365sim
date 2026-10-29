@@ -449,7 +449,7 @@ export async function agentFetchMe() {
   return request<{ agent: User }>('/agent/me');
 }
 
-export async function agentCreateUser(u: { name: string; username: string; password: string; initialBalance?: number }) {
+export async function agentCreateUser(u: { name: string; username: string; password: string; initialBalance?: number; initialBalanceEur?: number }) {
   return request<{ user: User }>('/agent/users', { method: 'POST', body: JSON.stringify(u) });
 }
 

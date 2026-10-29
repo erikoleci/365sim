@@ -67,19 +67,26 @@ router.get('/users', async (req, res) => {
 });
 
 router.post('/users', async (req, res) => {
-  const { name, username, password, initialBalance } = req.body || {};
+  const { name, username, password, initialBalance, initialBalanceEur } = req.body || {};
   if (!name || !username || !password) {
     return res.status(400).json({ error: 'name, username, and password are required' });
   }
   if (password.length < 6) {
     return res.status(400).json({ error: 'Password must be at least 6 characters' });
   }
+  // The agent opens the user in lek (initialBalance), in euro (initialBalanceEur) or in both.
   const startBalance = Number(initialBalance) || 0;
-  if (startBalance < 0) return res.status(400).json({ error: 'initialBalance cannot be negative' });
+  const startBalanceEur = Number(initialBalanceEur) || 0;
+  if (!Number.isFinite(startBalance) || !Number.isFinite(startBalanceEur) || startBalance < 0 || startBalanceEur < 0) {
+    return res.status(400).json({ error: 'initial balance cannot be negative' });
+  }
 
-  const self = await loadSelf(req);
-  if (startBalance > 0 && self.balance < startBalance) {
-    return res.status(400).json({ error: 'Insufficient agent balance to fund initial balance' });
+  const wallet = await readWallet(req.user.id);
+  if (startBalance > 0 && Number(wallet.balance) < startBalance) {
+    return res.status(400).json({ error: 'Insufficient agent balance (lek) to fund initial balance' });
+  }
+  if (startBalanceEur > 0 && Number(wallet.balanceEur) < startBalanceEur) {
+    return res.status(400).json({ error: 'Insufficient agent balance (euro) to fund initial balance' });
   }
 
   const { rows: existingRows } = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
@@ -93,15 +100,19 @@ router.post('/users', async (req, res) => {
     [id, name, username, hash, '', req.user.id, Date.now()]
   );
 
-  if (startBalance > 0) {
-    await transferBalance({
+  const parts = [];
+  if (startBalance > 0) parts.push({ currency: 'ALL', amount: startBalance });
+  if (startBalanceEur > 0) parts.push({ currency: 'EUR', amount: startBalanceEur });
+  if (parts.length) {
+    // lek and euro move in ONE transaction: both happen or none
+    await transferBalances({
       actorId: req.user.id, sourceId: req.user.id, targetId: id,
-      amount: startBalance, type: 'AGENT_CREATE_USER_FUND', reference: username,
-    });
+      type: 'AGENT_CREATE_USER_FUND', reference: username,
+    }, parts);
   }
 
   const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
-  await logAudit(req.user, 'AGENT_USER_CREATE', id, { username, initialBalance: startBalance });
+  await logAudit(req.user, 'AGENT_USER_CREATE', id, { username, initialBalance: startBalance, initialBalanceEur: startBalanceEur });
   res.status(201).json({ user: toPublicUser(rows[0]) });
 });
 
