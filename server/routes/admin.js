@@ -549,8 +549,8 @@ router.post('/users/:id/credit', async (req, res) => {
 
 router.post('/users/:id/reset-password', async (req, res) => {
   const { password } = req.body || {};
-  if (!password || password.length < 6) {
-    return res.status(400).json({ error: 'password must be at least 6 characters' });
+  if (!password || password.length < 4) {
+    return res.status(400).json({ error: 'password must be at least 4 characters' });
   }
   const { rows } = await pool.query('SELECT id, role, admin_id FROM users WHERE id = $1', [req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: 'User not found' });
@@ -621,7 +621,7 @@ router.get('/bets', async (req, res) => {
 router.post('/admins', requireSuperAdmin, async (req, res) => {
   const { name, username, password, balance } = req.body || {};
   if (!name || !username || !password) return res.status(400).json({ error: 'name, username, and password are required' });
-  if (String(password).length < 6) return res.status(400).json({ error: 'password must be at least 6 characters' });
+  if (String(password).length < 4) return res.status(400).json({ error: 'password must be at least 4 characters' });
   const { rows: existing } = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
   if (existing[0]) return res.status(409).json({ error: 'Username already taken' });
   const id = randomUUID();

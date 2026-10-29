@@ -71,8 +71,8 @@ router.post('/users', async (req, res) => {
   if (!name || !username || !password) {
     return res.status(400).json({ error: 'name, username, and password are required' });
   }
-  if (password.length < 6) {
-    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  if (password.length < 4) {
+    return res.status(400).json({ error: 'Password must be at least 4 characters' });
   }
   // The agent opens the user in lek (initialBalance), in euro (initialBalanceEur) or in both.
   const startBalance = Number(initialBalance) || 0;
