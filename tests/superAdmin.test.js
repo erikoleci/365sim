@@ -55,9 +55,15 @@ const mocks = vi.hoisted(() => {
     if (s.startsWith('INSERT INTO users')) { users.set(params[0], { id: params[0], name: params[1], username: params[2], role: 'ADMIN', is_active: true, balance: params[4] }); return { rows: [] }; }
     if (s.startsWith('SELECT value FROM kv_store WHERE key = $1')) return { rows: kv.has(params[0]) ? [{ value: kv.get(params[0]) }] : [] };
     if (s.startsWith('INSERT INTO kv_store')) { kv.set(params[0], params[1]); return { rows: [] }; }
-    if (s.startsWith("SELECT COALESCE(SUM(CASE WHEN status = 'LOST'")) return { rows: [{ profit: '100', loss: '30', tickets_open: 2, tickets_won: 3, tickets_lost: 4 }] };
-    if (s.startsWith('SELECT COALESCE(SUM(stake),0) AS turnover, COALESCE(SUM(potential_return),0) AS liability')) return { rows: [{ turnover: '50', liability: '200', open_bets: 2 }] };
-    if (s.startsWith("SELECT COALESCE(SUM(stake),0) AS turnover, COALESCE(SUM(CASE WHEN status = 'WON' THEN potential_return")) return { rows: [{ turnover: '500', paid_out: '350' }] };
+    if (s.startsWith('SELECT COUNT(b.id)::int AS tickets, COALESCE(SUM(b.stake) FILTER (WHERE b.currency')) return { rows: [{ tickets: 9, turnover: '0', wins: '30', losses: '100', pending: '0', turnover_eur: '0', wins_eur: '5', losses_eur: '20', pending_eur: '0', won_tickets: 3, lost_tickets: 4, pending_tickets: 2 }] };
+    if (s.startsWith("SELECT currency, COALESCE(SUM(stake) FILTER (WHERE status = 'PENDING')")) return { rows: [
+      { currency: 'ALL', pending_stake: '50', liability: '200', open_bets: 2, settled_stake: '500', paid_out: '350' },
+      { currency: 'EUR', pending_stake: '10', liability: '40', open_bets: 1, settled_stake: '100', paid_out: '60' },
+    ] };
+    if (s.startsWith('SELECT id, name, username, role, is_active AS "isActive"')) return { rows: [...users.values()].map((u) => ({ id: u.id, name: u.username, username: u.username, role: u.role, isActive: true, adminId: u.admin_id ?? null, agentId: u.agent_id ?? null, balance: u.balance, balanceEur: u.balance_eur ?? 0 })) };
+    if (s.startsWith("SELECT id, username, role, admin_id, agent_id FROM users WHERE id = $1 AND role IN ('AGENT','USER')")) { const r = users.get(params[0]); return { rows: r && (r.role === 'AGENT' || r.role === 'USER') ? [{ id: r.id, username: r.username, role: r.role, admin_id: r.admin_id ?? null, agent_id: r.agent_id ?? null }] : [] }; }
+    if (s.startsWith("SELECT admin_id FROM users WHERE id = $1 AND role = 'AGENT'")) { const r = users.get(params[0]); return { rows: r?.role === 'AGENT' ? [{ admin_id: r.admin_id ?? null }] : [] }; }
+    if (s.startsWith('UPDATE users SET admin_id = $1, agent_id = $2 WHERE id = $3')) { const u = users.get(params[2]); u.admin_id = params[0]; u.agent_id = params[1]; return { rows: [], rowCount: 1 }; }
     if (s.startsWith('SELECT COUNT(*)::int AS c FROM users')) return { rows: [{ c: users.size }] };
     if (s.startsWith('SELECT * FROM bets WHERE id = $1')) { const b = bets.get(params[0]); return { rows: b ? [b] : [] }; }
     if (s.startsWith("UPDATE bets SET status = 'CANCELLED' WHERE id = $1")) { bets.get(params[0]).status = 'CANCELLED'; return { rows: [] }; }
@@ -329,11 +335,11 @@ describe('markets and settlement tools are the super admin\'s', () => {
 describe('dashboard figures', () => {
   it('a normal admin only gets profit, loss, net and the ticket counts', async () => {
     const k = await (await call('GET', '/dashboard/kpi', ADMIN)).json();
-    expect(k).toEqual({ profit: 100, loss: 30, net: 70, ticketsOpen: 2, ticketsWon: 3, ticketsLost: 4 });
+    expect(k).toEqual({ profit: 100, loss: 30, net: 70, profitEur: 20, lossEur: 5, netEur: 15, ticketsOpen: 2, ticketsWon: 3, ticketsLost: 4 });
   });
   it('the super admin gets those plus the full picture', async () => {
     const k = await (await call('GET', '/dashboard/kpi', SUPER)).json();
-    expect(k).toMatchObject({ profit: 100, loss: 30, net: 70, ticketsOpen: 2, ticketsWon: 3, ticketsLost: 4, turnover: 550, openLiability: 200, openBets: 2, ggr: 150 });
+    expect(k).toMatchObject({ profit: 100, loss: 30, net: 70, ticketsOpen: 2, ticketsWon: 3, ticketsLost: 4, turnover: 550, turnoverEur: 110, openLiability: 200, openLiabilityEur: 40, openBets: 3, ggr: 150, ggrEur: 40 });
     expect(k.totalUsers).toBeGreaterThan(0);
   });
 });
@@ -383,5 +389,39 @@ describe('ticket deletion switch', () => {
     }
     expect(mocks.users.get('user-1').balance).toBe(10);        // nothing moved
     expect((await call('POST', '/bets/nope/cancel', ADMIN)).status).toBe(404);
+  });
+});
+
+
+describe('moving accounts between admins (super admin)', () => {
+  it('hierarchy lists every admin with his agents and users', async () => {
+    const res = await call('GET', '/hierarchy', SUPER);
+    expect(res.status).toBe(200);
+    const h = await res.json();
+    const a1 = h.admins.find((a) => a.id === 'admin-1');
+    expect(a1.agents.map((a) => a.id)).toEqual(['agent-1']);
+    expect(a1.agents[0].users.map((u) => u.id)).toEqual(['user-1']);
+  });
+  it('a normal admin cannot read the hierarchy or move anybody', async () => {
+    expect((await call('GET', '/hierarchy', ADMIN)).status).toBe(403);
+    expect((await call('PATCH', '/accounts/user-2/admin', ADMIN, { adminId: 'admin-1' })).status).toBe(403);
+  });
+  it('moves one user to another admin as a direct user', async () => {
+    const res = await call('PATCH', '/accounts/user-1/admin', SUPER, { adminId: 'admin-2' });
+    expect(res.status).toBe(200);
+    expect(mocks.users.get('user-1')).toMatchObject({ admin_id: 'admin-2', agent_id: null });
+  });
+  it('moves one user under an agent of the target admin, but not under a foreign agent', async () => {
+    expect((await call('PATCH', '/accounts/user-1/admin', SUPER, { adminId: 'admin-2', agentId: 'agent-2' })).status).toBe(200);
+    expect(mocks.users.get('user-1')).toMatchObject({ admin_id: 'admin-2', agent_id: 'agent-2' });
+    expect((await call('PATCH', '/accounts/user-2/admin', SUPER, { adminId: 'admin-1', agentId: 'agent-2' })).status).toBe(400);
+  });
+  it('moves an agent together with his users', async () => {
+    expect((await call('PATCH', '/accounts/agent-1/admin', SUPER, { adminId: 'admin-2' })).status).toBe(200);
+    expect(mocks.users.get('agent-1').admin_id).toBe('admin-2');
+    expect(mocks.users.get('user-1').admin_id).toBe('admin-2');
+  });
+  it('refuses a target that is not an admin', async () => {
+    expect((await call('PATCH', '/accounts/user-1/admin', SUPER, { adminId: 'agent-2' })).status).toBe(400);
   });
 });

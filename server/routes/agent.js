@@ -7,6 +7,14 @@ import { logAudit } from '../auditLog.js';
 import { transferBalance, transferBalances, amountParts, readWallet } from '../ledger.js';
 import { deleteUserIfUnused, deleteBlockedMessage } from '../userDeletion.js';
 
+// Lek (bets.currency = 'ALL') and euro are never added together: each money column exists once per currency (_eur = euro).
+const sumsIn = (cur, sfx) => `COALESCE(SUM(b.stake) FILTER (WHERE b.currency = '${cur}'), 0) AS turnover${sfx},
+            COALESCE(SUM(b.potential_return - b.stake) FILTER (WHERE b.currency = '${cur}' AND b.status = 'WON'), 0) AS wins${sfx},
+            COALESCE(SUM(b.stake) FILTER (WHERE b.currency = '${cur}' AND b.status = 'LOST'), 0) AS losses${sfx},
+            COALESCE(SUM(b.stake) FILTER (WHERE b.currency = '${cur}' AND b.status = 'PENDING'), 0) AS pending${sfx}`;
+const MONEY_SUMS = `${sumsIn('ALL', '')},
+            ${sumsIn('EUR', '_eur')}`;
+
 const router = express.Router();
 
 // Only AGENT accounts may use these routes. ADMIN (Owner) keeps using the
@@ -250,10 +258,7 @@ router.get('/performance', async (req, res) => {
   const { rows } = await pool.query(
     `SELECT u.id, u.name, u.username, u.balance, u.is_active,
             COALESCE(COUNT(b.id), 0)::int AS tickets,
-            COALESCE(SUM(b.stake), 0) AS turnover,
-            COALESCE(SUM(CASE WHEN b.status = 'WON' THEN b.potential_return - b.stake ELSE 0 END), 0) AS wins,
-            COALESCE(SUM(CASE WHEN b.status = 'LOST' THEN b.stake ELSE 0 END), 0) AS losses,
-            COALESCE(SUM(CASE WHEN b.status = 'PENDING' THEN b.stake ELSE 0 END), 0) AS pending
+            ${MONEY_SUMS}
      FROM users u
      LEFT JOIN bets b ON b.user_id = u.id AND b.status <> 'CANCELLED'
      WHERE u.agent_id = $1
@@ -289,10 +294,7 @@ router.get('/reports/monthly', async (req, res) => {
   const { rows: totalsRows } = await pool.query(
     `SELECT COUNT(DISTINCT u.id)::int AS total_users,
             COALESCE(COUNT(b.id), 0)::int AS total_tickets,
-            COALESCE(SUM(b.stake), 0) AS turnover,
-            COALESCE(SUM(CASE WHEN b.status = 'WON' THEN b.potential_return - b.stake ELSE 0 END), 0) AS wins,
-            COALESCE(SUM(CASE WHEN b.status = 'LOST' THEN b.stake ELSE 0 END), 0) AS losses,
-            COALESCE(SUM(CASE WHEN b.status = 'PENDING' THEN b.stake ELSE 0 END), 0) AS pending
+            ${MONEY_SUMS}
      FROM users u
      LEFT JOIN bets b ON b.user_id = u.id AND b.status <> 'CANCELLED' AND b.created_at >= $2 AND b.created_at < $3
      WHERE u.agent_id = $1`,
@@ -302,10 +304,7 @@ router.get('/reports/monthly', async (req, res) => {
   const { rows: perUser } = await pool.query(
     `SELECT u.id, u.name, u.username,
             COALESCE(COUNT(b.id), 0)::int AS tickets,
-            COALESCE(SUM(b.stake), 0) AS turnover,
-            COALESCE(SUM(CASE WHEN b.status = 'WON' THEN b.potential_return - b.stake ELSE 0 END), 0) AS wins,
-            COALESCE(SUM(CASE WHEN b.status = 'LOST' THEN b.stake ELSE 0 END), 0) AS losses,
-            COALESCE(SUM(CASE WHEN b.status = 'PENDING' THEN b.stake ELSE 0 END), 0) AS pending
+            ${MONEY_SUMS}
      FROM users u
      LEFT JOIN bets b ON b.user_id = u.id AND b.status <> 'CANCELLED' AND b.created_at >= $2 AND b.created_at < $3
      WHERE u.agent_id = $1
@@ -316,6 +315,7 @@ router.get('/reports/monthly', async (req, res) => {
 
   const t = totalsRows[0];
   const netResult = Number(t.losses) - Number(t.wins);
+  const netResultEur = Number(t.losses_eur) - Number(t.wins_eur);
   const self = await loadSelf(req);
   const commissionRate = Number(self?.commission_rate) || 0;
   res.json({
@@ -323,7 +323,8 @@ router.get('/reports/monthly', async (req, res) => {
     totals: {
       totalUsers: t.total_users, totalTickets: t.total_tickets, turnover: t.turnover,
       wins: t.wins, losses: t.losses, pending: t.pending,
-      netResult,
+      turnoverEur: t.turnover_eur, winsEur: t.wins_eur, lossesEur: t.losses_eur, pendingEur: t.pending_eur,
+      netResult, netResultEur,
     },
     // Same commission model as the Owner's per-agent report
     // (admin.js /reports/monthly): a percentage of this agent's users' net
@@ -331,6 +332,7 @@ router.get('/reports/monthly', async (req, res) => {
     // the house won overall this month).
     commissionRate,
     commissionOwed: netResult > 0 ? Number((netResult * commissionRate / 100).toFixed(2)) : 0,
+    commissionOwedEur: netResultEur > 0 ? Number((netResultEur * commissionRate / 100).toFixed(2)) : 0,
     users: perUser,
   });
 });
