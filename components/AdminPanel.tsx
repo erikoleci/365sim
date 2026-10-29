@@ -539,18 +539,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                                         <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
                                             bet.status === BetStatus.WON ? 'bg-brand-header text-white' : 
                                             bet.status === BetStatus.LOST ? 'bg-red-900 text-red-200' : 
+                                            bet.status === BetStatus.CANCELLED ? 'bg-gray-600/30 text-gray-300 line-through' : 
                                             'bg-yellow-600/20 text-yellow-500'
                                         }`}>
-                                            {bet.status}
+                                            {bet.status === BetStatus.CANCELLED ? t('ANULUAR') : bet.status}
                                         </span>
                                     </td>
                                     <td className="p-3 text-right">
-                                        {canDeleteTickets && (
+                                        {canDeleteTickets && bet.status !== BetStatus.CANCELLED && (
                                         <button 
                                             onClick={(e) => { e.stopPropagation(); onCancelBet(bet.id, 'ADMIN'); }}
                                             className="text-red-400 hover:text-white bg-red-900/30 hover:bg-red-900 px-2 py-1 rounded text-xs transition-colors"
                                         >
-                                            Delete
+                                            {t('Anulo')}
                                         </button>
                                         )}
                                     </td>

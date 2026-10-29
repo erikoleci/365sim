@@ -60,6 +60,7 @@ const mocks = vi.hoisted(() => {
     if (s.startsWith("SELECT COALESCE(SUM(stake),0) AS turnover, COALESCE(SUM(CASE WHEN status = 'WON' THEN potential_return")) return { rows: [{ turnover: '500', paid_out: '350' }] };
     if (s.startsWith('SELECT COUNT(*)::int AS c FROM users')) return { rows: [{ c: users.size }] };
     if (s.startsWith('SELECT * FROM bets WHERE id = $1')) { const b = bets.get(params[0]); return { rows: b ? [b] : [] }; }
+    if (s.startsWith("UPDATE bets SET status = 'CANCELLED' WHERE id = $1")) { bets.get(params[0]).status = 'CANCELLED'; return { rows: [] }; }
     if (s.startsWith('DELETE FROM bets WHERE id = $1')) { bets.delete(params[0]); return { rows: [] }; }
     if (s.startsWith('SELECT * FROM users ORDER BY created_at')) return { rows: [...users.values()] };
     if (s.startsWith('SELECT COUNT(*)::int AS count FROM users')) return { rows: [{ count: users.size }] };
@@ -342,8 +343,10 @@ describe('ticket deletion switch', () => {
     expect((await (await call('GET', '/settings', ADMIN)).json()).ticketDeletionAllowed).toBe(true);
     const res = await call('POST', '/bets/bet-pending/cancel', ADMIN);
     expect(res.status).toBe(200);
-    expect(mocks.bets.has('bet-pending')).toBe(false);
+    expect(mocks.bets.get('bet-pending').status).toBe('CANCELLED'); // not deleted: it stays, marked cancelled
     expect(mocks.users.get('user-1').balance).toBe(20);        // stake of 10 back
+    expect((await call('POST', '/bets/bet-pending/cancel', ADMIN)).status).toBe(400); // and cannot be cancelled (refunded) twice
+    expect(mocks.users.get('user-1').balance).toBe(20);
   });
   it('only the super admin flips it, and then admins can no longer delete', async () => {
     expect((await call('PUT', '/settings/ticket-deletion', ADMIN, { allowed: false })).status).toBe(403);

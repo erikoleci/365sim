@@ -116,7 +116,9 @@ export enum BetStatus {
   HALF_LOST = 'HALF_LOST',
   WON = 'WON',
   LOST = 'LOST',
-  VOID = 'VOID'
+  VOID = 'VOID',
+  /** Cancelled by an admin: the ticket stays in the lists, marked as cancelled; the money was put back. */
+  CANCELLED = 'CANCELLED'
 }
 
 export interface BetSelectionItem {

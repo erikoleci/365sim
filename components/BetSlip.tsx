@@ -301,13 +301,13 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                 {myBets.map(bet => {
                     const canCancel = bet.status === BetStatus.PENDING && bet.cancellable === true && (Date.now() - bet.timestamp < 10 * 60 * 1000);
                     const partialLoss = bet.status === BetStatus.WON && Number(bet.potentialReturn) < Number(bet.stake); // half-lost leg: part of the stake came back
-                    const statusLabel = bet.status === BetStatus.PENDING ? t('Hapur') : partialLoss ? t('Humbje e pjesshme') : bet.status === BetStatus.WON ? t('Fituar') : bet.status === BetStatus.VOID ? t('Rimbursuar') : t('Humbur');
-                    const statusColor = bet.status === BetStatus.WON ? 'border-brand-accent' : bet.status === BetStatus.LOST ? 'border-red-500' : bet.status === BetStatus.VOID ? 'border-gray-500' : 'border-brand-yellow';
+                    const statusLabel = bet.status === BetStatus.PENDING ? t('Hapur') : partialLoss ? t('Humbje e pjesshme') : bet.status === BetStatus.WON ? t('Fituar') : bet.status === BetStatus.VOID ? t('Rimbursuar') : bet.status === BetStatus.CANCELLED ? t('ANULUAR') : t('Humbur');
+                    const statusColor = bet.status === BetStatus.WON ? 'border-brand-accent' : bet.status === BetStatus.LOST ? 'border-red-500' : bet.status === BetStatus.VOID || bet.status === BetStatus.CANCELLED ? 'border-gray-500' : 'border-brand-yellow';
                     return (
                         <div key={bet.id} onClick={() => setOpenTicket({ id: bet.id, createdAt: bet.timestamp, status: bet.status, stake: bet.stake, totalOdds: bet.totalOdds, potentialReturn: bet.potentialReturn, legs: bet.selections })} className={`bg-brand-bg border-l-4 ${statusColor} border-y border-r border-brand-divider rounded-lg p-2 text-xs relative cursor-pointer hover:bg-brand-panel/60`} title={t('Hap biletën')}>
                             <div className="flex justify-between mb-2 border-b border-brand-divider pb-1.5">
                                 <span className="text-brand-textMuted tabular-nums">{new Date(bet.timestamp).toLocaleDateString(locale, { timeZone: 'Europe/Tirane' })} {new Date(bet.timestamp).toLocaleTimeString(locale, { timeZone: 'Europe/Tirane', hour: '2-digit', minute: '2-digit' })}</span>
-                                <span className={`font-bold uppercase text-[10px] tracking-wide px-1.5 py-0.5 rounded ${bet.status === BetStatus.WON ? 'bg-brand-accent/15 text-brand-accent' : bet.status === BetStatus.LOST ? 'bg-red-500/15 text-red-400' : bet.status === BetStatus.VOID ? 'bg-gray-500/20 text-gray-300' : 'bg-brand-yellow/15 text-brand-yellow'}`}>
+                                <span className={`font-bold uppercase text-[10px] tracking-wide px-1.5 py-0.5 rounded ${bet.status === BetStatus.WON ? 'bg-brand-accent/15 text-brand-accent' : bet.status === BetStatus.LOST ? 'bg-red-500/15 text-red-400' : bet.status === BetStatus.VOID || bet.status === BetStatus.CANCELLED ? 'bg-gray-500/20 text-gray-300' : 'bg-brand-yellow/15 text-brand-yellow'}`}>
                                     {statusLabel}
                                 </span>
                             </div>

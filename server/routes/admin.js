@@ -197,7 +197,7 @@ router.get('/overview', async (req, res) => {
                         COALESCE(SUM(CASE WHEN status = 'LOST' THEN stake ELSE 0 END), 0) AS losses,
                         COALESCE(SUM(CASE WHEN status = 'PENDING' THEN stake ELSE 0 END), 0) AS pending,
                         COUNT(*) FILTER (WHERE status = 'PENDING')::int AS pending_tickets
-                 FROM bets WHERE ($1::text IS NULL OR user_id IN (SELECT id FROM users WHERE admin_id = $1))`, scope),
+                 FROM bets WHERE status <> 'CANCELLED' AND ($1::text IS NULL OR user_id IN (SELECT id FROM users WHERE admin_id = $1))`, scope),
   ]);
   res.json({
     agents: { total: agentsCount.rows[0].total, active: agentsCount.rows[0].active, totalBalance: agentsCount.rows[0].total_balance },
@@ -251,7 +251,7 @@ router.get('/reports/monthly', async (req, res) => {
             ${TICKET_SUMS}
      FROM bets b
      JOIN users u ON u.id = b.user_id
-     WHERE b.created_at >= $1 AND b.created_at < $2 AND ($3::text IS NULL OR u.admin_id = $3)`,
+     WHERE b.status <> 'CANCELLED' AND b.created_at >= $1 AND b.created_at < $2 AND ($3::text IS NULL OR u.admin_id = $3)`,
     [rangeStart, rangeEnd, scope]
   );
 
@@ -261,7 +261,7 @@ router.get('/reports/monthly', async (req, res) => {
             ${TICKET_SUMS}
      FROM users a
      LEFT JOIN users u ON u.agent_id = a.id
-     LEFT JOIN bets b ON b.user_id = u.id AND b.created_at >= $1 AND b.created_at < $2
+     LEFT JOIN bets b ON b.user_id = u.id AND b.status <> 'CANCELLED' AND b.created_at >= $1 AND b.created_at < $2
      WHERE a.role = 'AGENT' AND ($3::text IS NULL OR a.admin_id = $3)
      GROUP BY a.id
      ORDER BY turnover DESC`,
@@ -272,7 +272,7 @@ router.get('/reports/monthly', async (req, res) => {
     `SELECT COUNT(DISTINCT u.id)::int AS total_users,
             ${TICKET_SUMS}
      FROM users u
-     LEFT JOIN bets b ON b.user_id = u.id AND b.created_at >= $1 AND b.created_at < $2
+     LEFT JOIN bets b ON b.user_id = u.id AND b.status <> 'CANCELLED' AND b.created_at >= $1 AND b.created_at < $2
      WHERE u.role = 'USER' AND u.agent_id IS NULL AND ($3::text IS NULL OR u.admin_id = $3)`,
     [rangeStart, rangeEnd, scope]
   );
@@ -319,7 +319,7 @@ router.get('/reports/admins', requireSuperAdmin, async (req, res) => {
             ${TICKET_SUMS}
      FROM users a
      LEFT JOIN users u ON u.admin_id = a.id AND u.role = 'USER'
-     LEFT JOIN bets b ON b.user_id = u.id AND b.created_at >= $1 AND b.created_at < $2
+     LEFT JOIN bets b ON b.user_id = u.id AND b.status <> 'CANCELLED' AND b.created_at >= $1 AND b.created_at < $2
      WHERE a.role = 'ADMIN'
      GROUP BY a.id
      ORDER BY turnover DESC`,
@@ -329,7 +329,7 @@ router.get('/reports/admins', requireSuperAdmin, async (req, res) => {
     `SELECT COUNT(DISTINCT u.id)::int AS users,
             ${TICKET_SUMS}
      FROM users u
-     LEFT JOIN bets b ON b.user_id = u.id AND b.created_at >= $1 AND b.created_at < $2
+     LEFT JOIN bets b ON b.user_id = u.id AND b.status <> 'CANCELLED' AND b.created_at >= $1 AND b.created_at < $2
      WHERE u.role = 'USER' AND u.admin_id IS NULL`,
     [rangeStart, rangeEnd]
   );
@@ -468,7 +468,7 @@ router.get('/agents/:id/performance', async (req, res) => {
             COALESCE(SUM(CASE WHEN b.status = 'LOST' THEN b.stake ELSE 0 END), 0) AS losses,
             COALESCE(SUM(CASE WHEN b.status = 'PENDING' THEN b.stake ELSE 0 END), 0) AS pending
      FROM users u
-     LEFT JOIN bets b ON b.user_id = u.id
+     LEFT JOIN bets b ON b.user_id = u.id AND b.status <> 'CANCELLED'
      WHERE u.agent_id = $1
      GROUP BY u.id
      ORDER BY u.created_at DESC`,
@@ -732,12 +732,13 @@ router.post('/bets/:id/cancel', async (req, res) => {
     // A normal admin only deletes tickets of his own users.
     const { rows: ownerRows } = await client.query('SELECT admin_id FROM users WHERE id = $1', [bet.user_id]);
     if (!ownsRow(req.user, ownerRows[0])) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Bet not found' }); }
+    if (bet.status === 'CANCELLED') { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Bileta është anuluar tashmë' }); }
     // Put the money back as if the ticket had never been placed (PENDING / LOST: the stake; WON: the winnings
     // are taken back; VOID: it was refunded already, nothing to give twice).
     delta = betBalanceReversal(bet);
     if (delta !== 0) await client.query(`UPDATE users SET ${walletColumn(bet.currency)} = ${walletColumn(bet.currency)} + $1 WHERE id = $2`, [delta, bet.user_id]);
-    await client.query('DELETE FROM bet_selections WHERE bet_id = $1', [bet.id]);
-    await client.query('DELETE FROM bets WHERE id = $1', [bet.id]);
+    // The ticket is NOT deleted: it stays in the lists, marked CANCELLED (its legs stay too).
+    await client.query(`UPDATE bets SET status = 'CANCELLED' WHERE id = $1`, [bet.id]);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1031,7 +1032,7 @@ router.get('/dashboard/kpi', async (req, res) => {
             COUNT(*) FILTER (WHERE status = 'PENDING')::int AS tickets_open,
             COUNT(*) FILTER (WHERE status = 'WON')::int AS tickets_won,
             COUNT(*) FILTER (WHERE status = 'LOST')::int AS tickets_lost
-       FROM bets WHERE ($1::text IS NULL OR user_id IN (SELECT id FROM users WHERE admin_id = $1))`,
+       FROM bets WHERE status <> 'CANCELLED' AND ($1::text IS NULL OR user_id IN (SELECT id FROM users WHERE admin_id = $1))`,
     [scopeOf(req.user)]
   );
   const profit = Number(agg[0].profit);

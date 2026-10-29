@@ -244,7 +244,7 @@ router.get('/performance', async (req, res) => {
             COALESCE(SUM(CASE WHEN b.status = 'LOST' THEN b.stake ELSE 0 END), 0) AS losses,
             COALESCE(SUM(CASE WHEN b.status = 'PENDING' THEN b.stake ELSE 0 END), 0) AS pending
      FROM users u
-     LEFT JOIN bets b ON b.user_id = u.id
+     LEFT JOIN bets b ON b.user_id = u.id AND b.status <> 'CANCELLED'
      WHERE u.agent_id = $1
      GROUP BY u.id
      ORDER BY u.created_at DESC`,
@@ -283,7 +283,7 @@ router.get('/reports/monthly', async (req, res) => {
             COALESCE(SUM(CASE WHEN b.status = 'LOST' THEN b.stake ELSE 0 END), 0) AS losses,
             COALESCE(SUM(CASE WHEN b.status = 'PENDING' THEN b.stake ELSE 0 END), 0) AS pending
      FROM users u
-     LEFT JOIN bets b ON b.user_id = u.id AND b.created_at >= $2 AND b.created_at < $3
+     LEFT JOIN bets b ON b.user_id = u.id AND b.status <> 'CANCELLED' AND b.created_at >= $2 AND b.created_at < $3
      WHERE u.agent_id = $1`,
     [req.user.id, rangeStart, rangeEnd]
   );
@@ -296,7 +296,7 @@ router.get('/reports/monthly', async (req, res) => {
             COALESCE(SUM(CASE WHEN b.status = 'LOST' THEN b.stake ELSE 0 END), 0) AS losses,
             COALESCE(SUM(CASE WHEN b.status = 'PENDING' THEN b.stake ELSE 0 END), 0) AS pending
      FROM users u
-     LEFT JOIN bets b ON b.user_id = u.id AND b.created_at >= $2 AND b.created_at < $3
+     LEFT JOIN bets b ON b.user_id = u.id AND b.status <> 'CANCELLED' AND b.created_at >= $2 AND b.created_at < $3
      WHERE u.agent_id = $1
      GROUP BY u.id
      ORDER BY turnover DESC`,

@@ -9,7 +9,7 @@ const money = (n: number) => Number(n || 0).toLocaleString(getLocale(), { maximu
 const dateFmt = (ms: number) => new Date(ms).toLocaleString(getLocale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 const statusColor: Record<string, string> = {
-  WON: 'text-green-400', LOST: 'text-red-400', PENDING: 'text-brand-yellow',
+  WON: 'text-green-400', LOST: 'text-red-400', PENDING: 'text-brand-yellow', CANCELLED: 'text-gray-400 line-through',
 };
 
 interface AgentUsersPanelProps {

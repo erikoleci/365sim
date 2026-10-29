@@ -101,10 +101,10 @@ export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reload
 
   const cancelBet = useCallback(async (betId: string, origin: 'USER' | 'ADMIN') => {
     if (origin === 'ADMIN') {
-      if (!window.confirm('Admin delete this bet and adjust balance?')) return;
+      if (!window.confirm(t('Ta anuloj këtë biletë dhe t\'i kthej paratë? Bileta mbetet në listë e shënuar si e anuluar.'))) return;
       try {
-        // the super admin erases any ticket (open, live or settled)
-        if (isSuper) await api.adminDeleteBet(betId); else await api.adminCancelBet(betId);
+        // Nobody deletes a ticket any more: it is cancelled and stays in the list with its mark
+        await api.adminCancelBet(betId);
         await loadAdminData();
       } catch (e: any) {
         alert(e.message || 'Failed to cancel bet');

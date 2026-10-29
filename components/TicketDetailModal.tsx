@@ -27,11 +27,11 @@ const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => vo
   }, [ticket, onClose]);
   if (!ticket) return null;
 
-  const label = (s: string) => (s === 'PENDING' ? t('Hapur') : s === 'WON' ? t('Fituar') : s === 'HALF_WON' ? t('Gjysmë fitore') : s === 'HALF_LOST' ? t('Gjysmë humbje') : s === 'VOID' ? t('Rimbursuar') : t('Humbur'));
+  const label = (s: string) => (s === 'PENDING' ? t('Hapur') : s === 'WON' ? t('Fituar') : s === 'HALF_WON' ? t('Gjysmë fitore') : s === 'HALF_LOST' ? t('Gjysmë humbje') : s === 'VOID' ? t('Rimbursuar') : s === 'CANCELLED' ? t('ANULUAR') : t('Humbur'));
   const partialLoss = ticket.status === 'WON' && Number(ticket.potentialReturn) < Number(ticket.stake);
   const when = new Date(ticket.createdAt).toLocaleString(locale, { timeZone: 'Europe/Tirane', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   const kind = ticket.legs.length > 1 ? t('{n}-Fish', { n: ticket.legs.length }) : t('Bast i Thjeshtë');
-  const returnLabel = ticket.status === 'PENDING' ? t('Fitimi i Mundshëm') : ticket.status === 'LOST' ? t('Humbur') : ticket.status === 'VOID' ? t('Rimbursuar') : t('Paguar');
+  const returnLabel = ticket.status === 'PENDING' ? t('Fitimi i Mundshëm') : ticket.status === 'LOST' ? t('Humbur') : ticket.status === 'VOID' ? t('Rimbursuar') : ticket.status === 'CANCELLED' ? t('ANULUAR') : t('Paguar');
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-3" onClick={onClose} role="dialog" aria-modal="true">

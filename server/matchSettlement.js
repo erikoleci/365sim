@@ -841,6 +841,7 @@ export async function recomputeBetStatus(betId, client = pool) {
   const { rows: betRows } = await client.query('SELECT * FROM bets WHERE id = $1 FOR UPDATE', [betId]);
   const bet = betRows[0];
   if (!bet) return;
+  if (bet.status === 'CANCELLED') return; // cancelled by an admin: stake already put back, never settle or pay it
   const { rows: legs } = await client.query('SELECT * FROM bet_selections WHERE bet_id = $1', [betId]);
   if (legs.length === 0) return; // [].every(...) is true — never pay a bet that has no legs
 
