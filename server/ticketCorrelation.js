@@ -93,7 +93,7 @@ export function goalInterval(optionName) {
 
 const bttsSide = (optionName) => {
   const o = norm(optionName).replace(/\s+/g, '');
-  if (/^(jogol|jo|no|nuk|nogoal)$/.test(o)) return 'no';
+  if (/^(jogol|jgol|jo|no|nuk|nogoal)$/.test(o)) return 'no';
   if (/^(gol|po|yes|ja|goal)$/.test(o)) return 'yes';
   return null;
 };

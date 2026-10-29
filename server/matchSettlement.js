@@ -31,11 +31,23 @@ function splitCombo(leg) {
   const marketParts = String(leg.market_name || '').replace(/&amp;/g, '&').split(/\s*&\s*/);
   const selection = String(leg.selection_name || leg.selection_id || '').replace(/&amp;/g, '&');
   let selectionParts = selection.split(/\s*&\s*/);
-  // Some markets write the parts of one combined selection with "/" instead of "&":
-  // "Rezultat Final & Numri i Golave" -> "X/5+", "45/90 & Numri i Golave" -> "2-X/0-4".
+  // Some markets write the parts of one combined selection with "/" or "_" instead of "&":
+  // "Rezultat Final & Numri i Golave" -> "X/5+", "45/90 & Numri i Golave" -> "2-X/0-4" (or "X-2/3+"),
+  // "Dopio Shans & Gol/JGol" -> "X2_Gol".
+  if (marketParts.length >= 2 && selectionParts.length !== marketParts.length) {
+    for (const sep of [/\s*\/\s*/, /\s*_\s*/]) {
+      const parts = selection.split(sep);
+      if (parts.length === marketParts.length) { selectionParts = parts; break; }
+    }
+  }
+  // A half-time/full-time part written with a slash itself ("1/2") inside a slash-separated option
+  // ("1/2/3+" for "45/90 & Numri i Golave"): put its two halves back together.
   if (marketParts.length >= 2 && selectionParts.length !== marketParts.length) {
     const slashed = selection.split(/\s*\/\s*/);
-    if (slashed.length === marketParts.length) selectionParts = slashed;
+    const i = marketParts.findIndex((m) => HTFT_NAMES.has(norm(m)));
+    if (i >= 0 && slashed.length === marketParts.length + 1) {
+      selectionParts = [...slashed.slice(0, i), slashed[i] + '/' + slashed[i + 1], ...slashed.slice(i + 2)];
+    }
   }
   if (marketParts.length < 2 || marketParts.length > 3 || marketParts.length !== selectionParts.length) return null;
   return marketParts.map((m, i) => ({
@@ -482,8 +494,10 @@ function statsOutcome(leg, marketName, stats, { home, away }) {
   if (!Number.isFinite(h) || !Number.isFinite(a)) return null;
   let total = h + a;
   const rest = marketName.replace(/p1\s*\+\s*p2/g, '');
-  if (home && rest.includes(norm(home))) total = h;
-  else if (away && rest.includes(norm(away))) total = a;
+  // the team name must appear as whole words ("Shuma total e korneve" must not match a team called "A")
+  const hasWord = (team) => new RegExp('(^|[^a-z0-9])' + String(team).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^a-z0-9]|$)').test(rest);
+  if (home && hasWord(home)) total = h;
+  else if (away && hasWord(away)) total = a;
   else if (/\b(skuadra|team)\b|\b1\b|\b2\b/.test(rest) && !/\b(shuma|totali|total)\b/.test(rest)) return null; // team market we cannot attribute
   const text = norm(leg.selection_name || leg.selection_id);
   const ou = parseOverUnder(leg.selection_id) || parseOverUnder(leg.selection_name);
@@ -702,8 +716,9 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
     const sel = norm(leg.selection_name || leg.selection_id);
     // the provider's "Gol Jo Gol Live" / "Gol / Jo Gol Ne P2" label the options 1 = Gol, 2 = Jo Gol
     const numeric = marketName === 'gol jo gol live';
+    const tight = sel.replace(/[\s_-]/g, ''); // "Jo Gol", "J_Gol", "JGol" ...
     if (sel === 'po' || sel === 'yes' || sel === 'gol' || (numeric && sel === '1')) return bothScored ? 'WON' : 'LOST';
-    if (sel === 'jo' || sel === 'no' || sel === 'jogol' || (numeric && sel === '2')) return !bothScored ? 'WON' : 'LOST';
+    if (sel === 'jo' || sel === 'no' || tight === 'jogol' || tight === 'jgol' || tight === 'nogoal' || (numeric && sel === '2')) return !bothScored ? 'WON' : 'LOST';
     return null;
   }
 

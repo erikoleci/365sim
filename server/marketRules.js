@@ -28,7 +28,7 @@ import { normMarketText as norm, splitPeriod, PERIOD_BASE_ALIASES, isPastFirstHa
 // 'totali' / 'total' are the short names used inside combination markets ("Rezultat Final & Totali").
 export const TOTAL_GOALS_PREFIXES = ['numri i golave ne ndeshje', 'numri i golave', 'totali i golave', 'total goals', 'golat ne ndeshje', 'totali', 'total'];
 export const H2H_NAMES = new Set(['rezultat final', 'rezultati final', '1x2', 'rezultati i ndeshjes', 'fituesi i ndeshjes']);
-export const BTTS_NAMES = new Set(['gol/jogol', 'gol-jogol', 'gol / jogol', 'gol jo gol live', 'te dy skuadrat shenojne', 'both teams to score']);
+export const BTTS_NAMES = new Set(['gol/jogol', 'gol/jgol', 'gol / jgol', 'gol/jo gol', 'gol / jo gol', 'gol-jogol', 'gol / jogol', 'gol jo gol live', 'te dy skuadrat shenojne', 'both teams to score']);
 export const DOUBLE_CHANCE_NAMES = new Set(['dopioshans live', 'dopioshans', 'dopio shans', 'double chance', 'shans i dyfishte']);
 export const CORRECT_SCORE_NAMES = new Set(['rezultati sakte live', 'rezultati i sakte', 'rezultati ekzakt', 'correct score']);
 // "Skuadra që shënon e para" / "First team to score": decided from the logged goal order
