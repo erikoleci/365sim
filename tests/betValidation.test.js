@@ -1,6 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { findConflictingSelection, validateStakeAmount } from '../server/betValidation.js';
 
+describe('validateStakeAmount max stake (1,000,000)', () => {
+  it('accepts a stake equal to the maximum', () => {
+    expect(validateStakeAmount(1000000, { min: 10, max: 1000000 })).toBeNull();
+  });
+  it('rejects a stake above the maximum', () => {
+    expect(validateStakeAmount(1000000.01, { min: 10, max: 1000000 })).toBe('Maximum stake is 1000000');
+    expect(validateStakeAmount(5000000, { min: 10, max: 1000000 })).toBe('Maximum stake is 1000000');
+  });
+});
+
 describe('findConflictingSelection', () => {
   it('returns null for selections across different matches/markets', () => {
     const selections = [

@@ -32,8 +32,9 @@ router.use(requireAuth);
 // --- Ticket rules (kept simple & proportional to a play-money simulator,
 // not a full enterprise risk-limits system) ---
 const MIN_STAKE = 10;
-// No maximum stake (removed on purpose). Payout is still bounded by
+// Max stake per ticket; the payout is additionally bounded by
 // MAX_POTENTIAL_RETURN and the per-selection exposure cap below.
+const MAX_STAKE = 1000000; // must match MAX_STAKE in components/BetSlip.tsx
 const MAX_SELECTIONS_PER_TICKET = 20;
 const MAX_POTENTIAL_RETURN = 1000000;
 // Risk Management: max total liability the house will carry on a single
@@ -113,7 +114,7 @@ router.post('/', wrap(async (req, res) => {
   if (selections.length > MAX_SELECTIONS_PER_TICKET) {
     return res.status(400).json({ error: `Maximum ${MAX_SELECTIONS_PER_TICKET} selections per ticket` });
   }
-  const stakeError = validateStakeAmount(stake, { min: MIN_STAKE });
+  const stakeError = validateStakeAmount(stake, { min: MIN_STAKE, max: MAX_STAKE });
   if (stakeError) {
     return res.status(400).json({ error: stakeError });
   }
