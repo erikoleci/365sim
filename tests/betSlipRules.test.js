@@ -27,12 +27,12 @@ describe('findSlipConflicts: tied legs of the same match are flagged, nothing is
     expect(flagged([a, b])).toEqual(keys(a, b));
   });
 
-  it('only the tied legs are flagged, independent legs stay clean', () => {
+  it('only the tied legs are flagged: all result / goals legs of a match, while corners stay clean', () => {
     const over = leg('t', 'Totali i golave', 'Mbi 1.5');
     const range = leg('g', 'Numri i golave ne ndeshje', '0-3');
     const result = leg('r', 'Rezultat Final', '1');
     const corners = leg('c', 'Korner Mbi/Nen 8.5', 'Mbi');
-    expect(flagged([over, range, result, corners])).toEqual(keys(over, range));
+    expect(flagged([over, range, result, corners])).toEqual(keys(over, range, result));
   });
 
   it('result + double chance, BTTS + Over 1.5, two corner lines are flagged', () => {
@@ -44,16 +44,21 @@ describe('findSlipConflicts: tied legs of the same match are flagged, nothing is
     expect(flagged([c1, c2])).toEqual(keys(c1, c2));
   });
 
-  it('independent legs: result + goals + BTTS + corners, and other matches, give no conflict', () => {
+  it('independent legs: one result + one corners + one cards of a match, and other matches, give no conflict', () => {
     const slip = [
       leg('r', 'Rezultat Final', '1'),
-      leg('t', 'Totali i golave', 'Mbi 2.5'),
-      leg('b', 'Gol/Jogol', 'Gol'),
       leg('c', 'Korner Mbi/Nen 8.5', 'Mbi'),
+      leg('k', 'Kartona Mbi/Nen 3.5', 'Mbi'),
       leg('r2', 'Rezultat Final', '1', 'm2', { matchHome: 'Roma', matchAway: 'Lazio' }),
-      leg('t2', 'Totali i golave', 'Mbi 1.5', 'm2', { matchHome: 'Roma', matchAway: 'Lazio' }),
+      leg('c2', 'Korner Mbi/Nen 8.5', 'Mbi', 'm2', { matchHome: 'Roma', matchAway: 'Lazio' }),
     ];
     expect(findSlipConflicts(slip).size).toBe(0);
+  });
+
+  it('a second result-type leg (result + goals, result + BTTS ...) is flagged', () => {
+    const r = leg('r', 'Rezultat Final', '1'); const t = leg('t', 'Totali i golave', 'Mbi 2.5');
+    const b = leg('b', 'Gol/Jogol', 'Gol');
+    expect(flagged([r, t, b])).toEqual(keys(r, t, b));
   });
 
   it('removing one of two tied legs clears the conflict', () => {

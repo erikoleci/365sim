@@ -1,104 +1,61 @@
 import { describe, it, expect } from 'vitest';
-import { findCorrelatedSelections } from '../server/ticketCorrelation.js';
+import { findCorrelatedSelections, selectionFamilies } from '../server/ticketCorrelation.js';
 
-const s = (matchId, marketId, marketName, optionName) => ({ matchId, marketId, marketName, optionName });
+const s = (matchId, marketId, marketName, optionName, extra = {}) => ({ matchId, marketId, marketName, optionName, home: 'Chelsea FC', away: 'Manchester United', ...extra });
+const clash = (...sel) => findCorrelatedSelections(sel);
 
-describe('findCorrelatedSelections', () => {
-  it('refuses goal-count selections of the same match (4+ with 1+/2+/3+, Over lines, ranges)', () => {
-    expect(findCorrelatedSelections([
-      s('m1', 'm1-a', 'Numri i Golave', '4+'),
-      s('m1', 'm1-b', 'Numri i Golave 2', '1+'),
-    ])).not.toBeNull();
-    expect(findCorrelatedSelections([
-      s('m1', 'm1-totals', 'Totali i golave', 'Mbi 1.5'),
-      s('m1', 'm1-x', 'Numri i golave ne ndeshje', '0-3'),
-    ])?.family).toBe('goals');
+describe('one match, one ticket: 1 result + 1 corners + 1 cards', () => {
+  it('refuses the five-leg slip on one match (result / goals / both teams to score ...)', () => {
+    const slip = [
+      s('m1', 'a', 'Fiton Udhetuesi ose Gol/JoGol', 'Jo'),
+      s('m1', 'b', '1st half - 1x2 & both teams to score', 'Draw / Yes'),
+      s('m1', 'c', 'RP1/RP2 & Gol/JoGol', 'GG / GG'),
+      s('m1', 'd', 'Gol/JoGol', 'Jo'),
+      s('m1', 'e', 'Away to win', '1X'),
+    ];
+    expect(findCorrelatedSelections(slip)?.family).toBe('score');
+    // any two of them already clash
+    for (let i = 0; i < slip.length; i++) for (let j = i + 1; j < slip.length; j++) expect(clash(slip[i], slip[j])?.family).toBe('score');
   });
-  it('refuses result + double chance on the same match', () => {
-    expect(findCorrelatedSelections([
-      s('m1', 'm1-h2h', 'Rezultat Final', '1'),
-      s('m1', 'm1-dc', 'Dopioshans', '1X'),
-    ])?.family).toBe('result');
+  it('treats every result / goals market as ONE group, whatever its name or language', () => {
+    for (const [a, b] of [
+      [s('m1', 'r', 'Rezultat Final', '1'), s('m1', 't', 'Totali i golave', 'Mbi 2.5')],
+      [s('m1', 'r', 'Rezultat Final', '1'), s('m1', 'dc', 'Dopioshans', '1X')],
+      [s('m1', 'r', 'Rezultat Final', '1'), s('m1', 'b', 'Gol/Jogol', 'Gol')],
+      [s('m1', 'g1', 'Numri i Golave', '4+'), s('m1', 'g2', 'Numri i Golave 2', '1+')],
+      [s('m1', 'h', '45/90', 'X-2'), s('m1', 'r', 'Rezultat Final', '2')],
+      [s('m1', 'c', 'Dopio Shans & Gol/JGol', 'X2_Gol'), s('m1', 'd', 'Gol/Jogol', 'Gol')],
+      [s('m1', 'q', 'Skuadra qe kualifikohet', '1'), s('m1', 'r', 'Rezultat Final', '1')],
+      [s('m1', 'f', 'Shenon golin e pare (skuadra)', '1'), s('m1', 'b', 'Gol/Jogol', 'Gol')],
+      [s('m1', 'x', 'Total Gola P1', 'Lart 0.5'), s('m1', 'y', 'Total Gola P2', 'Lart 0.5')],
+      [s('m1', 'x', 'Some market the provider added', 'Yes'), s('m1', 'r', 'Rezultat Final', '1')], // unknown name: still a score selection
+    ]) expect(clash(a, b)?.family, a.marketName + ' + ' + b.marketName).toBe('score');
   });
-  it('refuses a result+goals combination with a goals selection or a result selection', () => {
-    const combo = s('m1', 'm1-c', 'Rezultat Final & Totali', '1 & Mbi 1.5');
-    expect(findCorrelatedSelections([combo, s('m1', 'm1-x', 'Numri i golave', '0-3')])).not.toBeNull();
-    expect(findCorrelatedSelections([combo, s('m1', 'm1-h2h', 'Rezultat Final', '2')])).not.toBeNull();
+  it('allows one result + one corners + one cards selection of the same match', () => {
+    const result = s('m1', 'r', 'Rezultat Final', '1');
+    const corners = s('m1', 'c', 'Shuma total e korneve', '10+');
+    const cards = s('m1', 'k', 'Kartona Mbi/Nen 3.5', 'Mbi');
+    expect(findCorrelatedSelections([result, corners, cards])).toBeNull();
+    expect(findCorrelatedSelections([result, corners])).toBeNull();
+    expect(findCorrelatedSelections([corners, cards])).toBeNull();
   });
-  it('refuses two corner or two card selections of one match', () => {
-    expect(findCorrelatedSelections([s('m1', 'a', 'Korner Mbi/Nen 8.5', 'Mbi'), s('m1', 'b', 'Korner Mbi/Nen 9.5', 'Mbi')])?.family).toBe('corners');
-    expect(findCorrelatedSelections([s('m1', 'a', 'Kartona Mbi/Nen 3.5', 'Mbi'), s('m1', 'b', 'Kartona Mbi/Nen 4.5', 'Mbi')])?.family).toBe('cards');
+  it('refuses two corners selections and two cards selections', () => {
+    expect(clash(s('m1', 'a', 'Korner Mbi/Nen 8.5', 'Mbi'), s('m1', 'b', 'Korner Mbi/Nen 9.5', 'Mbi'))?.family).toBe('corners');
+    expect(clash(s('m1', 'a', 'Shuma total e korneve', '10+'), s('m1', 'b', 'Corners Over/Under', 'Over 9.5'))?.family).toBe('corners');
+    expect(clash(s('m1', 'a', 'Kartona Mbi/Nen 3.5', 'Mbi'), s('m1', 'b', 'Kartona Mbi/Nen 4.5', 'Mbi'))?.family).toBe('cards');
   });
-  it('allows independent legs: other matches, result + goals, result + BTTS, goals + corners', () => {
-    expect(findCorrelatedSelections([s('m1', 'm1-h2h', 'Rezultat Final', '1'), s('m2', 'm2-h2h', 'Rezultat Final', '1')])).toBeNull();
-    expect(findCorrelatedSelections([s('m1', 'm1-h2h', 'Rezultat Final', '1'), s('m1', 'm1-totals', 'Totali i golave', 'Mbi 2.5')])).toBeNull();
-    expect(findCorrelatedSelections([s('m1', 'm1-h2h', 'Rezultat Final', '1'), s('m1', 'm1-btts', 'Gol/Jogol', 'Gol')])).toBeNull();
-    expect(findCorrelatedSelections([s('m1', 'm1-totals', 'Totali i golave', 'Mbi 2.5'), s('m1', 'a', 'Korner Mbi/Nen 8.5', 'Mbi')])).toBeNull();
+  it('a combination of corners/cards with a result counts as a result selection too', () => {
+    expect([...selectionFamilies({ marketId: 'x', marketName: 'Rezultat & Korne', home: 'A', away: 'B' })].sort()).toEqual(['corners', 'score']);
+    expect(clash(s('m1', 'x', 'Rezultat & Korne', '1 & Mbi 8.5'), s('m1', 'r', 'Rezultat Final', '1'))?.family).toBe('score');
   });
-
-  it('BTTS Yes with Over 0.5 / 1.5 / 1+ / 2+ is refused (needs 2+ goals); BTTS No with Under 1.5 too', () => {
-    const yes = s('m1', 'm1-btts', 'Gol/Jogol', 'Gol');
-    const no = s('m1', 'm1-btts', 'Gol/Jogol', 'Jogol');
-    expect(findCorrelatedSelections([yes, s('m1', 'm1-t1', 'Totali i golave', 'Mbi 0.5')])?.family).toBe('btts');
-    expect(findCorrelatedSelections([yes, s('m1', 'm1-t1', 'Totali i golave', 'Mbi 1.5')])).not.toBeNull();
-    expect(findCorrelatedSelections([yes, s('m1', 'm1-t2', 'Numri i golave', '2+')])).not.toBeNull();
-    expect(findCorrelatedSelections([yes, s('m1', 'm1-t3', 'Totali i golave', 'Nen 1.5')])).not.toBeNull(); // impossible together
-    expect(findCorrelatedSelections([no, s('m1', 'm1-t4', 'Totali i golave', 'Nen 1.5')])).not.toBeNull();
-    expect(findCorrelatedSelections([no, s('m1', 'm1-t5', 'Numri i golave', '0-1')])).not.toBeNull();
+  it('different matches never clash; one match listed under two ids is one match', () => {
+    expect(clash(s('m1', 'r', 'Rezultat Final', '1'), s('m2', 'r', 'Rezultat Final', '1', { home: 'Roma', away: 'Lazio' }))).toBeNull();
+    const a = s('l365-1', 'a', 'Numri i golave', '4+', { startTime: '2026-10-27T18:00:00Z' });
+    const b = s('l365-2', 'b', 'Numri i golave 2', '2+', { startTime: '2026-10-27T18:00:00Z' });
+    expect(clash(a, b)).not.toBeNull();
+    expect(clash(a, { ...b, startTime: '2026-11-03T18:00:00Z' })).toBeNull(); // same teams a week later = another match
   });
-  it('allows BTTS with goal selections that are not decided by it', () => {
-    const yes = s('m1', 'm1-btts', 'Gol/Jogol', 'Gol');
-    expect(findCorrelatedSelections([yes, s('m1', 'm1-t', 'Totali i golave', 'Mbi 2.5')])).toBeNull();
-    expect(findCorrelatedSelections([s('m1', 'm1-btts', 'Gol/Jogol', 'Jogol'), s('m1', 'm1-t', 'Totali i golave', 'Mbi 2.5')])).toBeNull();
-  });
-  it('treats one real match listed under two ids as the same match', () => {
-    const a = { ...s('l365-1', 'a', 'Numri i golave', '4+'), home: 'UD Almeria', away: 'Elche CF', startTime: '2026-10-27T18:00:00Z' };
-    const b = { ...s('l365-2', 'b', 'Numri i golave 2', '2+'), home: 'UD Almeria', away: 'Elche CF', startTime: '2026-10-27T18:00:00Z' };
-    expect(findCorrelatedSelections([a, b])).not.toBeNull();
-    // same teams a week later is another match
-    expect(findCorrelatedSelections([a, { ...b, startTime: '2026-11-03T18:00:00Z' }])).toBeNull();
-  });
-  it('refuses a result with "qualifies", and scoring facts with each other / with BTTS', () => {
-    expect(findCorrelatedSelections([s('m1', 'm1-h2h', 'Rezultat Final', '1'), s('m1', 'q', 'Skuadra qe kualifikohet', '1')])?.family).toBe('result');
-    expect(findCorrelatedSelections([s('m1', 'a', 'Shenon golin e pare (skuadra)', '1'), s('m1', 'm1-btts', 'Gol/Jogol', 'Gol')])?.family).toBe('scoring');
-    expect(findCorrelatedSelections([s('m1', 'a', 'Skuadra qe shenon e pare', '1'), s('m1', 'b', 'Shenon golin e fundit (skuadra)', '1')])?.family).toBe('scoring');
-  });
-  it('refuses Asian goal lines together with other goal selections', () => {
-    expect(findCorrelatedSelections([s('m1', 'a', 'Gola Aziatik', 'Mbi 2.25'), s('m1', 'm1-totals', 'Totali i golave', 'Mbi 1.5')])?.family).toBe('goals');
-  });
-});
-
-describe('the provider\'s own markets follow the same logic rule', () => {
-  const S = (marketName, optionName, extra = {}) => ({ matchId: 'm1', marketId: 'mk-' + marketName, marketName, optionName, home: 'Udinese', away: 'AC Milan', startTime: '2026-10-27T18:00:00Z', ...extra });
-  const blocked = (...sels) => Boolean(findCorrelatedSelections(sels));
-
-  it('team goal counts (1 Gol / 2 Gola / 3+ Gola) cannot sit with each other or with goal totals', () => {
-    expect(blocked(S('Nr-Gola Pritesi', '3+ Gola'), S('Nr-Gola Udhetuesi', '3+ Gola'))).toBe(true);
-    expect(blocked(S('Nr-Gola Pritesi', '1 Gol'), S('Numri i Golave në Ndeshje', 'Lart 2.5'))).toBe(true);
-    expect(blocked(S('Nr-Gola Pritesi', '0 Gola'), S('Gol Jo Gol Live', '1'))).toBe(true);
-  });
-  it('result & goals / result & both-teams-score / result at minute N share the result family', () => {
-    expect(blocked(S('Rezultat Final/Gol-Gol', '1|G'), S('Rezultat Final', '1'))).toBe(true);
-    expect(blocked(S('RF-60Min', '1'), S('Rezultat Final', '1'))).toBe(true);
-    expect(blocked(S('Rezultati Final Gola 3+', '2|3+'), S('Rezultati Final Gola 4+', '1|4+'))).toBe(true);
-  });
-  it('goal before minute N and scoring in a half are scoring / goal facts', () => {
-    expect(blocked(S('Goli i Dyte Shenohet perpara min. 60:00', 'Po'), S('Numri i Golave në Ndeshje', 'Lart 1.5'))).toBe(true);
-    expect(blocked(S('Shenon Pritesi ne P2', 'Po'), S('Nr-Gola Pritesi', '0 Gola'))).toBe(true);
-  });
-  it('next goal / corner / card belong to scoring / corners / cards', () => {
-    expect(blocked(S('Goli i radhës', '1'), S('Shenon golin e dyte (skuadra)', '1'))).toBe(true);
-    expect(blocked(S('Korneri i radhës', '1'), S('Korne Totali', '5+'))).toBe(true);
-    expect(blocked(S('Godet kornen e fundit', '1'), S('Korneri i radhës', '2'))).toBe(true);
-    expect(blocked(S('Kartoni i radhës', '1'), S('Merr kartonin e pare', '2'))).toBe(true);
-  });
-  it('independent facts still go together, and so do different matches', () => {
-    expect(blocked(S('Shenon Pritesi ne P2', 'Po'), S('Rezultat Final', '1'))).toBe(false);        // scoring vs result
-    expect(blocked(S('Nr-Gola Pritesi', '1 Gol'), S('Korne Totali', '5+'))).toBe(false);           // goals vs corners
-    expect(blocked(S('Godet kornen e fundit', '1'), S('Numri i Golave në Ndeshje', 'Lart 2.5'))).toBe(false);
-    expect(blocked(S('Nr-Gola Pritesi', '3+ Gola'), S('Nr-Gola Pritesi', '3+ Gola', { matchId: 'm2', home: 'Roma', away: 'Lazio' }))).toBe(false);
-  });
-  it('"3+ Gola" / "1 Gol" options count as goal numbers in a generic goals market', () => {
-    expect(blocked(S('Gola', '1 Gol'), S('Golat', '3+ Gola'))).toBe(true);
+  it('a single selection is never refused', () => {
+    expect(findCorrelatedSelections([s('m1', 'r', 'Rezultat Final', '1')])).toBeNull();
   });
 });

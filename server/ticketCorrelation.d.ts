@@ -9,7 +9,6 @@ export interface CorrelationInput {
 }
 
 export function selectionFamilies(sel: CorrelationInput): Set<string>;
-export function goalInterval(optionName: string): { min: number; max: number } | null;
 export function findCorrelatedSelections(
   selections: CorrelationInput[],
 ): { first: CorrelationInput; second: CorrelationInput; family: string } | null;
