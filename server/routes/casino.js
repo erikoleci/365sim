@@ -4,6 +4,11 @@ import pool from '../db.js';
 import { requireAuth } from './auth.js';
 
 const router = express.Router();
+// Casino is disabled for now; set CASINO_ENABLED=true to re-enable once the games are rebuilt.
+router.use((req, res, next) => {
+  if (process.env.CASINO_ENABLED === 'true') return next();
+  return res.status(403).json({ error: 'Casino is temporarily disabled' });
+});
 router.use(requireAuth);
 
 // --- Shared house rules (kept simple & proportional to a play-money

@@ -3,6 +3,7 @@ import React from 'react';
 import { User, UserRole } from '../types';
 import { useI18n } from '../i18n';
 import LanguageSwitcher from './LanguageSwitcher';
+import { CASINO_ENABLED } from '../utils/features';
 
 interface NavbarProps {
   currentUser: User;
@@ -44,12 +45,14 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
             >
                 SPORTS
             </span>
+            {CASINO_ENABLED && (
             <span 
                 onClick={() => onNavigate('casino')}
                 className={`cursor-pointer transition-opacity ${currentView === 'casino' ? 'text-white opacity-100 font-bold border-b-2 border-brand-yellow' : 'hover:text-white opacity-70'}`}
             >
                 CASINO
             </span>
+            )}
           </div>
         </div>
 
@@ -93,7 +96,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
              </button>
            )}
            <span onClick={() => onNavigate('sports')} className={currentView === 'sports' ? 'text-white' : 'text-brand-text/60'}>SPORTS</span>
-           <span onClick={() => onNavigate('casino')} className={currentView === 'casino' ? 'text-white' : 'text-brand-text/60'}>CASINO</span>
+           {CASINO_ENABLED && <span onClick={() => onNavigate('casino')} className={currentView === 'casino' ? 'text-white' : 'text-brand-text/60'}>CASINO</span>}
            <span className="w-px h-4 bg-brand-divider" aria-hidden="true" />
          </div>
          {currentView === 'sports' ? (
