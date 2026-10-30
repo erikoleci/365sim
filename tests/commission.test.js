@@ -1,160 +1,47 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import express from 'express';
-import jwt from 'jsonwebtoken';
+import { describe, it, expect } from 'vitest';
+import { finishMetrics, buildCommissionReport, emptyMetrics, COMMISSION_SINGLE_PCT, COMMISSION_MULTI_PCT } from '../server/commission.js';
 
-// Commission model: an agent's commissionRate (%) applies to their users'
-// net gaming result (house win = losses - wins, i.e. GGR) for the month.
-// Informational -- it never moves balance automatically. These tests cover
-// (1) the Owner-only endpoint that sets an agent's rate, with validation,
-// and (2) the monthly report's commissionOwed calculation for both a
-// winning-for-the-house month and a losing-for-the-house month.
+const m = (o) => ({ ...emptyMetrics(), ...o });
 
-const mocks = vi.hoisted(function () {
-  const users = new Map();
-
-  function reset() {
-    users.clear();
-    users.set('owner-1', { id: 'owner-1', username: 'owner', role: 'ADMIN', is_active: true, commission_rate: 0 });
-    users.set('agent-1', { id: 'agent-1', username: 'agent1', role: 'AGENT', is_active: true, commission_rate: 10, admin_id: 'owner-1' });
-    users.set('user-1', { id: 'user-1', username: 'user1', role: 'USER', is_active: true, agent_id: 'agent-1', commission_rate: 0 });
-  }
-  reset();
-
-  function query(sql, params = []) {
-    const s = String(sql);
-    if (s.startsWith('SELECT id, role, is_active FROM users WHERE id = $1')) {
-      const row = users.get(params[0]);
-      return Promise.resolve({ rows: row ? [row] : [] });
-    }
-    if (s.startsWith(`SELECT id, admin_id FROM users WHERE id = $1 AND role = 'AGENT'`)) {
-      const row = users.get(params[0]);
-      return Promise.resolve({ rows: row?.role === 'AGENT' ? [{ id: row.id, admin_id: row.admin_id ?? null }] : [] });
-    }
-    if (s.startsWith(`SELECT id FROM users WHERE id = $1 AND role = 'AGENT'`)) {
-      const row = users.get(params[0]);
-      return Promise.resolve({ rows: row?.role === 'AGENT' ? [{ id: row.id }] : [] });
-    }
-    if (s.startsWith('UPDATE users SET commission_rate = $1 WHERE id = $2')) {
-      const row = users.get(params[1]);
-      if (row) row.commission_rate = params[0];
-      return Promise.resolve({ rows: [], rowCount: row ? 1 : 0 });
-    }
-    if (s.startsWith('INSERT INTO audit_log')) {
-      return Promise.resolve({ rows: [] });
-    }
-    // Monthly-report totals query -- shape controlled per-test via
-    // mocks.monthlyTotals so we can exercise both a house-won and a
-    // house-lost month without needing real bet rows.
-    if (s.includes('FROM users u') && s.includes('LEFT JOIN bets b') && s.includes('total_users')) {
-      return Promise.resolve({ rows: [mocks.monthlyTotals] });
-    }
-    if (s.includes('GROUP BY u.id')) {
-      return Promise.resolve({ rows: [] });
-    }
-    if (s.startsWith('SELECT * FROM users WHERE id = $1')) {
-      const row = users.get(params[0]);
-      return Promise.resolve({ rows: row ? [row] : [] });
-    }
-    throw new Error('unmocked query: ' + s);
-  }
-
-  const pool = { query };
-  return {
-    users, reset, pool,
-    monthlyTotals: { total_users: 1, total_tickets: 10, turnover: 1000, wins: 200, losses: 500, pending: 0 },
-  };
-});
-
-vi.mock('../server/db.js', () => ({ default: mocks.pool, pool: mocks.pool }));
-
-const { JWT_SECRET } = await import('../server/routes/auth.js');
-const adminRouter = (await import('../server/routes/admin.js')).default;
-const agentRouter = (await import('../server/routes/agent.js')).default;
-
-beforeEach(() => {
-  mocks.reset();
-  mocks.monthlyTotals = { total_users: 1, total_tickets: 10, turnover: 1000, wins: 200, losses: 500, pending: 0 };
-});
-
-function sign(id, role) {
-  return jwt.sign({ id, username: id, role }, JWT_SECRET, { expiresIn: '7d' });
-}
-
-let server;
-let baseUrl;
-
-beforeEach(async () => {
-  const app = express();
-  app.use(express.json());
-  app.use('/api/admin', adminRouter);
-  app.use('/api/agent', agentRouter);
-  await new Promise((resolve) => {
-    server = app.listen(0, () => { baseUrl = `http://127.0.0.1:${server.address().port}`; resolve(); });
+describe('agent commission report', () => {
+  it('defaults to 4% (live / single result) and 8% (two or more results)', () => {
+    expect(COMMISSION_SINGLE_PCT).toBe(4);
+    expect(COMMISSION_MULTI_PCT).toBe(8);
   });
-});
-
-afterEach(async () => { await new Promise((resolve) => server.close(resolve)); });
-
-describe('PATCH /api/admin/agents/:id/commission', () => {
-  it('lets the Owner set a valid commission rate', async () => {
-    const res = await fetch(`${baseUrl}/api/admin/agents/agent-1/commission`, {
-      method: 'PATCH',
-      headers: { authorization: 'Bearer ' + sign('owner-1', 'ADMIN'), 'content-type': 'application/json' },
-      body: JSON.stringify({ commissionRate: 15 }),
-    });
-    expect(res.status).toBe(200);
-    expect(mocks.users.get('agent-1').commission_rate).toBe(15);
+  it('uses the owner sheet convention: kompania = diferenca + commission, % agjentit shown negative', () => {
+    // 2,500 staked, nothing won, 8% commission = 200  ->  -2,500 / -200 / -2,300
+    const r = finishMetrics(m({ xhiro: 2500, tickets: 3, commission: 200 }));
+    expect(r).toMatchObject({ xhiro: 2500, fitim: 0, diferenca: -2500, percAgjentit: -200, kompania: -2300, tickets: 3 });
   });
-
-  it('rejects an out-of-range rate', async () => {
-    const res = await fetch(`${baseUrl}/api/admin/agents/agent-1/commission`, {
-      method: 'PATCH',
-      headers: { authorization: 'Bearer ' + sign('owner-1', 'ADMIN'), 'content-type': 'application/json' },
-      body: JSON.stringify({ commissionRate: 150 }),
-    });
-    expect(res.status).toBe(400);
-    expect(mocks.users.get('agent-1').commission_rate).toBe(10); // unchanged
+  it('open tickets stay out of diferenca (they are in "në pritje")', () => {
+    const r = finishMetrics(m({ xhiro: 1000, pending: 400, activeTickets: 2, tickets: 5, commission: 24 }));
+    expect(r.diferenca).toBe(-600);
+    expect(r.pending).toBe(400);
+    expect(r.activeTickets).toBe(2);
   });
-
-  it('404s for a non-agent id', async () => {
-    const res = await fetch(`${baseUrl}/api/admin/agents/user-1/commission`, {
-      method: 'PATCH',
-      headers: { authorization: 'Bearer ' + sign('owner-1', 'ADMIN'), 'content-type': 'application/json' },
-      body: JSON.stringify({ commissionRate: 5 }),
-    });
-    expect(res.status).toBe(404);
-  });
-
-  it('a non-admin cannot set commission rates', async () => {
-    const res = await fetch(`${baseUrl}/api/admin/agents/agent-1/commission`, {
-      method: 'PATCH',
-      headers: { authorization: 'Bearer ' + sign('agent-1', 'AGENT'), 'content-type': 'application/json' },
-      body: JSON.stringify({ commissionRate: 50 }),
-    });
-    expect(res.status).toBe(403);
-  });
-});
-
-describe('GET /api/agent/reports/monthly - commissionOwed', () => {
-  it('accrues commission when the house won overall this month (losses > wins)', async () => {
-    mocks.monthlyTotals = { total_users: 1, total_tickets: 10, turnover: 1000, wins: 200, losses: 500, pending: 0 };
-    const res = await fetch(`${baseUrl}/api/agent/reports/monthly`, {
-      headers: { authorization: 'Bearer ' + sign('agent-1', 'AGENT') },
-    });
-    const body = await res.json();
-    expect(res.status).toBe(200);
-    expect(body.totals.netResult).toBe(300); // 500 - 200
-    expect(body.commissionRate).toBe(10);
-    expect(body.commissionOwed).toBe(30); // 300 * 10%
-  });
-
-  it('accrues NO commission when the house lost overall this month (wins > losses)', async () => {
-    mocks.monthlyTotals = { total_users: 1, total_tickets: 10, turnover: 1000, wins: 900, losses: 100, pending: 0 };
-    const res = await fetch(`${baseUrl}/api/agent/reports/monthly`, {
-      headers: { authorization: 'Bearer ' + sign('agent-1', 'AGENT') },
-    });
-    const body = await res.json();
-    expect(body.totals.netResult).toBe(-800);
-    expect(body.commissionOwed).toBe(0);
+  it('groups by admin, agent and player and keeps lek and euro apart', () => {
+    const admins = [{ id: 'a1', name: 'Admin', username: 'admin' }];
+    const agents = [{ id: 'g1', name: 'Agent', username: 'agent', is_active: true, admin_id: 'a1' }];
+    const users = [
+      { id: 'u1', name: 'Ana', username: 'ana', is_active: true, admin_id: 'a1', agent_id: 'g1' },
+      { id: 'u2', name: 'Beni', username: 'beni', is_active: true, admin_id: 'a1', agent_id: 'g1' },
+      { id: 'u3', name: 'Dir', username: 'dir', is_active: true, admin_id: 'a1', agent_id: null },
+    ];
+    const metrics = [
+      { userId: 'u1', currency: 'ALL', ...m({ xhiro: 1000, tickets: 1, commission: 40 }) },
+      { userId: 'u2', currency: 'ALL', ...m({ xhiro: 500, tickets: 1, commission: 20 }) },
+      { userId: 'u1', currency: 'EUR', ...m({ xhiro: 50, tickets: 1, commission: 4 }) },
+      { userId: 'u3', currency: 'ALL', ...m({ xhiro: 300, tickets: 1, commission: 12 }) },
+    ];
+    const r = buildCommissionReport({ admins, agents, users, metrics });
+    const [g] = r.groups;
+    const agent = g.rows[0];
+    expect(agent.currencies.ALL.percAgjentit).toBe(-60);     // 40 + 20, only lek
+    expect(agent.currencies.EUR.percAgjentit).toBe(-4);      // euro kept apart
+    expect(agent.players.map((p) => [p.name, p.currencies.ALL.percAgjentit])).toEqual([['Ana', -40], ['Beni', -20]]);
+    expect(g.rows[1].direct).toBe(true);
+    expect(g.rows[1].currencies.ALL.percAgjentit).toBe(-12);
+    expect(g.totals.ALL.percAgjentit).toBe(-72);
+    expect(r.totals.EUR.xhiro).toBe(50);
   });
 });

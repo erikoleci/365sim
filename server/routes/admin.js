@@ -22,6 +22,7 @@ import { isAdminRole, isSuperAdmin, ROLE_ADMIN } from '../roles.js';
 import { scopeOf, ownsRow } from '../adminScope.js';
 import { importLondon365, getLondon365Status, getLondon365CountryDebug } from '../london365.js';
 import { monthRange } from './agent.js';
+import { userMetrics, buildCommissionReport, periodRange } from '../commission.js';
 import { deleteUserIfUnused, deleteBlockedMessage, forceDeleteUser } from '../userDeletion.js';
 
 const router = express.Router();
@@ -683,6 +684,26 @@ router.patch('/agents/:id/admin', requireSuperAdmin, async (req, res) => {
   const { rowCount } = await pool.query('UPDATE users SET admin_id = $1 WHERE id = $2 OR agent_id = $2', [adminId, req.params.id]);
   await logAudit(req.user, 'AGENT_REASSIGN', req.params.id, { username: agentRows[0].username, adminId, rows: rowCount });
   res.json({ ok: true, adminId, rows: rowCount });
+});
+
+// Agent commission report (super admin: every admin's agents grouped by admin; admin: his own agents).
+// ?month=YYYY-MM (default: this month) or ?month=all. Every agent row carries the commission each of his players made.
+router.get('/reports/commission', async (req, res) => {
+  const { rangeStart, rangeEnd, label } = periodRange(req.query.month, monthRange);
+  const scope = scopeOf(req.user);
+  const { rows: people } = await pool.query(
+    `SELECT id, name, username, role, is_active, admin_id, agent_id FROM users
+     WHERE role IN ('ADMIN','AGENT','USER') AND ($1::text IS NULL OR admin_id = $1 OR id = $1) ORDER BY name`,
+    [scope]
+  );
+  const metrics = await userMetrics(pool, { rangeStart, rangeEnd, adminId: scope });
+  const report = buildCommissionReport({
+    admins: people.filter((p) => p.role === 'ADMIN'),
+    agents: people.filter((p) => p.role === 'AGENT'),
+    users: people.filter((p) => p.role === 'USER'),
+    metrics,
+  });
+  res.json({ month: label, ...report });
 });
 
 // SUPER ADMIN: the whole tree -- every admin with his agents, every agent with his users, the users an admin

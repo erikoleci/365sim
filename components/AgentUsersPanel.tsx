@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { User } from '../types';
 import * as api from '../services/api';
+import CommissionReport from './CommissionReport';
 import { useI18n, getLocale } from '../i18n';
 import TicketDetailModal, { TicketView } from './TicketDetailModal';
 import MatchupLabel from './MatchupLabel';
@@ -23,7 +24,7 @@ interface AgentUsersPanelProps {
 // Agent already plays through unchanged.
 const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanceChanged }) => {
   const { t } = useI18n();
-  const [tab, setTab] = useState<'users' | 'monthly'>('users');
+  const [tab, setTab] = useState<'users' | 'monthly' | 'commission'>('users');
   const [me, setMe] = useState<User | null>(null);
   const [users, setUsers] = useState<api.AgentUserPerformance[]>([]);
   const [loading, setLoading] = useState(false);
@@ -156,13 +157,13 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
     <div className="p-3 md:p-4 max-w-[1200px] mx-auto">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="flex gap-1">
-          {(['users', 'monthly'] as const).map((tabKey) => (
+          {(['users', 'monthly', 'commission'] as const).map((tabKey) => (
             <button
               key={tabKey}
               onClick={() => setTab(tabKey)}
               className={'px-4 py-2 text-xs font-bold rounded uppercase tracking-wide ' + (tab === tabKey ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-brand-textMuted hover:text-white border border-[#444]')}
             >
-              {tabKey === 'users' ? t('Userat e Mi') : t('Raporti Mujor')}
+              {tabKey === 'users' ? t('Userat e Mi') : tabKey === 'commission' ? t('Komisioni') : t('Raporti Mujor')}
             </button>
           ))}
         </div>
@@ -298,6 +299,8 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
           )}
         </div>
       )}
+
+      {tab === 'commission' && <CommissionReport scope="agent" />}
 
       {tab === 'monthly' && (
         <div className="bg-brand-panel border border-[#444] rounded p-4">

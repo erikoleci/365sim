@@ -174,6 +174,8 @@ router.post('/', wrap(async (req, res) => {
   // ticket at once, matching the one-shot re-offer flow real bookmakers use,
   // instead of a live-fire-by-fire retry loop.
   const oddsChanges = [];
+  // True when any selection is on a match that is already running: live tickets earn the lower agent commission.
+  let isLiveTicket = false;
 
   // Boost is only ever honored for true single bets (one selection) — this
   // keeps liability predictable and matches what the Special Offers strip
@@ -223,6 +225,7 @@ router.post('/', wrap(async (req, res) => {
       return fail(400, { error: `Selection ${sel.selectionId} in market ${sel.marketId} not found in current odds — it may have closed or moved` });
     }
     if (matchRow.status === 'LIVE' || matchRow.live_status != null) {
+      isLiveTicket = true;
       if (isLiveCornerMarket(current.marketName)) {
         matchRow.live_corners = await readLiveCorners(pool, matchRow.id);
         if (LIVE_CORNER_LOCK_MS > 0) {
@@ -405,9 +408,9 @@ router.post('/', wrap(async (req, res) => {
 
     await client.query(`UPDATE users SET ${wallet} = ${wallet} - $1 WHERE id = $2`, [stake, user.id]);
     await client.query(
-      `INSERT INTO bets (id, user_id, type, stake, total_odds, potential_return, status, created_at, currency)
-       VALUES ($1,$2,$3,$4,$5,$6,'PENDING',$7,$8)`,
-      [betId, user.id, ticketType, stake, totalOdds, potentialReturn, Date.now(), currency]
+      `INSERT INTO bets (id, user_id, type, stake, total_odds, potential_return, status, created_at, currency, is_live)
+       VALUES ($1,$2,$3,$4,$5,$6,'PENDING',$7,$8,$9)`,
+      [betId, user.id, ticketType, stake, totalOdds, potentialReturn, Date.now(), currency, isLiveTicket]
     );
     // Audit trail: the stake debit is recorded (reference = bet id) so the money
     // movement survives even if the ticket row is later cancelled/deleted.
