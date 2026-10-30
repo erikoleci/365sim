@@ -55,6 +55,11 @@ const TUNE = {
   'diamond-rush': { scale: 2.781, rtp: 95.01 },
   'wild-west-gold': { scale: 1.2966, rtp: 94.99 },
   'lucky-dragon': { scale: 1.7307, rtp: 94.92 },
+  'viking-fortune': { scale: 0.8617, rtp: 95.05 },
+  'space-odyssey': { scale: 2.7812, rtp: 95.01 },
+  'mystic-wolf': { scale: 1.301, rtp: 94.94 },
+  'candy-blast': { scale: 2.5154, rtp: 95.13 },
+  'aztec-sun': { scale: 1.3225, rtp: 94.89 },
 };
 
 const def = (id, o) => {
@@ -84,6 +89,11 @@ const pharaoh = ids('PALM', 'JAR', 'BEETLE', 'EYE', 'SNAKE', 'FALCON', 'PHARAOH'
 const diamond = ids('BLUE', 'GREEN', 'YELLOW', 'PURPLE', 'RING', 'CROWN', 'DIAMOND');
 const west = ids('CACTUS', 'BOOT', 'BEER', 'GUN', 'HORSE', 'COWBOY', 'GOLD');
 const dragon = ids('BAMBOO', 'LANTERN', 'COOKIE', 'ENVELOPE', 'FISH', 'TIGER', 'DRAGON');
+const viking = ids('RUNE', 'HORN', 'AXE', 'SHIELD', 'SHIP', 'RAVEN', 'ODIN');
+const space = ids('STAR', 'MOON', 'COMET', 'SATURN', 'ROCKET', 'ALIEN', 'GALAXY');
+const wolf = ids('PAW', 'FEATHER', 'ARROW', 'TOTEM', 'EAGLE', 'BEAR', 'WOLF');
+const candy = ids('GUMMY', 'LOLLI', 'DONUT', 'CUPCAKE', 'ICECREAM', 'CAKE', 'CHOCO');
+const aztec = ids('MASK', 'CORN', 'JAGUAR', 'SERPENT', 'TEMPLE', 'CALENDAR', 'GOLDMASK');
 
 export const SLOT_GAMES = [
   def('hot-fruits', {
@@ -115,6 +125,36 @@ export const SLOT_GAMES = [
     symbolIds: dragon, shape: shapeOf(dragon, BALANCED), freeSpinMultiplier: 3, wildExpand: false,
     symbols: { BAMBOO: '🎋', LANTERN: '🏮', COOKIE: '🥠', ENVELOPE: '🧧', FISH: '🐟', TIGER: '🐯', DRAGON: '🐉', WILD: '☯️', SCATTER: '🪙' },
     scatterName: 'Monedha', wildName: 'Yin-Yang',
+  }),
+  def('viking-fortune', {
+    name: 'Viking Fortune', tagline: 'Lundrat e veriut dhe thesari i Odinit', volatility: 'Mesatare', color: ['#1e3a5f', '#0b1220'], seed: 67,
+    symbolIds: viking, shape: shapeOf(viking, BALANCED), freeSpinMultiplier: 2, wildExpand: true,
+    symbols: { RUNE: 'ᚱ', HORN: '📯', AXE: '🪓', SHIELD: '🛡️', SHIP: '⛵', RAVEN: '🐦‍⬛', ODIN: '🧙', WILD: '⚡', SCATTER: '🪙' },
+    scatterName: 'Monedha e Odinit', wildName: 'Rrufeja (zgjerohet)',
+  }),
+  def('space-odyssey', {
+    name: 'Space Odyssey', tagline: 'Udhëtim mes yjeve, free spins x3', volatility: 'E lartë', color: ['#312e81', '#020617'], seed: 71,
+    symbolIds: space, shape: shapeOf(space, VOLATILE), freeSpinMultiplier: 3, wildExpand: false,
+    symbols: { STAR: '⭐', MOON: '🌙', COMET: '☄️', SATURN: '🪐', ROCKET: '🚀', ALIEN: '👽', GALAXY: '🌌', WILD: '🛸', SCATTER: '🌠' },
+    scatterName: 'Ylli rënës', wildName: 'Disku fluturues',
+  }),
+  def('mystic-wolf', {
+    name: 'Mystic Wolf', tagline: 'Ujku i natës, wild që zgjerohet', volatility: 'Mesatare', color: ['#334155', '#0f172a'], seed: 79,
+    symbolIds: wolf, shape: shapeOf(wolf, STEADY), freeSpinMultiplier: 2, wildExpand: true,
+    symbols: { PAW: '🐾', FEATHER: '🪶', ARROW: '🏹', TOTEM: '🗿', EAGLE: '🦅', BEAR: '🐻', WOLF: '🐺', WILD: '🌕', SCATTER: '🔥' },
+    scatterName: 'Zjarri i fisit', wildName: 'Hëna e plotë (zgjerohet)',
+  }),
+  def('candy-blast', {
+    name: 'Candy Blast', tagline: 'Ëmbëlsira, fitime të shpeshta', volatility: 'E ulët', color: ['#9d174d', '#3b0764'], seed: 83,
+    symbolIds: candy, shape: shapeOf(candy, CLASSIC), freeSpinMultiplier: 2, wildExpand: false,
+    symbols: { GUMMY: '🍬', LOLLI: '🍭', DONUT: '🍩', CUPCAKE: '🧁', ICECREAM: '🍦', CAKE: '🎂', CHOCO: '🍫', WILD: '🌈', SCATTER: '🎁' },
+    scatterName: 'Dhurata', wildName: 'Ylber',
+  }),
+  def('aztec-sun', {
+    name: 'Aztec Sun', tagline: 'Tempulli i diellit, fitime të mëdha', volatility: 'E lartë', color: ['#7c2d12', '#1c1917'], seed: 89,
+    symbolIds: aztec, shape: shapeOf(aztec, VOLATILE), freeSpinMultiplier: 3, wildExpand: true,
+    symbols: { MASK: '🎭', CORN: '🌽', JAGUAR: '🐆', SERPENT: '🐍', TEMPLE: '🛕', CALENDAR: '🗓️', GOLDMASK: '👺', WILD: '☀️', SCATTER: '💎' },
+    scatterName: 'Gur i çmuar', wildName: 'Dielli (zgjerohet)',
   }),
 ];
 
