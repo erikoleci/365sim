@@ -49,6 +49,7 @@ export const enCore: Record<string, string> = {
   // --- BetSlip ---
   'Konfirmo Biletën': 'Confirm Your Bet',
   'Bileta po pret konfirmimin': 'Your bet is awaiting confirmation',
+  'Agjenti pranoi biletën tuaj': 'The agent accepted your bet',
   'Kuota Totale': 'Total Odds',
   'Fitimi i Mundshëm': 'Potential Return',
   'Vendos Biletën': 'Place Bet',
