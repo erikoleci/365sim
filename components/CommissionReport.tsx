@@ -15,7 +15,7 @@ const CommissionReport: React.FC<{ scope: 'owner' | 'agent' }> = ({ scope }) => 
   const [data, setData] = useState<api.CommissionReportData | null>(null);
   const [error, setError] = useState('');
   const [month, setMonth] = useState('');
-  const [currency, setCurrency] = useState<'ALL' | 'EUR' | 'BOTH'>('ALL');
+  const [currency, setCurrency] = useState<'ALL' | 'EUR' | 'BOTH'>('BOTH');
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<Record<string, boolean>>({});
 
@@ -75,6 +75,9 @@ const CommissionReport: React.FC<{ scope: 'owner' | 'agent' }> = ({ scope }) => 
       <div className="text-[11px] text-brand-textMuted mb-3">
         {t('Komisioni: {single}% live dhe rezultat tek, {multi}% dy ose më shumë rezultate. Llogaritet mbi kuponat e mbyllur. Muaji: {month}', { single: data.rates.single, multi: data.rates.multi, month: data.month })}
       </div>
+      {currency !== 'BOTH' && data.totals[currency === 'ALL' ? 'EUR' : 'ALL'].tickets > 0 && data.totals[currency].tickets === 0 && (
+        <div className="text-xs text-yellow-400 mb-2">{t('Nuk ka kupona në këtë monedhë, por ka në tjetrën. Zgjidh "Të gjitha".')}</div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-xs whitespace-nowrap">
           <thead>
@@ -97,7 +100,7 @@ const CommissionReport: React.FC<{ scope: 'owner' | 'agent' }> = ({ scope }) => 
                   const isOpen = open[k] ?? (scope === 'agent' || !!q);
                   const label = r.direct
                     ? t('Usera pa agjent')
-                    : <span>{scope === 'owner' && <span className="text-brand-yellow mr-1">{isOpen ? '▾' : '▸'}</span>}<b>{r.name}</b> <span className="text-brand-textMuted">@{r.username}</span></span>;
+                    : <span>{scope === 'owner' && <span className="text-brand-yellow mr-1">{isOpen ? '▾' : '▸'}</span>}<b>{r.name}</b> <span className="text-brand-textMuted">@{r.username} · {r.players.length} {t('lojtarë')}</span></span>;
                   return (
                     <React.Fragment key={k}>
                       {scope === 'owner' && rowsOf(label, r.currencies, 'bg-white/5', () => setOpen((p) => ({ ...p, [k]: !isOpen })), k)}
