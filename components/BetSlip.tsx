@@ -19,7 +19,7 @@ interface BetSlipProps {
 }
 
 // Live tickets and tickets from this stake up (per wallet) wait a few seconds for "confirmation" before being placed.
-const PENDING_STAKE_THRESHOLD = { ALL: 50000, EUR: 50 } as const;
+const PENDING_STAKE_THRESHOLD = { ALL: 5000, EUR: 50 } as const;
 const PENDING_DELAY_MS = 5000;
 
 // Limits per wallet: must match the constants in server/routes/bets.js
