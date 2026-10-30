@@ -579,10 +579,25 @@ export async function adminFetchMonthlyReport(month?: string) {
 
 export interface PokerCard { suit: string; value: string; }
 
-export async function casinoSlotsSpin(stake: number) {
-  return request<{ reels: string[]; payout: number; balance: number }>('/casino/slots/spin', {
+export interface SlotGameInfo {
+  id: string;
+  name: string;
+  reels: number;
+  paytable: Record<string, number>;
+  twoCherries: number;
+  rtp: number;
+  hitFrequency: number;
+  maxMultiplier: number;
+}
+
+export async function casinoSlotsGames() {
+  return request<{ games: SlotGameInfo[] }>('/casino/slots/games');
+}
+
+export async function casinoSlotsSpin(stake: number, game = 'fruit') {
+  return request<{ game: string; reels: string[]; multiplier: number; payout: number; balance: number }>('/casino/slots/spin', {
     method: 'POST',
-    body: JSON.stringify({ stake }),
+    body: JSON.stringify({ stake, game }),
   });
 }
 

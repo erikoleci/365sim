@@ -26,7 +26,7 @@ import { useBetSlip } from './hooks/useBetSlip';
 import { useMyBets } from './hooks/useMyBets';
 import { useAdminActions } from './hooks/useAdminActions';
 import { useDismissOnOutsideClick } from './hooks/useDismissOnOutsideClick';
-import { CASINO_ENABLED } from './utils/features';
+import { canSeeCasino } from './utils/features';
 
 const ROW_SLICE = 60; // match rows drawn per step of the "load more" list
 
@@ -137,6 +137,7 @@ const App: React.FC = () => {
         onAddCredit={admin.addCredit}
         onResetPassword={admin.resetPassword}
         onCancelBet={admin.cancelBet}
+        onSetBalance={applyBalance}
       />
     );
   }
@@ -191,7 +192,7 @@ const App: React.FC = () => {
         <main ref={mainRef} className="flex-1 min-w-0 mb-20 md:mb-0">
           {showAdmin && currentUser.role === UserRole.AGENT ? (
             <AgentUsersPanel currentUser={currentUser} onBalanceChanged={applyBalance} />
-          ) : CASINO_ENABLED && currentView === 'casino' ? (
+          ) : canSeeCasino(currentUser.role) && currentView === 'casino' ? (
             <CasinoHub userBalance={currentUser.balance} onSetBalance={applyBalance} />
           ) : detailMatch ? (
             <MatchDetail
