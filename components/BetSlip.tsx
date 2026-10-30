@@ -14,7 +14,13 @@ interface BetSlipProps {
   userBalance: number;
   userBalanceEur?: number;
   myBets: Bet[];
+  /** True when at least one selection is on a live match. */
+  hasLiveSelection?: boolean;
 }
+
+// Live tickets and lek tickets from this stake up wait a few seconds for "confirmation" before being placed.
+const PENDING_STAKE_THRESHOLD = 50000;
+const PENDING_DELAY_MS = 5000;
 
 // Limits per wallet: must match the constants in server/routes/bets.js
 const LIMITS = {
@@ -22,7 +28,7 @@ const LIMITS = {
   EUR: { min: 1, maxStake: 10000, maxReturn: 10000, symbol: '€' },
 } as const;
 
-const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClearAll, onPlaceBet, onCancelBet, userBalance, userBalanceEur = 0, myBets }) => {
+const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClearAll, onPlaceBet, onCancelBet, userBalance, userBalanceEur = 0, myBets, hasLiveSelection = false }) => {
   const { t, locale } = useI18n();
   // A ticket is placed in ONE wallet: lek or euro.
   const [currency, setCurrency] = useState<'ALL' | 'EUR'>('ALL');
@@ -31,6 +37,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
   const [stake, setStake] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'slip' | 'mybets'>('slip');
   const [showConfirm, setShowConfirm] = useState(false);
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
   const [openTicket, setOpenTicket] = useState<TicketView | null>(null);
   
   // Force re-render to update timers for "Cancel" button visibility
@@ -71,9 +78,24 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
   };
 
   const confirmBet = () => {
-    onPlaceBet(parseFloat(stake), isAccumulator ? 'ACCUMULATOR' : 'SINGLE', currency);
-    setStake('');
-    setShowConfirm(false);
+    if (awaitingConfirmation) return; // no double clicks
+    const betStake = parseFloat(stake);
+    const betType = isAccumulator ? 'ACCUMULATOR' : 'SINGLE';
+    const betCurrency = currency;
+    const needsPending = hasLiveSelection || (betCurrency === 'ALL' && betStake >= PENDING_STAKE_THRESHOLD);
+    if (!needsPending) {
+      onPlaceBet(betStake, betType, betCurrency);
+      setStake('');
+      setShowConfirm(false);
+      return;
+    }
+    setAwaitingConfirmation(true);
+    setTimeout(() => {
+      onPlaceBet(betStake, betType, betCurrency);
+      setStake('');
+      setAwaitingConfirmation(false);
+      setShowConfirm(false);
+    }, PENDING_DELAY_MS);
   };
 
   const cancelConfirm = () => {
@@ -84,6 +106,14 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
     <div className="bg-brand-panel h-full flex flex-col border-l border-brand-divider text-sm relative">
 
       {/* Confirmation Modal Overlay */}
+      {showConfirm && awaitingConfirmation && (
+          <div className="absolute inset-0 bg-black/90 z-30 flex items-center justify-center p-4 text-center">
+              <div className="bg-brand-bg border border-brand-divider rounded-lg p-6 w-full shadow-xl">
+                  <div className="mx-auto mb-3 w-8 h-8 rounded-full border-4 border-brand-divider border-t-brand-yellow animate-spin" />
+                  <p className="text-white font-bold">{t('Bileta po pret konfirmimin')}</p>
+              </div>
+          </div>
+      )}
       {showConfirm && (
           <div className="absolute inset-0 bg-black/90 z-20 flex flex-col items-center justify-center p-4 text-center transition-opacity duration-150">
               <h3 className="text-white font-bold text-lg mb-4 tracking-tight">{t('Konfirmo Biletën')}</h3>

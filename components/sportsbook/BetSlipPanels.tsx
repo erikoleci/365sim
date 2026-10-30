@@ -15,6 +15,7 @@ interface Props {
   onClearAll: () => void;
   onPlaceBet: (stake: number, type: 'SINGLE' | 'ACCUMULATOR', currency: 'ALL' | 'EUR') => void;
   onCancelBet: (betId: string, origin: 'USER' | 'ADMIN') => void;
+  hasLiveSelection?: boolean;
 }
 
 const ErrorBanner: React.FC<{ message: string | null }> = ({ message }) =>
@@ -28,7 +29,7 @@ const ErrorBanner: React.FC<{ message: string | null }> = ({ message }) =>
  */
 const BetSlipPanels: React.FC<Props> = ({
   selections, myBets, userBalance, userBalanceEur = 0, betError, isMobileSlipOpen, onOpenMobileSlip, onCloseMobileSlip,
-  onRemoveSelection, onClearAll, onPlaceBet, onCancelBet,
+  onRemoveSelection, onClearAll, onPlaceBet, onCancelBet, hasLiveSelection = false,
 }) => {
   const slip = (
     <BetSlip
@@ -40,6 +41,7 @@ const BetSlipPanels: React.FC<Props> = ({
       userBalance={userBalance}
       userBalanceEur={userBalanceEur}
       myBets={myBets}
+      hasLiveSelection={hasLiveSelection}
     />
   );
 
