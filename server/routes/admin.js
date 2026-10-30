@@ -692,8 +692,9 @@ router.get('/reports/commission', async (req, res) => {
   const { rangeStart, rangeEnd, label } = periodRange(req.query.month, monthRange);
   const scope = scopeOf(req.user);
   const { rows: people } = await pool.query(
-    `SELECT id, name, username, role, is_active, admin_id, agent_id FROM users
-     WHERE role IN ('ADMIN','AGENT','USER') AND ($1::text IS NULL OR admin_id = $1 OR id = $1) ORDER BY name`,
+    `SELECT u.id, u.name, u.username, u.role, u.is_active, COALESCE(u.admin_id, ag.admin_id) AS admin_id, u.agent_id
+     FROM users u LEFT JOIN users ag ON ag.id = u.agent_id
+     WHERE u.role IN ('ADMIN','AGENT','USER') AND ($1::text IS NULL OR COALESCE(u.admin_id, ag.admin_id) = $1 OR u.id = $1) ORDER BY u.name`,
     [scope]
   );
   const metrics = await userMetrics(pool, { rangeStart, rangeEnd, adminId: scope });
@@ -725,6 +726,18 @@ router.get('/hierarchy', requireSuperAdmin, async (req, res) => {
     admins: rows.filter((r) => r.role === 'ADMIN').map((a) => ({ ...node(a), ...build(a.id) })),
     unowned: build(null),
   });
+});
+
+// Hand EVERY agent and user that has no admin yet (the accounts that existed before admins owned anything)
+// to one admin in a single step.
+router.post('/accounts/assign-unowned', requireSuperAdmin, async (req, res) => {
+  const adminId = req.body?.adminId;
+  if (typeof adminId !== 'string') return res.status(400).json({ error: 'adminId is required' });
+  const { rows } = await pool.query(`SELECT id, username FROM users WHERE id = $1 AND role = 'ADMIN'`, [adminId]);
+  if (!rows[0]) return res.status(400).json({ error: 'adminId is not an admin account' });
+  const { rowCount } = await pool.query(`UPDATE users SET admin_id = $1 WHERE role IN ('AGENT','USER') AND admin_id IS NULL`, [adminId]);
+  await logAudit(req.user, 'ASSIGN_UNOWNED', adminId, { username: rows[0].username, rows: rowCount });
+  res.json({ ok: true, rows: rowCount });
 });
 
 // Move an agent (with all his users) or a single user to another admin -- or to nobody (adminId null).

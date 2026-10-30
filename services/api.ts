@@ -545,6 +545,9 @@ export async function adminFetchHierarchy() {
   return request<Hierarchy>('/admin/hierarchy');
 }
 // Super admin: hand an agent (with all his users) or a single user to another admin (null = nobody).
+export async function adminAssignUnowned(adminId: string) {
+  return request<{ ok: true; rows: number }>('/admin/accounts/assign-unowned', { method: 'POST', body: JSON.stringify({ adminId }) });
+}
 export async function adminMoveAccount(accountId: string, adminId: string | null, agentId: string | null = null) {
   return request<{ ok: true }>(`/admin/accounts/${accountId}/admin`, { method: 'PATCH', body: JSON.stringify({ adminId, agentId }) });
 }

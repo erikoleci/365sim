@@ -22,7 +22,7 @@ export async function userMetrics(pool, { rangeStart, rangeEnd, adminId = null, 
        FROM bets b
        JOIN users u ON u.id = b.user_id
        WHERE b.created_at >= $1 AND b.created_at < $2 AND b.status <> 'CANCELLED'
-         AND ($5::text IS NULL OR u.admin_id = $5)
+         AND ($5::text IS NULL OR COALESCE(u.admin_id, (SELECT x.admin_id FROM users x WHERE x.id = u.agent_id)) = $5)
          AND ($6::text IS NULL OR u.agent_id = $6)
      )
      SELECT user_id, currency,

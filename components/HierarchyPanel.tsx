@@ -44,6 +44,16 @@ const HierarchyPanel: React.FC = () => {
     finally { setBusy(null); }
   };
 
+  const assignAll = async (adminId: string) => {
+    if (!adminId) return;
+    const name = tree?.admins.find((a) => a.id === adminId)?.name || '';
+    if (!window.confirm(t('Të kalohen TË GJITHË agjentët dhe userat pa pronar te {name}?', { name }))) return;
+    setBusy('all');
+    try { await api.adminAssignUnowned(adminId); await load(); }
+    catch (e: any) { alert(e?.message || t('Veprimi deshtoi')); }
+    finally { setBusy(null); }
+  };
+
   const mover = (id: string, name: string, isAgent: boolean) => (
     <select
       className="input text-xs w-44"
@@ -119,7 +129,13 @@ const HierarchyPanel: React.FC = () => {
         })}
         {unownedCount > 0 && (
           <div className="border border-dashed border-[#666] rounded p-3">
-            <div className="text-sm font-bold mb-1">{t('Pa pronar (asnjë admin)')}</div>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+              <div className="text-sm font-bold">{t('Pa pronar (asnjë admin)')} ({tree.unowned.agents.length} {t('agjente')} · {tree.unowned.directUsers.length + tree.unowned.agents.reduce((n, ag) => n + ag.users.length, 0)} {t('usera')})</div>
+              <select className="input text-xs w-56" value="" onChange={(e) => assignAll(e.target.value)}>
+                <option value="">{t('Kalo të gjithë te…')}</option>
+                {tree.admins.map((a) => <option key={a.id} value={a.id}>{a.name} (@{a.username})</option>)}
+              </select>
+            </div>
             {branch(tree.unowned)}
           </div>
         )}
