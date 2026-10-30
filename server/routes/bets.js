@@ -395,7 +395,7 @@ router.post('/', wrap(async (req, res) => {
     });
   }
 
-  return { totalOdds, verifiedSelections, inPlay };
+  return { totalOdds, verifiedSelections, inPlay, isLiveTicket };
   };
 
   let verified = await verifySelections();
@@ -456,7 +456,7 @@ router.post('/', wrap(async (req, res) => {
     });
     verified = { ...verified, verifiedSelections: repriced, totalOdds: repriced.reduce((acc, leg) => acc * leg.odds, 1) };
   }
-  const { totalOdds, verifiedSelections } = verified;
+  const { totalOdds, verifiedSelections, isLiveTicket } = verified;
 
   const betId = randomUUID();
   const potentialReturn = Number((stake * totalOdds).toFixed(2));
