@@ -5,8 +5,12 @@ import { requireAuth } from './auth.js';
 import { getCasinoAccess, canOpenCasino } from '../casinoAccess.js';
 import { isSuperAdmin } from '../roles.js';
 import { normalizeCurrency, walletColumn } from '../ledger.js';
-import { SLOT_GAMES, getSlotGame, publicGame } from '../slots/games.js';
+import { SLOT_GAMES as VIDEO_SLOTS, getSlotGame as getVideoSlot, publicGame } from '../slots/games.js';
 import { playRound } from '../slots/engine.js';
+import {
+  GAMES as SLOT_GAMES, getGame as getSlotGame, spinReels as spinSlotReels,
+  multiplierFor as slotMultiplier, payoutFor as slotPayout, describeGame as describeSlotGame,
+} from '../slots.js';
 
 const router = express.Router();
 router.use(requireAuth);
@@ -83,11 +87,11 @@ const MAX_WIN_MULTIPLIER = 2000; // one round never pays more than 2000x the sta
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 router.get('/slot-games', (req, res) => {
-  res.json({ games: SLOT_GAMES.map(publicGame), stakes: SLOT_STAKES, demo: isSuperAdmin(req.user.role) });
+  res.json({ games: VIDEO_SLOTS.map(publicGame), stakes: SLOT_STAKES, demo: isSuperAdmin(req.user.role) });
 });
 
 router.post('/slot-games/:id/spin', async (req, res) => {
-  const game = getSlotGame(req.params.id);
+  const game = getVideoSlot(req.params.id);
   if (!game) return res.status(404).json({ error: 'Game not found' });
   const currency = normalizeCurrency(req.body?.currency);
   const stake = req.body?.stake;
@@ -134,33 +138,51 @@ router.post('/slot-games/:id/spin', async (req, res) => {
 });
 
 // =====================================================================
-// SLOTS — single-shot
+// SLOTS — single-shot, fair RNG (see server/slots.js). One transaction: lock the player's row, check the
+// balance, apply stake - payout and write the round, so a crash can never leave a debited stake with no result.
 // =====================================================================
-const SLOT_SYMBOLS = ['🍒', '🍋', '🍇', '💎', '🔔', '7️⃣'];
+router.get('/slots/games', (req, res) => {
+  res.json({ games: Object.values(SLOT_GAMES).map(describeSlotGame) });
+});
 
 router.post('/slots/spin', async (req, res) => {
-  const { stake } = req.body || {};
-  if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
-
-  const ok = await deductStake(req.user.id, stake);
-  if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
-
-  let reels;
-  let payout = 0;
-  if (Math.random() < WIN_CHANCE) {
-    const symbol = SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)];
-    reels = [symbol, symbol, symbol];
-    payout = Number((stake * smallProfitMultiplier()).toFixed(2));
-  } else {
-    reels = [0, 1, 2].map(() => SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)]);
-    if (reels[0] === reels[1] && reels[1] === reels[2]) {
-      reels[2] = SLOT_SYMBOLS[(SLOT_SYMBOLS.indexOf(reels[2]) + 1) % SLOT_SYMBOLS.length];
-    }
+  const { stake, game: gameId } = req.body || {};
+  if (!validateStake(stake) || Math.round(stake * 100) / 100 !== stake) {
+    return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE} (max 2 decimals)` });
   }
+  const game = getSlotGame(gameId);
+  if (!game) return res.status(400).json({ error: 'Unknown slot game' });
 
-  await creditPayout(req.user.id, payout);
-  const balance = await getBalance(req.user.id);
-  res.json({ reels, payout, balance });
+  const reels = spinSlotReels(game);
+  const multiplier = slotMultiplier(game, reels);
+  const payout = slotPayout(stake, multiplier);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT balance FROM users WHERE id = $1 FOR UPDATE', [req.user.id]);
+    if (!rows[0] || Number(rows[0].balance) < stake) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Insufficient balance' });
+    }
+    const now = Date.now();
+    const { rows: updated } = await client.query(
+      'UPDATE users SET balance = balance - $1 + $2 WHERE id = $3 RETURNING balance',
+      [stake, payout, req.user.id]
+    );
+    await client.query(
+      `INSERT INTO casino_rounds (id, user_id, game, stake, status, state, payout, result, created_at, resolved_at)
+       VALUES ($1,$2,$3,$4,'FINISHED',$5,$6,$7,$8,$8)`,
+      [randomUUID(), req.user.id, `slots:${game.id}`, stake, JSON.stringify({ reels }), payout, JSON.stringify({ multiplier }), now]
+    );
+    await client.query('COMMIT');
+    res.json({ game: game.id, reels, multiplier, payout, balance: Number(updated[0].balance) });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 });
 
 // =====================================================================

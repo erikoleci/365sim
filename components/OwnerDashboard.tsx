@@ -18,6 +18,8 @@ interface OwnerDashboardProps {
   onAddCredit: (userId: string, amount: number, amountEur?: number) => void;
   onResetPassword: (userId: string, newPass: string) => void;
   onCancelBet: (betId: string, origin: 'USER' | 'ADMIN') => void;
+  // Super admin only: the casino tab plays on the super admin's own balance.
+  onSetBalance?: (balance: number, balanceEur?: number) => void;
 }
 
 const money = (n: number) => Number(n || 0).toLocaleString(getLocale(), { maximumFractionDigits: 2 });
@@ -30,7 +32,7 @@ const dual = (lek: any, eur: any) => (<>{money(lek)} L<br />€{money(eur ?? 0)}
 // when actual changes (create agent, credit, reset password) are needed.
 const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   currentUser, onLogout, users, allBets,
-  onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet,
+  onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet, onSetBalance,
 }) => {
   const { t } = useI18n();
   const isSuper = currentUser.role === 'SUPER_ADMIN';
@@ -407,7 +409,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
 
         {tab === 'commission' && <CommissionReport scope="owner" />}
         {tab === 'vc' && isSuper && <VcCodesPanel />}
-        {tab === 'casino' && isSuper && <CasinoAdmin />}
+        {tab === 'casino' && isSuper && onSetBalance && <CasinoAdmin userBalance={currentUser.balance} userBalanceEur={currentUser.balanceEur ?? 0} onSetBalance={onSetBalance} />}
         {tab === 'hierarchy' && isSuper && <HierarchyPanel />}
 
         {tab === 'monthly' && (

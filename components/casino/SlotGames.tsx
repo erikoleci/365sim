@@ -22,7 +22,7 @@ interface Props {
 // paid there); this component only animates it. The super admin plays on demo money, players on their wallet.
 const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, onBalances }) => {
   const [data, setData] = useState<Awaited<ReturnType<typeof api.casinoSlotGames>> | null>(null);
-  const [game, setGame] = useState<api.SlotGameInfo | null>(null);
+  const [game, setGame] = useState<api.VideoSlotInfo | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => { api.casinoSlotGames().then(setData).catch((e) => setError(e?.message || 'Gabim')); }, []);
@@ -52,7 +52,7 @@ const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, onBalances })
 };
 
 const SlotGame: React.FC<{
-  game: api.SlotGameInfo; stakes: { ALL: number[]; EUR: number[] }; demo: boolean; balance: number; balanceEur: number;
+  game: api.VideoSlotInfo; stakes: { ALL: number[]; EUR: number[] }; demo: boolean; balance: number; balanceEur: number;
   onBalances?: (lek: number, eur: number) => void; onBack: () => void;
 }> = ({ game, stakes, demo, balance, balanceEur, onBalances, onBack }) => {
   const [currency, setCurrency] = useState<'ALL' | 'EUR'>('ALL');
@@ -203,7 +203,7 @@ const SlotGame: React.FC<{
   );
 };
 
-function idleGrid(game: api.SlotGameInfo): string[][] {
+function idleGrid(game: api.VideoSlotInfo): string[][] {
   const base = Object.keys(game.symbols).filter((k) => k !== 'WILD' && k !== 'SCATTER');
   return [0, 1, 2, 3, 4].map((r) => [0, 1, 2].map((row) => game.symbols[base[(r * 3 + row) % base.length]]));
 }

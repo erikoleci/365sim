@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import * as api from '../services/api';
-import SlotGames from './casino/SlotGames';
+import CasinoHub from './CasinoHub';
 
 const MODES: { value: api.CasinoMode; label: string; hint: string }[] = [
   { value: 'off', label: 'Fshehur', hint: 'Askush nuk e sheh kazinon' },
@@ -10,7 +10,8 @@ const MODES: { value: api.CasinoMode; label: string; hint: string }[] = [
 const money = (n: number) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // Super admin: preview the casino on demo money, choose who may open it, and see what the players played.
-const CasinoAdmin: React.FC = () => {
+interface CasinoAdminProps { userBalance: number; userBalanceEur?: number; onSetBalance: (balance: number, balanceEur?: number) => void }
+const CasinoAdmin: React.FC<CasinoAdminProps> = ({ userBalance, userBalanceEur = 0, onSetBalance }) => {
   const [mode, setMode] = useState<api.CasinoMode | null>(null);
   const [report, setReport] = useState<api.CasinoReportRow[]>([]);
   const [error, setError] = useState('');
@@ -45,11 +46,6 @@ const CasinoAdmin: React.FC = () => {
       </div>
 
       <div className="bg-brand-panel border border-[#444] rounded p-4">
-        <div className="text-sm font-bold mb-3">Slots (demo)</div>
-        <SlotGames />
-      </div>
-
-      <div className="bg-brand-panel border border-[#444] rounded p-4">
         <div className="flex justify-between items-center mb-2"><div className="text-sm font-bold">Çfarë është luajtur</div><button className="text-xs text-brand-textMuted hover:text-white" onClick={load}>↻</button></div>
         {report.length === 0 ? <div className="text-xs text-brand-textMuted">Ende asnjë raund nga lojtarët.</div> : (
           <div className="overflow-x-auto"><table className="w-full text-xs">
@@ -63,6 +59,8 @@ const CasinoAdmin: React.FC = () => {
           </table></div>
         )}
       </div>
+
+      <CasinoHub userBalance={userBalance} userBalanceEur={userBalanceEur} onSetBalance={onSetBalance} />
     </div>
   );
 };

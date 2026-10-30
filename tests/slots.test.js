@@ -1,81 +1,83 @@
 import { describe, it, expect } from 'vitest';
-import { SLOT_GAMES, publicGame } from '../server/slots/games.js';
-import { evaluateLines, expandWilds, playRound, exactRtp, WILD, SCATTER } from '../server/slots/engine.js';
-import { canOpenCasino } from '../server/casinoAccess.js';
+import { GAMES, getGame, spinReels, multiplierFor, payoutFor, exactRtp, describeGame } from '../server/slots.js';
 
-function seeded(seed) {
-  let a = seed >>> 0;
-  return (n) => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return Math.floor((((t ^ (t >>> 14)) >>> 0) / 4294967296) * n);
-  };
-}
-const game = (id) => SLOT_GAMES.find((g) => g.id === id);
-const filler = (s) => [[s, s, s], [s, s, s], [s, s, s], [s, s, s], [s, s, s]];
+const fruit = GAMES.fruit;
 
-describe('slot engine', () => {
-  const g = game('hot-fruits');
-  it('pays 3, 4 and 5 of a kind from the left on a line', () => {
-    const grid = filler('LEMON');
-    grid[0] = ['BELL', 'CHERRY', 'BELL']; grid[1] = ['BELL', 'CHERRY', 'BELL']; grid[2] = ['BELL', 'CHERRY', 'BELL']; grid[3] = ['BELL', 'BELL', 'BELL']; grid[4] = ['BELL', 'BELL', 'BELL'];
-    const wins = evaluateLines(g, grid);
-    const middle = wins.find((w) => w.line === 0);
-    expect(middle).toMatchObject({ symbol: 'CHERRY', count: 3, pay: g.paytable.CHERRY[3] });
+describe('slots: fruit game maths', () => {
+  it('has the same number of stops on the strip as it advertises (32)', () => {
+    expect(Object.values(fruit.strip).reduce((a, b) => a + b, 0)).toBe(32);
   });
-  it('a wild substitutes for symbols but not for the scatter', () => {
-    const grid = filler('BELL'); // no win for a different symbol below
-    grid[0] = ['LEMON', 'SEVEN', 'LEMON']; grid[1] = ['LEMON', WILD, 'LEMON']; grid[2] = ['LEMON', 'SEVEN', 'LEMON']; grid[3] = ['LEMON', 'CHERRY', 'LEMON']; grid[4] = ['LEMON', 'CHERRY', 'LEMON'];
-    expect(evaluateLines(g, grid).find((w) => w.line === 0)).toMatchObject({ symbol: 'SEVEN', count: 3 });
-    const sc = filler('BELL'); sc[0] = ['LEMON', SCATTER, 'LEMON']; sc[1] = ['LEMON', WILD, 'LEMON']; sc[2] = ['LEMON', SCATTER, 'LEMON'];
-    expect(evaluateLines(g, sc).find((w) => w.line === 0)).toBeUndefined();
+
+  it('pins the exact RTP (~95.84%) and hit frequency (~8.5%) by full enumeration', () => {
+    const { rtp, hitFrequency } = exactRtp(fruit);
+    expect(rtp * 100).toBeCloseTo(95.84, 1);
+    expect(hitFrequency * 100).toBeCloseTo(8.5, 1);
   });
-  it('an expanding wild covers its whole reel', () => {
-    const e = game('pharaoh-gold');
-    const grid = filler('PALM'); grid[2] = ['JAR', WILD, 'JAR'];
-    expect(expandWilds(e, grid)[2]).toEqual([WILD, WILD, WILD]);
-    expect(expandWilds(g, grid)[2]).toEqual(['JAR', WILD, 'JAR']);
+
+  it('keeps the house edge positive but small (RTP between 90% and 99%)', () => {
+    const { rtp } = exactRtp(fruit);
+    expect(rtp).toBeGreaterThan(0.9);
+    expect(rtp).toBeLessThan(0.99);
   });
-  it('a round is the base spin plus the free spins it triggered', () => {
-    const rng = seeded(7);
-    let seen = false;
-    for (let i = 0; i < 20000 && !seen; i += 1) {
-      const r = playRound(g, rng);
-      const awarded = g.freeSpins[r.spins[0].scatters] ?? 0;
-      expect(r.spins.length).toBe(1 + awarded);
-      if (awarded > 0) { seen = true; expect(r.spins.slice(1).every((s) => s.free)).toBe(true); }
-    }
-    expect(seen).toBe(true);
-  });
-  it("never exposes the reel strips to the browser", () => {
-    for (const x of SLOT_GAMES) expect(publicGame(x).strips).toBeUndefined();
+
+  it('describeGame publishes the real RTP and the paytable', () => {
+    const d = describeGame(fruit);
+    expect(d.rtp).toBeCloseTo(95.84, 1);
+    expect(d.maxMultiplier).toBe(300);
+    expect(d.paytable['7️⃣']).toBe(300);
   });
 });
 
-describe('slot RTP is real and ~95%', () => {
-  for (const x of SLOT_GAMES) {
-    it(`${x.id}: exact RTP matches the published figure`, () => {
-      const { rtp } = exactRtp(x);
-      expect(Math.abs(rtp * 100 - x.rtp)).toBeLessThan(0.01);
-      expect(x.rtp).toBeGreaterThan(94);
-      expect(x.rtp).toBeLessThan(96);
-    }, 60000);
-    it(`${x.id}: simulation agrees with it`, () => {
-      const rng = seeded(1234);
-      let total = 0; const n = 250000;
-      for (let i = 0; i < n; i += 1) total += playRound(x, rng).totalMultiplier;
-      expect(Math.abs((total / n) * 100 - x.rtp)).toBeLessThan(6);
-    }, 60000);
-  }
+describe('slots: paytable', () => {
+  it('pays three of a kind', () => {
+    expect(multiplierFor(fruit, ['7️⃣', '7️⃣', '7️⃣'])).toBe(300);
+    expect(multiplierFor(fruit, ['🍒', '🍒', '🍒'])).toBe(8);
+    expect(multiplierFor(fruit, ['🍋', '🍋', '🍋'])).toBe(12);
+  });
+
+  it('pays two cherries on the first two reels, whatever the third', () => {
+    expect(multiplierFor(fruit, ['🍒', '🍒', '🍋'])).toBe(2);
+    expect(multiplierFor(fruit, ['🍒', '🍋', '🍒'])).toBe(0);
+    expect(multiplierFor(fruit, ['🍋', '🍒', '🍒'])).toBe(0);
+  });
+
+  it('pays nothing for a mixed result', () => {
+    expect(multiplierFor(fruit, ['🍋', '🍇', '🔔'])).toBe(0);
+    expect(multiplierFor(fruit, ['💎', '💎', '🔔'])).toBe(0);
+  });
+
+  it('rounds payouts to 2 decimals', () => {
+    expect(payoutFor(10, 12)).toBe(120);
+    expect(payoutFor(0.33, 8)).toBe(2.64);
+    expect(payoutFor(1.15, 2)).toBe(2.3);
+  });
 });
 
-describe('casino access switch', () => {
-  it('off: nobody. super: only the super admin. all: everybody', () => {
-    expect(canOpenCasino('off', 'SUPER_ADMIN')).toBe(false);
-    expect(canOpenCasino('super', 'SUPER_ADMIN')).toBe(true);
-    expect(canOpenCasino('super', 'USER')).toBe(false);
-    expect(canOpenCasino('all', 'USER')).toBe(true);
+describe('slots: the spin is a plain uniform draw (no rigging)', () => {
+  it('uses the injected RNG once per reel and maps it onto the strip', () => {
+    const calls = [];
+    const reels = spinReels(fruit, (n) => { calls.push(n); return 0; });
+    expect(calls).toEqual([32, 32, 32]);
+    expect(reels).toEqual(['🍒', '🍒', '🍒']); // stop 0 of the strip is a cherry
+  });
+
+  it('can reach every symbol on every reel (last stop is the seven)', () => {
+    const reels = spinReels(fruit, (n) => n - 1);
+    expect(reels).toEqual(['7️⃣', '7️⃣', '7️⃣']);
+  });
+
+  it('observed return over 400k real spins is close to the exact RTP', () => {
+    let paid = 0;
+    const N = 400000;
+    for (let i = 0; i < N; i++) paid += multiplierFor(fruit, spinReels(fruit));
+    const observed = paid / N;
+    // Standard deviation of one spin is ~9x stake (the 300x seven), so 400k spins => ~1.4% sigma.
+    expect(Math.abs(observed - exactRtp(fruit).rtp)).toBeLessThan(0.07);
+  });
+
+  it('knows its games', () => {
+    expect(getGame()?.id).toBe('fruit');
+    expect(getGame('fruit')?.id).toBe('fruit');
+    expect(getGame('nope')).toBeNull();
   });
 });

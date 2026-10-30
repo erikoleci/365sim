@@ -579,10 +579,25 @@ export async function adminFetchMonthlyReport(month?: string) {
 
 export interface PokerCard { suit: string; value: string; }
 
-export async function casinoSlotsSpin(stake: number) {
-  return request<{ reels: string[]; payout: number; balance: number }>('/casino/slots/spin', {
+export interface SlotGameInfo {
+  id: string;
+  name: string;
+  reels: number;
+  paytable: Record<string, number>;
+  twoCherries: number;
+  rtp: number;
+  hitFrequency: number;
+  maxMultiplier: number;
+}
+
+export async function casinoSlotsGames() {
+  return request<{ games: SlotGameInfo[] }>('/casino/slots/games');
+}
+
+export async function casinoSlotsSpin(stake: number, game = 'fruit') {
+  return request<{ game: string; reels: string[]; multiplier: number; payout: number; balance: number }>('/casino/slots/spin', {
     method: 'POST',
-    body: JSON.stringify({ stake }),
+    body: JSON.stringify({ stake, game }),
   });
 }
 
@@ -677,7 +692,7 @@ export async function adminSetCasinoAccess(mode: CasinoMode) {
 export interface CasinoReportRow { game: string; currency: 'ALL' | 'EUR'; rounds: number; staked: number; paid: number; houseResult: number }
 export async function adminCasinoReport() { return request<{ rows: CasinoReportRow[] }>('/admin/casino/report'); }
 
-export interface SlotGameInfo {
+export interface VideoSlotInfo {
   id: string; name: string; tagline: string; volatility: string; color: [string, string]; symbols: Record<string, string>;
   rtp: number; lines: number; paytable: Record<string, Record<string, number>>; scatterPay: Record<string, number>;
   freeSpins: Record<string, number>; freeSpinMultiplier: number; wildExpand: boolean; scatterName: string; wildName: string;
@@ -685,7 +700,7 @@ export interface SlotGameInfo {
 export interface SlotSpin { grid: string[][]; wins: { line: number; symbol: string; count: number; pay: number }[]; scatters: number; free: boolean; win: number }
 export interface SlotRound { spins: SlotSpin[]; payout: number; freeSpins: number; demo: boolean; balance?: number; balanceEur?: number }
 export async function casinoSlotGames() {
-  return request<{ games: SlotGameInfo[]; stakes: { ALL: number[]; EUR: number[] }; demo: boolean }>('/casino/slot-games');
+  return request<{ games: VideoSlotInfo[]; stakes: { ALL: number[]; EUR: number[] }; demo: boolean }>('/casino/slot-games');
 }
 export async function casinoSlotSpin(id: string, stake: number, currency: 'ALL' | 'EUR') {
   return request<SlotRound>(`/casino/slot-games/${id}/spin`, { method: 'POST', body: JSON.stringify({ stake, currency }) });

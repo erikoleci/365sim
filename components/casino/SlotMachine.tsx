@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { casinoSlotsSpin } from '../../services/api';
+import React, { useState, useEffect } from 'react';
+import { casinoSlotsSpin, casinoSlotsGames, SlotGameInfo } from '../../services/api';
 
 interface SlotMachineProps {
   onSetBalance: (balance: number) => void;
@@ -8,22 +8,15 @@ interface SlotMachineProps {
 }
 
 const SYMBOLS = ['🍒', '🍋', '🍇', '💎', '🔔', '7️⃣'];
-// Display-only reference table — actual payouts are decided by the server.
-const PAYOUTS: Record<string, number> = {
-  '🍒': 3,
-  '🍋': 5,
-  '🍇': 10,
-  '🔔': 20,
-  '💎': 50,
-  '7️⃣': 100
-};
-
 const SlotMachine: React.FC<SlotMachineProps> = ({ onSetBalance, userBalance, onClose }) => {
   const [reels, setReels] = useState<string[]>(['7️⃣', '7️⃣', '7️⃣']);
   const [isSpinning, setIsSpinning] = useState(false);
   const [stake, setStake] = useState(10);
   const [message, setMessage] = useState('GOOD LUCK!');
   const [winAmount, setWinAmount] = useState(0);
+  // The paytable and the RTP come from the server (the real numbers the game runs on).
+  const [info, setInfo] = useState<SlotGameInfo | null>(null);
+  useEffect(() => { casinoSlotsGames().then((r) => setInfo(r.games.find((g) => g.id === 'fruit') || null)).catch(() => {}); }, []);
 
   const spin = async () => {
     if (userBalance < stake) {
@@ -53,7 +46,7 @@ const SlotMachine: React.FC<SlotMachineProps> = ({ onSetBalance, userBalance, on
         if (intervalCount > 10) clearInterval(interval);
       }, 100);
 
-      const { reels: finalReels, payout, balance } = await resultPromise;
+      const { reels: finalReels, payout, balance, multiplier } = await resultPromise;
       await new Promise((r) => setTimeout(r, 1100));
       clearInterval(interval);
 
@@ -63,11 +56,9 @@ const SlotMachine: React.FC<SlotMachineProps> = ({ onSetBalance, userBalance, on
 
       if (payout > 0) {
         setWinAmount(payout);
-        setMessage(`WIN! ${payout} L`);
-      } else if (finalReels[0] === finalReels[1] || finalReels[1] === finalReels[2] || finalReels[0] === finalReels[2]) {
-        setMessage('NO WIN');
+        setMessage(`WIN! ${payout} L (x${multiplier})`);
       } else {
-        setMessage('TRY AGAIN');
+        setMessage('NO WIN');
       }
     } catch (err: any) {
       setIsSpinning(false);
@@ -122,14 +113,20 @@ const SlotMachine: React.FC<SlotMachineProps> = ({ onSetBalance, userBalance, on
         </div>
       </div>
       
-      <div className="mt-8 grid grid-cols-3 gap-4 text-xs text-gray-400">
-         {Object.entries(PAYOUTS).map(([sym, mul]) => (
-             <div key={sym} className="flex gap-2 justify-center">
-                 <span>{sym}{sym}{sym}</span>
-                 <span className="text-yellow-500">x{mul}</span>
-             </div>
-         ))}
-      </div>
+      {info && (
+        <div className="mt-8 text-xs text-gray-400 w-full max-w-md">
+          <div className="grid grid-cols-3 gap-4">
+            {Object.entries(info.paytable).map(([sym, mul]) => (
+              <div key={sym} className="flex gap-2 justify-center">
+                <span>{sym}{sym}{sym}</span>
+                <span className="text-yellow-500">x{mul}</span>
+              </div>
+            ))}
+          </div>
+          <div className="text-center mt-3">🍒🍒 (reels 1-2) <span className="text-yellow-500">x{info.twoCherries}</span></div>
+          <div className="text-center mt-2 text-gray-500">RTP {info.rtp}% · win on {info.hitFrequency}% of spins</div>
+        </div>
+      )}
     </div>
   );
 };

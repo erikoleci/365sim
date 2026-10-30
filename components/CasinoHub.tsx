@@ -92,7 +92,7 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
               <div className="absolute bottom-4 left-4 z-20">
                   <div className="bg-purple-600 text-xs font-bold px-2 py-0.5 rounded w-fit mb-1">POPULAR</div>
                   <h3 className="text-2xl font-bold text-white group-hover:text-brand-yellow transition-colors">Super Slots</h3>
-                  <p className="text-xs text-gray-300">Win up to 100x stake</p>
+                  <p className="text-xs text-gray-300">Win up to 300x stake</p>
               </div>
               <div className="h-full w-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-purple-800 to-black flex items-center justify-center text-8xl group-hover:scale-110 transition-transform duration-500">
                   🍒
