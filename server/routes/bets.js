@@ -13,6 +13,39 @@ import { wrap } from '../asyncHandler.js';
 import { noteBetOnMatches } from '../oddsHistoryPolicy.js';
 import { walletColumn, normalizeCurrency } from '../ledger.js';
 
+// Pool pressure (live import/socket writes share the same few connections) or a dropped idle
+// connection used to surface as "503 Service temporarily unavailable" on ticket placement.
+// These errors are transient and, before COMMIT, safe to retry: nothing was booked.
+const TRANSIENT_DB_CODES = new Set([
+  'ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'EAI_AGAIN',
+  '57P01', '53300', '53400', '40001', '40P01', '57014', '08006', '08003', '08001',
+]);
+function isTransientDbErr(err) {
+  if (!err) return false;
+  if (TRANSIENT_DB_CODES.has(err.code)) return true;
+  const msg = String(err.message || '');
+  return msg.includes('timeout exceeded when trying to connect')
+    || msg.includes('Connection terminated')
+    || msg.includes('connection is not open')
+    || msg.includes('remaining connection slots')
+    || msg.includes('canceling statement due to statement timeout');
+}
+async function withDbRetry(fn, { retries = 2, delayMs = 300 } = {}) {
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn(attempt);
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientDbErr(err) || attempt === retries) throw err;
+      console.warn(`[bets] transient db error (attempt ${attempt + 1}/${retries + 1}), retrying:`, err.message);
+      await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+}
+const dbq = (text, params) => withDbRetry(() => pool.query(text, params));
+
 // After a goal / red card on a LIVE match, bets on it are refused for this long so
 // nobody can bet on prices that have not caught up with what just happened. 0 = off.
 // After a corner, bets on the corner TOTALS wait this long (the counter and the odds need to catch up).
@@ -162,7 +195,7 @@ router.post('/', wrap(async (req, res) => {
     });
   }
 
-  const { rows: userRows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
+  const { rows: userRows } = await dbq('SELECT * FROM users WHERE id = $1', [req.user.id]);
   const user = userRows[0];
   if (!user) return res.status(404).json({ error: 'User not found' });
   if (Number(user[wallet]) < stake) {
@@ -197,7 +230,7 @@ router.post('/', wrap(async (req, res) => {
   const boostRequested = selections.length === 1 && selections[0]?.boosted === true;
 
   for (const sel of selections) {
-    const { rows: matchRows } = await pool.query('SELECT * FROM matches_cache WHERE id = $1', [sel.matchId]);
+    const { rows: matchRows } = await dbq('SELECT * FROM matches_cache WHERE id = $1', [sel.matchId]);
     const matchRow = matchRows[0];
     if (!matchRow) {
       return fail(400, { error: `Match ${sel.matchId} not found or no longer available` });
@@ -210,7 +243,7 @@ router.post('/', wrap(async (req, res) => {
       });
     }
     if (LIVE_EVENT_LOCK_MS > 0 && (matchRow.status === 'LIVE' || matchRow.live_status != null)) {
-      const { rows: evRows } = await pool.query(
+      const { rows: evRows } = await dbq(
         "SELECT MAX(created_at) AS last_at FROM match_events WHERE match_id = $1 AND type IN ('GOAL','RED_CARD')",
         [matchRow.id]
       );
@@ -243,7 +276,7 @@ router.post('/', wrap(async (req, res) => {
       if (isLiveCornerMarket(current.marketName)) {
         matchRow.live_corners = await readLiveCorners(pool, matchRow.id);
         if (LIVE_CORNER_LOCK_MS > 0) {
-          const { rows: cRows } = await pool.query("SELECT MAX(created_at) AS last_at FROM match_events WHERE match_id = $1 AND type = 'CORNER'", [matchRow.id]);
+          const { rows: cRows } = await dbq("SELECT MAX(created_at) AS last_at FROM match_events WHERE match_id = $1 AND type = 'CORNER'", [matchRow.id]);
           if (isLiveEventLocked(matchRow, cRows[0]?.last_at, { lockMs: LIVE_CORNER_LOCK_MS })) {
             return fail(409, {
               error: `Betting on corner markets for ${matchRow.home_team} vs ${matchRow.away_team} is paused for a few seconds after a corner — odds are updating.`,
@@ -255,7 +288,7 @@ router.post('/', wrap(async (req, res) => {
       if (isLiveCardMarket(current.marketName)) {
         matchRow.live_cards = await readLiveCards(pool, matchRow.id);
         if (LIVE_CARD_LOCK_MS > 0) {
-          const { rows: kRows } = await pool.query("SELECT MAX(created_at) AS last_at FROM match_events WHERE match_id = $1 AND type IN ('YELLOW_CARD','RED_CARD')", [matchRow.id]);
+          const { rows: kRows } = await dbq("SELECT MAX(created_at) AS last_at FROM match_events WHERE match_id = $1 AND type IN ('YELLOW_CARD','RED_CARD')", [matchRow.id]);
           if (isLiveEventLocked(matchRow, kRows[0]?.last_at, { lockMs: LIVE_CARD_LOCK_MS })) {
             return fail(409, {
               error: `Betting on card markets for ${matchRow.home_team} vs ${matchRow.away_team} is paused for a few seconds after a card — odds are updating.`,
@@ -389,7 +422,7 @@ router.post('/', wrap(async (req, res) => {
       });
     }
     if (LIVE_MAX_TICKETS_PER_MIN > 0) {
-      const { rows: recent } = await pool.query(
+      const { rows: recent } = await dbq(
         'SELECT COUNT(*)::int AS n FROM bets WHERE user_id = $1 AND is_live = true AND created_at > $2',
         [user.id, Date.now() - 60000],
       );
@@ -399,7 +432,7 @@ router.post('/', wrap(async (req, res) => {
     }
     if (LIVE_MAX_TICKETS_PER_MATCH > 0) {
       const matchIds = [...new Set(selections.map((x) => String(x.matchId)))];
-      const { rows: perMatch } = await pool.query(
+      const { rows: perMatch } = await dbq(
         `SELECT COUNT(DISTINCT b.id)::int AS n FROM bets b JOIN bet_selections bs ON bs.bet_id = b.id
          WHERE b.user_id = $1 AND b.is_live = true AND b.created_at > $2 AND bs.match_id = ANY($3::text[])`,
         [user.id, Date.now() - 600000, matchIds],
@@ -432,8 +465,16 @@ router.post('/', wrap(async (req, res) => {
     return res.status(400).json({ error: `Maximum potential payout is ${maxReturn}. Reduce your stake or selections.` });
   }
 
-  const client = await pool.connect();
+  let balanceAfterTx = null;
+  // Returns true when a response was already sent. Throws only BEFORE commit, so a retry is safe.
+  const runTicketTx = async (attempt) => {
   let committed = false;
+  if (attempt > 0) {
+    // A previous attempt may have lost the connection exactly at COMMIT: check if the ticket exists.
+    const { rows: existing } = await pool.query('SELECT 1 FROM bets WHERE id = $1', [betId]);
+    if (existing.length) return false;
+  }
+  const client = await pool.connect();
   try {
     await client.query('BEGIN');
     // Re-check balance inside the transaction to close the race window
@@ -442,10 +483,12 @@ router.post('/', wrap(async (req, res) => {
     const { rows: lockedUser } = await client.query(`SELECT ${wallet} FROM users WHERE id = $1 FOR UPDATE`, [user.id]);
     if (!lockedUser[0] || Number(lockedUser[0][wallet]) < stake) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Insufficient balance' });
+      res.status(400).json({ error: 'Insufficient balance' });
+      return true;
     }
     const balanceBefore = Number(lockedUser[0][wallet]);
     const balanceAfter = Number((balanceBefore - stake).toFixed(2));
+    balanceAfterTx = balanceAfter;
 
     // Risk Management: exposure check. It must run INSIDE the transaction and
     // under a per-selection advisory lock: checked before BEGIN, two
@@ -465,7 +508,8 @@ router.post('/', wrap(async (req, res) => {
       );
       if (Number(exposureRows[0].exposure) + potentialReturn * (currency === 'EUR' ? RISK_EUR_TO_ALL : 1) > MAX_SELECTION_EXPOSURE) {
         await client.query('ROLLBACK');
-        return res.status(400).json({ error: `This selection is temporarily limited due to high exposure. Try a smaller stake.` });
+        res.status(400).json({ error: `This selection is temporarily limited due to high exposure. Try a smaller stake.` });
+        return true;
       }
     }
 
@@ -514,8 +558,18 @@ router.post('/', wrap(async (req, res) => {
   } finally {
     client.release();
   }
+  return false;
+  };
+  if (await withDbRetry(runTicketTx, { retries: 2, delayMs: 400 })) return;
 
-  const { rows: updatedRows } = await pool.query('SELECT * FROM users WHERE id = $1', [user.id]);
+  let updatedRows;
+  try {
+    ({ rows: updatedRows } = await dbq('SELECT * FROM users WHERE id = $1', [user.id]));
+  } catch (err) {
+    // The ticket is already booked: never answer 503 here (the player would place it twice).
+    console.error('[bets] balance read after commit failed, using computed balance:', err && err.message);
+    updatedRows = [{ ...user, ...(balanceAfterTx != null ? { [wallet]: balanceAfterTx } : {}) }];
+  }
   res.status(201).json({
     bet: { id: betId, totalOdds, potentialReturn, stake, currency },
     balance: updatedRows[0].balance,
