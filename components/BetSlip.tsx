@@ -9,7 +9,7 @@ interface BetSlipProps {
   selections: BetSelectionItem[];
   onRemoveSelection: (uniqueId: string) => void;
   onClearAll: () => void;
-  onPlaceBet: (stake: number, type: 'SINGLE' | 'ACCUMULATOR', currency: 'ALL' | 'EUR') => void;
+  onPlaceBet: (stake: number, type: 'SINGLE' | 'ACCUMULATOR', currency: 'ALL' | 'EUR') => void | Promise<unknown>;
   onCancelBet: (betId: string, origin: 'USER' | 'ADMIN') => void;
   userBalance: number;
   userBalanceEur?: number;
@@ -18,8 +18,7 @@ interface BetSlipProps {
   hasLiveSelection?: boolean;
 }
 
-// Live tickets and tickets from this stake up (per wallet) wait a few seconds for "confirmation" before being placed.
-const PENDING_STAKE_THRESHOLD = { ALL: 5000, EUR: 50 } as const;
+// Every ticket waits this long for "confirmation" before the agent accepts it.
 const PENDING_DELAY_MS = 5000;
 
 // Limits per wallet: must match the constants in server/routes/bets.js
@@ -82,20 +81,16 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
     const betStake = parseFloat(stake);
     const betType = isAccumulator ? 'ACCUMULATOR' : 'SINGLE';
     const betCurrency = currency;
-    const needsPending = hasLiveSelection || betStake >= PENDING_STAKE_THRESHOLD[betCurrency];
-    if (!needsPending) {
-      onPlaceBet(betStake, betType, betCurrency);
-      setStake('');
-      setShowConfirm(false);
-      return;
-    }
+    // Every ticket waits 5 seconds ("Bileta po pret konfirmimin") and then the agent accepts it.
+    // The request is sent right away and runs IN PARALLEL with the 5s timer, so live / high-stake
+    // tickets (which the server also holds for ~5s to re-check prices) do not wait twice.
     setAwaitingConfirmation(true);
-    setTimeout(() => {
-      onPlaceBet(betStake, betType, betCurrency);
+    const wait = new Promise<void>((resolve) => setTimeout(resolve, PENDING_DELAY_MS));
+    Promise.all([Promise.resolve(onPlaceBet(betStake, betType, betCurrency)).catch(() => undefined), wait]).finally(() => {
       setStake('');
       setAwaitingConfirmation(false);
       setShowConfirm(false);
-    }, PENDING_DELAY_MS);
+    });
   };
 
   const cancelConfirm = () => {

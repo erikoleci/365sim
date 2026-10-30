@@ -13,7 +13,7 @@ interface Props {
   onCloseMobileSlip: () => void;
   onRemoveSelection: (key: string) => void;
   onClearAll: () => void;
-  onPlaceBet: (stake: number, type: 'SINGLE' | 'ACCUMULATOR', currency: 'ALL' | 'EUR') => void;
+  onPlaceBet: (stake: number, type: 'SINGLE' | 'ACCUMULATOR', currency: 'ALL' | 'EUR') => void | Promise<unknown>;
   onCancelBet: (betId: string, origin: 'USER' | 'ADMIN') => void;
   hasLiveSelection?: boolean;
 }

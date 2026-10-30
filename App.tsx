@@ -8,6 +8,7 @@ import Login from './components/Login';
 import CasinoHub from './components/CasinoHub';
 import BetSlipPanels from './components/sportsbook/BetSlipPanels';
 import SlipBlockedToast from './components/SlipBlockedToast';
+import BetAcceptedToast from './components/BetAcceptedToast';
 import SportsbookHome from './components/sportsbook/SportsbookHome';
 import SportsSidebar from './components/sportsbook/SportsSidebar';
 import { MatchRowActions } from './components/sportsbook/types';
@@ -253,6 +254,7 @@ const App: React.FC = () => {
         </main>
 
         <SlipBlockedToast list={slip.blockedNotice?.list ?? null} onDismiss={slip.dismissBlockedNotice} />
+        <BetAcceptedToast show={slip.betAccepted} onDismiss={slip.dismissBetAccepted} />
 
         {currentView === 'sports' && (
           <BetSlipPanels

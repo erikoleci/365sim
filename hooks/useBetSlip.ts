@@ -24,6 +24,13 @@ export function useBetSlip({ currentUser, setCurrentUser, onPlaced }: Options) {
 
   // Set when a pick is refused because it follows the same logic as a pick already on the slip.
   const [blockedNotice, setBlockedNotice] = useState<{ list: string } | null>(null);
+  // True for a few seconds after a ticket was booked ("Agjenti pranoi biletën tuaj").
+  const [betAccepted, setBetAccepted] = useState(false);
+  useEffect(() => {
+    if (!betAccepted) return;
+    const timer = setTimeout(() => setBetAccepted(false), 5000);
+    return () => clearTimeout(timer);
+  }, [betAccepted]);
   const selectionsRef = useRef<BetSelectionItem[]>([]);
   selectionsRef.current = selections;
   useEffect(() => {
@@ -81,14 +88,17 @@ export function useBetSlip({ currentUser, setCurrentUser, onPlaced }: Options) {
 
   const clearSelections = useCallback(() => setSelections([]), []);
 
-  const placeBet = useCallback(async (stake: number, type: 'SINGLE' | 'ACCUMULATOR', currency: 'ALL' | 'EUR' = 'ALL') => {
-    if (!currentUser || selections.length === 0) return;
+  const placeBet = useCallback(async (stake: number, type: 'SINGLE' | 'ACCUMULATOR', currency: 'ALL' | 'EUR' = 'ALL'): Promise<boolean> => {
+    if (!currentUser || selections.length === 0) return false;
     setBetError(null);
     try {
       const result = await api.placeBet(stake, type, selections, currency);
       setCurrentUser((prev) => (prev ? { ...prev, balance: result.balance, balanceEur: result.balanceEur } : prev));
       setSelections([]);
-      await onPlaced();
+      // The ticket is booked: tell the player the agent accepted it (see BetAcceptedToast).
+      setBetAccepted(true);
+      try { await onPlaced(); } catch { /* refreshing "my bets" must never turn a booked ticket into an error */ }
+      return true;
     } catch (e: any) {
       // The server re-verifies every price and market at placement time. Two answers leave the
       // ticket fixable, so the slip is updated instead of leaving a generic error:
@@ -107,8 +117,9 @@ export function useBetSlip({ currentUser, setCurrentUser, onPlaced }: Options) {
         setSelections((prev) => prev.filter((sel) => !closed.some((c) => sameLeg(c, sel))));
       }
       setBetError(e.message || 'Could not place bet');
+      return false;
     }
   }, [currentUser, selections, setCurrentUser, onPlaced]);
 
-  return { selections, selectedIds, betError, blockedNotice, dismissBlockedNotice: () => setBlockedNotice(null), toggleSelection, removeSelection, clearSelections, placeBet, reset: clearSelections };
+  return { selections, selectedIds, betError, blockedNotice, dismissBlockedNotice: () => setBlockedNotice(null), betAccepted, dismissBetAccepted: () => setBetAccepted(false), toggleSelection, removeSelection, clearSelections, placeBet, reset: clearSelections };
 }

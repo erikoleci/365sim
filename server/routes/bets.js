@@ -373,7 +373,13 @@ router.post('/', wrap(async (req, res) => {
   let risk = { level: 'NORMAL', hits: 0 };
   let policy = riskPolicy('NORMAL', LIVE_BET_DELAY_MS);
   if (verified.inPlay) {
-    risk = await getLiveRisk(pool, user.id);
+    // Risk detection is an extra safety net: if it fails (e.g. a column of migration 0015 is
+    // missing on this database) the ticket is still placed with the normal policy instead of a 503.
+    try {
+      risk = await getLiveRisk(pool, user.id);
+    } catch (err) {
+      console.error('[bets] live risk check failed, using NORMAL:', err && err.message);
+    }
     policy = riskPolicy(risk.level, LIVE_BET_DELAY_MS);
     const liveCap = LIVE_MAX_STAKE[currency] * policy.stakeFactor;
     if (liveCap > 0 && stake > liveCap) {
@@ -427,6 +433,7 @@ router.post('/', wrap(async (req, res) => {
   }
 
   const client = await pool.connect();
+  let committed = false;
   try {
     await client.query('BEGIN');
     // Re-check balance inside the transaction to close the race window
@@ -489,12 +496,21 @@ router.post('/', wrap(async (req, res) => {
       );
     }
     await client.query('COMMIT');
+    committed = true;
     // From now on price moves on these matches are worth recording in
-    // odds_history (see oddsHistoryPolicy.js).
-    noteBetOnMatches(verifiedSelections.map((s) => s.matchId));
+    // odds_history (see oddsHistoryPolicy.js). Best effort: the ticket is already booked.
+    try {
+      noteBetOnMatches(verifiedSelections.map((s) => s.matchId));
+    } catch (err) {
+      console.error('[bets] noteBetOnMatches failed:', err && err.message);
+    }
   } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
+    if (committed) {
+      console.error('[bets] error after COMMIT (ticket is booked):', err && err.message);
+    } else {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    }
   } finally {
     client.release();
   }
