@@ -18,8 +18,8 @@ interface BetSlipProps {
   hasLiveSelection?: boolean;
 }
 
-// Live tickets and lek tickets from this stake up wait a few seconds for "confirmation" before being placed.
-const PENDING_STAKE_THRESHOLD = 50000;
+// Live tickets and tickets from this stake up (per wallet) wait a few seconds for "confirmation" before being placed.
+const PENDING_STAKE_THRESHOLD = { ALL: 50000, EUR: 500 } as const; // 500 € ≈ 50,000 L
 const PENDING_DELAY_MS = 5000;
 
 // Limits per wallet: must match the constants in server/routes/bets.js
@@ -82,7 +82,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
     const betStake = parseFloat(stake);
     const betType = isAccumulator ? 'ACCUMULATOR' : 'SINGLE';
     const betCurrency = currency;
-    const needsPending = hasLiveSelection || (betCurrency === 'ALL' && betStake >= PENDING_STAKE_THRESHOLD);
+    const needsPending = hasLiveSelection || betStake >= PENDING_STAKE_THRESHOLD[betCurrency];
     if (!needsPending) {
       onPlaceBet(betStake, betType, betCurrency);
       setStake('');
