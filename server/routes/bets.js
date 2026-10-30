@@ -21,6 +21,16 @@ const LIVE_CORNER_LOCK_MS = Math.max(0, Number(process.env.LIVE_BET_CORNER_LOCK_
 const LIVE_CARD_LOCK_MS = Math.max(0, Number(process.env.LIVE_BET_CARD_LOCK_MS ?? 15000));
 const LIVE_EVENT_LOCK_MS = Math.max(0, Number(process.env.LIVE_BET_EVENT_LOCK_MS ?? 30000));
 const LIVE_BET_DELAY_MS = Math.max(0, Number(process.env.LIVE_BET_DELAY_MS ?? 5000));
+// High-stake tickets are held for the same delay and re-verified, even when prematch
+// (must match PENDING_STAKE_THRESHOLD in components/BetSlip.tsx).
+const HIGH_STAKE_DELAY = { ALL: Number(process.env.HIGH_STAKE_DELAY_ALL ?? 5000), EUR: Number(process.env.HIGH_STAKE_DELAY_EUR ?? 50) };
+// Anti-abuse for live betting (people who play live all the time trying to beat the feed delay):
+//  - a lower max stake on live tickets (0 = off)
+//  - a cap on how many live tickets one user can place per minute (0 = off)
+//  - a cap on live tickets per user on the same match per 10 minutes (0 = off)
+const LIVE_MAX_STAKE = { ALL: Number(process.env.LIVE_MAX_STAKE_ALL ?? 100000), EUR: Number(process.env.LIVE_MAX_STAKE_EUR ?? 1000) };
+const LIVE_MAX_TICKETS_PER_MIN = Math.max(0, Number(process.env.LIVE_MAX_TICKETS_PER_MIN ?? 6));
+const LIVE_MAX_TICKETS_PER_MATCH = Math.max(0, Number(process.env.LIVE_MAX_TICKETS_PER_MATCH ?? 8));
 
 // Markets other than 1X2 on a LIVE match come from the budgeted full-market refresh
 // (liveDetailPlan.js). If that refresh is older than this, the prices may be stale
@@ -356,7 +366,37 @@ router.post('/', wrap(async (req, res) => {
   // Live bet delay: when any leg is in play, hold the ticket for a few seconds and
   // verify everything again against the freshest data, so a goal/card/half-time that
   // happened while the player was clicking cannot slip through.
-  if (verified.inPlay && LIVE_BET_DELAY_MS > 0) {
+  if (verified.inPlay) {
+    const liveCap = LIVE_MAX_STAKE[currency];
+    if (liveCap > 0 && stake > liveCap) {
+      return res.status(400).json({
+        error: `Maximum stake on a live ticket is ${liveCap} ${currency === 'EUR' ? '€' : 'L'}.`,
+        code: 'LIVE_STAKE_LIMIT',
+      });
+    }
+    if (LIVE_MAX_TICKETS_PER_MIN > 0) {
+      const { rows: recent } = await pool.query(
+        'SELECT COUNT(*)::int AS n FROM bets WHERE user_id = $1 AND is_live = true AND created_at > $2',
+        [user.id, Date.now() - 60000],
+      );
+      if (recent[0].n >= LIVE_MAX_TICKETS_PER_MIN) {
+        return res.status(429).json({ error: 'Too many live tickets in a short time. Please wait a moment.', code: 'LIVE_RATE_LIMIT' });
+      }
+    }
+    if (LIVE_MAX_TICKETS_PER_MATCH > 0) {
+      const matchIds = [...new Set(selections.map((x) => String(x.matchId)))];
+      const { rows: perMatch } = await pool.query(
+        `SELECT COUNT(DISTINCT b.id)::int AS n FROM bets b JOIN bet_selections bs ON bs.bet_id = b.id
+         WHERE b.user_id = $1 AND b.is_live = true AND b.created_at > $2 AND bs.match_id = ANY($3::text[])`,
+        [user.id, Date.now() - 600000, matchIds],
+      ).catch(() => ({ rows: [{ n: 0 }] }));
+      if (perMatch[0].n >= LIVE_MAX_TICKETS_PER_MATCH) {
+        return res.status(429).json({ error: 'Too many live tickets on this match. Please wait.', code: 'LIVE_MATCH_LIMIT' });
+      }
+    }
+  }
+  const highStake = stake >= HIGH_STAKE_DELAY[currency];
+  if ((verified.inPlay || highStake) && LIVE_BET_DELAY_MS > 0) {
     await new Promise((r) => setTimeout(r, LIVE_BET_DELAY_MS));
     verified = await verifySelections();
     if (verified.fail) return res.status(verified.fail.status).json(verified.fail.body);
