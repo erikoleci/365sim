@@ -2,14 +2,24 @@ import express from 'express';
 import { randomUUID, randomInt } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
+import { getCasinoAccess, canOpenCasino } from '../casinoAccess.js';
+import { isSuperAdmin } from '../roles.js';
+import { normalizeCurrency, walletColumn } from '../ledger.js';
+import { SLOT_GAMES, getSlotGame, publicGame } from '../slots/games.js';
+import { playRound } from '../slots/engine.js';
 
 const router = express.Router();
-// Casino is disabled for now; set CASINO_ENABLED=true to re-enable once the games are rebuilt.
-router.use((req, res, next) => {
-  if (process.env.CASINO_ENABLED === 'true') return next();
-  return res.status(403).json({ error: 'Casino is temporarily disabled' });
-});
 router.use(requireAuth);
+// Who may open the casino is a switch of the super admin (casino_access): off / only the super admin / everybody.
+router.get('/access', async (req, res) => {
+  const mode = await getCasinoAccess();
+  res.json({ mode, allowed: canOpenCasino(mode, req.user.role) });
+});
+router.use(async (req, res, next) => {
+  const mode = await getCasinoAccess();
+  if (canOpenCasino(mode, req.user.role)) return next();
+  return res.status(403).json({ error: 'Casino is not available' });
+});
 
 // --- Shared house rules (kept simple & proportional to a play-money
 // simulator, not a full enterprise risk-limits system) ---
@@ -59,6 +69,69 @@ async function getBalance(userId) {
   const { rows } = await pool.query('SELECT balance FROM users WHERE id = $1', [userId]);
   return rows[0]?.balance ?? 0;
 }
+
+// =====================================================================
+// SLOT GAMES — 5x3 video slots, 10 lines, wild, scatter, free spins (see server/slots/)
+// The result is drawn on the server with the crypto RNG; the browser only shows it. Each game shows its real
+// RTP (~95%). The super admin plays in demo mode: nothing is debited or credited.
+// =====================================================================
+export const SLOT_STAKES = {
+  ALL: [10, 20, 50, 100, 200, 500, 1000, 2000, 5000],
+  EUR: [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50],
+};
+const MAX_WIN_MULTIPLIER = 2000; // one round never pays more than 2000x the stake
+const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+
+router.get('/slot-games', (req, res) => {
+  res.json({ games: SLOT_GAMES.map(publicGame), stakes: SLOT_STAKES, demo: isSuperAdmin(req.user.role) });
+});
+
+router.post('/slot-games/:id/spin', async (req, res) => {
+  const game = getSlotGame(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Game not found' });
+  const currency = normalizeCurrency(req.body?.currency);
+  const stake = req.body?.stake;
+  if (typeof stake !== 'number' || !SLOT_STAKES[currency].includes(stake)) return res.status(400).json({ error: 'Invalid stake' });
+
+  const draw = () => {
+    const r = playRound(game, (n) => randomInt(n));
+    const multiplier = Math.min(r.totalMultiplier, MAX_WIN_MULTIPLIER);
+    return {
+      spins: r.spins.map((sp) => ({ grid: sp.grid, wins: sp.wins, scatters: sp.scatters, free: sp.free, win: round2(sp.win * stake) })),
+      payout: round2(multiplier * stake),
+      freeSpins: r.spins.length - 1,
+    };
+  };
+
+  // Super admin: demo round, no wallet involved.
+  if (isSuperAdmin(req.user.role)) return res.json({ ...draw(), demo: true });
+
+  const col = walletColumn(currency);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(`SELECT ${col} AS bal FROM users WHERE id = $1 FOR UPDATE`, [req.user.id]);
+    if (!rows[0] || Number(rows[0].bal) < stake) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Insufficient balance' });
+    }
+    const round = draw();
+    await client.query(`UPDATE users SET ${col} = ${col} - $1 + $2 WHERE id = $3`, [stake, round.payout, req.user.id]);
+    await client.query(
+      `INSERT INTO casino_rounds (id, user_id, game, currency, stake, payout, free_spins, status, created_at, resolved_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'FINISHED',$8,$8)`,
+      [randomUUID(), req.user.id, game.id, currency, stake, round.payout, round.freeSpins, Date.now()]
+    );
+    const { rows: bal } = await client.query('SELECT balance, balance_eur FROM users WHERE id = $1', [req.user.id]);
+    await client.query('COMMIT');
+    res.json({ ...round, demo: false, balance: Number(bal[0].balance), balanceEur: Number(bal[0].balance_eur) });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
 
 // =====================================================================
 // SLOTS — single-shot

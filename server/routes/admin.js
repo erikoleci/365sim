@@ -18,6 +18,7 @@ import { mapEventToMatch } from '../oddsUtils.js';
 
 import { transferBalance, transferBalances, amountParts, readWallet, walletColumn } from '../ledger.js';
 import { getTicketDeletionAllowed, setTicketDeletionAllowed } from '../appSettings.js';
+import { getCasinoAccess, setCasinoAccess, CASINO_MODES } from '../casinoAccess.js';
 import { isAdminRole, isSuperAdmin, ROLE_ADMIN } from '../roles.js';
 import { scopeOf, ownsRow } from '../adminScope.js';
 import { importLondon365, getLondon365Status, getLondon365CountryDebug } from '../london365.js';
@@ -1148,7 +1149,22 @@ router.get('/dashboard/kpi', async (req, res) => {
 // Switch: may normal admins delete tickets? Everybody reads it (the panel hides the button), only the super
 // admin changes it.
 router.get('/settings', async (req, res) => {
-  res.json({ ticketDeletionAllowed: await getTicketDeletionAllowed() });
+  res.json({ ticketDeletionAllowed: await getTicketDeletionAllowed(), casinoAccess: await getCasinoAccess() });
+});
+// Super admin: who may open the casino (off / only the super admin / everybody) + what was played.
+router.put('/settings/casino-access', requireSuperAdmin, async (req, res) => {
+  const { mode } = req.body || {};
+  if (!CASINO_MODES.includes(mode)) return res.status(400).json({ error: 'mode must be off, super or all' });
+  await setCasinoAccess(mode);
+  await logAudit(req.user, 'SETTING_CASINO_ACCESS', null, { mode });
+  res.json({ casinoAccess: mode });
+});
+router.get('/casino/report', requireSuperAdmin, async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT game, currency, COUNT(*)::int AS rounds, COALESCE(SUM(stake),0) AS staked, COALESCE(SUM(payout),0) AS paid
+     FROM casino_rounds GROUP BY game, currency ORDER BY game, currency`
+  );
+  res.json({ rows: rows.map((r) => ({ game: r.game, currency: r.currency, rounds: r.rounds, staked: Number(r.staked), paid: Number(r.paid), houseResult: Number(r.staked) - Number(r.paid) })) });
 });
 router.put('/settings/ticket-deletion', requireSuperAdmin, async (req, res) => {
   const { allowed } = req.body || {};

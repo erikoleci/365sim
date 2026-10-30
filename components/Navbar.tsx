@@ -3,13 +3,13 @@ import React from 'react';
 import { User, UserRole } from '../types';
 import { useI18n } from '../i18n';
 import LanguageSwitcher from './LanguageSwitcher';
-import { CASINO_ENABLED } from '../utils/features';
 
 interface NavbarProps {
   currentUser: User;
   onLogout: () => void;
   onOpenAdmin: () => void;
   currentView: 'sports' | 'casino';
+  casinoEnabled?: boolean;
   onNavigate: (view: 'sports' | 'casino') => void;
   onGoHome: () => void;
   onGoLive: () => void;
@@ -22,7 +22,7 @@ interface NavbarProps {
   onOpenMenu?: () => void;
 }
 
-const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, currentView, onNavigate, onGoHome, onGoLive, onGoResults, onGoSoccer, activeTab, liveCount, resultsCount, onOpenMenu }) => {
+const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, currentView, casinoEnabled = false, onNavigate, onGoHome, onGoLive, onGoResults, onGoSoccer, activeTab, liveCount, resultsCount, onOpenMenu }) => {
   const { t } = useI18n();
   return (
     <nav className="bg-brand-header text-brand-text text-sm sticky top-0 z-50 shadow-md flex flex-col">
@@ -45,7 +45,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
             >
                 SPORTS
             </span>
-            {CASINO_ENABLED && (
+            {casinoEnabled && (
             <span 
                 onClick={() => onNavigate('casino')}
                 className={`cursor-pointer transition-opacity ${currentView === 'casino' ? 'text-white opacity-100 font-bold border-b-2 border-brand-yellow' : 'hover:text-white opacity-70'}`}
@@ -99,7 +99,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentUser, onLogout, onOpenAdmin, cur
              </button>
            )}
            <span onClick={() => onNavigate('sports')} className={currentView === 'sports' ? 'text-white' : 'text-brand-text/60'}>SPORTS</span>
-           {CASINO_ENABLED && <span onClick={() => onNavigate('casino')} className={currentView === 'casino' ? 'text-white' : 'text-brand-text/60'}>CASINO</span>}
+           {casinoEnabled && <span onClick={() => onNavigate('casino')} className={currentView === 'casino' ? 'text-white' : 'text-brand-text/60'}>CASINO</span>}
            <span className="w-px h-4 bg-brand-divider" aria-hidden="true" />
          </div>
          {currentView === 'sports' ? (

@@ -26,7 +26,6 @@ import { useBetSlip } from './hooks/useBetSlip';
 import { useMyBets } from './hooks/useMyBets';
 import { useAdminActions } from './hooks/useAdminActions';
 import { useDismissOnOutsideClick } from './hooks/useDismissOnOutsideClick';
-import { CASINO_ENABLED } from './utils/features';
 
 const ROW_SLICE = 60; // match rows drawn per step of the "load more" list
 
@@ -67,6 +66,11 @@ const App: React.FC = () => {
     onPlaced: useCallback(async () => { nav.setIsMobileSlipOpen(false); await loadMyBets(); }, [nav.setIsMobileSlipOpen, loadMyBets]),
   });
 
+  const [casinoAllowed, setCasinoAllowed] = useState(false);
+  useEffect(() => {
+    if (!currentUser || isAdminRole(currentUser.role)) { setCasinoAllowed(false); return; }
+    api.casinoAccess().then((r) => setCasinoAllowed(r.allowed)).catch(() => setCasinoAllowed(false));
+  }, [currentUser?.id, currentUser?.role]);
   const applyBalance = useCallback((balance: number, balanceEur?: number) => setCurrentUser((u) => withBalance(u, balance, balanceEur)), [setCurrentUser]);
   const admin = useAdminActions({
     currentUser,
@@ -158,6 +162,7 @@ const App: React.FC = () => {
         onLogout={handleLogout}
         onOpenAdmin={() => setShowAdmin(!showAdmin)}
         currentView={currentView}
+        casinoEnabled={casinoAllowed}
         onNavigate={setCurrentView}
         activeTab={activeTab}
         onGoHome={goHome}
@@ -191,8 +196,8 @@ const App: React.FC = () => {
         <main ref={mainRef} className="flex-1 min-w-0 mb-20 md:mb-0">
           {showAdmin && currentUser.role === UserRole.AGENT ? (
             <AgentUsersPanel currentUser={currentUser} onBalanceChanged={applyBalance} />
-          ) : CASINO_ENABLED && currentView === 'casino' ? (
-            <CasinoHub userBalance={currentUser.balance} onSetBalance={applyBalance} />
+          ) : casinoAllowed && currentView === 'casino' ? (
+            <CasinoHub userBalance={currentUser.balance} userBalanceEur={currentUser.balanceEur ?? 0} onSetBalance={applyBalance} />
           ) : detailMatch ? (
             <MatchDetail
               // A full remount when the viewed match changes: otherwise the ticking clocks of

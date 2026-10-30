@@ -5,6 +5,7 @@ import AdminPanel from './AdminPanel';
 import VcCodesPanel from './VcCodesPanel';
 import HierarchyPanel from './HierarchyPanel';
 import CommissionReport from './CommissionReport';
+import CasinoAdmin from './CasinoAdmin';
 import { useI18n, getLocale } from '../i18n';
 
 interface OwnerDashboardProps {
@@ -33,7 +34,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
 }) => {
   const { t } = useI18n();
   const isSuper = currentUser.role === 'SUPER_ADMIN';
-  const [tab, setTab] = useState<'reports' | 'admins' | 'hierarchy' | 'monthly' | 'manage' | 'vc' | 'commission'>('reports');
+  const [tab, setTab] = useState<'reports' | 'admins' | 'hierarchy' | 'monthly' | 'manage' | 'vc' | 'commission' | 'casino'>('reports');
   // Super admin only: what every admin did, and the tickets of the admin he opened.
   const [adminsReport, setAdminsReport] = useState<api.AdminsReport | null>(null);
   const [openAdminId, setOpenAdminId] = useState<string | null>(null);
@@ -159,13 +160,13 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
       </header>
 
       <nav className="flex gap-1 px-4 pt-3 border-b border-[#333]">
-        {(isSuper ? ['reports', 'admins', 'hierarchy', 'commission', 'monthly', 'manage', 'vc'] as const : ['reports', 'commission', 'monthly', 'manage'] as const).map((tabKey) => (
+        {(isSuper ? ['reports', 'admins', 'hierarchy', 'commission', 'monthly', 'manage', 'vc', 'casino'] as const : ['reports', 'commission', 'monthly', 'manage'] as const).map((tabKey) => (
           <button
             key={tabKey}
             onClick={() => setTab(tabKey)}
             className={`px-4 py-2 text-sm font-bold rounded-t uppercase tracking-wide ${tab === tabKey ? 'bg-brand-panel text-brand-yellow border border-b-0 border-[#444]' : 'text-brand-textMuted hover:text-white'}`}
           >
-            {tabKey === 'reports' ? t('Raporte') : tabKey === 'admins' ? t('Adminët') : tabKey === 'hierarchy' ? t('Struktura') : tabKey === 'commission' ? t('Komisioni') : tabKey === 'monthly' ? t('Raporti Mujor') : tabKey === 'vc' ? t('Kodet live') : t('Menaxho')}
+            {tabKey === 'reports' ? t('Raporte') : tabKey === 'admins' ? t('Adminët') : tabKey === 'hierarchy' ? t('Struktura') : tabKey === 'commission' ? t('Komisioni') : tabKey === 'monthly' ? t('Raporti Mujor') : tabKey === 'vc' ? t('Kodet live') : tabKey === 'casino' ? 'Casino' : t('Menaxho')}
           </button>
         ))}
       </nav>
@@ -406,6 +407,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
 
         {tab === 'commission' && <CommissionReport scope="owner" />}
         {tab === 'vc' && isSuper && <VcCodesPanel />}
+        {tab === 'casino' && isSuper && <CasinoAdmin />}
         {tab === 'hierarchy' && isSuper && <HierarchyPanel />}
 
         {tab === 'monthly' && (

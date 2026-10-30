@@ -5,13 +5,15 @@ import Roulette from './casino/Roulette';
 import VideoPoker from './casino/VideoPoker';
 import Baccarat from './casino/Baccarat';
 import Crash from './casino/Crash';
+import SlotGames from './casino/SlotGames';
 
 interface CasinoHubProps {
   userBalance: number;
-  onSetBalance: (balance: number) => void;
+  userBalanceEur?: number;
+  onSetBalance: (balance: number, balanceEur?: number) => void;
 }
 
-const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, onSetBalance }) => {
+const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, onSetBalance }) => {
   const [activeGame, setActiveGame] = useState<'slots' | 'blackjack' | 'roulette' | 'poker' | 'baccarat' | 'crash' | null>(null);
 
   if (activeGame === 'slots') return <SlotMachine userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
@@ -34,6 +36,12 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, onSetBalance }) => {
           </div>
           <div className="absolute right-0 top-0 h-full w-1/2 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
       </div>
+
+      <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+          <span className="w-1 h-6 bg-brand-yellow rounded-full"></span>
+          Slots
+      </h3>
+      <div className="mb-10"><SlotGames balance={userBalance} balanceEur={userBalanceEur} onBalances={onSetBalance} /></div>
 
       <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
           <span className="w-1 h-6 bg-brand-yellow rounded-full"></span>
