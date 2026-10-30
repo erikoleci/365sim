@@ -150,6 +150,11 @@ export async function fetchMatchById(id: string): Promise<Match> {
   return match;
 }
 
+// Only the matches in play, small and fast: fetched first when a tab opens or returns (see useMatchesFeed.loadLive).
+export async function fetchLiveMatches(): Promise<{ matches: Match[] }> {
+  return request('/matches/live');
+}
+
 // Only the matches that changed since the last look (see server/matchChanges.js). since < 0 = just learn the position.
 export async function fetchMatchChanges(since: number, boot: string): Promise<{ boot: string; seq: number; full: boolean; matches: Match[] }> {
   return request(`/matches/changes?since=${since}&boot=${encodeURIComponent(boot)}`);

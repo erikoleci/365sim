@@ -398,6 +398,7 @@ router.post('/', wrap(async (req, res) => {
   return { totalOdds, verifiedSelections, inPlay, isLiveTicket };
   };
 
+  const betStartedAt = Date.now();
   let verified = await verifySelections();
   if (verified.fail) return res.status(verified.fail.status).json(verified.fail.body);
   // Live bet delay: when any leg is in play, hold the ticket for a few seconds and
@@ -445,7 +446,9 @@ router.post('/', wrap(async (req, res) => {
   const highStake = stake >= HIGH_STAKE_DELAY[currency];
   if ((verified.inPlay || highStake) && policy.delayMs > 0) {
     const firstPass = verified;
-    await new Promise((r) => setTimeout(r, policy.delayMs));
+    // The delay counts from the moment the request arrived: the first verification and the risk checks are part of it,
+    // so the player waits the delay itself (about 5 s), not the delay PLUS the work done before it.
+    await new Promise((r) => setTimeout(r, Math.max(0, policy.delayMs - (Date.now() - betStartedAt))));
     // Second look at the freshest data. A small price drop is accepted, a big one asks the player again.
     verified = await verifySelections(LIVE_REPRICE_TOLERANCE);
     if (verified.fail) return res.status(verified.fail.status).json(verified.fail.body);

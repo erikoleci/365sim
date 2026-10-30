@@ -22,8 +22,8 @@ export function classify(total, hits) {
 
 // What each level changes. delayMs is a floor for the live delay, stakeFactor scales the live max stake.
 export function riskPolicy(level, baseDelayMs) {
-  if (level === 'RESTRICTED') return { delayMs: Math.max(baseDelayMs, 15000), stakeFactor: 0.25 };
-  if (level === 'WATCH') return { delayMs: Math.max(baseDelayMs, 10000), stakeFactor: 0.5 };
+  if (level === 'RESTRICTED') return { delayMs: Math.max(baseDelayMs, 7000), stakeFactor: 0.25 };
+  if (level === 'WATCH') return { delayMs: Math.max(baseDelayMs, 6000), stakeFactor: 0.5 };
   return { delayMs: baseDelayMs, stakeFactor: 1 };
 }
 

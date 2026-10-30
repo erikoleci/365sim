@@ -221,6 +221,19 @@ setInterval(() => {
   try { Promise.resolve(ensureLondon365Import()).catch(() => {}); } catch { /* the throttle reports its own problems */ }
 }, 30000).unref?.();
 
+// Only the matches in play (a few dozen rows, 1X2 only): what the browser asks for FIRST when a tab is opened or
+// comes back, so minutes, scores and live odds are current in a fraction of a second instead of after the full list.
+router.get('/live', wrap(async (_req, res) => {
+  const { rows } = await queryWithRetry(
+    `SELECT ${MATCH_COLUMNS_LIST} FROM matches_cache WHERE status = 'LIVE' OR live_status IS NOT NULL`
+  );
+  const matches = [];
+  for (const r of rows) {
+    try { matches.push(mapEventToMatch(r)); } catch (err) { console.error(`[matches] skipped unreadable live row ${r && r.id}: ${err && err.message}`); }
+  }
+  res.json({ matches: dedupeMatches(matches, logMerge) });
+}));
+
 router.get('/live-health', wrap(async (_req, res) => {
   const { rows } = await queryWithRetry(
     `SELECT id, live_minute, live_minute_updated_at, live_home_score, live_away_score

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Match } from '../types';
+import { Match, MatchStatus } from '../types';
 import * as api from '../services/api';
 import { isGhostLiveMatch, isStaleLiveMatch } from '../utils/liveStatus';
 
@@ -71,6 +71,26 @@ export function useMatchesFeed(enabled: boolean, sessionKey: string | null) {
     }
   }, [enabled]);
 
+  // Fast path for a tab that was closed/hidden: the cached list holds old minutes and scores, and the full list
+  // is big. This asks only for the matches in play and puts them over the cached rows right away.
+  const loadLive = useCallback(async () => {
+    if (!enabled) return;
+    try {
+      const { matches: live } = await api.fetchLiveMatches();
+      const liveIds = new Set(live.map((m) => m.id));
+      setMatches((current) => {
+        const byId = new Map(live.map((m) => [m.id, m]));
+        const known = new Set(current.map((m) => m.id));
+        // A cached row still marked LIVE that the server no longer lists as live is old: drop it.
+        const merged = current
+          .filter((m) => m.status !== MatchStatus.LIVE || liveIds.has(m.id))
+          .map((m) => byId.get(m.id) ?? m);
+        for (const m of live) if (!known.has(m.id)) merged.push(m);
+        return merged;
+      });
+    } catch { /* the full load below is the fallback */ }
+  }, [enabled]);
+
   // The retry timer calls the NEWEST loadMatches (not the one from the render that set it).
   const loadMatchesRef = useRef(loadMatches);
   useEffect(() => { loadMatchesRef.current = loadMatches; }, [loadMatches]);
@@ -78,6 +98,7 @@ export function useMatchesFeed(enabled: boolean, sessionKey: string | null) {
   useEffect(() => () => { if (retryTimerRef.current) clearTimeout(retryTimerRef.current); }, []);
 
   useEffect(() => {
+    loadLive(); // in parallel with the full load: live data shows first
     loadMatches();
     const interval = setInterval(loadMatches, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
@@ -90,5 +111,5 @@ export function useMatchesFeed(enabled: boolean, sessionKey: string | null) {
     hasLoadedOnceRef.current = false;
   }, []);
 
-  return { matches, setMatches, leagueNames, leagueMeta, isLoading, loadError, loadMatches, reset };
+  return { matches, setMatches, leagueNames, leagueMeta, isLoading, loadError, loadMatches, loadLive, reset };
 }

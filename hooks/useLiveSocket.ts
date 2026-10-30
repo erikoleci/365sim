@@ -17,6 +17,8 @@ interface Options {
   setDetailMatchFull: SetDetail;
   /** Re-download the match list (used for events the socket cannot patch in place). */
   reloadMatches: () => void;
+  /** Fast refresh of only the matches in play (minutes, scores, live odds). */
+  reloadLive?: () => void;
   /** The current list: the watchdog needs it to spot a live clock that stopped moving. */
   matches?: Match[];
   /** A match ended: the tickets on it are being settled right now, so reload the user's tickets. */
@@ -52,7 +54,7 @@ const withScoreAndClock = (m: Match, msg: any): Match => ({
  * price moves are patched into the match list in place. Reconnects with exponential backoff.
  * The slow REST refresh in useMatchesFeed is only a safety net for a missed message.
  */
-export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadMatches, matches, onMatchEnded }: Options) {
+export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadMatches, reloadLive, matches, onMatchEnded }: Options) {
   const onMatchEndedRef = useRef(onMatchEnded);
   onMatchEndedRef.current = onMatchEnded;
   const matchesRef = useRef<Match[]>(matches ?? []);
@@ -259,6 +261,7 @@ export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadM
       const away = needsFullResync(hiddenSince, now);
       hiddenSince = null;
       if (away || socketLooksDead(socket?.readyState, lastMessageAt, now, hasLiveMatches(matchesRef.current))) reconnectNow();
+      reloadLive?.(); // minutes/scores/odds first, the full reload follows
       reload(away ? 0 : RESUME_RELOAD_MIN_GAP_MS);
     };
     document.addEventListener('visibilitychange', resume);
@@ -277,6 +280,7 @@ export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadM
         reconnectNow();
         reload(RESUME_RELOAD_MIN_GAP_MS);
       } else if (anyLiveClockStale(list, now)) {
+        reloadLive?.();
         reload(STALE_CLOCK_RELOAD_GAP_MS);
       }
     }, WATCHDOG_INTERVAL_MS);
@@ -293,5 +297,5 @@ export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadM
       if (tickTimer) clearTimeout(tickTimer);
       socket?.close();
     };
-  }, [enabled, setMatches, setDetailMatchFull, reloadMatches]);
+  }, [enabled, setMatches, setDetailMatchFull, reloadMatches, reloadLive]);
 }
