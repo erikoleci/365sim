@@ -7,6 +7,7 @@ import { getBetBlockReason, describeBlockReason, nextEventKind, eventOrderOrdina
 import { readNextEventCounters, readLiveCorners, readLiveCards } from '../matchSettlement.js';
 import { findCorrelatedSelections } from '../ticketCorrelation.js';
 import { findConflictingSelection, validateStakeAmount, getCancelBlockReason, isLiveEventLocked } from '../betValidation.js';
+import { getLiveRisk, riskPolicy } from '../liveRisk.js';
 import { getLiveDetailAgeMs, isLiveDetailStale } from '../liveDetailPlan.js';
 import { wrap } from '../asyncHandler.js';
 import { noteBetOnMatches } from '../oddsHistoryPolicy.js';
@@ -20,6 +21,9 @@ const LIVE_CORNER_LOCK_MS = Math.max(0, Number(process.env.LIVE_BET_CORNER_LOCK_
 // by the provider right after each card, so betting on them pauses briefly after any card.
 const LIVE_CARD_LOCK_MS = Math.max(0, Number(process.env.LIVE_BET_CARD_LOCK_MS ?? 15000));
 const LIVE_EVENT_LOCK_MS = Math.max(0, Number(process.env.LIVE_BET_EVENT_LOCK_MS ?? 30000));
+// After the delay the ticket is booked at the WORSE of the price seen before and after the delay.
+// If the price fell by more than this share the ticket is not booked: the player must re-confirm the new price.
+const LIVE_REPRICE_TOLERANCE = Math.max(0, Number(process.env.LIVE_REPRICE_TOLERANCE ?? 0.10));
 const LIVE_BET_DELAY_MS = Math.max(0, Number(process.env.LIVE_BET_DELAY_MS ?? 5000));
 // High-stake tickets are held for the same delay and re-verified, even when prematch
 // (must match PENDING_STAKE_THRESHOLD in components/BetSlip.tsx).
@@ -169,7 +173,7 @@ router.post('/', wrap(async (req, res) => {
   // trusting the client, and reject if odds moved unfavorably beyond
   // tolerance (odds protection) instead of silently booking a worse price.
   const fail = (status, body) => ({ fail: { status, body } });
-  const verifySelections = async () => {
+  const verifySelections = async (tolerance = ODDS_WORSENING_TOLERANCE) => {
   let totalOdds = 1;
   let inPlay = false;
   const verifiedSelections = [];
@@ -321,7 +325,7 @@ router.post('/', wrap(async (req, res) => {
       }
       currentOdds = Number((currentOdds * BOOST_MULTIPLIER).toFixed(2));
     }
-    if (typeof sel.odds === 'number' && currentOdds < sel.odds * (1 - ODDS_WORSENING_TOLERANCE)) {
+    if (typeof sel.odds === 'number' && currentOdds < sel.odds * (1 - tolerance)) {
       oddsChanges.push({
         matchId: sel.matchId,
         marketId: sel.marketId,
@@ -366,8 +370,12 @@ router.post('/', wrap(async (req, res) => {
   // Live bet delay: when any leg is in play, hold the ticket for a few seconds and
   // verify everything again against the freshest data, so a goal/card/half-time that
   // happened while the player was clicking cannot slip through.
+  let risk = { level: 'NORMAL', hits: 0 };
+  let policy = riskPolicy('NORMAL', LIVE_BET_DELAY_MS);
   if (verified.inPlay) {
-    const liveCap = LIVE_MAX_STAKE[currency];
+    risk = await getLiveRisk(pool, user.id);
+    policy = riskPolicy(risk.level, LIVE_BET_DELAY_MS);
+    const liveCap = LIVE_MAX_STAKE[currency] * policy.stakeFactor;
     if (liveCap > 0 && stake > liveCap) {
       return res.status(400).json({
         error: `Maximum stake on a live ticket is ${liveCap} ${currency === 'EUR' ? '€' : 'L'}.`,
@@ -396,10 +404,18 @@ router.post('/', wrap(async (req, res) => {
     }
   }
   const highStake = stake >= HIGH_STAKE_DELAY[currency];
-  if ((verified.inPlay || highStake) && LIVE_BET_DELAY_MS > 0) {
-    await new Promise((r) => setTimeout(r, LIVE_BET_DELAY_MS));
-    verified = await verifySelections();
+  if ((verified.inPlay || highStake) && policy.delayMs > 0) {
+    const firstPass = verified;
+    await new Promise((r) => setTimeout(r, policy.delayMs));
+    // Second look at the freshest data. A small price drop is accepted, a big one asks the player again.
+    verified = await verifySelections(LIVE_REPRICE_TOLERANCE);
     if (verified.fail) return res.status(verified.fail.status).json(verified.fail.body);
+    // Book every leg at the worse of: price before the delay, price after the delay.
+    const repriced = verified.verifiedSelections.map((leg, i) => {
+      const before = firstPass.verifiedSelections[i]?.odds;
+      return typeof before === 'number' && before < leg.odds ? { ...leg, odds: before } : leg;
+    });
+    verified = { ...verified, verifiedSelections: repriced, totalOdds: repriced.reduce((acc, leg) => acc * leg.odds, 1) };
   }
   const { totalOdds, verifiedSelections } = verified;
 
