@@ -91,12 +91,15 @@ export function minuteOf(raw) {
 // Wall-clock limits (minutes since kickoff). The first half, even with long
 // stoppage time, is over well before 60 minutes of real time have passed. With
 // no live data at all, 50 minutes after kickoff is already past it.
-const FIRST_HALF_MAX_WALL_MIN = 60;
+// First-half stoppage time is unbounded (+6, +15, +20 happen), so the GAME clock never ends the
+// first half: only the break itself does (the provider's half-time signal). The wall clock stays
+// as a backstop for a missed signal: even a first half with +20 ends ~70 real minutes after kickoff.
+export const FIRST_HALF_MAX_WALL_MIN = 80;
 const FIRST_HALF_NO_DATA_WALL_MIN = 50;
 
 // Has the first half of this match (a matches_cache row) already ended?
-// Never relies on a single signal: the live status, the clock minute and the
-// wall clock all count, so a stuck feed cannot keep first-half markets open.
+// Decided by the half-time signal (status HT / 2H..., or the captured half-time score), never by
+// the game clock -- "46:10" is still the first half when the referee added 6 minutes.
 export function isPastFirstHalf(row, now = Date.now()) {
   if (!row) return false;
   const kickoff = Date.parse(row.start_time);
@@ -104,8 +107,10 @@ export function isPastFirstHalf(row, now = Date.now()) {
   if (row.status === 'FINISHED') return true;
   const raw = String(row.live_status ?? '').toUpperCase().trim();
   if (PAST_FIRST_HALF_STATUSES.has(raw)) return true;
+  // The REST sync can overwrite the status with a numeric code nobody can read; the half-time
+  // score captured at the whistle (from the websocket's HT signal) still tells the break happened.
+  if (row.ht_home != null) return true;
   const minute = minuteOf(row.live_minute);
-  if (minute != null && minute >= 46) return true;
   const elapsedMin = (now - kickoff) / 60000;
   if (elapsedMin >= FIRST_HALF_MAX_WALL_MIN) return true;
   if (!raw && minute == null && elapsedMin >= FIRST_HALF_NO_DATA_WALL_MIN) return true;

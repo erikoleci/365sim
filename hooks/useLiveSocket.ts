@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Match, MatchStatus } from '../types';
 import * as api from '../services/api';
-import { isMessageForMatch } from '../utils/liveStatus';
+import { isMessageForMatch, noteServerTime, serverNowStamp } from '../utils/liveStatus';
 import { OddsChange, patchMarketsOdds } from '../utils/matchPatches';
 import {
   RESUME_RELOAD_MIN_GAP_MS, STALE_CLOCK_RELOAD_GAP_MS, WATCHDOG_INTERVAL_MS,
@@ -46,7 +46,7 @@ const withScoreAndClock = (m: Match, msg: any): Match => ({
   liveHomeScore: msg.homeScore ?? m.liveHomeScore,
   liveAwayScore: msg.awayScore ?? m.liveAwayScore,
   currentMinute: msg.minute ?? m.currentMinute,
-  currentMinuteUpdatedAt: msg.minute != null ? (msg.minuteUpdatedAt ?? Date.now()) : m.currentMinuteUpdatedAt,
+  currentMinuteUpdatedAt: msg.minute != null ? (msg.minuteUpdatedAt ?? serverNowStamp()) : m.currentMinuteUpdatedAt,
 });
 
 /**
@@ -85,7 +85,7 @@ export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadM
           liveHomeScore: tick.homeScore ?? m.liveHomeScore,
           liveAwayScore: tick.awayScore ?? m.liveAwayScore,
           currentMinute: tick.minute ?? m.currentMinute,
-          currentMinuteUpdatedAt: tick.minute != null ? (tick.minuteUpdatedAt ?? Date.now()) : m.currentMinuteUpdatedAt,
+          currentMinuteUpdatedAt: tick.minute != null ? (tick.minuteUpdatedAt ?? serverNowStamp()) : m.currentMinuteUpdatedAt,
           liveAction: tick.hasAction ? tick.action : m.liveAction,
           // HT / 1H / 2H from the tick: the clock stops at half time and runs again the moment the
           // second half starts, without waiting for the list refresh.
@@ -98,7 +98,7 @@ export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadM
       const acc = tickBuffer.get(msg.matchId) || {};
       if (msg.homeScore != null) acc.homeScore = msg.homeScore;
       if (msg.awayScore != null) acc.awayScore = msg.awayScore;
-      if (msg.minute != null) { acc.minute = msg.minute; acc.minuteUpdatedAt = msg.minuteUpdatedAt ?? Date.now(); }
+      if (msg.minute != null) { acc.minute = msg.minute; acc.minuteUpdatedAt = msg.minuteUpdatedAt ?? serverNowStamp(); }
       if (msg.action !== undefined) { acc.action = msg.action; acc.hasAction = true; }
       if (msg.liveStatus !== undefined) acc.liveStatus = msg.liveStatus;
       tickBuffer.set(msg.matchId, acc);
@@ -154,6 +154,9 @@ export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadM
     };
 
     const handleMessage = (msg: any) => {
+      // Server time on the frame: keeps the seconds of the match clock in step with the server even
+      // when this device's own clock is off.
+      if (msg.serverNow != null) noteServerTime(msg.serverNow);
       // One frame with the newest tick of many matches (server-side coalescing).
       if (msg.type === 'LIVE_TICKS' && Array.isArray(msg.ticks)) {
         for (const tick of msg.ticks) if (tick && tick.matchId) queueTick(tick);

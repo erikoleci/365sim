@@ -1,7 +1,7 @@
 import React from 'react';
 import { Match, MatchStatus } from '../types';
 import { formatMatchTime, formatMatchDayMonth, isSameAlbaniaDay, albaniaTodayKey } from '../utils/albaniaTime';
-import { isHalftime, liveMinuteFallback, isLiveClockStale, formatScore } from '../utils/liveStatus';
+import { isHalftime, liveMinuteFallback, isLiveClockStale, formatScore, serverToLocal } from '../utils/liveStatus';
 import { useI18n } from '../i18n';
 import TeamLogo from './TeamLogo';
 
@@ -35,7 +35,7 @@ const MAX_CLOCK_STAMP_AGE_MS = 3 * 60 * 60 * 1000;
 // period it belongs to (see projectionLimitSeconds).
 export const MAX_PROJECTION_SECONDS = 15 * 60;
 // How far beyond the nominal end of a period a running clock may go (stoppage time) before it holds.
-const FIRST_HALF_CEILING_SECONDS = 55 * 60;   // 45' + up to 10' of stoppage
+const FIRST_HALF_CEILING_SECONDS = 75 * 60;   // 45' + up to 30' of stoppage (+15, +20 happen)
 const SECOND_HALF_CEILING_SECONDS = 105 * 60; // 90' + up to 15' of stoppage
 const LATE_CEILING_SECONDS = 125 * 60;
 // Once the last reading is already in stoppage time (>= 90:00) the match is about to end, and a feed
@@ -116,8 +116,10 @@ export function projectClock(totalSecondsAtReceivedAt: number, receivedAt: numbe
 // match's running clock (rows imported days before kickoff used to carry their
 // import time), so it is ignored instead of producing a clock like "11081:42".
 export function clockReceivedAt(serverUpdatedAt: number | undefined, now: number): number {
-  const ok = serverUpdatedAt != null && serverUpdatedAt <= now && now - serverUpdatedAt < MAX_CLOCK_STAMP_AGE_MS;
-  return ok ? (serverUpdatedAt as number) : now;
+  // The stamp is in SERVER time: move it onto this device's clock first (see noteServerTime).
+  const local = serverUpdatedAt != null ? serverToLocal(serverUpdatedAt) : undefined;
+  const ok = local != null && local <= now && now - local < MAX_CLOCK_STAMP_AGE_MS;
+  return ok ? (local as number) : now;
 }
 
 export function useTickingClock(

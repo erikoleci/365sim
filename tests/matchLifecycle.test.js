@@ -157,11 +157,18 @@ describe('isPastFirstHalf', () => {
     }
     expect(isPastFirstHalf(live({ status: 'FINISHED' }), NOW)).toBe(true);
   });
-  it('is true once the clock passes minute 45', () => {
-    expect(isPastFirstHalf(live({ live_minute: '46:10', start_time: minutesAgo(65) }), NOW)).toBe(true);
+  it('the game clock never ends the first half: stoppage time of +6, +15, +20 stays open until the break', () => {
+    expect(isPastFirstHalf(live({ live_minute: '46:10', start_time: minutesAgo(52) }), NOW)).toBe(false);
+    expect(isPastFirstHalf(live({ live_minute: '52:30', start_time: minutesAgo(58) }), NOW)).toBe(false);
+    expect(isPastFirstHalf(live({ live_minute: '63:00', start_time: minutesAgo(68) }), NOW)).toBe(false);
+    expect(isPastFirstHalf(live({ live_status: 'LIVE', live_minute: '47:00', start_time: minutesAgo(53) }), NOW)).toBe(false);
   });
-  it('does not trust a stuck "1H": 60+ minutes of real time is always past the first half', () => {
-    expect(isPastFirstHalf(live({ live_minute: '38:00', start_time: minutesAgo(75) }), NOW)).toBe(true);
+  it('is true as soon as the break is signalled, even if the status was overwritten by a numeric code', () => {
+    expect(isPastFirstHalf(live({ live_status: 'HT', live_minute: '46:59', start_time: minutesAgo(55) }), NOW)).toBe(true);
+    expect(isPastFirstHalf(live({ live_status: '3', live_minute: '47:00', start_time: minutesAgo(55), ht_home: 1, ht_away: 0 }), NOW)).toBe(true);
+  });
+  it('does not trust a stuck "1H": 80+ minutes of real time is always past the first half', () => {
+    expect(isPastFirstHalf(live({ live_minute: '38:00', start_time: minutesAgo(85) }), NOW)).toBe(true);
   });
   it('with no live data at all, 50+ minutes after kickoff is past the first half', () => {
     expect(isPastFirstHalf({ start_time: minutesAgo(55), status: 'LIVE' }, NOW)).toBe(true);

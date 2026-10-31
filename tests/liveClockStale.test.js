@@ -29,7 +29,8 @@ describe('projectClock - never runs on forever', () => {
     expect(projectClock(base, T, T + 300_000)).toEqual({ minute: 80, second: 39, half: 'Pjesa II' }); // +5 min
   });
   it('holds at the end of the period (stoppage ceiling), never running on past it', () => {
-    expect(projectionLimitSeconds(44 * 60, false)).toBe(11 * 60); // first half: up to 55:00
+    expect(projectionLimitSeconds(44 * 60, false)).toBe(15 * 60); // first half: ceiling 75:00 (+30 stoppage), so the 15 min gap limit applies
+    expect(projectionLimitSeconds(70 * 60 - 1, false)).toBe(15 * 60);
     expect(projectionLimitSeconds(50 * 60, false)).toBe(15 * 60); // second half, capped by the 15 min gap limit
     expect(projectionLimitSeconds(100 * 60, false)).toBe(5 * 60); // up to 105:00
     expect(projectionLimitSeconds(72 * 60, true)).toBe(59);       // bare minute: never rolls over

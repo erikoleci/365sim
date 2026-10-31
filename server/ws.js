@@ -179,7 +179,10 @@ const tickQueue = new Map(); // matchId -> newest tick payload
 let tickTimer = null;
 
 export const pushLiveTick = (matchId, data) => {
-  broadcast(`match:${matchId}`, { type: 'LIVE_TICK', ...data }, { droppable: true });
+  // serverNow: the server's clock at send time. minuteUpdatedAt is a SERVER timestamp, and a phone
+  // whose own clock is 5-10 s off would show the match clock (seconds included) off by the same
+  // amount; the client uses serverNow to measure that offset and correct for it.
+  broadcast(`match:${matchId}`, { type: 'LIVE_TICK', ...data, serverNow: Date.now() }, { droppable: true });
   tickQueue.set(matchId, { matchId, ...data });
   if (!tickTimer) {
     tickTimer = setTimeout(flushLiveTicks, TICK_FLUSH_MS);
@@ -193,7 +196,7 @@ export function flushLiveTicks() {
   const ticks = Array.from(tickQueue.values());
   tickQueue.clear();
   for (let i = 0; i < ticks.length; i += TICKS_PER_FRAME) {
-    broadcast('live', { type: 'LIVE_TICKS', ticks: ticks.slice(i, i + TICKS_PER_FRAME) }, { droppable: true });
+    broadcast('live', { type: 'LIVE_TICKS', ticks: ticks.slice(i, i + TICKS_PER_FRAME), serverNow: Date.now() }, { droppable: true });
   }
   return ticks.length;
 }

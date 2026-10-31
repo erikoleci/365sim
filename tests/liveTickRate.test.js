@@ -89,8 +89,8 @@ describe('applyGameDetails - LIVE_TICK volume (80 live matches must not flood cl
       await applyGameDetails(tag({ ...base, T: String(t) }));
       vi.advanceTimersByTime(1000);
     }
-    // 10 seconds of play, nothing happened: first tick only (clients tick the clock themselves).
-    expect(wsModule.pushLiveTick.mock.calls.length).toBeLessThanOrEqual(1);
+    // 10 seconds of play, nothing happened: the first tick plus a resync every ~5 s, never one per second.
+    expect(wsModule.pushLiveTick.mock.calls.length).toBeLessThanOrEqual(3);
   });
 
   it('still resyncs the clock periodically so client clocks cannot drift', async () => {
@@ -99,8 +99,8 @@ describe('applyGameDetails - LIVE_TICK volume (80 live matches must not flood cl
       vi.advanceTimersByTime(1000);
     }
     const n = wsModule.pushLiveTick.mock.calls.length;
-    expect(n).toBeGreaterThanOrEqual(2); // 40s => at least a couple of 15s resyncs
-    expect(n).toBeLessThanOrEqual(4);
+    expect(n).toBeGreaterThanOrEqual(2); // 40s => a resync every ~5s
+    expect(n).toBeLessThanOrEqual(10); // ~every 5 s (was 15 s): seconds stay anchored without flooding 80 matches
   });
 
   it('a new whole minute is broadcast immediately', async () => {

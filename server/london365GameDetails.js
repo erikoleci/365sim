@@ -100,7 +100,9 @@ const DERIVED_CLOCK_WRITE_MS = 15000;
 let lastPruneAt = 0;
 let pruneRuns = 0;
 const PRUNE_MIN_INTERVAL_MS = 30000;
-const LIVE_TICK_RESYNC_MS = 15000;
+// The clock (with seconds) is re-sent at least this often even when nothing else changed, so the
+// seconds on every screen are re-anchored to the provider's T every few seconds, not every 15.
+const LIVE_TICK_RESYNC_MS = 5000;
 // How long the last decoded pitch action (corner, attack, ...) stays on the
 // pitch when the following messages carry no (decodable) VC. The provider's own
 // pitch keeps showing the last action until the next one; clearing it on the very

@@ -19,7 +19,8 @@
 //        real minutes after the scheduled kickoff, a match with no HT seen is taken to be in the
 //        second half (a first half with +20 stoppage still ends ~70 real minutes after kickoff).
 // Penalties stay NULL (unknown).
-export const FIRST_HALF_WALL_LIMIT_MIN = 80;
+import { FIRST_HALF_MAX_WALL_MIN } from './marketPeriods.js';
+export const FIRST_HALF_WALL_LIMIT_MIN = FIRST_HALF_MAX_WALL_MIN;
 export const halfSql = (p) => `(SELECT CASE
   WHEN UPPER(COALESCE(live_status, '')) IN ('ET', 'EXTRA_TIME') THEN 3
   WHEN UPPER(COALESCE(live_status, '')) IN ('2H', 'SECOND_HALF', 'FT', 'ENDED', 'FINISHED') THEN 2

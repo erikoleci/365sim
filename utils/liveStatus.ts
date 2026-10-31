@@ -95,6 +95,24 @@ export const HIDE_LIVE_WITHOUT_PROVIDER_CLOCK = true;
 export const LIVE_FIRST_CLOCK_GRACE_MS = 5 * 60 * 1000;
 export const LIVE_RECENT_CLOCK_MS = 30 * 60 * 1000;
 
+// Clock sync between this device and the server. Clock stamps (currentMinuteUpdatedAt) are SERVER
+// timestamps, but the running clock is projected with this device's Date.now(): a phone that is 8 s
+// ahead of the server showed the match clock (seconds included) 8 s ahead. Every websocket frame
+// carries serverNow; the offset is measured from it and stamps are moved onto the device clock.
+let serverClockOffsetMs = 0;
+export function noteServerTime(serverNow: unknown, now: number = Date.now()): void {
+  const s = Number(serverNow);
+  if (!Number.isFinite(s) || s <= 0) return;
+  const offset = s - now;
+  // Ignore absurd values (a broken frame must never move the clock by hours).
+  if (Math.abs(offset) > 10 * 60 * 1000) return;
+  serverClockOffsetMs = offset;
+}
+export const serverToLocal = (serverStamp: number): number => serverStamp - serverClockOffsetMs;
+// "Now" as a server timestamp: the fallback stamp for a reading that arrived without one.
+export const serverNowStamp = (): number => Date.now() + serverClockOffsetMs;
+export const __resetServerClockOffsetForTests = () => { serverClockOffsetMs = 0; };
+
 // The provider clock stopped moving: the client froze it (MAX_PROJECTION_SECONDS = 120). Shown as
 // a small marker so a frozen "72:14" is never mistaken for a live one. Not for halftime.
 export const LIVE_CLOCK_STALE_MS = 150 * 1000;
@@ -105,7 +123,7 @@ export function isLiveClockStale(
   if (String(match.status) !== 'LIVE' || isHalftime(match as any)) return false;
   if (!match.currentMinute || match.currentMinuteEstimated) return false;
   const stamp = Number(match.currentMinuteUpdatedAt);
-  return Number.isFinite(stamp) && stamp > 0 && now - stamp > LIVE_CLOCK_STALE_MS;
+  return Number.isFinite(stamp) && stamp > 0 && now - serverToLocal(stamp) > LIVE_CLOCK_STALE_MS;
 }
 export function isGhostLiveMatch(
   match: { status: unknown; startTime: string; currentMinute?: string; currentMinuteUpdatedAt?: number; currentMinuteEstimated?: boolean; liveStatus?: string },
