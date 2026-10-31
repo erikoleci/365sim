@@ -138,10 +138,10 @@ async function fetchUpcomingMatchRowsPaged() {
   return rows;
 }
 
-// The list is the heaviest query of the app. It is served from memory: a copy up to MAX_STALE old is returned
+// The list is the heaviest query of the app. It is served from memory: a copy up to MAX_STALE (15 s) old is returned
 // AT ONCE and refreshed in the background (one refresh at a time), and while people are using the app it is kept
 // warm, so opening the page never waits for the database. Only a copy older than MAX_STALE (or none) is awaited.
-const MATCHES_MAX_STALE_MS = 2 * 60 * 1000;
+const MATCHES_MAX_STALE_MS = 15 * 1000; // as fresh as before (8 s) in practice: live minutes must never lag
 const MATCHES_WARM_EVERY_MS = 10 * 1000;
 const refreshesInFlight = new Map(); // key -> Promise<body>
 let lastListRequestAt = 0;

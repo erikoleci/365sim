@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Match, MatchStatus } from '../types';
 import * as api from '../services/api';
+import { keepNewerLive } from '../utils/liveMerge';
 import { isGhostLiveMatch, isStaleLiveMatch } from '../utils/liveStatus';
 
 const POLL_INTERVAL_MS = 5 * 60 * 1000; // slow safety net: the WebSocket is the primary update path
@@ -46,7 +47,7 @@ export function useMatchesFeed(enabled: boolean, sessionKey: string | null) {
       const { matches: freshAll, leagueNames: freshNames, leagueMeta: freshMeta } = await api.fetchMatches();
       // Drop matches the feed abandoned (still "LIVE" hours after kickoff).
       const fresh = freshAll.filter((m) => !isStaleLiveMatch(m));
-      setMatches(fresh);
+      setMatches((current) => keepNewerLive(current, fresh)); // a list a few seconds old must not undo a newer live minute
       writeCache('cachedMatches', fresh);
       if (freshNames) {
         setLeagueNames((prev) => { const next = { ...prev, ...freshNames }; writeCache('cachedLeagueNames', next); return next; });
@@ -86,7 +87,7 @@ export function useMatchesFeed(enabled: boolean, sessionKey: string | null) {
           .filter((m) => m.status !== MatchStatus.LIVE || liveIds.has(m.id))
           .map((m) => byId.get(m.id) ?? m);
         for (const m of live) if (!known.has(m.id)) merged.push(m);
-        return merged;
+        return keepNewerLive(current, merged);
       });
     } catch { /* the full load below is the fallback */ }
   }, [enabled]);
