@@ -23,8 +23,11 @@ const writeCache = (key: string, value: unknown) => {
  * and looking at the sportsbook; `sessionKey` (the user id) restarts everything for a new user.
  */
 export function useMatchesFeed(enabled: boolean, sessionKey: string | null) {
+  // Matches in play are NOT seeded from the cache: their minute, score and half-time status are
+  // minutes or hours old, and showing them first meant a wrong clock until the fresh data arrived
+  // (or until a manual refresh). They appear, correct, with the first /matches/live answer.
   const [allMatches, setMatches] = useState<Match[]>(() =>
-    readCache<Match[]>('cachedMatches', []).filter((m) => !isStaleLiveMatch(m)));
+    readCache<Match[]>('cachedMatches', []).filter((m) => !isStaleLiveMatch(m) && m.status !== MatchStatus.LIVE && !m.liveStatus));
   const [leagueNames, setLeagueNames] = useState<Record<string, string>>(() => readCache('cachedLeagueNames', {}));
   const [leagueMeta, setLeagueMeta] = useState<Record<string, api.LeagueMeta>>(() => readCache('cachedLeagueMeta', {}));
   const [isLoading, setIsLoading] = useState(false);

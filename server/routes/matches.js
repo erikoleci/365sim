@@ -12,6 +12,8 @@ import { summarizeLiveHealth } from '../liveHealth.js';
 import { fetchMatchRowsPrioritized, PAGE_SIZE } from '../matchRows.js';
 import { readLiveCorners, readLiveCards } from '../matchSettlement.js';
 import { getChangesSince } from '../matchChanges.js';
+import { getLatestLiveTick } from '../london365GameDetails.js';
+import { overlayLiveTick } from '../liveOverlay.js';
 
 const router = express.Router();
 
@@ -285,8 +287,9 @@ router.get('/live', wrap(async (_req, res) => {
     `SELECT ${MATCH_COLUMNS_LIST} FROM matches_cache WHERE status = 'LIVE' OR live_status IS NOT NULL`
   );
   const matches = [];
-  for (const r of rows) {
-    try { matches.push(mapEventToMatch(r)); } catch (err) { console.error(`[matches] skipped unreadable live row ${r && r.id}: ${err && err.message}`); }
+  for (const r0 of rows) {
+    const r = overlayLiveTick(r0, getLatestLiveTick(r0.id));
+    try { matches.push(mapEventToMatch(r)); } catch (err) { console.error(`[matches] skipped unreadable live row ${r0 && r0.id}: ${err && err.message}`); }
   }
   res.json({ matches: dedupeMatches(matches, logMerge) });
 }));

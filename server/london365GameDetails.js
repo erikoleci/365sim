@@ -116,6 +116,11 @@ const UNMAPPED_VC_CAP = 200;
 // Test-only: clears in-memory state between test cases so each test is
 // independent (lastSeen/lastBroadcast are intentionally module-level, not
 // per-call, in production — see comments above).
+// Newest tick sent for a match (minute with seconds, its server stamp, score, HT/1H/2H status).
+export function getLatestLiveTick(matchId) {
+  return lastBroadcast.get(matchId) || null;
+}
+
 export function __resetLiveStateForTests() {
   lastPruneAt = 0;
   pruneRuns = 0;

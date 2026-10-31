@@ -220,6 +220,8 @@ export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadM
         socket!.send(JSON.stringify({ type: 'subscribe', topic: 'live' }));
         socket!.send(JSON.stringify({ type: 'subscribe', topic: 'odds' }));
         syncChanges();
+        // Whatever happened between the first REST answer and this subscription is picked up now.
+        reloadLive?.();
       };
       socket.onmessage = (event) => {
         lastMessageAt = Date.now();
