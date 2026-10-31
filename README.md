@@ -210,6 +210,23 @@ open, won and lost tickets (`GET /api/admin/dashboard/kpi`), the ticket list and
 feed and every settlement tool (market report, pending legs, manual settle, exposure, diagnostics) are the super
 admin's: those routes answer a normal admin `403`.
 
+**Credit book (the "Kredia" tab, super admin).** Every credit given to an admin (and every one taken back) is
+already a ledger row (`SUPER_TO_ADMIN` / `ADMIN_TO_SUPER`); `GET /api/admin/credit-ledger` turns them into one
+book: per admin what was given, taken back, what is left on his balance, what was used, and the cash the super
+admin keeps for each credit (`OWNER_CREDIT_FEE_RATE`, default 10%, frozen on the credit in
+`transactions.fee_rate` when it is given, so changing the rate later never rewrites the history). Lek and euro are
+never added together. The tab also gives credit (lek and/or euro), filters the history by admin and exports it as
+CSV. The cash is not reduced when credit is taken back. Credit given outside the app is not in the book.
+
+**Results.** "Rezultate" lists only the main competitions (Champions League, Europa League, World Cup, European
+Championship, and the top flight of Italy, Germany, France, Spain, England, Portugal): `utils/majorResults.ts`
+and `server/majorResults.js` (keep the two in step). Other finished matches are removed one day after settling
+(`RETENTION_MINOR_FINISHED_HOURS`) unless a ticket points at them.
+
+**Speed.** The match list is served from memory (`server/routes/matches.js`): serialized and gzipped once per
+refresh, at most 15 s old, kept warm while the app is in use. `GET /api/matches/live` returns only the matches in
+play and is what a tab asks for first when it opens or comes back.
+
 **Ticket deletion switch.** `PUT /api/admin/settings/ticket-deletion {allowed:true|false}` (super admin only; the
 button is on the Tickets tab) allows or forbids normal admins to delete tickets (`403 TICKET_DELETE_DISABLED`).
 Stored in `kv_store` (`ticket_deletion_allowed`), on by default. The super admin can always delete.

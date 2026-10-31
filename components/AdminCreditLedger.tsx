@@ -58,6 +58,24 @@ const AdminCreditLedger: React.FC = () => {
     } finally { setBusy(false); }
   };
 
+  // The book as a spreadsheet (opens in Excel): date, admin, action, currency, amount and the cash kept.
+  const downloadCsv = () => {
+    const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+    const lines = [['Data', 'Admini', 'Veprimi', 'Monedha', 'Shuma', 'Para dore', 'Perqindja'].map(esc).join(',')];
+    for (const h of history) {
+      lines.push([
+        new Date(h.at).toISOString().replace('T', ' ').slice(0, 19), h.adminName, h.kind === 'CREDIT' ? 'Kredi' : 'Marre mbrapsht',
+        h.currency === 'EUR' ? 'EUR' : 'ALL', h.amount, h.kind === 'CREDIT' ? h.cash : '', h.kind === 'CREDIT' && h.feeRate != null ? Math.round(h.feeRate * 100) + '%' : '',
+      ].map(esc).join(','));
+    }
+    const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `kredia-adminet-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   const history = useMemo(() => (ledger?.history ?? []).filter((h) => !filter || h.adminId === filter), [ledger, filter]);
   const feePct = Math.round((ledger?.feeRate ?? 0.1) * 100);
 
@@ -117,7 +135,10 @@ const AdminCreditLedger: React.FC = () => {
       </div>
 
       <div className="bg-brand-panel border border-[#444] rounded">
-        <div className="px-3 py-2 text-xs font-bold uppercase tracking-wider border-b border-[#444]">{t('Historiku i kredive')}</div>
+        <div className="px-3 py-2 text-xs font-bold uppercase tracking-wider border-b border-[#444] flex items-center justify-between">
+          <span>{t('Historiku i kredive')}</span>
+          <button onClick={downloadCsv} disabled={history.length === 0} className="text-[10px] text-brand-yellow disabled:opacity-40">{t('Shkarko CSV')}</button>
+        </div>
         {history.length === 0 ? (
           <div className="text-xs text-brand-textMuted p-4 text-center">{t('Asnje kredi e regjistruar.')}</div>
         ) : (

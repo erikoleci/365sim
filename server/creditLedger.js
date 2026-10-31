@@ -22,7 +22,7 @@ export function buildCreditLedger({ admins, rows, feeRate = DEFAULT_FEE_RATE, ad
     per.set(a.id, {
       id: a.id, name: a.name, username: a.username,
       remaining: { ALL: round2(a.balance), EUR: round2(a.balance_eur) },
-      given: zero(), takenBack: zero(), credits: 0, lastCreditAt: null,
+      given: zero(), takenBack: zero(), cash: zero(), credits: 0, lastCreditAt: null,
     });
   }
   const history = [];
@@ -33,8 +33,10 @@ export function buildCreditLedger({ admins, rows, feeRate = DEFAULT_FEE_RATE, ad
     const amount = Number(r.amount) || 0;
     const at = Number(r.created_at) || 0;
     const credit = r.type === 'SUPER_TO_ADMIN';
+    const rate = r.fee_rate != null && Number.isFinite(Number(r.fee_rate)) ? Number(r.fee_rate) : feeRate; // frozen when given
     if (credit) {
       row.given[c] += amount;
+      row.cash[c] += amount * rate;
       row.credits += 1;
       if (row.lastCreditAt == null || at > row.lastCreditAt) row.lastCreditAt = at;
     } else {
@@ -44,7 +46,8 @@ export function buildCreditLedger({ admins, rows, feeRate = DEFAULT_FEE_RATE, ad
       history.push({
         id: r.id, at, adminId: r.admin_id, adminName: row.name, adminUsername: row.username,
         kind: credit ? 'CREDIT' : 'TAKE_BACK', currency: c, amount: round2(amount),
-        cash: credit ? round2(amount * feeRate) : 0, // what the super admin keeps in cash for this credit
+        cash: credit ? round2(amount * rate) : 0, // what the super admin keeps in cash for this credit
+        feeRate: credit ? rate : null,
       });
     }
   }
@@ -57,7 +60,7 @@ export function buildCreditLedger({ admins, rows, feeRate = DEFAULT_FEE_RATE, ad
       out.given[c] = round2(a.given[c]);
       out.takenBack[c] = round2(a.takenBack[c]);
       out.net[c] = round2(a.given[c] - a.takenBack[c]);
-      out.cash[c] = round2(a.given[c] * feeRate);
+      out.cash[c] = round2(a.cash[c]);
       out.used[c] = round2(out.net[c] - a.remaining[c]);
       out.leftPct[c] = out.net[c] > 0 ? Math.max(0, Math.round((a.remaining[c] / out.net[c]) * 100)) : null;
       totals.given[c] += out.given[c];

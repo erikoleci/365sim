@@ -645,6 +645,7 @@ router.post('/admins/:id/credit', requireSuperAdmin, async (req, res) => {
   await transferBalances({
     actorId: req.user.id, sourceId: null, targetId: req.params.id,
     type: 'SUPER_TO_ADMIN', reference: rows[0].username,
+    feeRate: feeRateFromEnv(process.env.OWNER_CREDIT_FEE_RATE),
   }, parts);
   await logAudit(req.user, 'ADMIN_CREDIT', req.params.id, { amounts: parts, username: rows[0].username });
   const admin = await readWallet(req.params.id);
@@ -680,7 +681,7 @@ router.get('/credit-ledger', requireSuperAdmin, async (req, res) => {
   const [{ rows: admins }, { rows }] = await Promise.all([
     pool.query(`SELECT id, name, username, balance, balance_eur FROM users WHERE role = 'ADMIN'`),
     pool.query(
-      `SELECT id, created_at, amount, currency, type,
+      `SELECT id, created_at, amount, currency, type, fee_rate,
               CASE WHEN type = 'SUPER_TO_ADMIN' THEN target_id ELSE source_id END AS admin_id
          FROM transactions WHERE type IN ('SUPER_TO_ADMIN', 'ADMIN_TO_SUPER')`
     ),

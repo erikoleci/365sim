@@ -58,13 +58,14 @@ export async function transferBalance(args) {
   return out[normalizeCurrency(args.currency)];
 }
 
-async function transferOnClient(client, { actorId, sourceId, targetId, amount, type, reference, currency }) {
+async function transferOnClient(client, { actorId, sourceId, targetId, amount, type, reference, currency, feeRate }) {
   if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
     throw new Error('amount must be a positive finite number');
   }
   const col = walletColumn(currency);
   const cur = normalizeCurrency(currency);
   const round = (n) => Math.round(n * 100) / 100;
+  const createdAt = Date.now();
 
   let sourceBefore = null;
   let sourceAfter = null;
@@ -91,8 +92,17 @@ async function transferOnClient(client, { actorId, sourceId, targetId, amount, t
        target_balance_before, target_balance_after, created_at, currency)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
     [actorId, sourceId || null, targetId, amount, type, reference || null,
-     sourceBefore, sourceAfter, targetBefore, targetAfter, Date.now(), cur]
+     sourceBefore, sourceAfter, targetBefore, targetAfter, createdAt, cur]
   );
+
+  // Credit given to an admin: freeze the cash rate on that very row (the target row is locked, so it is the newest one).
+  if (typeof feeRate === 'number' && Number.isFinite(feeRate)) {
+    await client.query(
+      `UPDATE transactions SET fee_rate = $1
+        WHERE id = (SELECT id FROM transactions WHERE target_id = $2 AND type = $3 AND created_at = $4 ORDER BY id DESC LIMIT 1)`,
+      [feeRate, targetId, type, createdAt]
+    );
+  }
 
   return { sourceBefore, sourceAfter, targetBefore, targetAfter };
 }

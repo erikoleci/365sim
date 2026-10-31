@@ -35,6 +35,15 @@ describe('credit ledger', () => {
     expect(buildCreditLedger({ admins, rows, adminId: 'a2' }).history).toEqual([]);
     expect(buildCreditLedger({ admins, rows }).admins.find((a) => a.id === 'a2').leftPct).toEqual({ ALL: null, EUR: null });
   });
+  it('the cash of a credit uses the rate frozen when it was given, not today\'s rate', () => {
+    const frozen = [
+      { id: 1, created_at: 1, amount: 1000, currency: 'ALL', type: 'SUPER_TO_ADMIN', admin_id: 'a1', fee_rate: '0.1000' },
+      { id: 2, created_at: 2, amount: 1000, currency: 'ALL', type: 'SUPER_TO_ADMIN', admin_id: 'a1', fee_rate: null }, // before the column existed
+    ];
+    const l = buildCreditLedger({ admins, rows: frozen, feeRate: 0.2 });
+    expect(l.admins.find((a) => a.id === 'a1').cash.ALL).toBe(100 + 200);
+    expect(l.history.map((h) => h.feeRate)).toEqual([0.2, 0.1]);
+  });
   it('the fee rate defaults to 10% and can be set (0-1)', () => {
     expect(feeRateFromEnv(undefined)).toBe(0.1);
     expect(feeRateFromEnv('0.15')).toBe(0.15);
