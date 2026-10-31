@@ -138,62 +138,73 @@ async function fetchUpcomingMatchRowsPaged() {
   return rows;
 }
 
+// The list is the heaviest query of the app. It is served from memory: a copy up to MAX_STALE old is returned
+// AT ONCE and refreshed in the background (one refresh at a time), and while people are using the app it is kept
+// warm, so opening the page never waits for the database. Only a copy older than MAX_STALE (or none) is awaited.
+const MATCHES_MAX_STALE_MS = 2 * 60 * 1000;
+const MATCHES_WARM_EVERY_MS = 10 * 1000;
+const refreshesInFlight = new Map(); // key -> Promise<body>
+let lastListRequestAt = 0;
+
+function refreshMatchesList(league) {
+  const cacheKey = league || '__all__';
+  const running = refreshesInFlight.get(cacheKey);
+  if (running) return running;
+  const job = (async () => {
+    const t0 = Date.now();
+    let rows;
+    try {
+      rows = league
+        ? (await queryWithRetry(
+            `SELECT ${MATCH_COLUMNS_LIST} FROM matches_cache WHERE league = $1 ORDER BY start_time ASC`,
+            [league]
+          )).rows
+        : await fetchUpcomingMatchRowsPaged();
+    } catch (err) {
+      console.error(`[matches] list query failed after ${Date.now() - t0}ms: [${err && err.code}] ${err && err.message}`);
+      // Better a slightly old list than an empty board: serve the last good response if we have one.
+      throw err;
+    }
+    if (Date.now() - t0 > 3000) console.warn(`[matches] list query was slow: ${Date.now() - t0}ms for ${rows.length} row(s)`);
+    console.log(`[matches] GET / -> ${rows.length} cached row(s)${league ? ` for league=${league}` : ''}`);
+    // One malformed row must never take the whole board down: skip it and say which one.
+    const mapped = [];
+    for (const r of rows) {
+      try { mapped.push(mapEventToMatch(r)); } catch (err) { console.error(`[matches] skipped unreadable row ${r && r.id}: ${err && err.message}`); }
+    }
+    const body = { matches: dedupeMatches(mapped, logMerge), leagueNames: getLondon365LeagueNames(), leagueMeta: getLondon365LeagueMeta() };
+    matchesResponseCache.set(cacheKey, { body, computedAt: Date.now() });
+    return body;
+  })().finally(() => refreshesInFlight.delete(cacheKey));
+  refreshesInFlight.set(cacheKey, job);
+  return job;
+}
+
 router.get('/', wrap(async (req, res) => {
   ensureLondon365Import();
-
-  const cacheKey = req.query.league || '__all__';
-  const cached = matchesResponseCache.get(cacheKey);
-  if (cached && Date.now() - cached.computedAt < MATCHES_CACHE_TTL_MS) {
+  lastListRequestAt = Date.now();
+  const league = req.query.league || '';
+  const cached = matchesResponseCache.get(league || '__all__');
+  const age = cached ? Date.now() - cached.computedAt : Infinity;
+  if (cached && age < MATCHES_CACHE_TTL_MS) return res.json(cached.body);
+  if (cached && age < MATCHES_MAX_STALE_MS) {
+    refreshMatchesList(league).catch(() => {}); // fresh copy for the next one; this one is served now
     return res.json(cached.body);
   }
-
-  // Bounded by time: the UI only ever shows "today" through ~3 weeks ahead,
-  // plus recently-finished/live matches from the last couple of days — so
-  // there's no reason to keep pulling EVERY match_cache row ever imported
-  // (which only grows over time and was making first-load, especially for
-  // a brand-new visitor with no local cache, get slower and slower as the
-  // table accumulated old finished fixtures with their full raw_json
-  // market blobs). start_time is TEXT, so the timestamptz cast is required
-  // for a valid comparison (see server/oddsUtils.js normalizeStatus for
-  // the same pattern).
-  //
-  // 21 days forward (not the original 10) because continental competitions
-  // (UEFA Champions/Europa/Conference League, Nations League...) play in
-  // rounds spaced 3-4 weeks apart, unlike domestic leagues' weekly
-  // schedule — a 10-day window meant the entire "International" group
-  // went empty for most of the gap between rounds even though the
-  // fixtures existed and were correctly imported/classified.
-  // queryWithRetry (not plain pool.query): this is the endpoint the
-  // frontend hits on every load and every poll, so a brief DB hiccup here
-  // (Aiven connection reset, a pool slot momentarily full during a Render
-  // rolling deploy) is exactly the kind of thing that should self-heal
-  // with one quick retry instead of surfacing a 502/503 to the user.
-  const t0 = Date.now();
-  let rows;
   try {
-    rows = req.query.league
-      ? (await queryWithRetry(
-          `SELECT ${MATCH_COLUMNS_LIST} FROM matches_cache WHERE league = $1 ORDER BY start_time ASC`,
-          [req.query.league]
-        )).rows
-      : await fetchUpcomingMatchRowsPaged();
+    res.json(await refreshMatchesList(league));
   } catch (err) {
-    console.error(`[matches] list query failed after ${Date.now() - t0}ms: [${err && err.code}] ${err && err.message}`);
     // Better a slightly old list than an empty board: serve the last good response if we have one.
     if (cached) return res.json(cached.body);
     throw err;
   }
-  if (Date.now() - t0 > 3000) console.warn(`[matches] list query was slow: ${Date.now() - t0}ms for ${rows.length} row(s)`);
-  console.log(`[matches] GET / -> ${rows.length} cached row(s)${req.query.league ? ` for league=${req.query.league}` : ''}`);
-  // One malformed row must never take the whole board down: skip it and say which one.
-  const mapped = [];
-  for (const r of rows) {
-    try { mapped.push(mapEventToMatch(r)); } catch (err) { console.error(`[matches] skipped unreadable row ${r && r.id}: ${err && err.message}`); }
-  }
-  const body = { matches: dedupeMatches(mapped, logMerge), leagueNames: getLondon365LeagueNames(), leagueMeta: getLondon365LeagueMeta() };
-  matchesResponseCache.set(cacheKey, { body, computedAt: Date.now() });
-  res.json(body);
 }));
+
+// Warm copy for the first visitor after a (re)start, and kept fresh while somebody has asked for the list lately.
+setTimeout(() => { refreshMatchesList('').catch(() => {}); }, 3000).unref?.();
+setInterval(() => {
+  if (Date.now() - lastListRequestAt < 5 * 60 * 1000) refreshMatchesList('').catch(() => {});
+}, MATCHES_WARM_EVERY_MS).unref?.();
 
 // Only what changed since the browser's last look: a new match, a match that went live, a first clock reading.
 // The server pushes MATCHES_CHANGED over the WebSocket; the browser then asks for just those matches (a few KB)

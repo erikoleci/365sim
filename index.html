@@ -7,6 +7,21 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Start downloading the matches NOW, while the app code is still loading (only for a returning, signed-in
+      // visitor). services/api.ts picks these requests up instead of asking again.
+      (function () {
+        try {
+          if (!localStorage.getItem('betsim_token')) return;
+          var base = '%VITE_API_URL%';
+          if (base.charAt(0) === '%') base = '';
+          var get = function (path) {
+            return fetch(base + '/api/matches' + path).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+          };
+          window.__earlyMatches = { at: Date.now(), live: get('/live'), all: get('') };
+        } catch (e) { /* no storage: the app asks for the matches itself */ }
+      })();
+    </script>
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>

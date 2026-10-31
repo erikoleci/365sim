@@ -135,8 +135,23 @@ export interface LeagueMeta {
   countryName: string | null;
 }
 
+// The page asked for the matches before the app code finished loading (see index.html). Used once, only when fresh.
+function takeEarlyMatches<T>(kind: 'live' | 'all'): Promise<T | null> | null {
+  try {
+    const early = (window as any).__earlyMatches;
+    if (!early || Date.now() - early.at > 15000 || !early[kind]) return null;
+    const p = early[kind];
+    early[kind] = null;
+    return p;
+  } catch { return null; }
+}
+
 export async function fetchMatches(league?: string): Promise<{ matches: Match[]; leagueNames?: Record<string, string>; leagueMeta?: Record<string, LeagueMeta> }> {
   const qs = league && league !== 'All Top Football' ? `?league=${encodeURIComponent(league)}` : '';
+  if (!qs) {
+    const early = await takeEarlyMatches<{ matches: Match[]; leagueNames?: Record<string, string>; leagueMeta?: Record<string, LeagueMeta> }>('all');
+    if (early && Array.isArray(early.matches)) return early;
+  }
   return request(`/matches${qs}`);
 }
 
@@ -152,6 +167,8 @@ export async function fetchMatchById(id: string): Promise<Match> {
 
 // Only the matches in play, small and fast: fetched first when a tab opens or returns (see useMatchesFeed.loadLive).
 export async function fetchLiveMatches(): Promise<{ matches: Match[] }> {
+  const early = await takeEarlyMatches<{ matches: Match[] }>('live');
+  if (early && Array.isArray(early.matches)) return early;
   return request('/matches/live');
 }
 
