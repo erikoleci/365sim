@@ -630,11 +630,21 @@ export async function cleanupOldData() {
       const minorHours = Math.max(1, Number(process.env.RETENTION_MINOR_FINISHED_HOURS) || 24);
       const { rows: finished } = await pool.query(
         `SELECT id, league FROM matches_cache
-         WHERE status = 'FINISHED' AND settled_at IS NOT NULL AND settled_at < $1
+         WHERE status = 'FINISHED'
+           AND ((settled_at IS NOT NULL AND settled_at < $1)
+             OR (settled_at IS NULL AND start_time_tz(start_time) < NOW() - INTERVAL '2 days'))
            AND NOT EXISTS (SELECT 1 FROM bet_selections bs WHERE bs.match_id = matches_cache.id)`,
         [now - minorHours * 3600 * 1000]
       );
-      const minorIds = finished.filter((r) => !isMajorResultLeague(r.league)).map((r) => r.id);
+      const minorRows = finished.filter((r) => !isMajorResultLeague(r.league));
+      const minorIds = minorRows.map((r) => r.id);
+      if (minorRows.length) {
+        // So it can be checked in the logs that the right leagues are going (and no main league is among them).
+        const byLeague = {};
+        for (const r of minorRows) byLeague[r.league] = (byLeague[r.league] || 0) + 1;
+        const top = Object.entries(byLeague).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([l, n]) => `${l}=${n}`).join(', ');
+        console.log(`[cleanupOldData] finished matches outside the main competitions removed: ${minorRows.length} (${top})`);
+      }
       results.matches_cache_minor_finished = minorIds.length
         ? (await pool.query('DELETE FROM matches_cache WHERE id = ANY($1::text[])', [minorIds])).rowCount
         : 0;

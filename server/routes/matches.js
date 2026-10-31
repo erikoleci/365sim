@@ -202,8 +202,13 @@ router.get('/', wrap(async (req, res) => {
 
 // Warm copy for the first visitor after a (re)start, and kept fresh while somebody has asked for the list lately.
 setTimeout(() => { refreshMatchesList('').catch(() => {}); }, 3000).unref?.();
+let lastWarmAt = 0;
 setInterval(() => {
-  if (Date.now() - lastListRequestAt < 5 * 60 * 1000) refreshMatchesList('').catch(() => {});
+  const idle = Date.now() - lastListRequestAt;
+  const due = idle < 5 * 60 * 1000 || (idle < 30 * 60 * 1000 && Date.now() - lastWarmAt >= 60 * 1000);
+  if (!due) return;
+  lastWarmAt = Date.now();
+  refreshMatchesList('').catch(() => {});
 }, MATCHES_WARM_EVERY_MS).unref?.();
 
 // Only what changed since the browser's last look: a new match, a match that went live, a first clock reading.
