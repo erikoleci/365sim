@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { casinoRouletteSpin } from '../../services/api';
+import RouletteWheel, { WheelPhase } from './RouletteWheel';
+import Croupier, { CroupierMood } from './Croupier';
 
 interface RouletteProps {
   onSetBalance: (balance: number) => void;
@@ -20,6 +22,11 @@ const getColor = (num: number) => {
 const Roulette: React.FC<RouletteProps> = ({ onSetBalance, userBalance, onClose }) => {
   const [bets, setBets] = useState<Record<string, number>>({});
   const [spinning, setSpinning] = useState(false);
+  const [phase, setPhase] = useState<WheelPhase>('idle');
+  const [landResult, setLandResult] = useState<number | null>(null); // the number the ball is told to land on
+  const [mood, setMood] = useState<CroupierMood>('idle');
+  // The server's answer is held here until the ball has really landed, so the result is never shown early.
+  const outcome = useRef<{ result: number; payout: number; balance: number } | null>(null);
   const [resultNumber, setResultNumber] = useState<number | null>(null);
   const [message, setMessage] = useState('Place your bets');
   const [chipValue, setChipValue] = useState(10);
@@ -44,6 +51,8 @@ const Roulette: React.FC<RouletteProps> = ({ onSetBalance, userBalance, onClose 
       setMessage('Bets cleared');
   };
 
+  const MIN_SPIN_MS = 1300; // the wheel gets up to speed before the ball is allowed to drop
+
   const spinWheel = async () => {
     if (totalBet === 0) {
         setMessage('Place a bet first');
@@ -54,26 +63,43 @@ const Roulette: React.FC<RouletteProps> = ({ onSetBalance, userBalance, onClose 
     setSpinning(true);
     setMessage('No more bets...');
     setResultNumber(null);
+    setMood('spinning');
+    setPhase('spinning'); // the wheel and the ball start at once; the answer arrives while they turn
 
     try {
-        const { result, payout, balance } = await casinoRouletteSpin(bets);
-
-        setTimeout(() => {
-            setResultNumber(result);
-            setSpinning(false);
-            onSetBalance(balance);
-            if (payout > 0) {
-                setMessage(`You Win ${payout}!`);
-            } else {
-                setMessage('House Wins.');
-            }
-            setBets({});
-        }, 2000);
+        const startedAt = Date.now();
+        const answer = await casinoRouletteSpin(bets);
+        const wait = Math.max(0, MIN_SPIN_MS - (Date.now() - startedAt));
+        if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+        outcome.current = answer;
+        setLandResult(answer.result);
+        setPhase('landing'); // the ball slows down and drops into the pocket; onLanded reveals the result
     } catch (err: any) {
+        setPhase('idle');
+        setMood('idle');
         setSpinning(false);
         setMessage(err?.message || 'Something went wrong');
     }
   };
+
+  // Called by the wheel once the ball has settled in its pocket.
+  const onLanded = useCallback(() => {
+    const out = outcome.current;
+    outcome.current = null;
+    setPhase('idle');
+    setSpinning(false);
+    if (!out) { setMood('idle'); return; }
+    setResultNumber(out.result);
+    onSetBalance(out.balance);
+    if (out.payout > 0) {
+        setMessage(`You Win ${out.payout}!`);
+        setMood('win');
+    } else {
+        setMessage('House Wins.');
+        setMood('lose');
+    }
+    setBets({});
+  }, [onSetBalance]);
 
   return (
     <div className="flex flex-col items-center min-h-[600px] bg-[#1a1a1a] rounded-xl p-6 border-4 border-[#d4af37] relative shadow-2xl">
@@ -82,18 +108,20 @@ const Roulette: React.FC<RouletteProps> = ({ onSetBalance, userBalance, onClose 
       <h2 className="text-3xl font-bold text-[#d4af37] mb-2 tracking-widest uppercase">Roulette Royale</h2>
       <div className="text-xs text-gray-500 mb-6">European Rules • High Limit</div>
 
-      {/* Wheel Area */}
-      <div className="mb-8 flex flex-col items-center justify-center h-32">
-          {spinning ? (
-              <div className="w-24 h-24 rounded-full border-4 border-dashed border-white animate-spin"></div>
-          ) : resultNumber !== null ? (
-              <div className={`w-24 h-24 rounded-full flex items-center justify-center text-4xl font-bold text-white border-4 border-white shadow-lg ${getColor(resultNumber)}`}>
-                  {resultNumber}
+      {/* Table: the croupier behind the wheel, the ball and the result */}
+      <div className="mb-6 w-full max-w-2xl flex flex-col items-center">
+          <div className="flex items-end justify-center gap-2 sm:gap-6 w-full">
+              <div className="shrink-0 w-[96px] sm:w-[140px]"><Croupier mood={mood} size={140} /></div>
+              <div className="relative shrink min-w-0 w-[220px] sm:w-[290px]">
+                  <RouletteWheel phase={phase} result={landResult} onLanded={onLanded} size={290} />
+                  {resultNumber !== null && !spinning && (
+                      <div className={`absolute -top-1 -right-1 w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold text-white border-2 border-white shadow-lg ${getColor(resultNumber)}`}>
+                          {resultNumber}
+                      </div>
+                  )}
               </div>
-          ) : (
-              <div className="text-white opacity-50 italic">Ready to spin...</div>
-          )}
-          <div className="mt-4 text-xl font-bold text-yellow-400 h-8">{message}</div>
+          </div>
+          <div className="mt-3 text-xl font-bold text-yellow-400 min-h-[2rem] text-center">{message}</div>
       </div>
 
       {/* Betting Board */}
