@@ -3,7 +3,7 @@ import { recentResults, groupResultsByLeague, RESULTS_WINDOW_MS } from '../utils
 
 const NOW = Date.parse('2026-10-12T12:00:00.000Z');
 const H = 3600 * 1000;
-const m = (id, hoursAgo, o = {}) => ({ id, league: 'epl', status: 'FINISHED', score: { home: 2, away: 1 }, startTime: new Date(NOW - hoursAgo * H).toISOString(), homeTeam: 'Home ' + id, awayTeam: 'Away ' + id, ...o });
+const m = (id, hoursAgo, o = {}) => ({ id, league: 'l365_england__premier_league', status: 'FINISHED', score: { home: 2, away: 1 }, startTime: new Date(NOW - hoursAgo * H).toISOString(), homeTeam: 'Home ' + id, awayTeam: 'Away ' + id, ...o });
 
 describe('recentResults - the "Rezultate" section (finished, last 48 hours)', () => {
   it('keeps only FINISHED matches within 48 hours of kickoff, newest first', () => {
@@ -16,21 +16,25 @@ describe('recentResults - the "Rezultate" section (finished, last 48 hours)', ()
     expect(recentResults([m('over', 48.01)], '', NOW)).toHaveLength(0);
   });
   it('search filters by team or league, case-insensitive', () => {
-    const list = [m('a', 2, { homeTeam: 'Chelsea', awayTeam: 'Bournemouth' }), m('b', 3, { homeTeam: 'Ipswich', league: 'championship' })];
+    const list = [m('a', 2, { homeTeam: 'Chelsea', awayTeam: 'Bournemouth' }), m('b', 3, { homeTeam: 'Ipswich', league: 'l365_italy__serie_a' })];
     expect(recentResults(list, 'CHELSEA', NOW).map((x) => x.id)).toEqual(['a']);
-    expect(recentResults(list, 'champion', NOW).map((x) => x.id)).toEqual(['b']);
+    expect(recentResults(list, 'serie_a', NOW).map((x) => x.id)).toEqual(['b']);
   });
   it('a match closed without a real final score is NOT a result (no invented 0-0)', () => {
     const list = [m('settled', 2), m('noScore', 3, { score: undefined }), m('nullScore', 4, { score: { home: null, away: null } }), m('zero', 5, { score: { home: 0, away: 0 } })];
     expect(recentResults(list, '', NOW).map((x) => x.id)).toEqual(['settled', 'zero']); // a real 0-0 is kept
   });
+  it('only the main competitions are listed as results', () => {
+    const list = [m('major', 2), m('minor', 3, { league: 'l365_albania__superliga' }), m('second', 4, { league: 'l365_england__championship' })];
+    expect(recentResults(list, '', NOW).map((x) => x.id)).toEqual(['major']);
+  });
   it('a row with an unreadable date is never shown', () => {
     expect(recentResults([m('bad', 1, { startTime: 'nope' })], '', NOW)).toEqual([]);
   });
   it('groups by league, the league with the most recent match first', () => {
-    const list = recentResults([m('a', 10, { league: 'laliga' }), m('b', 2, { league: 'epl' }), m('c', 12, { league: 'epl' })], '', NOW);
+    const list = recentResults([m('a', 10, { league: 'l365_spain__la_liga' }), m('b', 2, { league: 'l365_england__premier_league' }), m('c', 12, { league: 'l365_england__premier_league' })], '', NOW);
     const groups = groupResultsByLeague(list);
-    expect(groups.map((g) => g.league)).toEqual(['epl', 'laliga']);
+    expect(groups.map((g) => g.league)).toEqual(['l365_england__premier_league', 'l365_spain__la_liga']);
     expect(groups[0].matches.map((x) => x.id)).toEqual(['b', 'c']);
   });
 });

@@ -1,4 +1,5 @@
 import { ensureSuperAdmin } from './superAdmin.js';
+import { isMajorResultLeague } from './majorResults.js';
 import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import { resolveDbConnection } from './dbConfig.js';
@@ -621,6 +622,25 @@ export async function cleanupOldData() {
          AND settled_at < $1`,
       [now - RETENTION_MS.finishedMatchesDays * day]
     )).rowCount;
+
+    // Results are kept only for the main competitions (Champions/Europa League, World Cup, Euros, the top flight of
+    // Italy/Germany/France/Spain/England/Portugal). Every other finished match goes once it is settled and a day old,
+    // unless a ticket still points at it (the admin ticket views join on it).
+    try {
+      const minorHours = Math.max(1, Number(process.env.RETENTION_MINOR_FINISHED_HOURS) || 24);
+      const { rows: finished } = await pool.query(
+        `SELECT id, league FROM matches_cache
+         WHERE status = 'FINISHED' AND settled_at IS NOT NULL AND settled_at < $1
+           AND NOT EXISTS (SELECT 1 FROM bet_selections bs WHERE bs.match_id = matches_cache.id)`,
+        [now - minorHours * 3600 * 1000]
+      );
+      const minorIds = finished.filter((r) => !isMajorResultLeague(r.league)).map((r) => r.id);
+      results.matches_cache_minor_finished = minorIds.length
+        ? (await pool.query('DELETE FROM matches_cache WHERE id = ANY($1::text[])', [minorIds])).rowCount
+        : 0;
+    } catch (minorErr) {
+      console.warn('[cleanupOldData] minor finished-match cleanup failed:', minorErr.message);
+    }
 
     // CATCH-ALL, closing a real gap in the rule above: it only ever
     // touched matches that both reached FINISHED *and* got settled.

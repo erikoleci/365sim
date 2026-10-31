@@ -1,5 +1,6 @@
 // "Rezultate": matches that FINISHED within the last 48 hours (by kickoff time), newest first,
 // grouped by league. Pure, so it can be tested without React.
+import { isMajorResultLeague } from './majorResults';
 export const RESULTS_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 // `score` is only set by the server for a match that was really settled (result_home/result_away).
@@ -12,6 +13,7 @@ export function recentResults<T extends ResultMatch>(matches: T[], query: string
   return matches
     .filter((m) => String(m.status) === 'FINISHED')
     .filter((m) => m.score != null && m.score.home != null && m.score.away != null)
+    .filter((m) => isMajorResultLeague(m.league)) // only the main competitions are listed as results
     .filter((m) => {
       const t = Date.parse(m.startTime);
       return !Number.isNaN(t) && t <= now && now - t <= RESULTS_WINDOW_MS;
