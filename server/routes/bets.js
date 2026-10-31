@@ -105,6 +105,10 @@ const RISK_EUR_TO_ALL = 100;
 // when they built the slip, before we reject instead of silently accepting
 // a worse price. 2% tolerance absorbs normal rounding/timing noise.
 const ODDS_WORSENING_TOLERANCE = 0.02;
+// "Prano Ndryshimet & Vendos": the player accepted the prices shown on the slip. If the price moved
+// again by less than this share while they pressed, the ticket is still booked at the price they
+// accepted (a bigger drop asks them again). See server/oddsAcceptance.js.
+const ACCEPTED_RETRY_TOLERANCE = Math.max(0, Number(process.env.ACCEPTED_RETRY_TOLERANCE ?? 0.25));
 
 // "Special Offers" boost: a fixed, server-verified uplift applied only when
 // the client explicitly flags a selection as boosted AND that selection is
@@ -207,7 +211,7 @@ router.post('/', wrap(async (req, res) => {
   // trusting the client, and reject if odds moved unfavorably beyond
   // tolerance (odds protection) instead of silently booking a worse price.
   const fail = (status, body) => ({ fail: { status, body } });
-  const verifySelections = async (tolerance = ODDS_WORSENING_TOLERANCE) => {
+  const verifySelections = async (tolerance = ODDS_WORSENING_TOLERANCE, { bookAtSent = false } = {}) => {
   let totalOdds = 1;
   let inPlay = false;
   const verifiedSelections = [];
@@ -369,8 +373,12 @@ router.post('/', wrap(async (req, res) => {
         newOdds: currentOdds,
       });
     }
-    totalOdds *= currentOdds;
-    verifiedSelections.push({ ...sel, odds: currentOdds });
+    // Accepted retry: book at the price the player accepted when the live price slipped a little since
+    // (never above what they sent, and never when it fell past the tolerance: that was refused above).
+    const bookedOdds = bookAtSent && typeof sel.odds === 'number' && Number.isFinite(sel.odds) && sel.odds > currentOdds
+      ? sel.odds : currentOdds;
+    totalOdds *= bookedOdds;
+    verifiedSelections.push({ ...sel, odds: bookedOdds });
     correlationInput.push({ matchId: sel.matchId, marketId: sel.marketId, marketName: current.marketName, optionName: current.selectionName || sel.selectionName, home: matchRow.home_team, away: matchRow.away_team, startTime: matchRow.start_time });
   }
 
@@ -401,7 +409,14 @@ router.post('/', wrap(async (req, res) => {
   };
 
   const betStartedAt = Date.now();
-  let verified = await verifySelections();
+  // Where the time goes for one ticket (logged once it is booked): see the [bets] timing line below.
+  const phase = { verify1: 0, risk: 0, hold: 0, verify2: 0, tx: 0 };
+  // Exact retry of a ticket just refused for moved prices = the player pressed "accept & place".
+  const acceptedCandidate = isAcceptedRetry(req.user.id, selections);
+  let verified = acceptedCandidate
+    ? await verifySelections(ACCEPTED_RETRY_TOLERANCE, { bookAtSent: true })
+    : await verifySelections();
+  phase.verify1 = Date.now() - betStartedAt;
   if (verified.fail) return res.status(verified.fail.status).json(verified.fail.body);
   // Live bet delay: when any leg is in play, hold the ticket for a few seconds and
   // verify everything again against the freshest data, so a goal/card/half-time that
@@ -445,19 +460,29 @@ router.post('/', wrap(async (req, res) => {
       }
     }
   }
+  phase.risk = Date.now() - betStartedAt - phase.verify1;
   const highStake = stake >= HIGH_STAKE_DELAY[currency];
   // The player is accepting the new prices of a ticket we just refused for moved prices: book it now,
   // at the price verified a moment ago, instead of making them wait (and chase the price) again.
   // Everything above (market, match, risk, limits) was checked as usual; flagged users keep the delay.
-  const acceptedRetry = risk.level === 'NORMAL' && isAcceptedRetry(req.user.id, selections);
+  const acceptedRetry = acceptedCandidate && risk.level === 'NORMAL';
   if (acceptedRetry) forgetOddsRefusal(req.user.id);
+  else if (acceptedCandidate) {
+    // A flagged user gets no special treatment: strict price check, normal delay.
+    verified = await verifySelections();
+    if (verified.fail) return res.status(verified.fail.status).json(verified.fail.body);
+  }
   if ((verified.inPlay || highStake) && policy.delayMs > 0 && !acceptedRetry) {
     const firstPass = verified;
+    const holdStartedAt = Date.now();
     // The delay counts from the moment the request arrived: the first verification and the risk checks are part of it,
     // so the player waits the delay itself (about 5 s), not the delay PLUS the work done before it.
     await new Promise((r) => setTimeout(r, Math.max(0, policy.delayMs - (Date.now() - betStartedAt))));
     // Second look at the freshest data. A small price drop is accepted, a big one asks the player again.
+    phase.hold = Date.now() - holdStartedAt;
+    const verify2StartedAt = Date.now();
     verified = await verifySelections(LIVE_REPRICE_TOLERANCE);
+    phase.verify2 = Date.now() - verify2StartedAt;
     if (verified.fail) return res.status(verified.fail.status).json(verified.fail.body);
     // Book every leg at the worse of: price before the delay, price after the delay.
     const repriced = verified.verifiedSelections.map((leg, i) => {
@@ -570,7 +595,9 @@ router.post('/', wrap(async (req, res) => {
   }
   return false;
   };
+  const txStartedAt = Date.now();
   if (await withDbRetry(runTicketTx, { retries: 2, delayMs: 400 })) return;
+  phase.tx = Date.now() - txStartedAt;
 
   let updatedRows;
   try {
@@ -580,6 +607,10 @@ router.post('/', wrap(async (req, res) => {
     console.error('[bets] balance read after commit failed, using computed balance:', err && err.message);
     updatedRows = [{ ...user, ...(balanceAfterTx != null ? { [wallet]: balanceAfterTx } : {}) }];
   }
+  // One line per booked ticket: total time and the phases (verify = price/market checks, hold = the
+  // live delay, tx = booking in the database). A ticket that took long shows which phase was slow.
+  const totalMs = Date.now() - betStartedAt;
+  (totalMs > 7000 ? console.warn : console.log)(`[bets] ticket ${betId} booked in ${totalMs}ms (verify1=${phase.verify1} risk=${phase.risk} hold=${phase.hold} verify2=${phase.verify2} tx=${phase.tx} live=${Boolean(isLiveTicket)})`);
   res.status(201).json({
     bet: { id: betId, totalOdds, potentialReturn, stake, currency },
     balance: updatedRows[0].balance,

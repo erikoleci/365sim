@@ -97,7 +97,10 @@ export function useBetSlip({ currentUser, setCurrentUser, onPlaced }: Options) {
       setSelections([]);
       // The ticket is booked: tell the player the agent accepted it (see BetAcceptedToast).
       setBetAccepted(true);
-      try { await onPlaced(); } catch { /* refreshing "my bets" must never turn a booked ticket into an error */ }
+      // The ticket is booked: the confirmation must not wait for "my bets" to reload (that request
+      // returns EVERY ticket of the player and grows with the account -- it added seconds). It runs
+      // in the background and the list fills in when it arrives.
+      void Promise.resolve().then(() => onPlaced()).catch(() => { /* refreshing "my bets" must never turn a booked ticket into an error */ });
       return true;
     } catch (e: any) {
       // The server re-verifies every price and market at placement time. Two answers leave the
