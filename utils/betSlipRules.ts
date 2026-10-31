@@ -39,3 +39,11 @@ export function findSlipConflicts(selections: BetSelectionItem[]): Map<string, B
   }
   return conflicts;
 }
+
+// The stake typed into the slip after a placement attempt. Only a ticket that was really booked
+// clears it. A refusal (prices moved, a market closed, ...) keeps the amount, so the player
+// accepts the new prices with ONE press instead of retyping the stake every time a live price
+// changes (3-4 changes = minutes lost on a live match).
+export function stakeAfterPlacement(result: unknown, stake: string): string {
+  return result === false ? stake : '';
+}

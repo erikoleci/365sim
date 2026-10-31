@@ -75,3 +75,14 @@ describe('goal-count picks of one team clash with the match total', () => {
     expect(flagged([team, total])).toEqual(keys(team, total));
   });
 });
+
+import { stakeAfterPlacement } from '../utils/betSlipRules';
+describe('stake after a placement attempt', () => {
+  it('is kept when the ticket was refused (live prices moved), so one press accepts the new prices', () => {
+    expect(stakeAfterPlacement(false, '500')).toBe('500');
+  });
+  it('is cleared once the ticket is booked', () => {
+    expect(stakeAfterPlacement(true, '500')).toBe('');
+    expect(stakeAfterPlacement(undefined, '500')).toBe('');
+  });
+});

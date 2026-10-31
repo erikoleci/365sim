@@ -3,7 +3,7 @@ import { BetSelectionItem, Bet, BetStatus } from '../types';
 import { useI18n } from '../i18n';
 import MatchupLabel from './MatchupLabel';
 import TicketDetailModal, { TicketView } from './TicketDetailModal';
-import { findSlipConflicts, legKey } from '../utils/betSlipRules';
+import { findSlipConflicts, legKey, stakeAfterPlacement } from '../utils/betSlipRules';
 
 interface BetSlipProps {
   selections: BetSelectionItem[];
@@ -74,6 +74,9 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
   const handlePlaceBetClick = () => {
     if (!stake || !isValidStake || hasConflicts) return;
     setShowConfirm(true);
+    // "Prano Ndryshimet & Vendos": the player has just seen the new prices on the slip and pressed
+    // accept, so the ticket goes out right away with the same stake (no second confirmation).
+    if (changedSelections.length > 0) confirmBet();
   };
 
   const confirmBet = () => {
@@ -86,8 +89,10 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
     // tickets (which the server also holds for ~5s to re-check prices) do not wait twice.
     setAwaitingConfirmation(true);
     const wait = new Promise<void>((resolve) => setTimeout(resolve, PENDING_DELAY_MS));
-    Promise.all([Promise.resolve(onPlaceBet(betStake, betType, betCurrency)).catch(() => undefined), wait]).finally(() => {
-      setStake('');
+    Promise.all([Promise.resolve(onPlaceBet(betStake, betType, betCurrency)).catch(() => false), wait]).then(([result]) => {
+      // Booked: clear the stake. Refused (prices changed ...): keep it, one press accepts the new prices.
+      setStake((current) => stakeAfterPlacement(result, current));
+    }).finally(() => {
       setAwaitingConfirmation(false);
       setShowConfirm(false);
     });
