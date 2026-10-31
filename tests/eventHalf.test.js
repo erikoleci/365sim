@@ -22,6 +22,12 @@ describe('first-half stoppage time stays in the first half', () => {
   it('the divider does not appear while the first half is still being played (stoppage time)', () => {
     expect(firstHalfDividerIndex(events, ctx({ liveStatus: '1H', minuteNow: 47 }))).toBeNull();
   });
+  it('long stoppage (46:59) never shows the divider, whatever the status says, until halftime', () => {
+    expect(firstHalfDividerIndex(events, ctx({ liveStatus: '1H', minuteNow: 46.98 }))).toBeNull();
+    expect(firstHalfDividerIndex(events, ctx({ liveStatus: '', minuteNow: 47 }))).toBeNull();
+    expect(firstHalfDividerIndex(events, ctx({ liveStatus: 'LIVE', minuteNow: 51 }))).toBeNull();
+    expect(firstHalfDividerIndex(events, ctx({ liveStatus: 'HT', halftime: true, minuteNow: 51 }))).toBe(6);
+  });
   it('older rows without a half fall back to the minute', () => {
     const old = [ev(12), ev(44), ev(46), ev(70)];
     expect(isFirstHalfEvent(ev(44))).toBe(true);
