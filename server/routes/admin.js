@@ -24,6 +24,7 @@ import { scopeOf, ownsRow } from '../adminScope.js';
 import { importLondon365, getLondon365Status, getLondon365CountryDebug } from '../london365.js';
 import { monthRange } from './agent.js';
 import { userMetrics, buildCommissionReport, periodRange } from '../commission.js';
+import { buildCreditLedger, feeRateFromEnv } from '../creditLedger.js';
 import { deleteUserIfUnused, deleteBlockedMessage, forceDeleteUser } from '../userDeletion.js';
 
 const router = express.Router();
@@ -670,6 +671,25 @@ router.post('/admins/:id/debit', requireSuperAdmin, async (req, res) => {
     if (err.message === 'Insufficient balance') return res.status(400).json({ error: 'Admini ka më pak kredi se kjo shumë' });
     throw err;
   }
+});
+
+// The super admin's book of credit given to the admins: what each got (date, lek, euro), what came back, what is
+// left on his balance, and the cash the super admin keeps for it (OWNER_CREDIT_FEE_RATE, default 10%).
+router.get('/credit-ledger', requireSuperAdmin, async (req, res) => {
+  const adminId = req.query.adminId ? String(req.query.adminId) : null;
+  const [{ rows: admins }, { rows }] = await Promise.all([
+    pool.query(`SELECT id, name, username, balance, balance_eur FROM users WHERE role = 'ADMIN'`),
+    pool.query(
+      `SELECT id, created_at, amount, currency, type,
+              CASE WHEN type = 'SUPER_TO_ADMIN' THEN target_id ELSE source_id END AS admin_id
+         FROM transactions WHERE type IN ('SUPER_TO_ADMIN', 'ADMIN_TO_SUPER')`
+    ),
+  ]);
+  res.json(buildCreditLedger({
+    admins, rows, adminId,
+    feeRate: feeRateFromEnv(process.env.OWNER_CREDIT_FEE_RATE),
+    limit: Math.min(Number(req.query.limit) || 300, 1000),
+  }));
 });
 
 // Hand an agent (and every user he has) over to another admin, or to nobody (adminId null / missing).

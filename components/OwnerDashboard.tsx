@@ -6,6 +6,7 @@ import VcCodesPanel from './VcCodesPanel';
 import HierarchyPanel from './HierarchyPanel';
 import CommissionReport from './CommissionReport';
 import CasinoAdmin from './CasinoAdmin';
+import AdminCreditLedger from './AdminCreditLedger';
 import { useI18n, getLocale } from '../i18n';
 
 interface OwnerDashboardProps {
@@ -22,6 +23,14 @@ interface OwnerDashboardProps {
   onSetBalance?: (balance: number, balanceEur?: number) => void;
 }
 
+// The dashboard paints at once from the last copy kept on this device, then refreshes it from the server.
+const readOwnerCache = <T,>(userId: string, key: string): T | null => {
+  try { return JSON.parse(localStorage.getItem(`ownerCache:${userId}:${key}`) || 'null'); } catch { return null; }
+};
+const writeOwnerCache = (userId: string, key: string, value: unknown) => {
+  try { localStorage.setItem(`ownerCache:${userId}:${key}`, JSON.stringify(value)); } catch { /* storage unavailable */ }
+};
+
 const money = (n: number) => Number(n || 0).toLocaleString(getLocale(), { maximumFractionDigits: 2 });
 // Lek and euro are always shown side by side and never added together: lek on the first line, euro under it.
 const dual = (lek: any, eur: any) => (<>{money(lek)} L<br />€{money(eur ?? 0)}</>);
@@ -36,13 +45,13 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
 }) => {
   const { t } = useI18n();
   const isSuper = currentUser.role === 'SUPER_ADMIN';
-  const [tab, setTab] = useState<'reports' | 'admins' | 'hierarchy' | 'monthly' | 'manage' | 'vc' | 'commission' | 'casino'>('reports');
+  const [tab, setTab] = useState<'reports' | 'admins' | 'credit' | 'hierarchy' | 'monthly' | 'manage' | 'vc' | 'commission' | 'casino'>('reports');
   // Super admin only: what every admin did, and the tickets of the admin he opened.
-  const [adminsReport, setAdminsReport] = useState<api.AdminsReport | null>(null);
+  const [adminsReport, setAdminsReport] = useState<api.AdminsReport | null>(() => (currentUser.role === 'SUPER_ADMIN' ? readOwnerCache<api.AdminsReport>(currentUser.id, 'adminsReport') : null));
   const [openAdminId, setOpenAdminId] = useState<string | null>(null);
   const [openAdminBets, setOpenAdminBets] = useState<any[] | null>(null);
-  const [overview, setOverview] = useState<api.AdminOverview | null>(null);
-  const [agents, setAgents] = useState<User[]>([]);
+  const [overview, setOverview] = useState<api.AdminOverview | null>(() => readOwnerCache<api.AdminOverview>(currentUser.id, 'overview'));
+  const [agents, setAgents] = useState<User[]>(() => readOwnerCache<User[]>(currentUser.id, 'agents') ?? []);
   const [loading, setLoading] = useState(false);
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
   const [agentDetail, setAgentDetail] = useState<Record<string, api.AgentUserPerformance[]>>({});
@@ -62,12 +71,14 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
       const [ov, ag] = await Promise.all([api.adminFetchOverview(), api.adminFetchAgents()]);
       setOverview(ov);
       setAgents(ag);
+      writeOwnerCache(currentUser.id, 'overview', ov);
+      writeOwnerCache(currentUser.id, 'agents', ag);
     } catch (e) {
       console.error('Failed to load owner overview', e);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentUser.id]);
 
   useEffect(() => { if (tab === 'reports') load(); }, [tab, load]);
 
@@ -78,9 +89,19 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
 
   useEffect(() => {
     if (tab !== 'admins' || !isSuper) return;
-    setAdminsReport(null);
-    api.adminFetchAdminsReport(monthInput || undefined).then(setAdminsReport).catch((e) => console.error(e));
-  }, [tab, monthInput, isSuper]);
+    if (monthInput) setAdminsReport(null); // another month: do not show the old numbers under the new label
+    api.adminFetchAdminsReport(monthInput || undefined).then((r) => {
+      setAdminsReport(r);
+      if (!monthInput) writeOwnerCache(currentUser.id, 'adminsReport', r);
+    }).catch((e) => console.error(e));
+  }, [tab, monthInput, isSuper, currentUser.id]);
+
+  // The super admin's admins report is fetched right away (in parallel with the overview), so that tab opens ready.
+  useEffect(() => {
+    if (!isSuper) return;
+    api.adminFetchAdminsReport().then((r) => { setAdminsReport((cur) => (monthInput ? cur : r)); writeOwnerCache(currentUser.id, 'adminsReport', r); }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSuper, currentUser.id]);
 
   const toggleAdminTickets = async (adminId: string) => {
     if (openAdminId === adminId) { setOpenAdminId(null); setOpenAdminBets(null); return; }
@@ -162,13 +183,13 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
       </header>
 
       <nav className="flex gap-1 px-4 pt-3 border-b border-[#333]">
-        {(isSuper ? ['reports', 'admins', 'hierarchy', 'commission', 'monthly', 'manage', 'vc', 'casino'] as const : ['reports', 'commission', 'monthly', 'manage'] as const).map((tabKey) => (
+        {(isSuper ? ['reports', 'admins', 'credit', 'hierarchy', 'commission', 'monthly', 'manage', 'vc', 'casino'] as const : ['reports', 'commission', 'monthly', 'manage'] as const).map((tabKey) => (
           <button
             key={tabKey}
             onClick={() => setTab(tabKey)}
             className={`px-4 py-2 text-sm font-bold rounded-t uppercase tracking-wide ${tab === tabKey ? 'bg-brand-panel text-brand-yellow border border-b-0 border-[#444]' : 'text-brand-textMuted hover:text-white'}`}
           >
-            {tabKey === 'reports' ? t('Raporte') : tabKey === 'admins' ? t('Adminët') : tabKey === 'hierarchy' ? t('Struktura') : tabKey === 'commission' ? t('Komisioni') : tabKey === 'monthly' ? t('Raporti Mujor') : tabKey === 'vc' ? t('Kodet live') : tabKey === 'casino' ? 'Casino' : t('Menaxho')}
+            {tabKey === 'reports' ? t('Raporte') : tabKey === 'admins' ? t('Adminët') : tabKey === 'credit' ? t('Kredia') : tabKey === 'hierarchy' ? t('Struktura') : tabKey === 'commission' ? t('Komisioni') : tabKey === 'monthly' ? t('Raporti Mujor') : tabKey === 'vc' ? t('Kodet live') : tabKey === 'casino' ? 'Casino' : t('Menaxho')}
           </button>
         ))}
       </nav>
@@ -307,6 +328,8 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             )}
           </div>
         )}
+
+        {tab === 'credit' && isSuper && <AdminCreditLedger />}
 
         {tab === 'admins' && isSuper && (
           <div className="bg-brand-panel border border-[#444] rounded p-4">

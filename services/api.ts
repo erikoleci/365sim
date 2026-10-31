@@ -546,6 +546,18 @@ export async function adminFetchAdminsReport(month?: string) {
   const q = month ? `?month=${encodeURIComponent(month)}` : '';
   return request<AdminsReport>(`/admin/reports/admins${q}`);
 }
+// Super admin: the book of credit given to the admins (see server/creditLedger.js).
+export interface Dual { ALL: number; EUR: number }
+export interface CreditLedger {
+  feeRate: number;
+  admins: { id: string; name: string; username: string; remaining: Dual; given: Dual; takenBack: Dual; net: Dual; cash: Dual; used: Dual; leftPct: { ALL: number | null; EUR: number | null }; credits: number; lastCreditAt: number | null }[];
+  totals: { given: Dual; takenBack: Dual; net: Dual; cash: Dual; remaining: Dual };
+  history: { id: number; at: number; adminId: string; adminName: string; adminUsername: string; kind: 'CREDIT' | 'TAKE_BACK'; currency: 'ALL' | 'EUR'; amount: number; cash: number }[];
+}
+export async function adminFetchCreditLedger(adminId?: string) {
+  const q = adminId ? `?adminId=${encodeURIComponent(adminId)}` : '';
+  return request<CreditLedger>(`/admin/credit-ledger${q}`);
+}
 // Super admin: the tickets of ONE admin's agents and users, newest first.
 export async function adminFetchBetsOfAdmin(adminId: string, limit = 100) {
   const data = await request<{ bets: any[] }>(`/admin/bets?adminId=${encodeURIComponent(adminId)}&limit=${limit}`);

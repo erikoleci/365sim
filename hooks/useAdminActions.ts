@@ -38,8 +38,15 @@ export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reload
     }
   }, [isAdmin]);
 
-  // The owner's data loads as soon as they sign in, so their dashboard has it immediately.
-  useEffect(() => { if (panelOpen || isAdmin) loadAdminData(); }, [panelOpen, isAdmin, loadAdminData]);
+  // The big lists (up to 1000 users and 500 tickets with their legs) are only needed in the management tab. They used to
+  // be downloaded at the very moment the dashboard opened, competing with the overview the person is looking at. Now the
+  // overview goes first and these follow a moment later (at once when the panel overlay itself was opened).
+  useEffect(() => {
+    if (panelOpen) { loadAdminData(); return; }
+    if (!isAdmin) return;
+    const timer = setTimeout(loadAdminData, 1200);
+    return () => clearTimeout(timer);
+  }, [panelOpen, isAdmin, loadAdminData]);
 
   // The admin picks the role at creation: USER and AGENT are separate tables/permissions server-side.
   const createUser = async (newUser: NewUser) => {

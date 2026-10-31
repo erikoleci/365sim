@@ -307,6 +307,7 @@ export async function initDb() {
   // ADMIN, same as today), nothing retroactively changes for them.
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS agent_id TEXT REFERENCES users(id);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_agent_id ON users (agent_id);`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_admin_id ON users (admin_id);`); // admin dashboards scope every query by admin_id
 
   // commission_rate: percentage (0-100) of an AGENT's users' net gaming
   // result (house win = losses - wins, i.e. GGR) that the platform owes
