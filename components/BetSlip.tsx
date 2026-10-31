@@ -88,7 +88,8 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
     // The request is sent right away and runs IN PARALLEL with the 5s timer, so live / high-stake
     // tickets (which the server also holds for ~5s to re-check prices) do not wait twice.
     setAwaitingConfirmation(true);
-    const wait = new Promise<void>((resolve) => setTimeout(resolve, PENDING_DELAY_MS));
+    // Accepting changed prices books at once (the server skips its hold for that retry too).
+    const wait = new Promise<void>((resolve) => setTimeout(resolve, changedSelections.length > 0 ? 0 : PENDING_DELAY_MS));
     Promise.all([Promise.resolve(onPlaceBet(betStake, betType, betCurrency)).catch(() => false), wait]).then(([result]) => {
       // Booked: clear the stake. Refused (prices changed ...): keep it, one press accepts the new prices.
       setStake((current) => stakeAfterPlacement(result, current));

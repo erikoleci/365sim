@@ -1,3 +1,4 @@
+import { noteOddsRefusal, isAcceptedRetry, forgetOddsRefusal } from '../oddsAcceptance.js';
 import express from 'express';
 import { randomUUID } from 'crypto';
 import pool from '../db.js';
@@ -384,6 +385,7 @@ router.post('/', wrap(async (req, res) => {
   }
 
   if (oddsChanges.length > 0) {
+    noteOddsRefusal(req.user.id, selections);
     return fail(409, {
       error: oddsChanges.length === 1
         ? `Odds for ${oddsChanges[0].selectionName} changed (was ${oddsChanges[0].oldOdds}, now ${oddsChanges[0].newOdds}).`
@@ -444,7 +446,12 @@ router.post('/', wrap(async (req, res) => {
     }
   }
   const highStake = stake >= HIGH_STAKE_DELAY[currency];
-  if ((verified.inPlay || highStake) && policy.delayMs > 0) {
+  // The player is accepting the new prices of a ticket we just refused for moved prices: book it now,
+  // at the price verified a moment ago, instead of making them wait (and chase the price) again.
+  // Everything above (market, match, risk, limits) was checked as usual; flagged users keep the delay.
+  const acceptedRetry = risk.level === 'NORMAL' && isAcceptedRetry(req.user.id, selections);
+  if (acceptedRetry) forgetOddsRefusal(req.user.id);
+  if ((verified.inPlay || highStake) && policy.delayMs > 0 && !acceptedRetry) {
     const firstPass = verified;
     // The delay counts from the moment the request arrived: the first verification and the risk checks are part of it,
     // so the player waits the delay itself (about 5 s), not the delay PLUS the work done before it.
