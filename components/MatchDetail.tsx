@@ -138,12 +138,22 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
     // `initial`: only the first load shows the "Duke ngarkuar..." spinner. The 15s poll and the
     // socket refreshes replace the data silently, and a failed refresh keeps what is on screen
     // (it used to blank the events list / stats every time one poll failed or reloaded).
+    // A request that hangs (slow database, server busy) must not leave "Duke ngarkuar ngjarjet..." on screen for ever:
+    // after 8 s it counts as failed, the list shows what it has, and the load is tried again a few seconds later.
+    let failures = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
     const load = (initial = false) => {
       if (initial) setLiveDetailLoading(true);
-      api.fetchMatchLiveDetail(match.liveSourceId ?? match.id)
-        .then((d) => { if (!cancelled) setLiveDetail(d); })
-        .catch(() => { if (!cancelled) setLiveDetail((prev) => prev ?? { statistics: null, events: [] }); })
-        .finally(() => { if (!cancelled && initial) setLiveDetailLoading(false); });
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('live-detail timeout')), 8000); });
+      Promise.race([api.fetchMatchLiveDetail(match.liveSourceId ?? match.id), timeout])
+        .then((d) => { failures = 0; if (!cancelled) setLiveDetail(d); })
+        .catch(() => {
+          if (cancelled) return;
+          setLiveDetail((prev) => prev ?? { statistics: null, events: [] });
+          if (failures < 4) { failures += 1; if (retryTimer) clearTimeout(retryTimer); retryTimer = setTimeout(() => load(), 3000); }
+        })
+        .finally(() => { clearTimeout(timer); if (!cancelled && initial) setLiveDetailLoading(false); });
     };
     load(true);
     // Live games: keep stats, events, minute and odds fresh on their own
@@ -176,6 +186,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
 
     return () => {
       cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
       if (interval) clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('pageshow', onVisible);

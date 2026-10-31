@@ -38,6 +38,7 @@ export function useMatchesFeed(enabled: boolean, sessionKey: string | null) {
   // must not bring the full-screen spinner back over matches that are already on screen.
   const hasLoadedOnceRef = useRef(matches.length > 0);
   const retryAttemptRef = useRef(0);
+  const loadLiveRef = useRef<() => Promise<void>>(async () => {});
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadMatches = useCallback(async () => {
@@ -49,6 +50,9 @@ export function useMatchesFeed(enabled: boolean, sessionKey: string | null) {
       const fresh = freshAll.filter((m) => !isStaleLiveMatch(m));
       setMatches((current) => keepNewerLive(current, fresh)); // a list a few seconds old must not undo a newer live minute
       writeCache('cachedMatches', fresh);
+      // The list the server keeps in memory can be up to a minute or so old; the matches in play are then refreshed from
+      // their own small, cheap request, so scores, minutes and status are never as old as the list.
+      loadLiveRef.current();
       if (freshNames) {
         setLeagueNames((prev) => { const next = { ...prev, ...freshNames }; writeCache('cachedLeagueNames', next); return next; });
       }
@@ -91,6 +95,8 @@ export function useMatchesFeed(enabled: boolean, sessionKey: string | null) {
       });
     } catch { /* the full load below is the fallback */ }
   }, [enabled]);
+
+  useEffect(() => { loadLiveRef.current = loadLive; }, [loadLive]);
 
   // The retry timer calls the NEWEST loadMatches (not the one from the render that set it).
   const loadMatchesRef = useRef(loadMatches);

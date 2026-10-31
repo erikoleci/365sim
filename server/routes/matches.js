@@ -168,8 +168,12 @@ async function fetchUpcomingMatchRowsPaged() {
 // The list is the heaviest query of the app. It is served from memory: a copy up to MAX_STALE (15 s) old is returned
 // AT ONCE and refreshed in the background (one refresh at a time), and while people are using the app it is kept
 // warm, so opening the page never waits for the database. Only a copy older than MAX_STALE (or none) is awaited.
-const MATCHES_MAX_STALE_MS = 15 * 1000; // as fresh as before (8 s) in practice: live minutes must never lag
-const MATCHES_WARM_EVERY_MS = 10 * 1000;
+// The full list is the heaviest query of the app (paged scans with the raw JSON of ~1000 rows). Refreshing it every few
+// seconds used to starve every other request of database connections (match events, tickets, odds). So it is refreshed
+// about once a minute; what must be fresh (minutes, scores, status, live odds) comes from GET /live (a few rows) and from
+// the WebSocket, and the browser overlays those on top of the list (see useMatchesFeed).
+const MATCHES_MAX_STALE_MS = 90 * 1000;
+const MATCHES_WARM_EVERY_MS = 15 * 1000;
 const refreshesInFlight = new Map(); // key -> Promise<body>
 let lastListRequestAt = 0;
 let lastListLogAt = 0;
@@ -240,7 +244,9 @@ setTimeout(() => { refreshMatchesList('').catch(() => {}); }, 3000).unref?.();
 let lastWarmAt = 0;
 setInterval(() => {
   const idle = Date.now() - lastListRequestAt;
-  const due = idle < 5 * 60 * 1000 || (idle < 30 * 60 * 1000 && Date.now() - lastWarmAt >= 60 * 1000);
+  const entry = matchesResponseCache.get('__all__');
+  const age = entry ? Date.now() - entry.computedAt : Infinity;
+  const due = (idle < 5 * 60 * 1000 && age >= 60 * 1000) || (idle < 30 * 60 * 1000 && age >= 5 * 60 * 1000);
   if (!due) return;
   lastWarmAt = Date.now();
   refreshMatchesList('').catch(() => {});
