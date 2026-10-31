@@ -11,16 +11,23 @@
 //    readable we use what we KNOW about the match:
 //      - the 90-minute score was captured (rt_home)   -> extra time (3)
 //      - the half-time score was captured (ht_home)   -> second half (2)
-//      - match is LIVE, no HT seen yet, clock <= 55'  -> still the first half (1): first-half
-//        stoppage time. (If the HT capture was ever missed, a 46'-55' second-half event would be
-//        filed as 45+N; that is the rare case we accept, it was the common case before.)
+//      - match is LIVE and no HT was seen yet -> still the first half (1). The GAME clock is never
+//        used to decide this: first-half stoppage time is unbounded (+6, +15, +20 happen), so
+//        "clock <= 55'" filed such events under the second half. Only the half-time signal from
+//        the provider (VC 1015 -> HT -> ht_home) ends the first half. Backstop for a missed HT
+//        capture, on the WALL clock (not the game clock): more than FIRST_HALF_WALL_LIMIT_MIN
+//        real minutes after the scheduled kickoff, a match with no HT seen is taken to be in the
+//        second half (a first half with +20 stoppage still ends ~70 real minutes after kickoff).
 // Penalties stay NULL (unknown).
+export const FIRST_HALF_WALL_LIMIT_MIN = 80;
 export const halfSql = (p) => `(SELECT CASE
   WHEN UPPER(COALESCE(live_status, '')) IN ('ET', 'EXTRA_TIME') THEN 3
   WHEN UPPER(COALESCE(live_status, '')) IN ('2H', 'SECOND_HALF', 'FT', 'ENDED', 'FINISHED') THEN 2
   WHEN UPPER(COALESCE(live_status, '')) IN ('1H', 'HT', 'FIRST_HALF', 'HALF_TIME', 'HALFTIME') THEN 1
   WHEN rt_home IS NOT NULL THEN 3
   WHEN ht_home IS NOT NULL THEN 2
+  WHEN status = 'LIVE' AND start_time::text !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN 1
   WHEN status = 'LIVE'
-       AND COALESCE(substring(COALESCE(live_minute, '') from '^[0-9]+')::int, 999) <= 55 THEN 1
+       AND NOW() - start_time::text::timestamptz <= INTERVAL '${FIRST_HALF_WALL_LIMIT_MIN} minutes' THEN 1
+  WHEN status = 'LIVE' THEN 2
   END FROM matches_cache WHERE id = ${p})`;

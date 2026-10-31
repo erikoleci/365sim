@@ -30,4 +30,9 @@ describe('extra time: markets are closed', () => {
   it('events logged in extra time get half 3', () => {
     expect(halfSql('$1')).toMatch(/IN \('ET', 'EXTRA_TIME'\) THEN 3/);
   });
+  it('the first half is never ended by the game clock (stoppage time is unbounded: +15, +20)', () => {
+    const sql = halfSql('$1');
+    expect(sql).not.toMatch(/live_minute/);
+    expect(sql).toMatch(/ht_home IS NOT NULL THEN 2/);
+  });
 });
