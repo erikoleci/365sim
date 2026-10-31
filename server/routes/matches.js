@@ -1,5 +1,7 @@
 import { reconcileEvents } from '../eventReconcile.js';
 import express from 'express';
+import { gzip as gzipCb } from 'zlib';
+import { promisify } from 'util';
 import { queryWithRetry } from '../db.js';
 import { mapEventToMatch } from '../oddsUtils.js';
 import { ensureLondon365Import, getLondon365LeagueNames, getLondon365LeagueMeta } from '../london365.js';
@@ -45,7 +47,32 @@ function logMerge(ids, keptId, liveSourceId) {
 // itself. TTL is short enough that no one perceives stale data (live
 // scores/odds flow separately over WebSocket in real time regardless).
 const MATCHES_CACHE_TTL_MS = 8000;
-const matchesResponseCache = new Map(); // key -> { body, computedAt }
+// key -> { json, gz, computedAt }. The list is serialized and gzipped ONCE per refresh and the same bytes go to every
+// visitor (no JSON.stringify + compression of a ~1 MB body per request), and only a few keys are ever kept, because the
+// key comes from the ?league= parameter and must never be able to fill the memory.
+const matchesResponseCache = new Map();
+const MATCHES_CACHE_MAX_KEYS = 6;
+const gzipAsync = promisify(gzipCb);
+
+function storeMatchesEntry(cacheKey, entry) {
+  matchesResponseCache.delete(cacheKey); // re-insert = newest
+  matchesResponseCache.set(cacheKey, entry);
+  while (matchesResponseCache.size > MATCHES_CACHE_MAX_KEYS) {
+    const oldest = [...matchesResponseCache.keys()].find((k) => k !== '__all__');
+    if (oldest === undefined) break;
+    matchesResponseCache.delete(oldest);
+  }
+}
+
+function sendMatchesEntry(req, res, entry) {
+  res.setHeader('Vary', 'Accept-Encoding');
+  res.type('application/json');
+  if (entry.gz && req.acceptsEncodings('gzip')) {
+    res.setHeader('Content-Encoding', 'gzip');
+    return res.send(entry.gz);
+  }
+  return res.send(entry.json);
+}
 
 export function getMatchesResponseCacheSize() {
   return matchesResponseCache.size;
@@ -145,6 +172,7 @@ const MATCHES_MAX_STALE_MS = 15 * 1000; // as fresh as before (8 s) in practice:
 const MATCHES_WARM_EVERY_MS = 10 * 1000;
 const refreshesInFlight = new Map(); // key -> Promise<body>
 let lastListRequestAt = 0;
+let lastListLogAt = 0;
 
 function refreshMatchesList(league) {
   const cacheKey = league || '__all__';
@@ -166,15 +194,22 @@ function refreshMatchesList(league) {
       throw err;
     }
     if (Date.now() - t0 > 3000) console.warn(`[matches] list query was slow: ${Date.now() - t0}ms for ${rows.length} row(s)`);
-    console.log(`[matches] GET / -> ${rows.length} cached row(s)${league ? ` for league=${league}` : ''}`);
+    if (Date.now() - lastListLogAt > 5 * 60 * 1000) { // not on every background refresh: that would fill the logs
+      lastListLogAt = Date.now();
+      console.log(`[matches] GET / -> ${rows.length} cached row(s)${league ? ` for league=${league}` : ''}`);
+    }
     // One malformed row must never take the whole board down: skip it and say which one.
     const mapped = [];
     for (const r of rows) {
       try { mapped.push(mapEventToMatch(r)); } catch (err) { console.error(`[matches] skipped unreadable row ${r && r.id}: ${err && err.message}`); }
     }
     const body = { matches: dedupeMatches(mapped, logMerge), leagueNames: getLondon365LeagueNames(), leagueMeta: getLondon365LeagueMeta() };
-    matchesResponseCache.set(cacheKey, { body, computedAt: Date.now() });
-    return body;
+    const json = JSON.stringify(body);
+    let gz = null;
+    try { gz = await gzipAsync(json, { level: 6 }); } catch { /* served uncompressed */ } // async: never blocks the live sockets
+    const entry = { json, gz, computedAt: Date.now() };
+    storeMatchesEntry(cacheKey, entry);
+    return entry;
   })().finally(() => refreshesInFlight.delete(cacheKey));
   refreshesInFlight.set(cacheKey, job);
   return job;
@@ -183,19 +218,19 @@ function refreshMatchesList(league) {
 router.get('/', wrap(async (req, res) => {
   ensureLondon365Import();
   lastListRequestAt = Date.now();
-  const league = req.query.league || '';
+  const league = typeof req.query.league === 'string' ? req.query.league.slice(0, 200) : '';
   const cached = matchesResponseCache.get(league || '__all__');
   const age = cached ? Date.now() - cached.computedAt : Infinity;
-  if (cached && age < MATCHES_CACHE_TTL_MS) return res.json(cached.body);
+  if (cached && age < MATCHES_CACHE_TTL_MS) return sendMatchesEntry(req, res, cached);
   if (cached && age < MATCHES_MAX_STALE_MS) {
     refreshMatchesList(league).catch(() => {}); // fresh copy for the next one; this one is served now
-    return res.json(cached.body);
+    return sendMatchesEntry(req, res, cached);
   }
   try {
-    res.json(await refreshMatchesList(league));
+    return sendMatchesEntry(req, res, await refreshMatchesList(league));
   } catch (err) {
     // Better a slightly old list than an empty board: serve the last good response if we have one.
-    if (cached) return res.json(cached.body);
+    if (cached) return sendMatchesEntry(req, res, cached);
     throw err;
   }
 }));
