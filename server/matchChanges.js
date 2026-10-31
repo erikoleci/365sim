@@ -20,7 +20,8 @@ export function noteMatchChanged(id) {
   if (!pushTimer) {
     pushTimer = setTimeout(() => {
       pushTimer = null;
-      broadcast('live', { type: 'MATCHES_CHANGED', seq });
+      // A failing push must never become an uncaught exception inside a timer (it would take the process down).
+      try { broadcast('live', { type: 'MATCHES_CHANGED', seq }); } catch (err) { console.warn('[matchChanges] push failed:', err && err.message); }
     }, PUSH_DELAY_MS);
     if (pushTimer.unref) pushTimer.unref();
   }

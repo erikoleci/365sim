@@ -268,7 +268,7 @@ describe('erasing tickets', () => {
   });
   it('only the super admin erases a ticket (any status), adjusting the balance by default', async () => {
     expect((await call('DELETE', '/bets/bet-pending', ADMIN)).status).toBe(403);
-    const res = await call('DELETE', '/bets/bet-void', SUPER);
+    const res = await call('DELETE', '/bets/bet-pending', SUPER); // an open ticket: its stake goes back
     expect(res.status).toBe(200);
     expect((await res.json()).balanceChange).toBe(10);
     expect(mocks.bets.has('bet-pending')).toBe(false);

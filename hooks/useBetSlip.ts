@@ -109,7 +109,7 @@ export function useBetSlip({ currentUser, setCurrentUser, onPlaced }: Options) {
           const change = changes.find((c) => sameLeg(c, sel));
           return change ? { ...sel, previousOdds: sel.odds, odds: change.newOdds } : sel;
         }));
-        return;
+        return false;
       }
       if (e instanceof api.ApiError && (e.code === 'MARKET_CLOSED' || e.code === 'MATCH_FINISHED') && Array.isArray(e.body?.closed)) {
         // the market (or match) closed, or the outcome is already decided: drop exactly those legs
