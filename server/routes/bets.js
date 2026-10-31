@@ -58,6 +58,11 @@ const LIVE_EVENT_LOCK_MS = Math.max(0, Number(process.env.LIVE_BET_EVENT_LOCK_MS
 // After the delay the ticket is booked at the WORSE of the price seen before and after the delay.
 // If the price fell by more than this share the ticket is not booked: the player must re-confirm the new price.
 const LIVE_REPRICE_TOLERANCE = Math.max(0, Number(process.env.LIVE_REPRICE_TOLERANCE ?? 0.10));
+// How long the work AFTER the hold usually takes (second price check + booking in the database), as a
+// moving average. The hold is shortened by this much so the player's ticket is accepted ~LIVE_BET_DELAY_MS
+// after pressing, not LIVE_BET_DELAY_MS plus that work (which made tickets take 8-16 s on a slow database).
+let postHoldMs = 800;
+const POST_HOLD_CAP_MS = 2000;
 const LIVE_BET_DELAY_MS = Math.max(0, Number(process.env.LIVE_BET_DELAY_MS ?? 5000));
 // High-stake tickets are held for the same delay and re-verified, even when prematch
 // (must match PENDING_STAKE_THRESHOLD in components/BetSlip.tsx).
@@ -477,7 +482,7 @@ router.post('/', wrap(async (req, res) => {
     const holdStartedAt = Date.now();
     // The delay counts from the moment the request arrived: the first verification and the risk checks are part of it,
     // so the player waits the delay itself (about 5 s), not the delay PLUS the work done before it.
-    await new Promise((r) => setTimeout(r, Math.max(0, policy.delayMs - (Date.now() - betStartedAt))));
+    await new Promise((r) => setTimeout(r, Math.max(0, policy.delayMs - (Date.now() - betStartedAt) - Math.min(postHoldMs, POST_HOLD_CAP_MS))));
     // Second look at the freshest data. A small price drop is accepted, a big one asks the player again.
     phase.hold = Date.now() - holdStartedAt;
     const verify2StartedAt = Date.now();
@@ -598,6 +603,7 @@ router.post('/', wrap(async (req, res) => {
   const txStartedAt = Date.now();
   if (await withDbRetry(runTicketTx, { retries: 2, delayMs: 400 })) return;
   phase.tx = Date.now() - txStartedAt;
+  if (phase.hold > 0) postHoldMs = Math.round(0.7 * postHoldMs + 0.3 * (phase.verify2 + phase.tx)); // learn how long the tail takes
 
   let updatedRows;
   try {
