@@ -12,7 +12,9 @@
 //   3. older finished                : [now-2d,  now-8h)
 // `pagesPerSegmentRound` rows are fetched in parallel, like before.
 export const PAGE_SIZE = 200;
-export const CONCURRENT_PAGES = 3;
+// The full list is a background job: it takes at most this many database connections at once, so live data, match
+// events and tickets (which share the pool) are never left waiting behind it.
+export const CONCURRENT_PAGES = Math.max(1, Number(process.env.MATCHES_CONCURRENT_PAGES) || 2);
 const H = 60 * 60 * 1000;
 
 export function prioritySegments(nowMs) {

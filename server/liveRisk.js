@@ -21,9 +21,13 @@ export function classify(total, hits) {
 }
 
 // What each level changes. delayMs is a floor for the live delay, stakeFactor scales the live max stake.
+// Users the system flagged for suspicious live betting wait LONGER than everybody else (anti-abuse): never shorten these to
+// make betting feel faster, that only helps the people it is there to stop. Normal users are not affected by them.
+const WATCH_DELAY_MS = Number(process.env.LIVE_RISK_WATCH_DELAY_MS) || 10000;
+const RESTRICTED_DELAY_MS = Number(process.env.LIVE_RISK_RESTRICTED_DELAY_MS) || 15000;
 export function riskPolicy(level, baseDelayMs) {
-  if (level === 'RESTRICTED') return { delayMs: Math.max(baseDelayMs, 7000), stakeFactor: 0.25 };
-  if (level === 'WATCH') return { delayMs: Math.max(baseDelayMs, 6000), stakeFactor: 0.5 };
+  if (level === 'RESTRICTED') return { delayMs: Math.max(baseDelayMs, RESTRICTED_DELAY_MS), stakeFactor: 0.25 };
+  if (level === 'WATCH') return { delayMs: Math.max(baseDelayMs, WATCH_DELAY_MS), stakeFactor: 0.5 };
   return { delayMs: baseDelayMs, stakeFactor: 1 };
 }
 
