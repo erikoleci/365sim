@@ -17,18 +17,19 @@ describe('agent commission report', () => {
     const rows = await userMetrics(pool, { rangeStart: 0, rangeEnd: 1 });
     expect(args[6]).toEqual(['PENDING', 'WON', 'LOST']);
     const r = finishMetrics(rows[0]);
-    expect(r).toMatchObject({ xhiro: 20, pending: 20, diferenca: 0, percAgjentit: -0.8 });
+    expect(r).toMatchObject({ xhiro: 20, pending: 20, diferenca: 19.2, percAgjentit: 0.8, kompania: 19.2 });
   });
-  it('uses the owner sheet convention: kompania = diferenca + commission, % agjentit shown negative', () => {
-    // 2,500 staked, nothing won, 8% commission = 200  ->  -2,500 / -200 / -2,300
-    const r = finishMetrics(m({ xhiro: 2500, tickets: 3, commission: 200 }));
-    expect(r).toMatchObject({ xhiro: 2500, fitim: 0, diferenca: -2500, percAgjentit: -200, kompania: -2300, tickets: 3 });
+  it('two open tickets of 20 and 10 at 8%: xhiro 30, pending 30, diferenca 27.60, % agjentit 2.40, kompania 27.60', () => {
+    const r = finishMetrics(m({ xhiro: 30, pending: 30, activeTickets: 2, tickets: 2, commission: 2.4 }));
+    expect(r).toMatchObject({ xhiro: 30, fitim: 0, pending: 30, activeTickets: 2, tickets: 2, diferenca: 27.6, percAgjentit: 2.4, kompania: 27.6 });
   });
-  it('open tickets stay out of diferenca (they are in "në pritje")', () => {
-    const r = finishMetrics(m({ xhiro: 1000, pending: 400, activeTickets: 2, tickets: 5, commission: 24 }));
-    expect(r.diferenca).toBe(-600);
-    expect(r.pending).toBe(400);
-    expect(r.activeTickets).toBe(2);
+  it('a win takes its payout out of diferenca and kompania; a loss changes nothing (the stake was already counted)', () => {
+    const open = finishMetrics(m({ xhiro: 30, pending: 30, tickets: 2, commission: 2.4 }));
+    const lost = finishMetrics(m({ xhiro: 30, pending: 20, tickets: 2, commission: 2.4 }));
+    const won = finishMetrics(m({ xhiro: 30, fitim: 50, pending: 20, tickets: 2, commission: 2.4 }));
+    expect(lost.diferenca).toBe(open.diferenca);
+    expect(won.diferenca).toBe(-22.4);
+    expect(won.kompania).toBe(-22.4);
   });
   it('groups by admin, agent and player and keeps lek and euro apart', () => {
     const admins = [{ id: 'a1', name: 'Admin', username: 'admin' }];
@@ -47,12 +48,12 @@ describe('agent commission report', () => {
     const r = buildCommissionReport({ admins, agents, users, metrics });
     const [g] = r.groups;
     const agent = g.rows[0];
-    expect(agent.currencies.ALL.percAgjentit).toBe(-60);     // 40 + 20, only lek
-    expect(agent.currencies.EUR.percAgjentit).toBe(-4);      // euro kept apart
-    expect(agent.players.map((p) => [p.name, p.currencies.ALL.percAgjentit])).toEqual([['Ana', -40], ['Beni', -20]]);
+    expect(agent.currencies.ALL.percAgjentit).toBe(60);     // 40 + 20, only lek
+    expect(agent.currencies.EUR.percAgjentit).toBe(4);      // euro kept apart
+    expect(agent.players.map((p) => [p.name, p.currencies.ALL.percAgjentit])).toEqual([['Ana', 40], ['Beni', 20]]);
     expect(g.rows[1].direct).toBe(true);
-    expect(g.rows[1].currencies.ALL.percAgjentit).toBe(-12);
-    expect(g.totals.ALL.percAgjentit).toBe(-72);
+    expect(g.rows[1].currencies.ALL.percAgjentit).toBe(12);
+    expect(g.totals.ALL.percAgjentit).toBe(72);
     expect(r.totals.EUR.xhiro).toBe(50);
   });
 });

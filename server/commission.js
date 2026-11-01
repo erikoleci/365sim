@@ -1,6 +1,6 @@
 // Agent commission.
-//   - live tickets and tickets with a single result .......... COMMISSION_SINGLE_PCT  (default 4%)
-//   - pre-match tickets with two or more results ............ COMMISSION_MULTI_PCT   (default 8%)
+//   - tickets with a single result (live or not) ............ COMMISSION_SINGLE_PCT  (default 4%)
+//   - tickets with two or more results (a live leg included) . COMMISSION_MULTI_PCT   (default 8%)
 // It is counted on the stake the moment the ticket is placed (open, won or lost), so the agent sees what he earns from
 // every bet straight away. Cancelled and refunded (void) tickets earn nothing. Lek and euro are kept apart
 // (currency 'ALL' = lek, 'EUR' = euro).
@@ -21,11 +21,11 @@ export async function userMetrics(pool, { rangeStart, rangeEnd, adminId = null, 
   const { rows } = await pool.query(
     `WITH t AS (
        SELECT b.user_id, b.currency, b.stake, b.potential_return, b.status,
-              CASE WHEN b.is_live OR (SELECT COUNT(*) FROM bet_selections s WHERE s.bet_id = b.id) <= 1
-                   THEN $3::numeric ELSE $4::numeric END AS rate
+              CASE WHEN (SELECT COUNT(*) FROM bet_selections s WHERE s.bet_id = b.id) >= 2
+                   THEN $4::numeric ELSE $3::numeric END AS rate
        FROM bets b
        JOIN users u ON u.id = b.user_id
-       WHERE b.created_at >= $1 AND b.created_at < $2 AND b.status <> 'CANCELLED'
+       WHERE b.created_at >= $1 AND b.created_at < $2 AND b.status NOT IN ('CANCELLED', 'VOID')
          AND ($5::text IS NULL OR COALESCE(u.admin_id, (SELECT x.admin_id FROM users x WHERE x.id = u.agent_id)) = $5)
          AND ($6::text IS NULL OR u.agent_id = $6)
      )
@@ -53,19 +53,21 @@ export const addMetrics = (a, b) => ({
 
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 
-// The columns of the report, derived from the raw sums (same convention as the agents table the owner uses):
-//   diferenca = fitim - settled xhiro      (negative: what the agent's players lost = what the agent owes the company)
-//   percAgjentit = -commission             (what the agent keeps from every placed bet, shown negative)
-//   kompania = diferenca + commission      (what is left for the company)
+// The columns of the report (every figure from the company's side, open tickets included):
+//   xhiro      = every stake placed (not cancelled / refunded)
+//   fitim      = what the winning tickets pay out
+//   diferenca  = xhiro - fitim - commission     (a new ticket adds to it, a win takes its payout out of it)
+//   percAgjentit = commission                   (what the agent keeps: 4% / 8% of every stake)
+//   kompania   = diferenca
+// e.g. 2 open tickets of 20 and 10 at 8%: 30 - 1.60 - 0.80 = 27.60, % agjentit 2.40, kompania 27.60.
 export function finishMetrics(m) {
-  const settledXhiro = m.xhiro - m.pending;
-  const diferenca = m.fitim - settledXhiro;
+  const diferenca = m.xhiro - m.fitim - m.commission;
   return {
     xhiro: round2(m.xhiro), fitim: round2(m.fitim), pending: round2(m.pending),
     activeTickets: m.activeTickets, tickets: m.tickets,
     diferenca: round2(diferenca),
-    percAgjentit: round2(-m.commission),
-    kompania: round2(diferenca + m.commission),
+    percAgjentit: round2(m.commission),
+    kompania: round2(diferenca),
   };
 }
 
