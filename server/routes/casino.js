@@ -2,7 +2,8 @@ import express from 'express';
 import { randomUUID, randomInt } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
-import { getCasinoAccess, canOpenCasino } from '../casinoAccess.js';
+import { getCasinoAccess, canOpenCasino, getDisabledGames, gameKeyForPath } from '../casinoAccess.js';
+import { PLINKO_ROWS, PLINKO_RISKS, plinkoMultipliers, minesMultiplier, MINES_TILES, dragonTigerPayout, DT_PAYOUT } from '../casinoMath.js';
 import { isSuperAdmin } from '../roles.js';
 import { normalizeCurrency, walletColumn } from '../ledger.js';
 import { SLOT_GAMES as VIDEO_SLOTS, getSlotGame as getVideoSlot, publicGame } from '../slots/games.js';
@@ -17,12 +18,20 @@ router.use(requireAuth);
 // Who may open the casino is a switch of the super admin (casino_access): off / only the super admin / everybody.
 router.get('/access', async (req, res) => {
   const mode = await getCasinoAccess();
-  res.json({ mode, allowed: canOpenCasino(mode, req.user.role) });
+  res.json({ mode, allowed: canOpenCasino(mode, req.user.role), disabledGames: await getDisabledGames() });
 });
 router.use(async (req, res, next) => {
   const mode = await getCasinoAccess();
   if (canOpenCasino(mode, req.user.role)) return next();
   return res.status(403).json({ error: 'Casino is not available' });
+});
+// A single game can be closed by the super admin; the super admin himself can still open it.
+router.use(async (req, res, next) => {
+  const game = gameKeyForPath(req.path);
+  if (game && !isSuperAdmin(req.user.role) && (await getDisabledGames()).includes(game)) {
+    return res.status(403).json({ error: 'This game is not available right now', code: 'GAME_DISABLED' });
+  }
+  return next();
 });
 
 // --- Shared house rules (kept simple & proportional to a play-money
@@ -542,6 +551,135 @@ router.post('/dice/roll', async (req, res) => {
   await creditPayout(req.user.id, payout);
   const balance = await getBalance(req.user.id);
   res.json({ dice, sum: dice[0] + dice[1], result, payout, balance });
+});
+
+// =====================================================================
+// PLINKO / MINES / DRAGON TIGER — fair games, crypto RNG, payout tables in server/casinoMath.js
+// =====================================================================
+async function logRound(userId, game, stake, payout, extra = {}) {
+  try {
+    const now = Date.now();
+    await pool.query(
+      `INSERT INTO casino_rounds (id, user_id, game, stake, status, state, result, payout, created_at, resolved_at)
+       VALUES ($1,$2,$3,$4,'FINISHED',NULL,$5,$6,$7,$7)`,
+      [randomUUID(), userId, game, stake, JSON.stringify(extra), payout, now]
+    );
+  } catch (err) { console.error('[casino] logRound', err.message); }
+}
+
+router.get('/plinko/config', (req, res) => {
+  const tables = {};
+  for (const rows of PLINKO_ROWS) for (const risk of PLINKO_RISKS) tables[`${rows}-${risk}`] = plinkoMultipliers(rows, risk);
+  res.json({ rows: PLINKO_ROWS, risks: PLINKO_RISKS, tables });
+});
+
+router.post('/plinko/drop', async (req, res) => {
+  const { stake, risk, rows } = req.body || {};
+  if (!PLINKO_RISKS.includes(risk) || !PLINKO_ROWS.includes(rows)) return res.status(400).json({ error: 'Invalid risk or rows' });
+  if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
+  const ok = await deductStake(req.user.id, stake);
+  if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
+
+  const path = Array.from({ length: rows }, () => randomInt(0, 2)); // 1 = right
+  const bucket = path.reduce((a, b) => a + b, 0);
+  const multiplier = plinkoMultipliers(rows, risk)[bucket];
+  const payout = roundMoney(stake * multiplier);
+  await creditPayout(req.user.id, payout);
+  await logRound(req.user.id, 'plinko', stake, payout, { rows, risk, bucket, multiplier });
+  res.json({ path, bucket, multiplier, payout, balance: await getBalance(req.user.id) });
+});
+
+// MINES — multi-step; the mine positions stay on the server until the round ends.
+router.post('/mines/start', async (req, res) => {
+  const { stake, mines } = req.body || {};
+  if (!Number.isInteger(mines) || mines < 1 || mines > 24) return res.status(400).json({ error: 'Mines must be between 1 and 24' });
+  if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
+  const ok = await deductStake(req.user.id, stake);
+  if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
+
+  const tiles = Array.from({ length: MINES_TILES }, (_, i) => i);
+  for (let i = tiles.length - 1; i > 0; i -= 1) { const j = randomInt(0, i + 1); [tiles[i], tiles[j]] = [tiles[j], tiles[i]]; }
+  const mineSet = tiles.slice(0, mines);
+  const roundId = randomUUID();
+  await pool.query(
+    `INSERT INTO casino_rounds (id, user_id, game, stake, status, state, created_at)
+     VALUES ($1,$2,'mines',$3,'PLAYING',$4,$5)`,
+    [roundId, req.user.id, stake, JSON.stringify({ mines: mineSet, revealed: [] }), Date.now()]
+  );
+  res.json({ roundId, mines, multiplier: 1, nextMultiplier: minesMultiplier(mines, 1), balance: await getBalance(req.user.id) });
+});
+
+async function loadMinesRound(req, res) {
+  const { rows } = await pool.query('SELECT * FROM casino_rounds WHERE id = $1', [req.params.id]);
+  const round = rows[0];
+  if (!round || round.game !== 'mines') { res.status(404).json({ error: 'Round not found' }); return null; }
+  if (round.user_id !== req.user.id) { res.status(403).json({ error: 'Not your round' }); return null; }
+  if (round.status !== 'PLAYING') { res.status(400).json({ error: 'Round already finished' }); return null; }
+  return { round, state: JSON.parse(round.state) };
+}
+
+router.post('/mines/:id/reveal', async (req, res) => {
+  const { index } = req.body || {};
+  if (!Number.isInteger(index) || index < 0 || index >= MINES_TILES) return res.status(400).json({ error: 'Invalid tile' });
+  const loaded = await loadMinesRound(req, res);
+  if (!loaded) return;
+  const { round, state } = loaded;
+  if (state.revealed.includes(index)) return res.status(400).json({ error: 'Tile already open' });
+
+  if (state.mines.includes(index)) {
+    await pool.query(
+      `UPDATE casino_rounds SET status='FINISHED', payout=0, result=$1, resolved_at=$2 WHERE id=$3 AND status='PLAYING'`,
+      [JSON.stringify({ hit: index }), Date.now(), round.id]
+    );
+    return res.json({ safe: false, mines: state.mines, payout: 0, balance: await getBalance(req.user.id) });
+  }
+  state.revealed.push(index);
+  const mineCount = state.mines.length;
+  const multiplier = minesMultiplier(mineCount, state.revealed.length);
+  const lastTile = state.revealed.length === MINES_TILES - mineCount;
+  if (lastTile) {
+    const payout = roundMoney(Number(round.stake) * multiplier);
+    await pool.query(`UPDATE casino_rounds SET status='FINISHED', state=$1, payout=$2, result=$3, resolved_at=$4 WHERE id=$5 AND status='PLAYING'`,
+      [JSON.stringify(state), payout, JSON.stringify({ cleared: true, multiplier }), Date.now(), round.id]);
+    await creditPayout(req.user.id, payout);
+    return res.json({ safe: true, finished: true, multiplier, payout, mines: state.mines, balance: await getBalance(req.user.id) });
+  }
+  await pool.query('UPDATE casino_rounds SET state = $1 WHERE id = $2', [JSON.stringify(state), round.id]);
+  res.json({ safe: true, finished: false, multiplier, nextMultiplier: minesMultiplier(mineCount, state.revealed.length + 1), revealed: state.revealed.length });
+});
+
+router.post('/mines/:id/cashout', async (req, res) => {
+  const loaded = await loadMinesRound(req, res);
+  if (!loaded) return;
+  const { round, state } = loaded;
+  if (state.revealed.length === 0) return res.status(400).json({ error: 'Open at least one tile first' });
+  const multiplier = minesMultiplier(state.mines.length, state.revealed.length);
+  const payout = roundMoney(Number(round.stake) * multiplier);
+  // status guard: a double click cannot pay twice
+  const upd = await pool.query(`UPDATE casino_rounds SET status='FINISHED', payout=$1, result=$2, resolved_at=$3 WHERE id=$4 AND status='PLAYING'`,
+    [payout, JSON.stringify({ cashedOut: true, multiplier }), Date.now(), round.id]);
+  if (upd.rowCount === 0) return res.status(400).json({ error: 'Round already finished' });
+  await creditPayout(req.user.id, payout);
+  res.json({ multiplier, payout, mines: state.mines, balance: await getBalance(req.user.id) });
+});
+
+// DRAGON TIGER
+router.post('/dragon-tiger/deal', async (req, res) => {
+  const { stake, bet } = req.body || {};
+  if (!Object.keys(DT_PAYOUT).includes(bet)) return res.status(400).json({ error: 'Invalid bet selection' });
+  if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
+  const ok = await deductStake(req.user.id, stake);
+  if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
+
+  const deck = [];
+  for (const suit of CARD_SUITS) for (const v of BJ_VALUES) deck.push({ suit, value: v });
+  const a = randomInt(0, 52); let b = randomInt(0, 51); if (b >= a) b += 1; // two different cards
+  const dragon = deck[a], tiger = deck[b];
+  const rank = (c) => { const v = c.value; return v === 'A' ? 1 : v === 'J' ? 11 : v === 'Q' ? 12 : v === 'K' ? 13 : parseInt(v, 10); };
+  const { result, payout } = dragonTigerPayout(bet, rank(dragon), rank(tiger), stake);
+  await creditPayout(req.user.id, payout);
+  await logRound(req.user.id, 'dragontiger', stake, payout, { bet, result });
+  res.json({ dragon, tiger, result, payout, balance: await getBalance(req.user.id) });
 });
 
 export default router;

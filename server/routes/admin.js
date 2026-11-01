@@ -18,7 +18,7 @@ import { mapEventToMatch } from '../oddsUtils.js';
 
 import { transferBalance, transferBalances, amountParts, readWallet, walletColumn } from '../ledger.js';
 import { getTicketDeletionAllowed, setTicketDeletionAllowed } from '../appSettings.js';
-import { getCasinoAccess, setCasinoAccess, CASINO_MODES } from '../casinoAccess.js';
+import { getCasinoAccess, setCasinoAccess, CASINO_MODES, getDisabledGames, setDisabledGames, CASINO_GAME_KEYS } from '../casinoAccess.js';
 import { isAdminRole, isSuperAdmin, ROLE_ADMIN } from '../roles.js';
 import { scopeOf, ownsRow } from '../adminScope.js';
 import { importLondon365, getLondon365Status, getLondon365CountryDebug } from '../london365.js';
@@ -1170,7 +1170,7 @@ router.get('/dashboard/kpi', async (req, res) => {
 // Switch: may normal admins delete tickets? Everybody reads it (the panel hides the button), only the super
 // admin changes it.
 router.get('/settings', async (req, res) => {
-  res.json({ ticketDeletionAllowed: await getTicketDeletionAllowed(), casinoAccess: await getCasinoAccess() });
+  res.json({ ticketDeletionAllowed: await getTicketDeletionAllowed(), casinoAccess: await getCasinoAccess(), casinoDisabledGames: await getDisabledGames(), casinoGameKeys: CASINO_GAME_KEYS });
 });
 // Super admin: who may open the casino (off / only the super admin / everybody) + what was played.
 router.put('/settings/casino-access', requireSuperAdmin, async (req, res) => {
@@ -1179,6 +1179,14 @@ router.put('/settings/casino-access', requireSuperAdmin, async (req, res) => {
   await setCasinoAccess(mode);
   await logAudit(req.user, 'SETTING_CASINO_ACCESS', null, { mode });
   res.json({ casinoAccess: mode });
+});
+// Super admin: close single games to players (the super admin can still open them).
+router.put('/settings/casino-games', requireSuperAdmin, async (req, res) => {
+  const { disabled } = req.body || {};
+  if (!Array.isArray(disabled) || disabled.some((g) => !CASINO_GAME_KEYS.includes(g))) return res.status(400).json({ error: 'disabled must be a list of game keys' });
+  const saved = await setDisabledGames(disabled);
+  await logAudit(req.user, 'SETTING_CASINO_GAMES', null, { disabled: saved });
+  res.json({ casinoDisabledGames: saved });
 });
 router.get('/casino/report', requireSuperAdmin, async (req, res) => {
   const { rows } = await pool.query(

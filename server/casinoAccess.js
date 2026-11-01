@@ -22,3 +22,32 @@ export async function setCasinoAccess(mode) {
 }
 
 export const canOpenCasino = (mode, role) => mode === 'all' || (mode === 'super' && isSuperAdmin(role));
+
+// Per-game switches: the super admin can close single games (e.g. 'plinko') to players, whatever the casino mode is.
+// The super admin can still open a closed game, to test it.
+export const CASINO_GAME_KEYS = ['slots', 'roulette', 'baccarat', 'blackjack', 'videopoker', 'dice', 'plinko', 'mines', 'dragontiger'];
+const GAMES_KEY = 'casino_games_disabled';
+
+export async function getDisabledGames() {
+  try {
+    const { rows } = await pool.query('SELECT value FROM kv_store WHERE key = $1', [GAMES_KEY]);
+    const list = JSON.parse(rows[0]?.value || '[]');
+    return Array.isArray(list) ? list.filter((g) => CASINO_GAME_KEYS.includes(g)) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function setDisabledGames(list) {
+  const clean = [...new Set((Array.isArray(list) ? list : []).filter((g) => CASINO_GAME_KEYS.includes(g)))];
+  await pool.query('INSERT INTO kv_store (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [GAMES_KEY, JSON.stringify(clean)]);
+  return clean;
+}
+
+// Route prefix -> game key
+export const gameKeyForPath = (path) => {
+  const seg = String(path).split('/')[1] || '';
+  if (seg === 'slot-games' || seg === 'slots') return 'slots';
+  if (seg === 'dragon-tiger') return 'dragontiger';
+  return CASINO_GAME_KEYS.includes(seg) ? seg : null;
+};
