@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
 import { casinoBaccaratDeal } from '../../services/api';
+import PlayingCard from './PlayingCard';
+import Croupier, { CroupierMood } from './Croupier';
+import { ChipStack } from './Chip';
+import CoinBurst from './CoinBurst';
 
 interface BaccaratProps {
   onSetBalance: (balance: number) => void;
@@ -8,14 +12,7 @@ interface BaccaratProps {
 }
 
 type Card = { suit: string; value: string; numValue: number };
-const getCardColor = (suit: string) => (suit === '♥' || suit === '♦' ? 'text-red-500' : 'text-black');
-
-const CardView: React.FC<{ card: Card }> = ({ card }) => (
-  <div className="w-16 h-24 bg-white rounded flex flex-col items-center justify-center border-2 border-gray-300 shadow-md transform transition-transform hover:scale-105">
-      <div className={`text-xl font-bold ${getCardColor(card.suit)}`}>{card.value}</div>
-      <div className={`text-2xl ${getCardColor(card.suit)}`}>{card.suit}</div>
-  </div>
-);
+const CardView: React.FC<{ card: Card; delay?: number }> = ({ card, delay = 0 }) => <PlayingCard card={card} delay={delay} flipIn={120} />;
 
 const Baccarat: React.FC<BaccaratProps> = ({ onSetBalance, userBalance, onClose }) => {
   const [gameState, setGameState] = useState<'BETTING' | 'DEALING' | 'FINISHED'>('BETTING');
@@ -24,6 +21,8 @@ const Baccarat: React.FC<BaccaratProps> = ({ onSetBalance, userBalance, onClose 
   const [selectedBet, setSelectedBet] = useState<'PLAYER' | 'BANKER' | 'TIE' | null>(null);
   const [stake, setStake] = useState(50);
   const [message, setMessage] = useState('Select a hand to bet on');
+  const [won, setWon] = useState<boolean | null>(null);
+  const mood: CroupierMood = gameState === 'DEALING' ? 'spinning' : gameState === 'FINISHED' ? (won ? 'win' : 'lose') : 'idle';
 
   const calculateScore = (hand: Card[]) => {
       const total = hand.reduce((acc, c) => acc + c.numValue, 0);
@@ -47,6 +46,7 @@ const Baccarat: React.FC<BaccaratProps> = ({ onSetBalance, userBalance, onClose 
       }
 
       setGameState('DEALING');
+      setWon(null);
       setMessage('Dealing...');
       setPlayerHand([]);
       setBankerHand([]);
@@ -82,6 +82,7 @@ const Baccarat: React.FC<BaccaratProps> = ({ onSetBalance, userBalance, onClose 
       }
 
       setGameState('FINISHED');
+      setWon(round.payout > 0);
       onSetBalance(round.balance);
 
       if (round.payout > 0) {
@@ -93,20 +94,21 @@ const Baccarat: React.FC<BaccaratProps> = ({ onSetBalance, userBalance, onClose 
 
   const reset = () => {
       setGameState('BETTING');
+      setWon(null);
       setPlayerHand([]);
       setBankerHand([]);
       setMessage('Place your bet');
   };
 
   return (
-    <div className="flex flex-col items-center min-h-[600px] bg-[#1a472a] rounded-xl p-6 border-4 border-[#d4af37] relative shadow-2xl overflow-hidden">
-       {/* Felt Texture Overlay */}
-       <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/felt.png')] opacity-30 pointer-events-none"></div>
+    <div className="casino-felt flex flex-col items-center min-h-[600px] rounded-xl p-6 relative overflow-hidden">
+       {won && gameState === 'FINISHED' && <CoinBurst />}
        
        <button onClick={onClose} className="absolute top-4 left-4 text-white/70 hover:text-white font-bold z-10">‹ Lobby</button>
        
        <div className="relative z-10 w-full max-w-4xl flex flex-col items-center">
-            <h2 className="text-4xl font-serif font-bold text-[#d4af37] mb-8 tracking-widest drop-shadow-md">BACCARAT</h2>
+            <h2 className="text-4xl font-serif font-bold casino-gold-text mb-2 tracking-widest drop-shadow-md">BACCARAT</h2>
+            <div className="mb-4"><Croupier mood={mood} size={120} /></div>
 
             {/* Table Area */}
             <div className="flex justify-between w-full mb-8 px-10 gap-20">
@@ -138,7 +140,7 @@ const Baccarat: React.FC<BaccaratProps> = ({ onSetBalance, userBalance, onClose 
             {/* Result Message */}
             <div className="h-12 flex items-center justify-center w-full mb-6">
                  {gameState === 'FINISHED' && (
-                     <div className="bg-black/50 px-8 py-2 rounded-full border border-[#d4af37] text-2xl font-bold text-white animate-bounce">
+                     <div className="bg-black/50 px-8 py-2 rounded-full border border-[#d4af37] text-2xl font-bold text-white win-pop">
                          {message}
                      </div>
                  )}
@@ -154,7 +156,7 @@ const Baccarat: React.FC<BaccaratProps> = ({ onSetBalance, userBalance, onClose 
                 >
                     <span className="text-xl font-bold text-white">PLAYER</span>
                     <span className="text-xs text-blue-200">Pays 1:1</span>
-                    {selectedBet === 'PLAYER' && <span className="mt-2 bg-yellow-400 text-black text-xs font-bold px-2 rounded-full">{stake}</span>}
+                    {selectedBet === 'PLAYER' && <span className="mt-1 flex items-center gap-1 text-xs font-bold text-yellow-300"><ChipStack value={stake} count={2} size={22} /><span className="ml-1">{stake}</span></span>}
                 </button>
 
                 <button 
@@ -164,7 +166,7 @@ const Baccarat: React.FC<BaccaratProps> = ({ onSetBalance, userBalance, onClose 
                 >
                     <span className="text-xl font-bold text-white">TIE</span>
                     <span className="text-xs text-green-200">Pays 8:1</span>
-                    {selectedBet === 'TIE' && <span className="mt-2 bg-yellow-400 text-black text-xs font-bold px-2 rounded-full">{stake}</span>}
+                    {selectedBet === 'TIE' && <span className="mt-1 flex items-center gap-1 text-xs font-bold text-yellow-300"><ChipStack value={stake} count={2} size={22} /><span className="ml-1">{stake}</span></span>}
                 </button>
 
                 <button 
@@ -174,7 +176,7 @@ const Baccarat: React.FC<BaccaratProps> = ({ onSetBalance, userBalance, onClose 
                 >
                     <span className="text-xl font-bold text-white">BANKER</span>
                     <span className="text-xs text-red-200">Pays 0.95:1</span>
-                    {selectedBet === 'BANKER' && <span className="mt-2 bg-yellow-400 text-black text-xs font-bold px-2 rounded-full">{stake}</span>}
+                    {selectedBet === 'BANKER' && <span className="mt-1 flex items-center gap-1 text-xs font-bold text-yellow-300"><ChipStack value={stake} count={2} size={22} /><span className="ml-1">{stake}</span></span>}
                 </button>
             </div>
 

@@ -53,7 +53,7 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
           {/* Crash / Aviator */}
           <div 
             onClick={() => setActiveGame('crash')}
-            className="group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg hover:shadow-2xl hover:scale-[1.02] transition-all border border-transparent hover:border-brand-accent/50"
+            className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-brand-accent/50"
           >
               <div className="absolute inset-0 bg-gradient-to-br from-[#161b2e] to-black z-10"></div>
               <div className="absolute bottom-4 left-4 z-20">
@@ -70,7 +70,7 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
           {/* Baccarat */}
           <div 
             onClick={() => setActiveGame('baccarat')}
-            className="group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg hover:shadow-2xl hover:scale-[1.02] transition-all border border-transparent hover:border-[#d4af37]/50"
+            className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-[#d4af37]/50"
           >
                <div className="absolute inset-0 bg-gradient-to-br from-[#1a472a] to-black z-10"></div>
                <div className="absolute bottom-4 left-4 z-20">
@@ -79,14 +79,14 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
                   <p className="text-xs text-gray-300">Player or Banker?</p>
                </div>
                <div className="h-full w-full flex items-center justify-center z-10 relative">
-                  <span className="text-7xl group-hover:scale-110 transition-transform duration-500">👔</span>
+                  <span className="text-7xl group-hover:scale-110 transition-transform duration-500">🎴</span>
               </div>
           </div>
 
           {/* Slot Card */}
           <div 
             onClick={() => setActiveGame('slots')}
-            className="group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg hover:shadow-2xl hover:scale-[1.02] transition-all border border-transparent hover:border-brand-yellow/50"
+            className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-brand-yellow/50"
           >
               <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"></div>
               <div className="absolute bottom-4 left-4 z-20">
@@ -102,7 +102,7 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
           {/* Blackjack Card */}
           <div 
             onClick={() => setActiveGame('blackjack')}
-            className="group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg hover:shadow-2xl hover:scale-[1.02] transition-all border border-transparent hover:border-brand-yellow/50"
+            className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-brand-yellow/50"
           >
               <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"></div>
               <div className="absolute bottom-4 left-4 z-20">
@@ -118,7 +118,7 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
           {/* Roulette Card */}
           <div 
              onClick={() => setActiveGame('roulette')}
-             className="group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg hover:shadow-2xl hover:scale-[1.02] transition-all border border-transparent hover:border-brand-yellow/50"
+             className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-brand-yellow/50"
           >
                <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"></div>
                <div className="absolute bottom-4 left-4 z-20">
@@ -134,7 +134,7 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
           {/* Video Poker Card */}
           <div 
              onClick={() => setActiveGame('poker')}
-             className="group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg hover:shadow-2xl hover:scale-[1.02] transition-all border border-transparent hover:border-brand-yellow/50"
+             className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-brand-yellow/50"
           >
                <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"></div>
                <div className="absolute bottom-4 left-4 z-20">

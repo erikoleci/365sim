@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as api from '../../services/api';
+import SlotReel from './SlotReel';
+import CountUp from './CountUp';
+import CoinBurst from './CoinBurst';
 
 // The ten paylines (row per reel), same as the server's engine: used only to light up the winning cells.
 const PAYLINES = [
@@ -65,6 +68,7 @@ const SlotGame: React.FC<{
   const [msg, setMsg] = useState('');
   const [lastWin, setLastWin] = useState(0);
   const [freeInfo, setFreeInfo] = useState('');
+  const [burst, setBurst] = useState(0); // bumps for every win worth celebrating (key of the coin shower)
   const [showPay, setShowPay] = useState(false);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
@@ -78,17 +82,13 @@ const SlotGame: React.FC<{
   const animateStop = useCallback(async (finalGrid: string[][], quick: boolean) => {
     setLit(new Set());
     setSpinning([true, true, true, true, true]);
-    const timer = setInterval(() => {
-      setGrid((g) => g.map((col, r) => (spinningRef.current[r] ? [0, 1, 2].map(() => game.symbols[pool[Math.floor(Math.random() * pool.length)]]) : col)));
-    }, 70);
     for (let r = 0; r < 5; r += 1) {
-      await sleep(quick ? 140 : 320);
+      await sleep(quick ? 150 : 380);
       spinningRef.current[r] = false;
       setGrid((g) => g.map((col, i) => (i === r ? finalGrid[r].map((s) => game.symbols[s]) : col)));
       setSpinning((sp) => sp.map((v, i) => (i === r ? false : v)));
     }
-    clearInterval(timer);
-  }, [game, pool]);
+  }, [game]);
   const spinningRef = useRef<boolean[]>([false, false, false, false, false]);
 
   const lightUp = (sp: api.SlotSpin) => {
@@ -122,6 +122,7 @@ const SlotGame: React.FC<{
       if (demo) setDemoBal((b) => ({ ...b, [currency]: Math.round((b[currency] - stake + res.payout) * 100) / 100 }));
       else if (res.balance !== undefined) onBalances?.(res.balance, res.balanceEur ?? balanceEur);
       setLastWin(res.payout);
+      if (res.payout >= stake * 3) setBurst((n) => n + 1);
       setMsg(res.payout > 0 ? `Fitove ${fmt(res.payout, currency)}!` : '');
       if (res.freeSpins > 0) setFreeInfo(`${res.freeSpins} rrotullime falas u luajtën`);
     } catch (e: any) {
@@ -135,7 +136,8 @@ const SlotGame: React.FC<{
 
   const top = Object.keys(game.paytable).filter((k) => k !== 'WILD');
   return (
-    <div className="rounded-xl overflow-hidden border border-white/10" style={{ background: `linear-gradient(160deg, ${game.color[0]}, ${game.color[1]})` }}>
+    <div className="rounded-xl overflow-hidden border border-white/10 relative" style={{ background: `linear-gradient(160deg, ${game.color[0]}, ${game.color[1]})` }}>
+      {burst > 0 && <CoinBurst key={burst} />}
       <div className="flex items-center justify-between px-4 py-3 bg-black/40">
         <button onClick={onBack} disabled={busy} className="text-sm text-gray-300 hover:text-white disabled:opacity-40">← Slots</button>
         <div className="text-center"><div className="font-bold text-white">{game.name}</div><div className="text-[10px] text-brand-yellow">RTP {game.rtp.toFixed(2)}% · {game.volatility} · {game.lines} linja</div></div>
@@ -153,21 +155,23 @@ const SlotGame: React.FC<{
           <div className="text-white">Gjendja: <b className="tabular-nums">{fmt(bal, currency)}</b></div>
         </div>
 
-        <div className="bg-black/50 rounded-xl p-2 sm:p-3 border-4 border-yellow-700/60">
+        <div className="bg-black/60 rounded-xl p-2 sm:p-3 border-4 border-yellow-600/70 shadow-[inset_0_0_30px_rgba(0,0,0,0.8),0_0_24px_rgba(212,175,55,0.25)]">
           <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
             {grid.map((col, r) => (
-              <div key={r} className="flex flex-col gap-1.5 sm:gap-2">
-                {col.map((sym, row) => (
-                  <div key={row} className={`aspect-square flex items-center justify-center text-3xl sm:text-5xl rounded-lg bg-white/10 transition-all ${spinning[r] ? 'blur-[1.5px] scale-95' : ''} ${lit.has(`${r}-${row}`) ? 'ring-2 ring-brand-yellow bg-yellow-400/25 scale-105' : ''}`}>{sym}</div>
-                ))}
-              </div>
+              <SlotReel
+                key={r}
+                symbols={col}
+                spinning={spinning[r]}
+                pool={Object.values(game.symbols)}
+                litRows={[0, 1, 2].filter((row) => lit.has(`${r}-${row}`))}
+              />
             ))}
           </div>
         </div>
 
         <div className="h-12 flex flex-col items-center justify-center text-center">
           {freeInfo && <div className="text-xs font-bold text-cyan-300">{freeInfo}</div>}
-          {(lastWin > 0 || msg) && <div className={`text-lg font-extrabold ${lastWin > 0 ? 'text-brand-yellow' : 'text-red-300'}`}>{busy && lastWin > 0 ? `Fitim: ${fmt(lastWin, currency)}` : msg}</div>}
+          {(lastWin > 0 || msg) && <div className={`text-lg font-extrabold ${lastWin > 0 ? 'text-brand-yellow' : 'text-red-300'}`}>{busy && lastWin > 0 ? `Fitim: ${fmt(lastWin, currency)}` : lastWin > 0 ? <span key={lastWin} className="win-pop inline-block">Fitove <CountUp value={lastWin} format={(n) => fmt(n, currency)} />!</span> : msg}</div>}
         </div>
 
         <div className="flex flex-wrap items-center justify-center gap-1.5 mb-3">

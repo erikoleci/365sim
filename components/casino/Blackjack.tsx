@@ -1,5 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { casinoBlackjackDeal, casinoBlackjackHit, casinoBlackjackStand } from '../../services/api';
+import PlayingCard from './PlayingCard';
+import Croupier, { CroupierMood } from './Croupier';
+import { ChipStack } from './Chip';
+import CoinBurst from './CoinBurst';
 
 interface BlackjackProps {
   onSetBalance: (balance: number) => void;
@@ -9,17 +13,9 @@ interface BlackjackProps {
 
 type Card = { suit: string; value: string; numValue: number } | null;
 
-const getCardColor = (suit: string) => (suit === '♥' || suit === '♦' ? 'text-red-500' : 'text-black');
-
-const CardView: React.FC<{ card: Card, hidden?: boolean }> = ({ card, hidden }) => (
-  <div className={`w-16 h-24 bg-white rounded flex flex-col items-center justify-center border-2 border-gray-300 shadow-md ${hidden || !card ? 'bg-blue-800 border-white' : ''}`}>
-      {!hidden && card && (
-          <>
-            <div className={`text-xl font-bold ${getCardColor(card.suit)}`}>{card.value}</div>
-            <div className={`text-2xl ${getCardColor(card.suit)}`}>{card.suit}</div>
-          </>
-      )}
-  </div>
+// Cards of the first deal fly in one after the other (player, dealer, player, dealer); later cards at once.
+const CardView: React.FC<{ card: Card; hidden?: boolean; delay?: number }> = ({ card, hidden, delay = 0 }) => (
+  <PlayingCard card={card} hidden={hidden || !card} delay={delay} />
 );
 
 const calcScore = (hand: Card[]) => {
@@ -40,6 +36,10 @@ const Blackjack: React.FC<BlackjackProps> = ({ onSetBalance, userBalance, onClos
   const [stake, setStake] = useState(25);
   const [message, setMessage] = useState('Place your bet');
   const [roundId, setRoundId] = useState<string | null>(null);
+  const [dealing, setDealing] = useState(false); // true for a moment after a deal: the first cards are staggered
+  useEffect(() => { if (!dealing) return; const t = setTimeout(() => setDealing(false), 1400); return () => clearTimeout(t); }, [dealing]);
+  const resultMood: CroupierMood = /win|blackjack/i.test(message) && !/dealer wins|house/i.test(message) ? 'win' : /bust|lose|lost|dealer wins|house/i.test(message) ? 'lose' : 'idle';
+  const mood: CroupierMood = gameState === 'FINISHED' ? resultMood : dealing ? 'spinning' : 'idle';
 
   const dealGame = async () => {
     if (userBalance < stake) {
@@ -48,6 +48,7 @@ const Blackjack: React.FC<BlackjackProps> = ({ onSetBalance, userBalance, onClos
     }
     try {
         const res = await casinoBlackjackDeal(stake);
+        setDealing(true);
         setRoundId(res.roundId);
         setPlayerHand(res.playerHand);
         setDealerHand(res.dealerHand);
@@ -95,36 +96,38 @@ const Blackjack: React.FC<BlackjackProps> = ({ onSetBalance, userBalance, onClos
   };
 
   return (
-    <div className="flex flex-col items-center justify-between min-h-[600px] bg-[#0f4d2a] rounded-xl p-6 border-[10px] border-[#2f2f2f] shadow-2xl relative">
+    <div className="casino-felt flex flex-col items-center justify-between min-h-[600px] rounded-xl p-6 relative overflow-hidden">
+       {gameState === 'FINISHED' && mood === 'win' && <CoinBurst />}
        <button onClick={onClose} className="absolute top-4 left-4 text-white/50 hover:text-white font-bold z-10">‹ Exit Table</button>
        
        <div className="text-center w-full">
-           <h2 className="text-yellow-400 font-bold tracking-widest opacity-50 mb-4">BLACKJACK PRO</h2>
+           <h2 className="font-bold tracking-widest casino-gold-text mb-1">BLACKJACK PRO</h2>
+           <div className="flex justify-center mb-2"><Croupier mood={mood} size={104} /></div>
            <div className="flex justify-center gap-2 min-h-[100px] mb-4">
                 {gameState === 'BETTING' ? (
-                    <div className="w-16 h-24 border-2 border-dashed border-white/20 rounded"></div>
+                    <div className="w-16 h-[92px] border-2 border-dashed border-white/20 rounded-lg"></div>
                 ) : (
                     dealerHand.map((c, i) => (
-                        <CardView key={i} card={c} hidden={c === null} />
+                        <CardView key={i} card={c} hidden={c === null} delay={dealing ? (i * 2 + 1) * 180 : 0} />
                     ))
                 )}
            </div>
            {gameState === 'FINISHED' && (
-               <div className="text-white font-bold bg-black/40 inline-block px-3 rounded">{calcScore(dealerHand)}</div>
+               <div className="text-white font-bold bg-black/50 inline-block px-3 rounded-full border border-white/10">{calcScore(dealerHand)}</div>
            )}
        </div>
 
-       <div className="text-2xl text-white font-bold my-4 drop-shadow-md">{message}</div>
+       <div key={message} className="text-2xl text-white font-bold my-4 drop-shadow-md win-pop">{message}</div>
 
        <div className="text-center w-full mb-8">
            {gameState !== 'BETTING' && (
-             <div className="text-white font-bold bg-black/40 inline-block px-3 rounded mb-2">{calcScore(playerHand)}</div>
+             <div className="text-white font-bold bg-black/50 inline-block px-3 rounded-full border border-white/10 mb-2">{calcScore(playerHand)}</div>
            )}
            <div className="flex justify-center gap-2 min-h-[100px]">
                 {gameState === 'BETTING' ? (
-                    <div className="w-16 h-24 border-2 border-dashed border-white/20 rounded"></div>
+                    <div className="w-16 h-[92px] border-2 border-dashed border-white/20 rounded-lg"></div>
                 ) : (
-                    playerHand.map((c, i) => <CardView key={i} card={c} />)
+                    playerHand.map((c, i) => <CardView key={i} card={c} delay={dealing ? i * 2 * 180 : 0} />)
                 )}
            </div>
        </div>
@@ -138,7 +141,7 @@ const Blackjack: React.FC<BlackjackProps> = ({ onSetBalance, userBalance, onClos
                    </div>
                    <div className="flex items-center gap-2">
                        <button onClick={() => setStake(Math.max(5, stake - 5))} className="bg-white/10 hover:bg-white/20 text-white w-8 h-8 rounded">-</button>
-                       <div className="text-white font-bold w-12 text-center">{stake}</div>
+                       <div className="w-12 flex justify-center"><ChipStack value={stake} count={Math.min(5, Math.max(1, Math.ceil(stake / 25)))} size={34} /></div>
                        <button onClick={() => setStake(stake + 5)} className="bg-white/10 hover:bg-white/20 text-white w-8 h-8 rounded">+</button>
                    </div>
                    <button onClick={dealGame} className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold px-8 py-2 rounded-full shadow-lg transition-transform hover:scale-105">

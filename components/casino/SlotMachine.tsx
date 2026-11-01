@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { casinoSlotsSpin, casinoSlotsGames, SlotGameInfo } from '../../services/api';
+import SlotReel from './SlotReel';
+import CountUp from './CountUp';
+import CoinBurst from './CoinBurst';
 
 interface SlotMachineProps {
   onSetBalance: (balance: number) => void;
@@ -9,8 +12,12 @@ interface SlotMachineProps {
 
 const SYMBOLS = ['🍒', '🍋', '🍇', '💎', '🔔', '7️⃣'];
 const SlotMachine: React.FC<SlotMachineProps> = ({ onSetBalance, userBalance, onClose }) => {
-  const [reels, setReels] = useState<string[]>(['7️⃣', '7️⃣', '7️⃣']);
+  // three reels, three visible rows each: the middle row is the pay line the server's result is on
+  const [reels, setReels] = useState<string[][]>([['🍒', '7️⃣', '🍋'], ['🍇', '7️⃣', '🔔'], ['🍋', '7️⃣', '💎']]);
+  const pick = () => SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
   const [isSpinning, setIsSpinning] = useState(false);
+  const [reelSpin, setReelSpin] = useState([false, false, false]); // each reel stops on its own, left to right
+  const [burst, setBurst] = useState(0);
   const [stake, setStake] = useState(10);
   const [message, setMessage] = useState('GOOD LUCK!');
   const [winAmount, setWinAmount] = useState(0);
@@ -35,48 +42,42 @@ const SlotMachine: React.FC<SlotMachineProps> = ({ onSetBalance, userBalance, on
       // stake and credited any winnings by the time this resolves.
       const resultPromise = casinoSlotsSpin(stake);
 
-      let intervalCount = 0;
-      const interval = setInterval(() => {
-        setReels([
-          SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)],
-          SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)],
-          SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)]
-        ]);
-        intervalCount++;
-        if (intervalCount > 10) clearInterval(interval);
-      }, 100);
-
+      setReelSpin([true, true, true]);
       const { reels: finalReels, payout, balance, multiplier } = await resultPromise;
-      await new Promise((r) => setTimeout(r, 1100));
-      clearInterval(interval);
-
-      setReels(finalReels);
+      await new Promise((r) => setTimeout(r, 900));
+      // The reels stop one after the other (like the real thing), the last one a little later.
+      for (let i = 0; i < 3; i += 1) {
+        setReels((prev) => prev.map((rows, k) => (k === i ? [pick(), finalReels[i], pick()] : rows)));
+        setReelSpin((prev) => prev.map((v, k) => (k === i ? false : v)));
+        await new Promise((r) => setTimeout(r, 420));
+      }
       onSetBalance(balance);
       setIsSpinning(false);
 
       if (payout > 0) {
         setWinAmount(payout);
+        if (multiplier >= 3) setBurst((n) => n + 1);
         setMessage(`WIN! ${payout} L (x${multiplier})`);
       } else {
         setMessage('NO WIN');
       }
     } catch (err: any) {
+      setReelSpin([false, false, false]);
       setIsSpinning(false);
       setMessage(err?.message || 'Something went wrong');
     }
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[500px] bg-gradient-to-b from-purple-900 to-black rounded-lg p-8 border-4 border-yellow-600 shadow-2xl relative">
+    <div className="flex flex-col items-center justify-center min-h-[500px] bg-gradient-to-b from-purple-900 to-black rounded-lg p-8 border-4 border-yellow-600 shadow-2xl relative overflow-hidden">
+      {burst > 0 && <CoinBurst key={burst} />}
       <button onClick={onClose} className="absolute top-4 left-4 text-white hover:text-yellow-400 font-bold">‹ Back to Lobby</button>
       
       <h2 className="text-4xl font-bold text-yellow-400 mb-8 tracking-widest drop-shadow-md">SUPER SLOTS</h2>
 
-      <div className="flex gap-4 mb-8 bg-black p-4 rounded-xl border-2 border-yellow-600 shadow-inner">
-        {reels.map((symbol, idx) => (
-          <div key={idx} className="w-24 h-32 bg-white rounded-lg flex items-center justify-center text-6xl shadow-inner border border-gray-300">
-            {symbol}
-          </div>
+      <div className="flex gap-3 mb-8 bg-black/80 p-4 rounded-xl border-4 border-yellow-600 shadow-[inset_0_0_30px_rgba(0,0,0,0.8),0_0_30px_rgba(212,175,55,0.3)]">
+        {reels.map((rows, idx) => (
+          <SlotReel key={idx} symbols={rows} spinning={reelSpin[idx]} pool={SYMBOLS} className="w-24" rowCount={3} litRows={winAmount > 0 && !isSpinning ? [1] : []} />
         ))}
       </div>
 
@@ -90,7 +91,7 @@ const SlotMachine: React.FC<SlotMachineProps> = ({ onSetBalance, userBalance, on
             </div>
             <div>
                 <span className="text-xs text-gray-400 uppercase block text-right">Win</span>
-                <span className="font-bold text-green-400 text-xl">{winAmount > 0 ? `+${winAmount}` : '0'}</span>
+                <span className="font-bold text-green-400 text-xl">{winAmount > 0 ? <CountUp value={winAmount} format={(n) => `+${Math.round(n)}`} /> : '0'}</span>
             </div>
         </div>
 

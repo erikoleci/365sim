@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { casinoVideoPokerDeal, casinoVideoPokerDraw, PokerCard } from '../../services/api';
+import PlayingCard from './PlayingCard';
+import CoinBurst from './CoinBurst';
 
 interface VideoPokerProps {
   onSetBalance: (balance: number) => void;
@@ -16,6 +18,7 @@ const VideoPoker: React.FC<VideoPokerProps> = ({ onSetBalance, userBalance, onCl
   const [stake, setStake] = useState(10);
   const [message, setMessage] = useState('Jacks or Better');
   const [roundId, setRoundId] = useState<string | null>(null);
+  const [won, setWon] = useState(false);
 
   const deal = async () => {
       if (userBalance < stake) {
@@ -51,6 +54,7 @@ const VideoPoker: React.FC<VideoPokerProps> = ({ onSetBalance, userBalance, onCl
           setHand(res.hand);
           setGameStage('OVER');
           onSetBalance(res.balance);
+          setWon(res.payout > 0);
           setMessage(res.payout > 0 ? `${res.tier}! WON ${res.payout}` : 'Game Over');
       } catch (err: any) {
           setMessage(err?.message || 'Something went wrong');
@@ -59,13 +63,15 @@ const VideoPoker: React.FC<VideoPokerProps> = ({ onSetBalance, userBalance, onCl
 
   const reset = () => {
       setGameStage('BET');
+      setWon(false);
       setHand([]);
       setRoundId(null);
       setMessage('Jacks or Better');
   };
 
   return (
-    <div className="flex flex-col items-center justify-between min-h-[600px] bg-[#003366] rounded-xl p-6 border-4 border-blue-400 relative shadow-2xl">
+    <div className="casino-felt-blue flex flex-col items-center justify-between min-h-[600px] rounded-xl p-6 relative overflow-hidden">
+      {won && gameStage === 'OVER' && <CoinBurst />}
       <button onClick={onClose} className="absolute top-4 left-4 text-white hover:text-blue-200 font-bold z-10">‹ Exit</button>
       
       <div className="text-center mb-4">
@@ -87,21 +93,18 @@ const VideoPoker: React.FC<VideoPokerProps> = ({ onSetBalance, userBalance, onCl
       </div>
 
       {/* Cards Area */}
-      <div className="flex justify-center gap-2 h-32 mb-4">
+      <div className="flex justify-center gap-2 h-[130px] mb-6">
           {hand.length === 0 ? (
               // Empty Placeholders
               Array.from({length:5}).map((_, i) => (
-                  <div key={i} className="w-20 h-28 bg-blue-800 rounded border border-blue-600"></div>
+                  <div key={i} className="w-20 h-[114px] bg-blue-900/50 rounded-lg border-2 border-dashed border-blue-300/30"></div>
               ))
           ) : (
               hand.map((card, idx) => (
-                  <div key={idx} className="relative">
-                      {/* Card */}
-                      <div className="w-20 h-28 bg-white rounded flex flex-col items-center justify-center shadow-lg border-2 border-gray-200">
-                          <div className={`text-xl font-bold ${getCardColor(card.suit)}`}>{card.value}</div>
-                          <div className={`text-3xl ${getCardColor(card.suit)}`}>{card.suit}</div>
-                      </div>
-                      
+                  <div key={`${roundId}-${idx}-${card.value}${card.suit}`} className="relative">
+                      {/* Card: a replaced card is a new one, so it flies in and turns over; a held one stays */}
+                      <PlayingCard card={card} size="lg" delay={idx * 110} flipIn={80} held={heldIndices.includes(idx)} onClick={() => toggleHold(idx)} />
+
                       {/* Hold Button / Badge */}
                       {gameStage === 'DRAW' && (
                           <button 
@@ -121,7 +124,7 @@ const VideoPoker: React.FC<VideoPokerProps> = ({ onSetBalance, userBalance, onCl
           )}
       </div>
 
-      <div className="text-2xl font-bold text-white h-8 mb-4">{message}</div>
+      <div key={message} className="text-2xl font-bold text-white h-8 mb-4 win-pop">{message}</div>
 
       {/* Controls */}
       <div className="w-full max-w-lg bg-black/30 p-4 rounded-xl border-t border-blue-500/30 flex items-center justify-between">
