@@ -608,8 +608,16 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
   // ---- half-time / full-time double: "Pushim/Fund" -> "1/2" ----
   if (HTFT_NAMES.has(marketName)) {
     const m = String(leg.selection_name || leg.selection_id).trim().toLowerCase().match(/^([12x])\s*[\/-]\s*([12x])$/);
-    if (!m || !hasScore || !Number.isFinite(htHome) || !Number.isFinite(htAway)) return null;
+    if (!m || !hasScore) return null;
     const sign = (h, a) => (h > a ? '1' : a > h ? '2' : 'x');
+    if (!Number.isFinite(htHome) || !Number.isFinite(htAway)) {
+      // The half-time score was never stored (e.g. the server restarted during the match). A LOSS can still be proven
+      // from the final score alone; a win cannot, so that case stays open for the admin.
+      if (sign(homeScore, awayScore) !== m[2]) return 'LOST';       // the full-time part is wrong
+      if (m[1] === '1' && homeScore < 1) return 'LOST';             // "home ahead at the break" with no home goal at all
+      if (m[1] === '2' && awayScore < 1) return 'LOST';             // "away ahead at the break" with no away goal at all
+      return null;
+    }
     return sign(htHome, htAway) === m[1] && sign(homeScore, awayScore) === m[2] ? 'WON' : 'LOST';
   }
 

@@ -30,4 +30,27 @@ describe('single-result markets settle correctly (1, X, 2, goals 2+/3+/4+, GG, J
     for (const m of ['Rezultat Final', 'Dopioshans', 'Gol/JoGol', 'Mbi/Nën 2.5', 'Rezultati i sakte', 'Handikap']) expect(resultsInSelection(m)).toBe(1);
     for (const m of ['45/90', 'Rezultat Final & Numri i Golave']) expect(resultsInSelection(m)).toBe(2);
   });
+
+  describe('45/90 (half-time / full-time) without a stored half-time score', () => {
+    const htft = (selection, h, a, ht) => determineLegOutcome(
+      { market_id: 'x', market_name: '45/90', selection_id: selection, selection_name: selection },
+      { ...ctx(h, a), htHome: ht ? ht[0] : undefined, htAway: ht ? ht[1] : undefined });
+    it('Racing 0-3 Real Madrid, ticket 1/2 -> LOST even without the half-time score', () => {
+      expect(htft('1/2', 0, 3)).toBe('LOST');
+    });
+    it('a loss is proven when the full-time part is wrong, or the half-time side never scored', () => {
+      expect(htft('1/1', 0, 3)).toBe('LOST');
+      expect(htft('2/1', 2, 2)).toBe('LOST');
+      expect(htft('2/2', 3, 0)).toBe('LOST');
+    });
+    it('a win (or anything not provable) stays open without the half-time score', () => {
+      expect(htft('1/2', 1, 3)).toBeNull();
+      expect(htft('x/2', 0, 3)).toBeNull();
+    });
+    it('with the half-time score known it settles both ways', () => {
+      expect(htft('1/2', 1, 3, [1, 0])).toBe('WON');
+      expect(htft('1/2', 1, 3, [0, 0])).toBe('LOST');
+      expect(htft('x/2', 0, 3, [0, 0])).toBe('WON');
+    });
+  });
 });
