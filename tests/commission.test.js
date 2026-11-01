@@ -17,11 +17,11 @@ describe('agent commission report', () => {
     const rows = await userMetrics(pool, { rangeStart: 0, rangeEnd: 1 });
     expect(args[6]).toEqual(['PENDING', 'WON', 'LOST']);
     const r = finishMetrics(rows[0]);
-    expect(r).toMatchObject({ xhiro: 20, pending: 20, diferenca: 19.2, percAgjentit: 0.8, kompania: 19.2 });
+    expect(r).toMatchObject({ xhiro: 20, pending: 20, diferenca: 19.2, percAgjentit: 0.8, kompania: 18.4 });
   });
-  it('two open tickets of 20 and 10 at 8%: xhiro 30, pending 30, diferenca 27.60, % agjentit 2.40, kompania 27.60', () => {
+  it('two open tickets of 20 and 10 at 8%: xhiro 30, pending 30, diferenca 27.60, % agjentit 2.40, kompania 25.20', () => {
     const r = finishMetrics(m({ xhiro: 30, pending: 30, activeTickets: 2, tickets: 2, commission: 2.4 }));
-    expect(r).toMatchObject({ xhiro: 30, fitim: 0, pending: 30, activeTickets: 2, tickets: 2, diferenca: 27.6, percAgjentit: 2.4, kompania: 27.6 });
+    expect(r).toMatchObject({ xhiro: 30, fitim: 0, pending: 30, activeTickets: 2, tickets: 2, diferenca: 27.6, percAgjentit: 2.4, kompania: 25.2 });
   });
   it('a win takes its payout out of diferenca and kompania; a loss changes nothing (the stake was already counted)', () => {
     const open = finishMetrics(m({ xhiro: 30, pending: 30, tickets: 2, commission: 2.4 }));
@@ -29,7 +29,7 @@ describe('agent commission report', () => {
     const won = finishMetrics(m({ xhiro: 30, fitim: 50, pending: 20, tickets: 2, commission: 2.4 }));
     expect(lost.diferenca).toBe(open.diferenca);
     expect(won.diferenca).toBe(-22.4);
-    expect(won.kompania).toBe(-22.4);
+    expect(won.kompania).toBe(-24.8);
   });
   it('groups by admin, agent and player and keeps lek and euro apart', () => {
     const admins = [{ id: 'a1', name: 'Admin', username: 'admin' }];
