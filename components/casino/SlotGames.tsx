@@ -13,6 +13,13 @@ const fmt = (n: number, cur: 'ALL' | 'EUR') => `${Number(n).toLocaleString(undef
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const DEMO_START = { ALL: 100000, EUR: 1000 };
 
+// Cover art from public/slots/<game id>.jpg. Games without a picture fall back to their symbols.
+const CoverImg: React.FC<{ id: string; name: string; children: React.ReactNode }> = ({ id, name, children }) => {
+  const [missing, setMissing] = useState(false);
+  if (missing) return <>{children}</>;
+  return <img src={`/slots/${id}.jpg`} alt={name} loading="lazy" draggable={false} className="w-full aspect-[250/257] object-cover block" onError={() => setMissing(true)} />;
+};
+
 interface Props {
   /** Real wallet of the player (ignored in demo mode). */
   balance?: number;
@@ -46,7 +53,9 @@ const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, onBalances })
         {data.games.filter((g) => cat === 'Të gjitha' || (g.category || 'Klasike') === cat).map((g) => (
           <button key={g.id} onClick={() => setGame(g)} className="lobby-card lobby-shine relative text-left rounded-xl overflow-hidden border border-white/10 hover:border-brand-yellow/60 shadow-lg"
             style={{ background: `linear-gradient(145deg, ${g.color[0]}, ${g.color[1]})` }}>
+            <CoverImg id={g.id} name={g.name}>
             <div className="flex justify-center gap-1 text-3xl pt-5 pb-3">{['WILD', Object.keys(g.paytable).find((k) => k !== 'WILD' && g.paytable[k][5] === Math.max(...Object.keys(g.paytable).filter((x) => x !== 'WILD').map((x) => g.paytable[x][5])))!, 'SCATTER'].map((k, i) => <span key={i}>{g.symbols[k]}</span>)}</div>
+            </CoverImg>
             <div className="px-3 pb-3 bg-black/40 pt-2">
               <div className="font-bold text-white">{g.name}</div>
               <div className="text-[11px] text-gray-300 min-h-[30px]">{g.tagline}</div>
