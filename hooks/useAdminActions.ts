@@ -16,7 +16,7 @@ interface Options {
   applyBalance: (balance: number) => void;
 }
 
-export type NewUser = { name: string; username: string; password: string; balance: number; role: 'USER' | 'AGENT' | 'ADMIN' };
+export type NewUser = { name: string; username: string; password: string; balance: number; balanceEur?: number; currency?: 'ALL' | 'EUR' | 'BOTH'; role: 'USER' | 'AGENT' | 'ADMIN' };
 
 /** Everything the owner (ADMIN) does: users, credit, tickets, manual settlement. */
 export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reloadMatches, reloadMyBets, applyBalance }: Options) {

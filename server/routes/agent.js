@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { logAudit } from '../auditLog.js';
-import { transferBalance, transferBalances, amountParts, readWallet } from '../ledger.js';
+import { transferBalance, transferBalances, amountParts, readWallet, normalizeAccountCurrency, disallowedPart, accountCurrencyError } from '../ledger.js';
 import { deleteUserIfUnused, deleteBlockedMessage } from '../userDeletion.js';
 import { userMetrics, buildCommissionReport, periodRange } from '../commission.js';
 
@@ -31,7 +31,7 @@ router.use(requireAuth, requireAgent);
 function toPublicUser(row) {
   return {
     id: row.id, name: row.name, username: row.username,
-    balance: row.balance, balanceEur: row.balance_eur ?? 0, role: row.role, avatar: row.avatar,
+    balance: row.balance, balanceEur: row.balance_eur ?? 0, accountCurrency: row.account_currency || 'BOTH', role: row.role, avatar: row.avatar,
     isActive: row.is_active, agentId: row.agent_id,
     commissionRate: row.commission_rate != null ? Number(row.commission_rate) : 0,
   };
@@ -77,6 +77,7 @@ router.get('/users', async (req, res) => {
 
 router.post('/users', async (req, res) => {
   const { name, username, password, initialBalance, initialBalanceEur } = req.body || {};
+  const accountCurrency = normalizeAccountCurrency((req.body || {}).currency);
   if (!name || !username || !password) {
     return res.status(400).json({ error: 'name, username, and password are required' });
   }
@@ -88,6 +89,10 @@ router.post('/users', async (req, res) => {
   const startBalanceEur = Number(initialBalanceEur) || 0;
   if (!Number.isFinite(startBalance) || !Number.isFinite(startBalanceEur) || startBalance < 0 || startBalanceEur < 0) {
     return res.status(400).json({ error: 'initial balance cannot be negative' });
+  }
+
+  if (disallowedPart(accountCurrency, [{ currency: 'ALL', amount: startBalance }, { currency: 'EUR', amount: startBalanceEur }])) {
+    return res.status(400).json({ error: accountCurrencyError(accountCurrency) });
   }
 
   const wallet = await readWallet(req.user.id);
@@ -104,9 +109,9 @@ router.post('/users', async (req, res) => {
   const id = randomUUID();
   const hash = await bcrypt.hash(password, 10);
   await pool.query(
-    `INSERT INTO users (id, name, username, password_hash, balance, role, avatar, agent_id, created_at)
-     VALUES ($1,$2,$3,$4,0,'USER',$5,$6,$7)`,
-    [id, name, username, hash, '', req.user.id, Date.now()]
+    `INSERT INTO users (id, name, username, password_hash, balance, role, avatar, agent_id, created_at, account_currency)
+     VALUES ($1,$2,$3,$4,0,'USER',$5,$6,$7,$8)`,
+    [id, name, username, hash, '', req.user.id, Date.now(), accountCurrency]
   );
 
   const parts = [];
@@ -169,6 +174,7 @@ router.post('/users/:id/credit', async (req, res) => {
   }
   const { rows } = await pool.query('SELECT * FROM users WHERE id = $1 AND agent_id = $2', [req.params.id, req.user.id]);
   if (!rows[0]) return res.status(404).json({ error: 'User not found' });
+  if (disallowedPart(rows[0].account_currency, parts)) return res.status(400).json({ error: accountCurrencyError(rows[0].account_currency) });
 
   try {
     await transferBalances({
@@ -193,6 +199,7 @@ router.post('/users/:id/debit', async (req, res) => {
   }
   const { rows } = await pool.query('SELECT * FROM users WHERE id = $1 AND agent_id = $2', [req.params.id, req.user.id]);
   if (!rows[0]) return res.status(404).json({ error: 'User not found' });
+  if (disallowedPart(rows[0].account_currency, parts)) return res.status(400).json({ error: accountCurrencyError(rows[0].account_currency) });
 
   try {
     await transferBalances({

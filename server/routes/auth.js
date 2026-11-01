@@ -30,6 +30,7 @@ function toPublicUser(row) {
     username: row.username,
     balance: row.balance,
     balanceEur: row.balance_eur ?? 0,
+    accountCurrency: row.account_currency || 'BOTH',
     role: row.role,
     avatar: row.avatar,
   };

@@ -11,7 +11,7 @@ import MatchupLabel from './MatchupLabel';
 interface AdminPanelProps {
   users: User[];
   allBets: Bet[];
-  onCreateUser: (u: Omit<User, 'id' | 'role' | 'avatar'> & { role: 'USER' | 'AGENT' | 'ADMIN' }) => void;
+  onCreateUser: (u: Omit<User, 'id' | 'role' | 'avatar'> & { role: 'USER' | 'AGENT' | 'ADMIN'; balanceEur?: number; currency?: 'ALL' | 'EUR' | 'BOTH' }) => void;
   /** Role of whoever is looking at the panel (SUPER_ADMIN sees the extra controls). */
   viewerRole?: string;
   onDeleteUser: (userId: string) => void;
@@ -64,7 +64,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
   
   // Create User State -- role defaults to USER; admin can switch to AGENT
   // (routed server-side to POST /admin/agents instead of /admin/users).
-  const [newUser, setNewUser] = useState<{ name: string; username: string; password: string; balance: number; role: 'USER' | 'AGENT' | 'ADMIN' }>({ name: '', username: '', password: '', balance: 0, role: 'USER' });
+  const [newUser, setNewUser] = useState<{ name: string; username: string; password: string; balance: number; balanceEur: number; currency: 'ALL' | 'EUR' | 'BOTH'; role: 'USER' | 'AGENT' | 'ADMIN' }>({ name: '', username: '', password: '', balance: 0, balanceEur: 0, currency: 'ALL', role: 'USER' });
   
   // Credit State
   const [creditAmounts, setCreditAmounts] = useState<Record<string, string>>({});
@@ -77,8 +77,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
   const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (newUser.name && newUser.username && newUser.password) {
-      onCreateUser(newUser);
-      setNewUser({ name: '', username: '', password: '', balance: 0, role: 'USER' });
+      // The account currency only exists for players; agents and admins keep both wallets.
+      const isPlayer = newUser.role === 'USER';
+      onCreateUser({
+        ...newUser,
+        currency: isPlayer ? newUser.currency : 'BOTH',
+        balance: isPlayer && newUser.currency === 'EUR' ? 0 : newUser.balance,
+        balanceEur: isPlayer && newUser.currency !== 'ALL' ? newUser.balanceEur : 0,
+      });
+      setNewUser({ name: '', username: '', password: '', balance: 0, balanceEur: 0, currency: 'ALL', role: 'USER' });
       alert(newUser.role === 'AGENT' ? t('Agjenti u krijua me sukses') : t('User u krijua me sukses'));
     }
   };
@@ -328,7 +335,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
             {/* Create User Section */}
             <div className="bg-brand-bg p-4 rounded border border-brand-divider">
               <h3 className="text-brand-yellow font-bold mb-4 uppercase text-xs tracking-wider">Create New User</h3>
-              <form onSubmit={handleCreateSubmit} className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
+              <form onSubmit={handleCreateSubmit} className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-7 gap-4 items-end">
                 <div>
                   <label className="text-xs text-brand-textMuted block mb-1">Full Name</label>
                   <input required className="w-full bg-brand-panel border border-brand-divider rounded p-2 text-white text-sm" 
@@ -344,11 +351,31 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                   <input required className="w-full bg-brand-panel border border-brand-divider rounded p-2 text-white text-sm" 
                     value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} placeholder="secret" />
                 </div>
-                <div>
-                  <label className="text-xs text-brand-textMuted block mb-1">Initial Balance (L)</label>
-                  <input type="number" className="w-full bg-brand-panel border border-brand-divider rounded p-2 text-white text-sm" 
-                    value={newUser.balance} onChange={e => setNewUser({...newUser, balance: parseFloat(e.target.value) || 0})} />
-                </div>
+                {newUser.role === 'USER' && (
+                  <div>
+                    <label className="text-xs text-brand-textMuted block mb-1">{t('Monedha e llogarisë')}</label>
+                    <select className="w-full bg-brand-panel border border-brand-divider rounded p-2 text-white text-sm"
+                      value={newUser.currency} onChange={e => setNewUser({...newUser, currency: e.target.value as 'ALL' | 'EUR' | 'BOTH'})}>
+                      <option value="ALL">Lek (L)</option>
+                      <option value="EUR">Euro (€)</option>
+                      <option value="BOTH">{t('Lek dhe Euro')}</option>
+                    </select>
+                  </div>
+                )}
+                {(newUser.role !== 'USER' || newUser.currency !== 'EUR') && (
+                  <div>
+                    <label className="text-xs text-brand-textMuted block mb-1">Initial Balance (L)</label>
+                    <input type="number" className="w-full bg-brand-panel border border-brand-divider rounded p-2 text-white text-sm"
+                      value={newUser.balance} onChange={e => setNewUser({...newUser, balance: parseFloat(e.target.value) || 0})} />
+                  </div>
+                )}
+                {newUser.role === 'USER' && newUser.currency !== 'ALL' && (
+                  <div>
+                    <label className="text-xs text-brand-textMuted block mb-1">Initial Balance (€)</label>
+                    <input type="number" className="w-full bg-brand-panel border border-brand-divider rounded p-2 text-white text-sm"
+                      value={newUser.balanceEur} onChange={e => setNewUser({...newUser, balanceEur: parseFloat(e.target.value) || 0})} />
+                  </div>
+                )}
                 <div>
                   <label className="text-xs text-brand-textMuted block mb-1">{t('Lloji')}</label>
                   <select className="w-full bg-brand-panel border border-brand-divider rounded p-2 text-white text-sm"
@@ -401,7 +428,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                             {u.role}
                           </span>
                         </td>
-                        <td className="p-3 font-mono text-brand-yellow font-bold">{u.balance.toFixed(2)} L<br />{(u.balanceEur ?? 0).toFixed(2)} €</td>
+                        <td className="p-3 font-mono text-brand-yellow font-bold">{u.accountCurrency !== 'EUR' && <>{u.balance.toFixed(2)} L</>}{u.accountCurrency === 'BOTH' || !u.accountCurrency ? <br /> : null}{u.accountCurrency !== 'ALL' && <>{(u.balanceEur ?? 0).toFixed(2)} €</>}</td>
                         
                         {/* Stats Columns */}
                         <td className="p-3 font-mono text-white">{stats.turnover.toFixed(2)} L</td>

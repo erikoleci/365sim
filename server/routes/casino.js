@@ -5,7 +5,7 @@ import { requireAuth } from './auth.js';
 import { getCasinoAccess, canOpenCasino, getDisabledGames, gameKeyForPath } from '../casinoAccess.js';
 import { PLINKO_ROWS, PLINKO_RISKS, plinkoMultipliers, minesMultiplier, MINES_TILES, dragonTigerPayout, DT_PAYOUT } from '../casinoMath.js';
 import { isSuperAdmin } from '../roles.js';
-import { normalizeCurrency, walletColumn } from '../ledger.js';
+import { normalizeCurrency, walletColumn, accountCurrencyOf, allowsCurrency, accountCurrencyError } from '../ledger.js';
 import { SLOT_GAMES as VIDEO_SLOTS, getSlotGame as getVideoSlot, publicGame } from '../slots/games.js';
 import { playRound } from '../slots/engine.js';
 import {
@@ -108,7 +108,9 @@ router.get('/slot-games', (req, res) => {
 router.post('/slot-games/:id/spin', async (req, res) => {
   const game = getVideoSlot(req.params.id);
   if (!game) return res.status(404).json({ error: 'Game not found' });
-  const currency = normalizeCurrency(req.body?.currency);
+  const acct = await accountCurrencyOf(req.user.id);
+  const currency = req.body?.currency === undefined && acct === 'EUR' ? 'EUR' : normalizeCurrency(req.body?.currency);
+  if (!allowsCurrency(acct, currency)) return res.status(400).json({ error: accountCurrencyError(acct) });
   const stake = req.body?.stake;
   if (typeof stake !== 'number' || !SLOT_STAKES[currency].includes(stake)) return res.status(400).json({ error: 'Invalid stake' });
 

@@ -7,6 +7,7 @@ interface Props {
   myBets: Bet[];
   userBalance: number;
   userBalanceEur?: number;
+  accountCurrency?: 'ALL' | 'EUR' | 'BOTH';
   betError: string | null;
   isMobileSlipOpen: boolean;
   onOpenMobileSlip: () => void;
@@ -28,7 +29,7 @@ const ErrorBanner: React.FC<{ message: string | null }> = ({ message }) =>
  * count that opens the slip full screen (it has its own address, /kuponi).
  */
 const BetSlipPanels: React.FC<Props> = ({
-  selections, myBets, userBalance, userBalanceEur = 0, betError, isMobileSlipOpen, onOpenMobileSlip, onCloseMobileSlip,
+  selections, myBets, userBalance, userBalanceEur = 0, accountCurrency = 'BOTH', betError, isMobileSlipOpen, onOpenMobileSlip, onCloseMobileSlip,
   onRemoveSelection, onClearAll, onPlaceBet, onCancelBet, hasLiveSelection = false,
 }) => {
   const slip = (
@@ -40,6 +41,7 @@ const BetSlipPanels: React.FC<Props> = ({
       onCancelBet={onCancelBet}
       userBalance={userBalance}
       userBalanceEur={userBalanceEur}
+      accountCurrency={accountCurrency}
       myBets={myBets}
       hasLiveSelection={hasLiveSelection}
     />

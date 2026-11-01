@@ -12,7 +12,7 @@ import { getLiveRisk, riskPolicy } from '../liveRisk.js';
 import { getLiveDetailAgeMs, isLiveDetailStale } from '../liveDetailPlan.js';
 import { wrap } from '../asyncHandler.js';
 import { noteBetOnMatches } from '../oddsHistoryPolicy.js';
-import { walletColumn, normalizeCurrency } from '../ledger.js';
+import { walletColumn, normalizeCurrency, accountCurrencyOf, allowsCurrency, accountCurrencyError } from '../ledger.js';
 
 // Pool pressure (live import/socket writes share the same few connections) or a dropped idle
 // connection used to surface as "503 Service temporarily unavailable" on ticket placement.
@@ -173,7 +173,11 @@ router.get('/', wrap(async (req, res) => {
 router.post('/', wrap(async (req, res) => {
   const { stake, selections } = req.body || {};
   // The ticket is placed, refunded and paid out in ONE wallet: lek ('ALL', default) or euro ('EUR').
-  const currency = normalizeCurrency((req.body || {}).currency);
+  // A euro-only account bets in euro even if the client does not say so; it can never bet in the other currency.
+  const acct = await accountCurrencyOf(req.user.id);
+  const asked = (req.body || {}).currency;
+  const currency = asked === undefined && acct === 'EUR' ? 'EUR' : normalizeCurrency(asked);
+  if (!allowsCurrency(acct, currency)) return res.status(400).json({ error: accountCurrencyError(acct) });
   const wallet = walletColumn(currency);
   // Ticket type is derived from the selections, never trusted from the client.
   const ticketType = Array.isArray(selections) && selections.length > 1 ? 'ACCUMULATOR' : 'SINGLE';

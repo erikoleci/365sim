@@ -88,6 +88,9 @@ vi.mock('../server/ledger.js', async (importOriginal) => {
     amountParts: actual.amountParts,
     walletColumn: actual.walletColumn,
     normalizeCurrency: actual.normalizeCurrency,
+    normalizeAccountCurrency: actual.normalizeAccountCurrency,
+    disallowedPart: actual.disallowedPart,
+    accountCurrencyError: actual.accountCurrencyError,
     transferBalance: async (args) => { mocks.calls.transfers.push(args); return { sourceAfter: null, targetAfter: 100 + args.amount }; },
     transferBalances: async (base, parts) => {
       const out = {};

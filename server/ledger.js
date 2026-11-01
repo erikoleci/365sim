@@ -19,6 +19,15 @@ export const CURRENCIES = ['ALL', 'EUR'];
 export const walletColumn = (currency) => (currency === 'EUR' ? 'balance_eur' : 'balance');
 export const normalizeCurrency = (c) => (c === 'EUR' ? 'EUR' : 'ALL');
 
+// A player account can be opened in lek only ('ALL'), in euro only ('EUR') or in both ('BOTH', every account that
+// existed before this was introduced). An account never plays, receives or is shown a currency it was not opened in.
+export const ACCOUNT_CURRENCIES = ['ALL', 'EUR', 'BOTH'];
+export const normalizeAccountCurrency = (c, fallback = 'BOTH') => (ACCOUNT_CURRENCIES.includes(c) ? c : fallback);
+export const allowsCurrency = (accountCurrency, currency) => !accountCurrency || accountCurrency === 'BOTH' || accountCurrency === normalizeCurrency(currency);
+export const accountCurrencyError = (accountCurrency) => (accountCurrency === 'EUR' ? 'Kjo llogari luan vetëm në euro' : 'Kjo llogari luan vetëm në lek');
+// First part of a credit/debit that the account cannot hold, or undefined.
+export const disallowedPart = (accountCurrency, parts) => parts.find((p) => p.amount !== 0 && !allowsCurrency(accountCurrency, p.currency));
+
 // Reads the two amounts of a credit/debit request: `amount` = lek, `amountEur` = euro (either or both).
 // Returns [{ currency, amount }] for every non-zero part, or null when the body is invalid
 // (nothing to move, not a finite number, or a negative amount when `signed` is false).
@@ -111,4 +120,9 @@ async function transferOnClient(client, { actorId, sourceId, targetId, amount, t
 export async function readWallet(id) {
   const { rows } = await pool.query('SELECT balance, balance_eur FROM users WHERE id = $1', [id]);
   return rows[0] ? { balance: rows[0].balance, balanceEur: rows[0].balance_eur } : { balance: 0, balanceEur: 0 };
+}
+
+export async function accountCurrencyOf(id) {
+  const { rows } = await pool.query('SELECT account_currency FROM users WHERE id = $1', [id]);
+  return rows[0]?.account_currency || 'BOTH';
 }

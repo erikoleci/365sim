@@ -287,7 +287,7 @@ export async function adminFetchUsers(): Promise<User[]> {
   return data.users;
 }
 
-export async function adminCreateUser(u: { name: string; username: string; password: string; balance: number }) {
+export async function adminCreateUser(u: { name: string; username: string; password: string; balance: number; balanceEur?: number; currency?: 'ALL' | 'EUR' | 'BOTH' }) {
   return request<{ user: User }>('/admin/users', { method: 'POST', body: JSON.stringify(u) });
 }
 
@@ -464,7 +464,7 @@ export async function adminSetAgentCommission(agentId: string, commissionRate: n
 }
 
 export interface AgentUserPerformance {
-  id: string; name: string; username: string; balance: number; balanceEur?: number; is_active: boolean;
+  id: string; name: string; username: string; balance: number; balanceEur?: number; accountCurrency?: 'ALL' | 'EUR' | 'BOTH'; is_active: boolean;
   tickets: number; turnover: number; wins: number; losses: number; pending: number;
   turnover_eur?: number; wins_eur?: number; losses_eur?: number; pending_eur?: number;
 }
@@ -478,7 +478,7 @@ export async function agentFetchMe() {
   return request<{ agent: User }>('/agent/me');
 }
 
-export async function agentCreateUser(u: { name: string; username: string; password: string; initialBalance?: number; initialBalanceEur?: number }) {
+export async function agentCreateUser(u: { name: string; username: string; password: string; initialBalance?: number; initialBalanceEur?: number; currency?: 'ALL' | 'EUR' | 'BOTH' }) {
   return request<{ user: User }>('/agent/users', { method: 'POST', body: JSON.stringify(u) });
 }
 

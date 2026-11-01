@@ -24,13 +24,14 @@ interface Props {
   /** Real wallet of the player (ignored in demo mode). */
   balance?: number;
   balanceEur?: number;
+  accountCurrency?: 'ALL' | 'EUR' | 'BOTH';
   onBalances?: (lek: number, eur: number) => void;
   onClose?: () => void;
 }
 
 // Lobby of the five slots + the game itself. The result of every round comes from the server (it is drawn and
 // paid there); this component only animates it. The super admin plays on demo money, players on their wallet.
-const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, onBalances }) => {
+const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, accountCurrency = 'BOTH', onBalances }) => {
   const [data, setData] = useState<Awaited<ReturnType<typeof api.casinoSlotGames>> | null>(null);
   const [game, setGame] = useState<api.VideoSlotInfo | null>(null);
   const [error, setError] = useState('');
@@ -40,7 +41,7 @@ const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, onBalances })
   if (error) return <div className="text-red-400 text-sm p-4">{error}</div>;
   if (!data) return <div className="text-brand-textMuted text-sm p-4">Duke ngarkuar...</div>;
 
-  if (game) return <SlotGame game={game} stakes={data.stakes} demo={data.demo} balance={balance} balanceEur={balanceEur} onBalances={onBalances} onBack={() => setGame(null)} />;
+  if (game) return <SlotGame game={game} stakes={data.stakes} demo={data.demo} balance={balance} balanceEur={balanceEur} accountCurrency={accountCurrency} onBalances={onBalances} onBack={() => setGame(null)} />;
 
   return (
     <div>
@@ -69,11 +70,12 @@ const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, onBalances })
 };
 
 const SlotGame: React.FC<{
-  game: api.VideoSlotInfo; stakes: { ALL: number[]; EUR: number[] }; demo: boolean; balance: number; balanceEur: number;
+  game: api.VideoSlotInfo; stakes: { ALL: number[]; EUR: number[] }; demo: boolean; balance: number; balanceEur: number; accountCurrency?: 'ALL' | 'EUR' | 'BOTH';
   onBalances?: (lek: number, eur: number) => void; onBack: () => void;
-}> = ({ game, stakes, demo, balance, balanceEur, onBalances, onBack }) => {
-  const [currency, setCurrency] = useState<'ALL' | 'EUR'>('ALL');
-  const [stake, setStake] = useState(stakes.ALL[3]);
+}> = ({ game, stakes, demo, balance, balanceEur, accountCurrency = 'BOTH', onBalances, onBack }) => {
+  const startCur: 'ALL' | 'EUR' = accountCurrency === 'EUR' ? 'EUR' : 'ALL';
+  const [currency, setCurrency] = useState<'ALL' | 'EUR'>(startCur);
+  const [stake, setStake] = useState(stakes[startCur][3]);
   const [demoBal, setDemoBal] = useState({ ...DEMO_START });
   const [grid, setGrid] = useState<string[][]>(() => idleGrid(game));
   const [spinning, setSpinning] = useState<boolean[]>([false, false, false, false, false]);
@@ -161,7 +163,7 @@ const SlotGame: React.FC<{
       <div className="p-4">
         <div className="flex items-center justify-between text-sm mb-3">
           <div className="flex rounded overflow-hidden border border-white/20">
-            {(['ALL', 'EUR'] as const).map((c) => (
+            {(['ALL', 'EUR'] as const).filter((c) => accountCurrency === 'BOTH' || accountCurrency === c).map((c) => (
               <button key={c} onClick={() => switchCurrency(c)} className={`px-3 py-1 ${currency === c ? 'bg-brand-yellow text-black font-bold' : 'bg-black/30 text-gray-300'}`}>{c === 'ALL' ? 'L' : '€'}</button>
             ))}
           </div>

@@ -14,16 +14,19 @@ import SlotGames from './casino/SlotGames';
 interface CasinoHubProps {
   userBalance: number;
   userBalanceEur?: number;
+  accountCurrency?: 'ALL' | 'EUR' | 'BOTH';
   onSetBalance: (balance: number, balanceEur?: number) => void;
   /** The super admin sees every game, also the ones closed to players (to test them). */
   showAllGames?: boolean;
 }
 
-const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, onSetBalance, showAllGames = false }) => {
+const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, accountCurrency = 'BOTH', onSetBalance, showAllGames = false }) => {
+  const euroOnly = accountCurrency === 'EUR';
   const [activeGame, setActiveGame] = useState<'slots' | 'blackjack' | 'roulette' | 'poker' | 'baccarat' | 'dice' | 'plinko' | 'mines' | 'dragontiger' | null>(null);
   const [disabled, setDisabled] = useState<string[]>([]);
   useEffect(() => { casinoAccess().then((a) => setDisabled(a.disabledGames || [])).catch(() => {}); }, []);
-  const open = (key: string) => showAllGames || !disabled.includes(key);
+  // The table games are played in lek: a euro-only account gets the slots only.
+  const open = (key: string) => (showAllGames || !disabled.includes(key)) && (!euroOnly || key === 'slots');
 
   if (activeGame === 'slots') return <SlotMachine userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
   if (activeGame === 'blackjack') return <Blackjack userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
@@ -53,12 +56,14 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
           <span className="w-1 h-6 bg-brand-yellow rounded-full"></span>
           Slots
       </h3>
-      {open('slots') && <div className="mb-10"><SlotGames balance={userBalance} balanceEur={userBalanceEur} onBalances={onSetBalance} /></div>}
+      {open('slots') && <div className="mb-10"><SlotGames balance={userBalance} balanceEur={userBalanceEur} accountCurrency={accountCurrency} onBalances={onSetBalance} /></div>}
 
+      {!euroOnly && (
       <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
           <span className="w-1 h-6 bg-brand-yellow rounded-full"></span>
           Featured Games
       </h3>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
           

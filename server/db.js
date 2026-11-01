@@ -319,6 +319,14 @@ export async function initDb() {
   // balance around unattended; an Owner still uses the existing manual
   // agents/:id/credit endpoint to actually pay it out.
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS commission_rate NUMERIC(5,2) NOT NULL DEFAULT 0;`);
+  // The currency a player account was opened in: 'ALL' (lek only), 'EUR' (euro only) or 'BOTH' (default, existing accounts).
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS account_currency TEXT NOT NULL DEFAULT 'BOTH';`);
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE users ADD CONSTRAINT account_currency_values CHECK (account_currency IN ('ALL','EUR','BOTH'));
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
+  `);
   // Postgres has no `ADD CONSTRAINT IF NOT EXISTS` -- the DO block + catching
   // duplicate_object is the standard idempotent equivalent, safe to run on
   // every boot.

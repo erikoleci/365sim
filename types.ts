@@ -13,6 +13,8 @@ export interface User {
   balance: number;
   /** Euro wallet (the lek wallet is `balance`). */
   balanceEur?: number;
+  /** The currency the account was opened in: 'ALL' = lek only, 'EUR' = euro only, 'BOTH' (default). */
+  accountCurrency?: 'ALL' | 'EUR' | 'BOTH';
   role: UserRole;
   avatar: string;
   isActive?: boolean;

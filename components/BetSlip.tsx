@@ -6,6 +6,7 @@ import TicketDetailModal, { TicketView } from './TicketDetailModal';
 import { findSlipConflicts, legKey, stakeAfterPlacement } from '../utils/betSlipRules';
 
 interface BetSlipProps {
+  accountCurrency?: 'ALL' | 'EUR' | 'BOTH';
   selections: BetSelectionItem[];
   onRemoveSelection: (uniqueId: string) => void;
   onClearAll: () => void;
@@ -27,10 +28,10 @@ const LIMITS = {
   EUR: { min: 1, maxStake: 10000, maxReturn: 10000, symbol: '€' },
 } as const;
 
-const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClearAll, onPlaceBet, onCancelBet, userBalance, userBalanceEur = 0, myBets, hasLiveSelection = false }) => {
+const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClearAll, onPlaceBet, onCancelBet, userBalance, userBalanceEur = 0, myBets, hasLiveSelection = false, accountCurrency = 'BOTH' }) => {
   const { t, locale } = useI18n();
   // A ticket is placed in ONE wallet: lek or euro.
-  const [currency, setCurrency] = useState<'ALL' | 'EUR'>('ALL');
+  const [currency, setCurrency] = useState<'ALL' | 'EUR'>(accountCurrency === 'EUR' ? 'EUR' : 'ALL');
   const { min: MIN_STAKE, maxStake: MAX_STAKE, maxReturn: MAX_POTENTIAL_RETURN, symbol: sym } = LIMITS[currency];
   const walletBalance = currency === 'EUR' ? userBalanceEur : userBalance;
   const [stake, setStake] = useState<string>('');
@@ -254,7 +255,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                             <div className="flex items-center gap-2 mb-2">
                                 <span className="text-brand-textMuted w-12">{t('Monedha')}</span>
                                 <div className="flex flex-1 rounded-lg overflow-hidden border border-brand-divider text-xs font-bold">
-                                    {(['ALL', 'EUR'] as const).map((c) => (
+                                    {(['ALL', 'EUR'] as const).filter((c) => accountCurrency === 'BOTH' || accountCurrency === c).map((c) => (
                                         <button
                                             key={c}
                                             type="button"

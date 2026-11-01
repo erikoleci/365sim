@@ -35,7 +35,7 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
   const [tickets, setTickets] = useState<Record<string, api.AgentTicket[]>>({});
 
   const [showCreate, setShowCreate] = useState(false);
-  const [newUser, setNewUser] = useState({ name: '', username: '', password: '', initialBalance: 0, initialBalanceEur: 0 });
+  const [newUser, setNewUser] = useState<{ name: string; username: string; password: string; initialBalance: number; initialBalanceEur: number; currency: 'ALL' | 'EUR' | 'BOTH' }>({ name: '', username: '', password: '', initialBalance: 0, initialBalanceEur: 0, currency: 'ALL' });
 
   const [amountDraft, setAmountDraft] = useState<Record<string, string>>({});
   const [amountEurDraft, setAmountEurDraft] = useState<Record<string, string>>({});
@@ -91,8 +91,12 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
     e.preventDefault();
     if (!newUser.name || !newUser.username || !newUser.password) return;
     try {
-      await api.agentCreateUser(newUser);
-      setNewUser({ name: '', username: '', password: '', initialBalance: 0, initialBalanceEur: 0 });
+      await api.agentCreateUser({
+        ...newUser,
+        initialBalance: newUser.currency === 'EUR' ? 0 : newUser.initialBalance,
+        initialBalanceEur: newUser.currency === 'ALL' ? 0 : newUser.initialBalanceEur,
+      });
+      setNewUser({ name: '', username: '', password: '', initialBalance: 0, initialBalanceEur: 0, currency: 'ALL' });
       setShowCreate(false);
       await load();
     } catch (err: any) {
@@ -201,12 +205,23 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
               <label className="text-[10px] text-brand-textMuted uppercase flex flex-col gap-1">Password
                 <input type="password" value={newUser.password} onChange={(e) => setNewUser((p) => ({ ...p, password: e.target.value }))} className="input" />
               </label>
-              <label className="text-[10px] text-brand-textMuted uppercase flex flex-col gap-1">{t('Balanca fillestare')} (Lek)
-                <input type="number" min={0} value={newUser.initialBalance} onChange={(e) => setNewUser((p) => ({ ...p, initialBalance: Number(e.target.value) }))} className="input" />
+              <label className="text-[10px] text-brand-textMuted uppercase flex flex-col gap-1">{t('Monedha e llogarisë')}
+                <select value={newUser.currency} onChange={(e) => setNewUser((p) => ({ ...p, currency: e.target.value as 'ALL' | 'EUR' | 'BOTH' }))} className="input">
+                  <option value="ALL">Lek (L)</option>
+                  <option value="EUR">Euro (€)</option>
+                  <option value="BOTH">{t('Lek dhe Euro')}</option>
+                </select>
               </label>
-              <label className="text-[10px] text-brand-textMuted uppercase flex flex-col gap-1">{t('Balanca fillestare')} (Euro €)
-                <input type="number" min={0} value={newUser.initialBalanceEur} onChange={(e) => setNewUser((p) => ({ ...p, initialBalanceEur: Number(e.target.value) }))} className="input" />
-              </label>
+              {newUser.currency !== 'EUR' && (
+                <label className="text-[10px] text-brand-textMuted uppercase flex flex-col gap-1">{t('Balanca fillestare')} (Lek)
+                  <input type="number" min={0} value={newUser.initialBalance} onChange={(e) => setNewUser((p) => ({ ...p, initialBalance: Number(e.target.value) }))} className="input" />
+                </label>
+              )}
+              {newUser.currency !== 'ALL' && (
+                <label className="text-[10px] text-brand-textMuted uppercase flex flex-col gap-1">{t('Balanca fillestare')} (Euro €)
+                  <input type="number" min={0} value={newUser.initialBalanceEur} onChange={(e) => setNewUser((p) => ({ ...p, initialBalanceEur: Number(e.target.value) }))} className="input" />
+                </label>
+              )}
               <button type="submit" className="text-xs px-3 py-2 rounded bg-green-700 hover:bg-green-600 font-bold h-fit">{t('Krijo')}</button>
             </form>
           )}
@@ -227,7 +242,7 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
                     </button>
 
                     <div className="flex items-center gap-3 text-xs">
-                      <span className="text-brand-yellow font-bold">{money(u.balance)} L · {money(u.balanceEur ?? 0)} €</span>
+                      <span className="text-brand-yellow font-bold">{u.accountCurrency !== 'EUR' && <>{money(u.balance)} L</>}{(!u.accountCurrency || u.accountCurrency === 'BOTH') && ' · '}{u.accountCurrency !== 'ALL' && <>{money(u.balanceEur ?? 0)} €</>}</span>
                       <span title={t('Kupona')}>{t('Kupona: {n}', { n: u.tickets })}</span>
                       <span title={t('Xhiro')}>{t('Xhiro: {n}', { n: money(u.turnover) })}</span>
                       <span className="text-green-400" title={t('Fitime')}>+{money(u.wins)}</span>

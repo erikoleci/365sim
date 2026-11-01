@@ -16,7 +16,7 @@ import { getRecentErrors } from '../recentErrors.js';
 import { getUnmappedVcReport } from '../vcDeltaSampler.js';
 import { mapEventToMatch } from '../oddsUtils.js';
 
-import { transferBalance, transferBalances, amountParts, readWallet, walletColumn } from '../ledger.js';
+import { transferBalance, transferBalances, amountParts, readWallet, walletColumn, normalizeAccountCurrency, disallowedPart, accountCurrencyError } from '../ledger.js';
 import { getTicketDeletionAllowed, setTicketDeletionAllowed } from '../appSettings.js';
 import { getCasinoAccess, setCasinoAccess, CASINO_MODES, getDisabledGames, setDisabledGames, CASINO_GAME_KEYS } from '../casinoAccess.js';
 import { isAdminRole, isSuperAdmin, ROLE_ADMIN } from '../roles.js';
@@ -79,7 +79,7 @@ function canDeleteAccount(actor, target) {
 function toPublicUser(row) {
   return {
     id: row.id, name: row.name, username: row.username,
-    balance: row.balance, balanceEur: row.balance_eur ?? 0, role: row.role, avatar: row.avatar,
+    balance: row.balance, balanceEur: row.balance_eur ?? 0, accountCurrency: row.account_currency || 'BOTH', role: row.role, avatar: row.avatar,
     isActive: row.is_active, agentId: row.agent_id, adminId: row.admin_id ?? null,
     // Only meaningful for AGENT rows; present (as 0) for USER/ADMIN too so
     // the shape is consistent, since the frontend types this as a single
@@ -150,24 +150,39 @@ router.get('/users', async (req, res) => {
 });
 
 router.post('/users', async (req, res) => {
-  const { name, username, password, balance } = req.body || {};
+  const { name, username, password, balance, balanceEur } = req.body || {};
+  // The account is opened in lek only, euro only or both; the opening balance must be in that currency.
+  const accountCurrency = normalizeAccountCurrency((req.body || {}).currency);
   if (!name || !username || !password) {
     return res.status(400).json({ error: 'name, username, and password are required' });
+  }
+  const lek = Number(balance) || 0;
+  const eur = Number(balanceEur) || 0;
+  if (!Number.isFinite(lek) || !Number.isFinite(eur) || lek < 0 || eur < 0) {
+    return res.status(400).json({ error: 'initial balance cannot be negative' });
+  }
+  if (disallowedPart(accountCurrency, [{ currency: 'ALL', amount: lek }, { currency: 'EUR', amount: eur }])) {
+    return res.status(400).json({ error: accountCurrencyError(accountCurrency) });
   }
   const { rows: existingRows } = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
   if (existingRows[0]) return res.status(409).json({ error: 'Username already taken' });
 
   const id = randomUUID();
   const hash = await bcrypt.hash(password, 10);
+  const isSuper = isSuperAdmin(req.user.role);
   // The new user belongs to the admin who creates him (the super admin's own users stay unowned).
   await pool.query(
-    `INSERT INTO users (id, name, username, password_hash, balance, role, avatar, admin_id, created_at)
-     VALUES ($1,$2,$3,$4,$5,'USER',$6,$7,$8)`,
-    [id, name, username, hash, isSuperAdmin(req.user.role) ? (Number(balance) || 0) : 0, '', isSuperAdmin(req.user.role) ? null : req.user.id, Date.now()]
+    `INSERT INTO users (id, name, username, password_hash, balance, balance_eur, role, avatar, admin_id, created_at, account_currency)
+     VALUES ($1,$2,$3,$4,$5,$6,'USER',$7,$8,$9,$10)`,
+    [id, name, username, hash, isSuper ? lek : 0, isSuper ? eur : 0, '', isSuper ? null : req.user.id, Date.now(), accountCurrency]
   );
-  if (!isSuperAdmin(req.user.role) && Number(balance) > 0) {
+  const parts = [];
+  if (lek > 0) parts.push({ currency: 'ALL', amount: lek });
+  if (eur > 0) parts.push({ currency: 'EUR', amount: eur });
+  if (!isSuper && parts.length) {
     try {
-      await transferBalance({ actorId: req.user.id, sourceId: req.user.id, targetId: id, amount: Number(balance), type: 'ADMIN_TO_USER', reference: username });
+      // lek and euro move together in one transaction
+      await transferBalances({ actorId: req.user.id, sourceId: req.user.id, targetId: id, type: 'ADMIN_TO_USER', reference: username }, parts);
     } catch (err) {
       await pool.query('DELETE FROM users WHERE id = $1', [id]);
       if (err.message === 'Insufficient balance') return res.status(400).json({ error: 'Kredia jote ka mbaruar: prit që super admini të të shtojë kredi' });
@@ -176,7 +191,7 @@ router.post('/users', async (req, res) => {
   }
 
   const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
-  await logAudit(req.user, 'USER_CREATE', id, { username, balance: Number(balance) || 0 });
+  await logAudit(req.user, 'USER_CREATE', id, { username, balance: lek, balanceEur: eur, currency: accountCurrency });
   res.status(201).json({ user: toPublicUser(rows[0]) });
 });
 
@@ -463,7 +478,7 @@ router.get('/agents/:id/performance', async (req, res) => {
   if (!agentRows[0] || !ownsRow(req.user, agentRows[0])) return res.status(404).json({ error: 'Agent not found' });
 
   const { rows } = await pool.query(
-    `SELECT u.id, u.name, u.username, u.balance, u.balance_eur AS "balanceEur", u.is_active,
+    `SELECT u.id, u.name, u.username, u.balance, u.balance_eur AS "balanceEur", u.account_currency AS "accountCurrency", u.is_active,
             COALESCE(COUNT(b.id), 0)::int AS tickets,
             ${MONEY_SUMS}
      FROM users u
@@ -520,6 +535,7 @@ router.post('/users/:id/credit', async (req, res) => {
   }
   // ... and never to an agent or user that belongs to another admin.
   if (!ownsRow(req.user, rows[0])) return res.status(404).json({ error: 'User not found' });
+  if (disallowedPart(rows[0].account_currency, parts)) return res.status(400).json({ error: accountCurrencyError(rows[0].account_currency) });
   if (!isSuperAdmin(req.user.role)) {
     // A normal admin does not create money: what he gives (or takes back) moves between HIS balance
     // (given by the super admin) and the account. When his credit runs out he waits for the super admin.

@@ -200,7 +200,7 @@ const App: React.FC = () => {
           {showAdmin && currentUser.role === UserRole.AGENT ? (
             <AgentUsersPanel currentUser={currentUser} onBalanceChanged={applyBalance} />
           ) : casinoAllowed && currentView === 'casino' ? (
-            <CasinoHub userBalance={currentUser.balance} userBalanceEur={currentUser.balanceEur ?? 0} onSetBalance={applyBalance} />
+            <CasinoHub userBalance={currentUser.balance} userBalanceEur={currentUser.balanceEur ?? 0} accountCurrency={currentUser.accountCurrency ?? 'BOTH'} onSetBalance={applyBalance} />
           ) : detailMatch ? (
             <MatchDetail
               // A full remount when the viewed match changes: otherwise the ticking clocks of
@@ -263,6 +263,7 @@ const App: React.FC = () => {
             myBets={myBets}
             userBalance={currentUser.balance}
             userBalanceEur={currentUser.balanceEur ?? 0}
+            accountCurrency={currentUser.accountCurrency ?? 'BOTH'}
             betError={slip.betError}
             isMobileSlipOpen={nav.isMobileSlipOpen}
             onOpenMobileSlip={() => nav.setIsMobileSlipOpen(true)}
