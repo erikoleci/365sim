@@ -174,7 +174,11 @@ export async function upsertMatch(ev, league, status, liveScores, liveInfo, leag
                                    ELSE COALESCE(excluded.live_home_score, matches_cache.live_home_score) END,
            live_away_score = CASE WHEN $15 THEN excluded.live_away_score
                                    ELSE COALESCE(excluded.live_away_score, matches_cache.live_away_score) END,
+           -- A live websocket clock (written within the last 25 s, see DERIVED_CLOCK_WRITE_MS) is exact to the
+           -- second; this REST poll carries a minute that is already old and, written with a fresh stamp,
+           -- made every clock jump back. While the websocket is alive the REST minute is left out.
            live_minute = CASE WHEN $15 THEN excluded.live_minute
+                               WHEN matches_cache.live_minute IS NOT NULL AND matches_cache.live_minute_updated_at > excluded.fetched_at - 25000 THEN matches_cache.live_minute
                                ELSE COALESCE(excluded.live_minute, matches_cache.live_minute) END,
            live_status = CASE WHEN $15 THEN excluded.live_status
                                ELSE COALESCE(excluded.live_status, matches_cache.live_status) END,
@@ -187,6 +191,8 @@ export async function upsertMatch(ev, league, status, liveScores, liveInfo, leag
            -- forward for no reason.
            live_minute_updated_at = CASE
              WHEN $15 AND excluded.live_minute IS DISTINCT FROM matches_cache.live_minute THEN excluded.fetched_at
+             WHEN NOT $15 AND matches_cache.live_minute IS NOT NULL AND matches_cache.live_minute_updated_at > excluded.fetched_at - 25000
+               THEN matches_cache.live_minute_updated_at
              WHEN NOT $15 AND COALESCE(excluded.live_minute, matches_cache.live_minute) IS DISTINCT FROM matches_cache.live_minute
                THEN excluded.fetched_at
              ELSE matches_cache.live_minute_updated_at
