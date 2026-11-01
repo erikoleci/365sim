@@ -33,3 +33,24 @@ describe('server clock offset (seconds of the match clock stay in step with the 
     expect(Math.abs(serverNowStamp() - (Date.now() + 4000))).toBeLessThan(50);
   });
 });
+
+describe('offset estimate is steady under network jitter', () => {
+  it('uses the frame with the least delay, so one slow frame does not move the clock', () => {
+    const t0 = 1_000_000_000_000;
+    // true server ahead by 2000 ms; frames arrive after 120 ms, 800 ms, 60 ms, 400 ms
+    noteServerTime(t0 + 2000 - 120, t0);
+    const afterFirst = serverToLocal(t0 + 5000);
+    noteServerTime(t0 + 3000 + 2000 - 800, t0 + 3000);
+    expect(serverToLocal(t0 + 5000)).toBe(afterFirst); // the slow frame changes nothing
+    noteServerTime(t0 + 6000 + 2000 - 60, t0 + 6000);
+    expect(serverToLocal(t0 + 5000)).toBe(t0 + 5000 - 1940); // the fast frame improves it
+    noteServerTime(t0 + 9000 + 2000 - 400, t0 + 9000);
+    expect(serverToLocal(t0 + 5000)).toBe(t0 + 5000 - 1940);
+  });
+  it('forgets old samples (a device clock that was changed)', () => {
+    const t0 = 1_000_000_000_000;
+    noteServerTime(t0 + 10_000, t0);
+    noteServerTime(t0 + 200_000 + 1000, t0 + 200_000); // 200 s later the offset is 1 s
+    expect(serverToLocal(t0 + 200_000)).toBe(t0 + 200_000 - 1000);
+  });
+});

@@ -150,49 +150,81 @@ export function useTickingClock(
   const hasSeconds = /:\d/.test(String(rawMinute ?? '')) || (/^\d+$/.test(String(rawMinute ?? '').trim()) && Number(rawMinute) > MAX_SANE_MATCH_MINUTES);
   const maxProject = base ? projectionLimitSeconds(base.minute * 60 + base.second, !hasSeconds) : MAX_PROJECTION_SECONDS;
   const [, forceTick] = React.useState(0);
-  const baseRef = React.useRef<{ totalSeconds: number; receivedAt: number } | null>(null);
+  const baseRef = React.useRef<{ totalSeconds: number; receivedAt: number; hasSeconds: boolean } | null>(null);
+  // A fresher reading that is a little BEHIND what is already on screen (the phone's clock was a
+  // fraction early) must not make the seconds jump backwards: the clock runs at half speed until the
+  // true time catches up with it, then at full speed again.
+  const slewRef = React.useRef<{ from: number; startedAt: number } | null>(null);
 
   React.useEffect(() => {
     if (!base) {
       baseRef.current = null;
+      slewRef.current = null;
       return;
     }
     const incomingTotalSeconds = base.minute * 60 + base.second;
     // A minute reading older than a few hours (or from the future) cannot belong to
     // this match's running clock: fall back to the local receive time.
     const receivedAt = clockReceivedAt(serverUpdatedAt, Date.now());
-    // Never let the displayed clock jump BACKWARD within the same match.
-    // A real match clock only ever moves forward; a lower incoming value
-    // means this update is stale/out of order relative to what we already
-    // showed (e.g. a slower REST refresh landing after a faster live tick
-    // already advanced the clock, or any other source disagreement), not a
-    // legitimate correction. Snapping back and forth on every such
-    // disagreement is exactly the kind of visibly "wrong" live clock that
-    // erodes trust — once we've shown a given point in the match, keep
-    // ticking forward from there and ignore an incoming value that would
-    // rewind it. (A genuinely different match reusing the same id is a
-    // separate, much rarer case already guarded against on the server —
-    // see upsertMatch's team-mismatch reset in server/london365.js.) The
-    // "current projected" value is itself computed from receivedAt, so this
-    // check is correct whether receivedAt is the client's or the server's.
-    if (!shouldAcceptNewClockBase(baseRef.current, incomingTotalSeconds, Date.now(), receivedAt)) return;
-    baseRef.current = { totalSeconds: incomingTotalSeconds, receivedAt };
+    const now = Date.now();
+    const cur = baseRef.current;
+    const curProjected = cur ? cur.totalSeconds + Math.max(0, Math.floor((now - cur.receivedAt) / 1000)) : 0;
+    // A bare minute ("89", no seconds: the slower REST feed) says nothing about the seconds. Once the
+    // clock has real seconds it must not be replaced by "89:00", which made it jump back by up to a
+    // minute. It only matters when it names a minute the running clock has not reached yet.
+    if (cur && cur.hasSeconds && !hasSeconds && Math.floor(incomingTotalSeconds / 60) <= Math.floor(curProjected / 60)) return;
+    // Never let the displayed clock jump BACKWARD within the same match. A real match clock only
+    // ever moves forward; a lower, OLDER reading is stale / out of order, not a correction.
+    if (!shouldAcceptNewClockBase(cur, incomingTotalSeconds, now, receivedAt)) {
+      // ... but a FRESHER reading that is only a few seconds behind is the truth: adopt it and let the
+      // clock slow down until it matches, instead of keeping a clock that runs ahead of the provider.
+      if (cur && receivedAt > cur.receivedAt) {
+        const incomingProjected = incomingTotalSeconds + Math.max(0, Math.floor((now - receivedAt) / 1000));
+        const behind = curProjected - incomingProjected;
+        if (behind > 0 && behind <= REWIND_TOLERANCE_SECONDS) {
+          slewRef.current = { from: curProjected, startedAt: now };
+          baseRef.current = { totalSeconds: incomingTotalSeconds, receivedAt, hasSeconds };
+        }
+      }
+      return;
+    }
+    slewRef.current = null;
+    baseRef.current = { totalSeconds: incomingTotalSeconds, receivedAt, hasSeconds };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawMinute, serverUpdatedAt]);
 
   React.useEffect(() => {
     if (!base || !ticking) return;
-    const id = setInterval(() => forceTick((n) => n + 1), 1000);
-    return () => clearInterval(id);
+    // Re-render exactly when the displayed second changes (aligned with the reading's own phase), not on a
+    // free-running 1 s interval whose drift made seconds repeat or skip.
+    let id: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const b = baseRef.current;
+      const phase = b ? (Date.now() - b.receivedAt) % 1000 : 0;
+      id = setTimeout(() => { forceTick((n) => n + 1); schedule(); }, Math.max(30, 1000 - phase + 15));
+    };
+    schedule();
+    return () => clearTimeout(id);
   }, [!!base, ticking]);
 
   if (!base || !baseRef.current) return base;
+  const nowMs = Date.now();
   const projected = ticking
-    ? projectClock(baseRef.current.totalSeconds, baseRef.current.receivedAt, Date.now(), maxProject)
+    ? projectClock(baseRef.current.totalSeconds, baseRef.current.receivedAt, nowMs, maxProject)
     : projectClock(baseRef.current.totalSeconds, baseRef.current.receivedAt, baseRef.current.receivedAt, maxProject); // frozen: elapsed=0
+  let shown = projected;
+  const slew = slewRef.current;
+  if (slew && ticking) {
+    const slewed = Math.floor(slew.from + (nowMs - slew.startedAt) / 2000);
+    if (slewed > projected.minute * 60 + projected.second) {
+      shown = projectClock(slewed, nowMs, nowMs, 0);
+    } else {
+      slewRef.current = null;
+    }
+  }
   // Never display an impossible clock (it would read like "11081:42"): callers fall
   // back to the plain "LIVE" label when there is no usable clock.
-  return projected.minute > MAX_SANE_MATCH_MINUTES ? null : projected;
+  return shown.minute > MAX_SANE_MATCH_MINUTES ? null : shown;
 }
 
 // "61:01" gjatë lojës normale; kur provideri s'jep fare minutë (vetëm "LIVE"

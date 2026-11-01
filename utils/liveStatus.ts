@@ -100,18 +100,26 @@ export const LIVE_RECENT_CLOCK_MS = 30 * 60 * 1000;
 // ahead of the server showed the match clock (seconds included) 8 s ahead. Every websocket frame
 // carries serverNow; the offset is measured from it and stamps are moved onto the device clock.
 let serverClockOffsetMs = 0;
+// Every frame's offset = trueOffset - (that frame's network delay). A single sample therefore jumps by the
+// jitter of the connection (a phone on mobile data: several hundred ms), and every clock stamp moved with it,
+// so the seconds stuttered. The sample with the SMALLEST delay is the closest to the truth: keep the largest
+// offset seen in the last two minutes.
+const OFFSET_WINDOW_MS = 2 * 60 * 1000;
+let offsetSamples: { offset: number; at: number }[] = [];
 export function noteServerTime(serverNow: unknown, now: number = Date.now()): void {
   const s = Number(serverNow);
   if (!Number.isFinite(s) || s <= 0) return;
   const offset = s - now;
   // Ignore absurd values (a broken frame must never move the clock by hours).
   if (Math.abs(offset) > 10 * 60 * 1000) return;
-  serverClockOffsetMs = offset;
+  offsetSamples = offsetSamples.filter((x) => now - x.at <= OFFSET_WINDOW_MS && x.at <= now);
+  offsetSamples.push({ offset, at: now });
+  serverClockOffsetMs = Math.max(...offsetSamples.map((x) => x.offset));
 }
 export const serverToLocal = (serverStamp: number): number => serverStamp - serverClockOffsetMs;
 // "Now" as a server timestamp: the fallback stamp for a reading that arrived without one.
 export const serverNowStamp = (): number => Date.now() + serverClockOffsetMs;
-export const __resetServerClockOffsetForTests = () => { serverClockOffsetMs = 0; };
+export const __resetServerClockOffsetForTests = () => { serverClockOffsetMs = 0; offsetSamples = []; };
 
 // The provider clock stopped moving: the client froze it (MAX_PROJECTION_SECONDS = 120). Shown as
 // a small marker so a frozen "72:14" is never mistaken for a live one. Not for halftime.
