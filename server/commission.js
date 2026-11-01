@@ -1,5 +1,5 @@
 // Agent commission.
-//   - tickets with a single result (live or not) ............ COMMISSION_SINGLE_PCT  (default 4%)
+//   - tickets with a single result (live or not; a 45/90 pick counts as two results) ............ COMMISSION_SINGLE_PCT  (default 4%)
 //   - tickets with two or more results (a live leg included) . COMMISSION_MULTI_PCT   (default 8%)
 // It is counted on the stake the moment the ticket is placed (open, won or lost), so the agent sees what he earns from
 // every bet straight away. Cancelled and refunded (void) tickets earn nothing. Lek and euro are kept apart
@@ -11,6 +11,12 @@ const pct = (v, fallback) => {
 export const COMMISSION_SINGLE_PCT = pct(process.env.COMMISSION_SINGLE_PCT, 4);
 export const COMMISSION_MULTI_PCT = pct(process.env.COMMISSION_MULTI_PCT, 8);
 
+// "Results" of a selection: a half-time/full-time pick ("45/90", "1/2") is TWO results (the half-time and the full-time
+// one), and so is a combined market ("Rezultat Final & Numri i Golave"). Everything else is one result. A ticket with
+// two or more results in total earns the higher rate -- also a single "Bast i Thjeshte" on 45/90.
+export const MULTI_RESULT_MARKET_RE = '(&|^\\s*(45\\s*/\\s*90|ht\\s*/?\\s*ft|pushimi?\\s*/?\\s*fund|pjesa e par[eë]\\s*/\\s*(finale|fund)|rezultati (i )?(pjesa|pjeses|ne)\\s.*pushim?.*/|rezultati pjesa e par[eë]\\s*/))';
+export const resultsInSelection = (marketName) => (new RegExp(MULTI_RESULT_MARKET_RE, 'i').test(String(marketName || '')) ? 2 : 1);
+
 // Ticket statuses that earn commission.
 export const COMMISSION_STATUSES = ['PENDING', 'WON', 'LOST'];
 
@@ -21,7 +27,7 @@ export async function userMetrics(pool, { rangeStart, rangeEnd, adminId = null, 
   const { rows } = await pool.query(
     `WITH t AS (
        SELECT b.user_id, b.currency, b.stake, b.potential_return, b.status,
-              CASE WHEN (SELECT COUNT(*) FROM bet_selections s WHERE s.bet_id = b.id) >= 2
+              CASE WHEN (SELECT COALESCE(SUM(CASE WHEN s.market_name ~* $8 THEN 2 ELSE 1 END), 0) FROM bet_selections s WHERE s.bet_id = b.id) >= 2
                    THEN $4::numeric ELSE $3::numeric END AS rate
        FROM bets b
        JOIN users u ON u.id = b.user_id
@@ -37,7 +43,7 @@ export async function userMetrics(pool, { rangeStart, rangeEnd, adminId = null, 
             COUNT(*) FILTER (WHERE status = 'PENDING')::int AS active_tickets,
             COALESCE(SUM(stake * rate / 100) FILTER (WHERE status = ANY($7::text[])), 0) AS commission
      FROM t GROUP BY user_id, currency`,
-    [rangeStart, rangeEnd, COMMISSION_SINGLE_PCT, COMMISSION_MULTI_PCT, adminId, agentId, COMMISSION_STATUSES]
+    [rangeStart, rangeEnd, COMMISSION_SINGLE_PCT, COMMISSION_MULTI_PCT, adminId, agentId, COMMISSION_STATUSES, MULTI_RESULT_MARKET_RE]
   );
   return rows.map((r) => ({
     userId: r.user_id, currency: r.currency === 'EUR' ? 'EUR' : 'ALL',

@@ -1,7 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { finishMetrics, buildCommissionReport, emptyMetrics, COMMISSION_SINGLE_PCT, COMMISSION_MULTI_PCT, COMMISSION_STATUSES, userMetrics } from '../server/commission.js';
+import { resultsInSelection, finishMetrics, buildCommissionReport, emptyMetrics, COMMISSION_SINGLE_PCT, COMMISSION_MULTI_PCT, COMMISSION_STATUSES, userMetrics } from '../server/commission.js';
 
 const m = (o) => ({ ...emptyMetrics(), ...o });
+
+describe('results in a selection (4% for one result, 8% for two or more)', () => {
+  it('a half-time/full-time pick counts as two results', () => {
+    for (const n of ['45/90', '45 / 90', 'HT/FT', 'Pushim/Fund', 'Pjesa e pare/Finale', 'Rezultati pjesa e pare / Rezultati final']) expect(resultsInSelection(n)).toBe(2);
+  });
+  it('a combined market counts as two results', () => {
+    for (const n of ['Rezultat Final & Numri i Golave', '45/90 & Numri i Golave në Ndeshje']) expect(resultsInSelection(n)).toBe(2);
+  });
+  it('a plain market is one result', () => {
+    for (const n of ['Rezultat Final', 'Totali i golave', 'Të dyja shënojnë', 'Dyshe e mundshme']) expect(resultsInSelection(n)).toBe(1);
+  });
+});
 
 describe('agent commission report', () => {
   it('defaults to 4% (live / single result) and 8% (two or more results)', () => {
