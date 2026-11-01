@@ -229,12 +229,20 @@ app.get('/api/london365-status', async (req, res) => {
 if (fs.existsSync(distPath)) {
   const indexHtmlPath = path.join(distPath, 'index.html');
   console.log(`[static] Serving frontend from ${distPath} (index.html present: ${fs.existsSync(indexHtmlPath)})`);
-  app.use(express.static(distPath));
+  // Built files have a hash in their name (assets/index-ab12cd.js): they never change, so the browser keeps them for a
+  // year and does not even ask the server on the next visit. Only index.html (which points at the current hashes) is
+  // always re-checked. Before, every file was re-validated on every page load: a round trip each.
+  app.use('/assets', express.static(path.join(distPath, 'assets'), { maxAge: '1y', immutable: true }));
+  app.use(express.static(distPath, {
+    maxAge: '1d',
+    setHeaders(res, filePath) { if (filePath.endsWith('index.html')) res.setHeader('Cache-Control', 'no-cache'); },
+  }));
   app.get(/^(?!\/api\/).*/, (req, res) => {
     if (!fs.existsSync(indexHtmlPath)) {
       console.error(`[static] index.html missing at ${indexHtmlPath} — did "npm run build" actually run?`);
       return res.status(500).send('Frontend build not found on server (dist/index.html missing). Check build logs.');
     }
+    res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(indexHtmlPath);
   });
 } else if (process.env.PUBLIC_FRONTEND_URL) {

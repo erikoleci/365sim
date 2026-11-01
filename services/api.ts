@@ -97,7 +97,20 @@ async function request<T>(path: string, options: RequestInit = {}, opts: { retry
 
 // --- Auth ---
 
+// Ask for the matches in the background (public data), so they are already in the browser when the app needs them:
+// used on the login screen and the moment a login is sent, so after signing in (user, agent or admin) the games, odds
+// and live minutes appear at once instead of starting to download only then. Picked up by fetchMatches/fetchLiveMatches.
+export function prefetchMatches(): void {
+  try {
+    const w = window as any;
+    if (w.__earlyMatches && Date.now() - w.__earlyMatches.at < 8000) return; // a fresh one is already on its way
+    const get = (path: string) => fetch(`${API_BASE}/api/matches${path}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    w.__earlyMatches = { at: Date.now(), live: get('/live'), all: get('') };
+  } catch { /* the app asks for the matches itself */ }
+}
+
 export async function login(username: string, password: string): Promise<User> {
+  prefetchMatches(); // downloads while the password is being checked
   const data = await request<{ token: string; user: User }>('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ username, password }),
@@ -213,7 +226,26 @@ export interface MatchEvent {
   half?: number | null;
 }
 
-export async function fetchMatchLiveDetail(matchId: string): Promise<{ statistics: LiveStatistics | null; events: MatchEvent[] }> {
+type LiveDetail = { statistics: LiveStatistics | null; events: MatchEvent[] };
+const liveDetailPrefetch = new Map<string, { at: number; promise: Promise<LiveDetail> }>();
+
+// The finger is on a match: start downloading its events and statistics now, so they are there when the page opens.
+export function prefetchLiveDetail(matchId: string): void {
+  const now = Date.now();
+  const hit = liveDetailPrefetch.get(matchId);
+  if (hit && now - hit.at < 5000) return;
+  if (liveDetailPrefetch.size > 20) liveDetailPrefetch.clear();
+  const promise = request<LiveDetail>(`/matches/${matchId}/live-detail`);
+  promise.catch(() => liveDetailPrefetch.delete(matchId));
+  liveDetailPrefetch.set(matchId, { at: now, promise });
+}
+
+export async function fetchMatchLiveDetail(matchId: string): Promise<LiveDetail> {
+  const hit = liveDetailPrefetch.get(matchId);
+  if (hit && Date.now() - hit.at < 5000) {
+    liveDetailPrefetch.delete(matchId); // used once: the next look (polling, a goal) asks the server again
+    try { return await hit.promise; } catch { /* fall through to a normal request */ }
+  }
   return request(`/matches/${matchId}/live-detail`);
 }
 

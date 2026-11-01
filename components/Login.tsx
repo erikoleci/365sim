@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { User } from '../types';
 import * as api from '../services/api';
 import { useI18n } from '../i18n';
@@ -14,6 +14,8 @@ interface LoginProps {
 // that decision.
 const Login: React.FC<LoginProps> = ({ onAuthenticated }) => {
   const { t } = useI18n();
+  // Warm up the connection and the server's match list while the person types the password.
+  useEffect(() => { api.prefetchMatches(); }, []);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
