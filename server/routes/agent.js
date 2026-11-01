@@ -248,6 +248,7 @@ router.get('/users/:id/tickets', async (req, res) => {
     tickets: bets.map((b) => ({
       id: b.id, type: b.type, stake: b.stake, totalOdds: b.total_odds,
       potentialReturn: b.potential_return, status: b.status, createdAt: b.created_at,
+      currency: b.currency === 'EUR' ? 'EUR' : 'ALL',
       selections: selectionsByBet.get(b.id) || [],
     })),
   });

@@ -509,7 +509,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                             const user = users.find(u => u.id === bet.userId);
                             return (
                                 <tr key={bet.id} className="hover:bg-brand-bg/50 cursor-pointer" title="Hap biletën"
-                                    onClick={() => setOpenTicket({ id: bet.id, createdAt: bet.timestamp, status: bet.status, type: bet.type, stake: bet.stake, totalOdds: bet.totalOdds, potentialReturn: bet.potentialReturn, user: user ? user.username : undefined, legs: bet.selections })}>
+                                    onClick={() => setOpenTicket({ id: bet.id, createdAt: bet.timestamp, status: bet.status, type: bet.type, stake: bet.stake, totalOdds: bet.totalOdds, potentialReturn: bet.potentialReturn, currency: bet.currency, user: user ? user.username : undefined, legs: bet.selections })}>
                                     <td className="p-3 text-xs text-brand-textMuted">{new Date(bet.timestamp).toLocaleString()}</td>
                                     <td className="p-3">
                                         <div className="flex items-center gap-1">
@@ -532,9 +532,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                                             ? `${bet.selections.length}-Fold` 
                                             : bet.selections[0]?.selectionName}
                                     </td>
-                                    <td className="p-3 text-brand-textMuted">{bet.stake.toFixed(2)} L</td>
+                                    <td className="p-3 text-brand-textMuted">{bet.stake.toFixed(2)} {bet.currency === 'EUR' ? '€' : 'L'}</td>
                                     <td className="p-3 text-brand-yellow">@{bet.totalOdds.toFixed(2)}</td>
-                                    <td className="p-3">{bet.potentialReturn.toFixed(2)} L</td>
+                                    <td className="p-3">{bet.potentialReturn.toFixed(2)} {bet.currency === 'EUR' ? '€' : 'L'}</td>
                                     <td className="p-3">
                                         <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
                                             bet.status === BetStatus.WON ? 'bg-brand-header text-white' : 

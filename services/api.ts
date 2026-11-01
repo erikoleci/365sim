@@ -496,7 +496,7 @@ export interface AgentTicketSelection {
 }
 export interface AgentTicket {
   id: string; type: string; stake: number; totalOdds: number; potentialReturn: number;
-  status: string; createdAt: number; selections: AgentTicketSelection[];
+  status: string; createdAt: number; currency?: 'ALL' | 'EUR'; selections: AgentTicketSelection[];
 }
 export async function agentFetchUserTickets(userId: string) {
   const data = await request<{ tickets: AgentTicket[] }>(`/agent/users/${userId}/tickets`);

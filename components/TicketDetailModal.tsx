@@ -11,6 +11,7 @@ export interface TicketView {
   stake: number;
   totalOdds: number;
   potentialReturn: number;
+  currency?: 'ALL' | 'EUR';
   user?: string;
   legs: { matchHome: string; matchAway: string; marketName: string; selectionName: string; odds: number; status: string }[];
 }
@@ -30,6 +31,7 @@ const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => vo
   const label = (s: string) => (s === 'PENDING' ? t('Hapur') : s === 'WON' ? t('Fituar') : s === 'HALF_WON' ? t('Gjysmë fitore') : s === 'HALF_LOST' ? t('Gjysmë humbje') : s === 'VOID' ? t('Rimbursuar') : s === 'CANCELLED' ? t('ANULUAR') : t('Humbur'));
   const partialLoss = ticket.status === 'WON' && Number(ticket.potentialReturn) < Number(ticket.stake);
   const when = new Date(ticket.createdAt).toLocaleString(locale, { timeZone: 'Europe/Tirane', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const sym = ticket.currency === 'EUR' ? '€' : 'L';
   const kind = ticket.legs.length > 1 ? t('{n}-Fish', { n: ticket.legs.length }) : t('Bast i Thjeshtë');
   const returnLabel = ticket.status === 'PENDING' ? t('Fitimi i Mundshëm') : ticket.status === 'LOST' ? t('Humbur') : ticket.status === 'VOID' ? t('Rimbursuar') : ticket.status === 'CANCELLED' ? t('ANULUAR') : t('Paguar');
 
@@ -63,8 +65,8 @@ const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => vo
 
         <div className="p-4 border-t border-dashed border-brand-divider text-sm space-y-1 tabular-nums">
           <div className="flex justify-between"><span className="text-brand-textMuted">{t('Kuota totale')}</span><span className="text-brand-yellow font-bold">@{Number(ticket.totalOdds).toFixed(2)}</span></div>
-          <div className="flex justify-between"><span className="text-brand-textMuted">Stake</span><span className="text-white font-bold">{Number(ticket.stake).toFixed(2)} L</span></div>
-          <div className="flex justify-between"><span className="text-brand-textMuted">{returnLabel}</span><span className="text-white font-bold">{Number(ticket.potentialReturn).toFixed(2)} L</span></div>
+          <div className="flex justify-between"><span className="text-brand-textMuted">Stake</span><span className="text-white font-bold">{Number(ticket.stake).toFixed(2)} {sym}</span></div>
+          <div className="flex justify-between"><span className="text-brand-textMuted">{returnLabel}</span><span className="text-white font-bold">{Number(ticket.potentialReturn).toFixed(2)} {sym}</span></div>
         </div>
       </div>
     </div>
