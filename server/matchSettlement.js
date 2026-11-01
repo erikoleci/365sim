@@ -106,7 +106,59 @@ const legNeedsFirstScorer = (leg) => GOAL_ORDER_NAMES.has(norm(leg.market_name))
 
 // Final corner / card counters of a match, or undefined if there are none (or the
 // lookup fails -- the leg then simply stays PENDING).
-async function loadMatchStats(client, matchId) {
+// Corner / card totals rebuilt from the match events list ("Ngjarjet"): every corner / card event carries the
+// running total of its side in `detail`, so the highest value per type and side is the total at that moment.
+// `half` (1 = first half) gives the half-time totals. undefined when the match has no events at all (nothing to rebuild from).
+async function loadEventCounters(client, matchId) {
+  let rows;
+  try {
+    ({ rows } = await client.query(
+      `SELECT type, team, half, MAX(NULLIF(regexp_replace(detail, '[^0-9]', '', 'g'), '')::int) AS total, COUNT(*)::int AS n
+         FROM match_events WHERE match_id = $1 AND type IN ('CORNER','YELLOW_CARD','RED_CARD') GROUP BY type, team, half`, [matchId]));
+  } catch {
+    try { // half column not migrated: the final totals still work
+      ({ rows } = await client.query(
+        `SELECT type, team, NULL::int AS half, MAX(NULLIF(regexp_replace(detail, '[^0-9]', '', 'g'), '')::int) AS total, COUNT(*)::int AS n
+           FROM match_events WHERE match_id = $1 AND type IN ('CORNER','YELLOW_CARD','RED_CARD') GROUP BY type, team`, [matchId]));
+    } catch { return undefined; }
+  }
+  const { rows: any } = await client.query('SELECT 1 FROM match_events WHERE match_id = $1 LIMIT 1', [matchId]).catch(() => ({ rows: [] }));
+  if (!any.length) return undefined;
+  const pick = (type, team, onlyHalf1) => {
+    const mine = rows.filter((r) => r.type === type && r.team === team && (!onlyHalf1 || Number(r.half) === 1));
+    if (!mine.length) return 0;
+    return Math.max(...mine.map((r) => Math.max(Number(r.total) || 0, Number(r.n) || 0)));
+  };
+  const pack = (h1) => {
+    const yh = pick('YELLOW_CARD', 'home', h1); const ya = pick('YELLOW_CARD', 'away', h1);
+    const rh = pick('RED_CARD', 'home', h1); const ra = pick('RED_CARD', 'away', h1);
+    return { cornersHome: pick('CORNER', 'home', h1), cornersAway: pick('CORNER', 'away', h1), yellowHome: yh, yellowAway: ya, redHome: rh, redAway: ra, cardsHome: yh + rh, cardsAway: ya + ra };
+  };
+  const hasHalf = rows.some((r) => r.half != null);
+  return { final: pack(false), ht: hasHalf ? pack(true) : undefined };
+}
+
+// Stored counters win; a counter the stats row does not have (or a match without any stats row) is filled from the events.
+export async function loadMatchStats(client, matchId) {
+  const stored = await loadStoredMatchStats(client, matchId);
+  const need = ['cornersHome', 'cornersAway', 'cardsHome', 'cardsAway'];
+  if (stored && need.every((k) => stored[k] != null)) return stored;
+  const ev = await loadEventCounters(client, matchId).catch(() => undefined);
+  if (!ev) return stored;
+  const out = { ...ev.final };
+  if (stored) for (const [k, v] of Object.entries(stored)) if (v != null) out[k] = v;
+  return out;
+}
+
+// Half-time counters: the snapshot taken at the break when there is one, otherwise the first-half events.
+export async function loadHtStats(client, matchId, row) {
+  const snap = htStatsOf(row);
+  if (snap) return snap;
+  const ev = await loadEventCounters(client, matchId).catch(() => undefined);
+  return ev ? ev.ht : undefined;
+}
+
+async function loadStoredMatchStats(client, matchId) {
   const pack = (r) => ({
     cornersHome: r.corners_home, cornersAway: r.corners_away, cardsHome: r.cards_home, cardsAway: r.cards_away,
     yellowHome: r.yellow_home, yellowAway: r.yellow_away, redHome: r.red_home, redAway: r.red_away,
@@ -954,6 +1006,7 @@ export async function settleMatch(matchId, homeScore, awayScore, { force = false
     let leftPendingCount = 0;
 
     const stats = legs.some(legNeedsStats) ? await loadMatchStats(client, matchId) : undefined;
+    const htStats = legs.some(legNeedsStats) ? await loadHtStats(client, matchId, match) : undefined;
     const goalOrder = legs.some(legNeedsFirstScorer) ? await loadGoalOrder(client, match, homeScore, awayScore) : undefined;
     const goalMinutes = legs.some(legNeedsGoalMinutes) ? await loadGoalMinutes(client, matchId, homeScore, awayScore) : undefined;
     const nextEvents = legs.some(legNeedsNextEvent) ? await loadNextEvents(client, match, homeScore, awayScore) : undefined;
@@ -965,7 +1018,7 @@ export async function settleMatch(matchId, homeScore, awayScore, { force = false
         affectedBetIds.add(leg.bet_id);
         const outcome = determineLegOutcome(leg, {
           winner, totalGoals, bothScored, homeScore, awayScore, stats, goalOrder, goalMinutes, nextEvents, goalTimeline,
-          htStats: htStatsOf(match),
+          htStats,
           htHome: match.ht_home == null ? undefined : Number(match.ht_home),
           htAway: match.ht_away == null ? undefined : Number(match.ht_away),
         });
@@ -1081,6 +1134,7 @@ export async function settleStuckBets() {
     const affectedBetIds = new Set(undecided.map((r) => r.id));
     let settledLegs = 0;
     const statsByMatch = new Map();
+    const htStatsByMatch = new Map();
     const firstByMatch = new Map();
     const minutesByMatch = new Map();
     const nextByMatch = new Map();
@@ -1099,6 +1153,7 @@ export async function settleStuckBets() {
         firstByMatch.set(leg.match_id, mr[0] ? await loadGoalOrder(client, mr[0], Number(leg.result_home), Number(leg.result_away)) : undefined);
       }
       if (legNeedsStats(leg) && !statsByMatch.has(leg.match_id)) statsByMatch.set(leg.match_id, await loadMatchStats(client, leg.match_id));
+      if (legNeedsStats(leg) && !htStatsByMatch.has(leg.match_id)) htStatsByMatch.set(leg.match_id, await loadHtStats(client, leg.match_id, leg));
       if (legNeedsGoalMinutes(leg) && !minutesByMatch.has(leg.match_id)) {
         minutesByMatch.set(leg.match_id, await loadGoalMinutes(client, leg.match_id, Number(leg.result_home), Number(leg.result_away)));
       }
@@ -1111,7 +1166,7 @@ export async function settleStuckBets() {
         const away = Number(leg.result_away);
         const outcome = determineLegOutcome(leg, {
           stats: statsByMatch.get(leg.match_id),
-          htStats: htStatsOf(leg),
+          htStats: htStatsByMatch.get(leg.match_id),
           goalOrder: firstByMatch.get(leg.match_id),
           goalMinutes: minutesByMatch.get(leg.match_id),
           nextEvents: nextByMatch.get(leg.match_id),
