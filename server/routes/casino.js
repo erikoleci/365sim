@@ -29,11 +29,17 @@ router.use(async (req, res, next) => {
 // simulator, not a full enterprise risk-limits system) ---
 const MIN_STAKE = 1;
 const MAX_STAKE = 5000;
-// The house allows a real win on 20% of rounds; the other 80% are forced
-// to a loss. Wins are also capped to a small profit (5%-50% of stake)
-// instead of each game's "natural" payout table.
-export const WIN_CHANCE = 0.2;
-export const smallProfitMultiplier = () => 1.05 + Math.random() * 0.45;
+// Fair play: every round is decided by the real draw (shuffled cards, real wheel, real dice) and pays the
+// standard table below. The house edge comes only from those payout tables, never from forcing outcomes.
+export const PAYOUT = {
+  ROULETTE_NUMBER: 36, // 35:1 + stake
+  ROULETTE_EVEN_MONEY: 2,
+  BACCARAT: { PLAYER: 2, BANKER: 1.95, TIE: 9 }, // tie returns P/B stakes
+  BLACKJACK: 2.5,
+  WIN: 2,
+  DICE: { UNDER: 2.28, SEVEN: 5.7, OVER: 2.28 },
+};
+export const roundMoney = (n) => Number(n.toFixed(2));
 
 export function validateStake(stake) {
   return typeof stake === 'number' && Number.isFinite(stake) && stake >= MIN_STAKE && stake <= MAX_STAKE;
@@ -215,22 +221,23 @@ router.post('/roulette/spin', async (req, res) => {
   const ok = await deductStake(req.user.id, totalBet);
   if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
 
-  const winningNumbers = new Set();
-  Object.keys(bets).forEach((key) => {
-    const num = parseInt(key, 10);
-    if (!isNaN(num) && String(num) === key) winningNumbers.add(num);
-    if (key === 'RED') RED_NUMBERS.forEach((n) => winningNumbers.add(n));
-    if (key === 'BLACK') ROULETTE_NUMBERS.forEach((n) => { if (n !== 0 && !RED_NUMBERS.includes(n)) winningNumbers.add(n); });
-    if (key === 'EVEN') ROULETTE_NUMBERS.forEach((n) => { if (n !== 0 && n % 2 === 0) winningNumbers.add(n); });
-    if (key === 'ODD') ROULETTE_NUMBERS.forEach((n) => { if (n !== 0 && n % 2 !== 0) winningNumbers.add(n); });
-  });
-  let losingNumbers = ROULETTE_NUMBERS.filter((n) => !winningNumbers.has(n));
-  if (losingNumbers.length === 0) losingNumbers = [0];
-
-  const useWinningPool = winningNumbers.size > 0 && Math.random() < WIN_CHANCE;
-  const pickPool = useWinningPool ? Array.from(winningNumbers) : losingNumbers;
-  const result = pickPool[Math.floor(Math.random() * pickPool.length)];
-  const payout = useWinningPool ? Number((totalBet * smallProfitMultiplier()).toFixed(2)) : 0;
+  const result = ROULETTE_NUMBERS[randomInt(0, ROULETTE_NUMBERS.length)];
+  const inSpot = (spot) => {
+    const num = parseInt(spot, 10);
+    if (!isNaN(num) && String(num) === spot) return num === result;
+    if (result === 0) return false;
+    if (spot === 'RED') return RED_NUMBERS.includes(result);
+    if (spot === 'BLACK') return !RED_NUMBERS.includes(result);
+    if (spot === 'EVEN') return result % 2 === 0;
+    return result % 2 !== 0; // ODD
+  };
+  let payout = 0;
+  for (const [spot, amount] of Object.entries(bets)) {
+    if (!inSpot(spot)) continue;
+    const isNumber = String(parseInt(spot, 10)) === spot;
+    payout += amount * (isNumber ? PAYOUT.ROULETTE_NUMBER : PAYOUT.ROULETTE_EVEN_MONEY);
+  }
+  payout = roundMoney(payout);
 
   await creditPayout(req.user.id, payout);
   const balance = await getBalance(req.user.id);
@@ -293,15 +300,10 @@ router.post('/baccarat/deal', async (req, res) => {
   const ok = await deductStake(req.user.id, stake);
   if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
 
-  const wantWin = Math.random() < WIN_CHANCE;
-  let round = dealBaccaratRound();
-  let attempts = 0;
-  while (attempts < 300 && (wantWin ? round.result !== selectedBet : round.result === selectedBet)) {
-    round = dealBaccaratRound();
-    attempts++;
-  }
-
-  const payout = round.result === selectedBet ? Number((stake * smallProfitMultiplier()).toFixed(2)) : 0;
+  const round = dealBaccaratRound();
+  let payout = 0;
+  if (round.result === selectedBet) payout = roundMoney(stake * PAYOUT.BACCARAT[selectedBet]);
+  else if (round.result === 'TIE') payout = stake; // tie: bets on PLAYER/BANKER are returned
   await creditPayout(req.user.id, payout);
   const balance = await getBalance(req.user.id);
   res.json({ playerHand: round.pHand, bankerHand: round.bHand, result: round.result, payout, balance });
@@ -337,10 +339,8 @@ export function calcBjScore(hand) {
 export function resolveBlackjackResult(stake, natural) {
   if (natural.kind === 'LOSS') return { payout: 0, message: natural.message };
   if (natural.kind === 'PUSH') return { payout: stake, message: natural.message };
-  if (Math.random() < WIN_CHANCE) {
-    return { payout: Number((stake * smallProfitMultiplier()).toFixed(2)), message: natural.message };
-  }
-  return { payout: 0, message: 'DEALER WINS' };
+  const mult = natural.message === 'BLACKJACK' ? PAYOUT.BLACKJACK : PAYOUT.WIN;
+  return { payout: roundMoney(stake * mult), message: natural.message };
 }
 
 router.post('/blackjack/deal', async (req, res) => {
@@ -448,92 +448,33 @@ router.post('/blackjack/:id/stand', async (req, res) => {
 // =====================================================================
 // VIDEO POKER — multi-step (deal / draw), state kept server-side
 // =====================================================================
-const randomPokerCard = () => ({
-  suit: CARD_SUITS[Math.floor(Math.random() * CARD_SUITS.length)],
-  value: BJ_VALUES[Math.floor(Math.random() * BJ_VALUES.length)],
-});
-const shuffleArr = (arr) => [...arr].sort(() => Math.random() - 0.5);
 const mkPokerCard = (suit, value) => ({ suit, value });
-
-const buildJacksOrBetter = () => {
-  const rank = ['J', 'Q', 'K', 'A'][Math.floor(Math.random() * 4)];
-  const pair = shuffleArr(CARD_SUITS).slice(0, 2).map((s) => mkPokerCard(s, rank));
-  const fillers = shuffleArr(BJ_VALUES.filter((v) => v !== rank)).slice(0, 3)
-    .map((v) => mkPokerCard(CARD_SUITS[Math.floor(Math.random() * CARD_SUITS.length)], v));
-  return shuffleArr([...pair, ...fillers]);
+const newPokerDeck = () => {
+  const deck = [];
+  for (const suit of CARD_SUITS) for (const v of BJ_VALUES) deck.push(mkPokerCard(suit, v));
+  for (let i = deck.length - 1; i > 0; i -= 1) { const j = randomInt(0, i + 1); [deck[i], deck[j]] = [deck[j], deck[i]]; }
+  return deck;
 };
-const buildTwoPair = () => {
-  const [rankA, rankB] = shuffleArr(BJ_VALUES).slice(0, 2);
-  const pairA = shuffleArr(CARD_SUITS).slice(0, 2).map((s) => mkPokerCard(s, rankA));
-  const pairB = shuffleArr(CARD_SUITS).slice(0, 2).map((s) => mkPokerCard(s, rankB));
-  const filler = shuffleArr(BJ_VALUES.filter((v) => v !== rankA && v !== rankB))[0];
-  return shuffleArr([...pairA, ...pairB, mkPokerCard(CARD_SUITS[Math.floor(Math.random() * CARD_SUITS.length)], filler)]);
-};
-const buildThreeOfAKind = () => {
-  const rank = BJ_VALUES[Math.floor(Math.random() * BJ_VALUES.length)];
-  const trips = shuffleArr(CARD_SUITS).slice(0, 3).map((s) => mkPokerCard(s, rank));
-  const fillers = shuffleArr(BJ_VALUES.filter((v) => v !== rank)).slice(0, 2)
-    .map((v) => mkPokerCard(CARD_SUITS[Math.floor(Math.random() * CARD_SUITS.length)], v));
-  return shuffleArr([...trips, ...fillers]);
-};
-const buildFullHouse = () => {
-  const [rankA, rankB] = shuffleArr(BJ_VALUES).slice(0, 2);
-  const trips = shuffleArr(CARD_SUITS).slice(0, 3).map((s) => mkPokerCard(s, rankA));
-  const pair = shuffleArr(CARD_SUITS).slice(0, 2).map((s) => mkPokerCard(s, rankB));
-  return shuffleArr([...trips, ...pair]);
-};
-const buildFourOfAKind = () => {
-  const rank = BJ_VALUES[Math.floor(Math.random() * BJ_VALUES.length)];
-  const quads = CARD_SUITS.map((s) => mkPokerCard(s, rank));
-  const filler = shuffleArr(BJ_VALUES.filter((v) => v !== rank))[0];
-  return shuffleArr([...quads, mkPokerCard(CARD_SUITS[Math.floor(Math.random() * CARD_SUITS.length)], filler)]);
-};
-const pickConsecutiveRun = (excludeRoyal) => {
-  const maxStart = BJ_VALUES.length - 5;
-  const start = excludeRoyal ? Math.floor(Math.random() * maxStart) : maxStart;
-  return BJ_VALUES.slice(start, start + 5);
-};
-const buildStraight = () => {
-  const ranks = pickConsecutiveRun(true);
-  const suits = ranks.map(() => CARD_SUITS[Math.floor(Math.random() * CARD_SUITS.length)]);
-  if (suits.every((s) => s === suits[0])) suits[4] = CARD_SUITS[(CARD_SUITS.indexOf(suits[4]) + 1) % CARD_SUITS.length];
-  return shuffleArr(ranks.map((v, i) => mkPokerCard(suits[i], v)));
-};
-const buildFlush = () => {
-  const suit = CARD_SUITS[Math.floor(Math.random() * CARD_SUITS.length)];
-  const ranks = shuffleArr(BJ_VALUES).slice(0, 5);
-  const indices = ranks.map((v) => BJ_VALUES.indexOf(v)).sort((a, b) => a - b);
-  const isConsecutive = indices.every((v, i) => i === 0 || v === indices[i - 1] + 1);
-  if (isConsecutive) ranks[0] = BJ_VALUES.find((v) => !ranks.includes(v));
-  return shuffleArr(ranks.map((v) => mkPokerCard(suit, v)));
-};
-const buildStraightFlush = () => {
-  const suit = CARD_SUITS[Math.floor(Math.random() * CARD_SUITS.length)];
-  return shuffleArr(pickConsecutiveRun(true).map((v) => mkPokerCard(suit, v)));
-};
-const buildRoyalFlush = () => {
-  const suit = CARD_SUITS[Math.floor(Math.random() * CARD_SUITS.length)];
-  return shuffleArr(pickConsecutiveRun(false).map((v) => mkPokerCard(suit, v)));
-};
-const VP_WIN_TIERS = [
-  { name: 'ROYAL FLUSH', weight: 1, build: buildRoyalFlush },
-  { name: 'STRAIGHT FLUSH', weight: 3, build: buildStraightFlush },
-  { name: '4 OF A KIND', weight: 6, build: buildFourOfAKind },
-  { name: 'FULL HOUSE', weight: 10, build: buildFullHouse },
-  { name: 'FLUSH', weight: 12, build: buildFlush },
-  { name: 'STRAIGHT', weight: 12, build: buildStraight },
-  { name: '3 OF A KIND', weight: 20, build: buildThreeOfAKind },
-  { name: '2 PAIR', weight: 16, build: buildTwoPair },
-  { name: 'JACKS OR BETTER', weight: 20, build: buildJacksOrBetter },
-];
-function pickWeightedTier() {
-  const totalWeight = VP_WIN_TIERS.reduce((sum, t) => sum + t.weight, 0);
-  let r = Math.random() * totalWeight;
-  for (const tier of VP_WIN_TIERS) {
-    if (r < tier.weight) return tier;
-    r -= tier.weight;
-  }
-  return VP_WIN_TIERS[VP_WIN_TIERS.length - 1];
+// Jacks or Better 9/6 pay table (x stake).
+export const VP_PAYS = { 'ROYAL FLUSH': 800, 'STRAIGHT FLUSH': 50, '4 OF A KIND': 25, 'FULL HOUSE': 9, FLUSH: 6, STRAIGHT: 4, '3 OF A KIND': 3, '2 PAIR': 2, 'JACKS OR BETTER': 1 };
+export function evaluatePokerHand(hand) {
+  const rank = (v) => BJ_VALUES.indexOf(v) + 2; // 2..14 (A high)
+  const ranks = hand.map((c) => rank(c.value)).sort((x, y) => x - y);
+  const flush = hand.every((c) => c.suit === hand[0].suit);
+  const unique = new Set(ranks).size === 5;
+  const straight = unique && (ranks[4] - ranks[0] === 4 || ranks.join() === '2,3,4,5,14');
+  const counts = {};
+  ranks.forEach((r) => { counts[r] = (counts[r] || 0) + 1; });
+  const groups = Object.entries(counts).map(([r, n]) => [Number(r), n]).sort((x, y) => y[1] - x[1] || y[0] - x[0]);
+  if (straight && flush) return ranks[0] === 10 ? 'ROYAL FLUSH' : 'STRAIGHT FLUSH';
+  if (groups[0][1] === 4) return '4 OF A KIND';
+  if (groups[0][1] === 3 && groups[1][1] === 2) return 'FULL HOUSE';
+  if (flush) return 'FLUSH';
+  if (straight) return 'STRAIGHT';
+  if (groups[0][1] === 3) return '3 OF A KIND';
+  if (groups[0][1] === 2 && groups[1][1] === 2) return '2 PAIR';
+  if (groups[0][1] === 2 && groups[0][0] >= 11) return 'JACKS OR BETTER';
+  return null;
 }
 
 router.post('/videopoker/deal', async (req, res) => {
@@ -543,12 +484,13 @@ router.post('/videopoker/deal', async (req, res) => {
   const ok = await deductStake(req.user.id, stake);
   if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
 
-  const hand = Array.from({ length: 5 }, randomPokerCard);
+  const deck = newPokerDeck();
+  const hand = deck.splice(0, 5);
   const roundId = randomUUID();
   await pool.query(
     `INSERT INTO casino_rounds (id, user_id, game, stake, status, state, created_at)
      VALUES ($1,$2,'videopoker',$3,'PLAYING',$4,$5)`,
-    [roundId, req.user.id, stake, JSON.stringify({ hand }), Date.now()]
+    [roundId, req.user.id, stake, JSON.stringify({ hand, deck }), Date.now()]
   );
   const balance = await getBalance(req.user.id);
   res.json({ roundId, hand, balance });
@@ -565,39 +507,10 @@ router.post('/videopoker/:id/draw', async (req, res) => {
   const held = Array.isArray(holdIndices) ? holdIndices.filter((i) => Number.isInteger(i) && i >= 0 && i < 5) : [];
   const state = JSON.parse(round.state);
 
-  let payout = 0;
-  let tierName = null;
-  let finalHand;
-
-  if (Math.random() < WIN_CHANCE) {
-    const tier = pickWeightedTier();
-    finalHand = tier.build();
-    payout = Number((round.stake * smallProfitMultiplier()).toFixed(2));
-    tierName = tier.name;
-  } else {
-    let newHand = state.hand.map((card, idx) => (held.includes(idx) ? card : randomPokerCard()));
-    const counts = {};
-    newHand.forEach((c) => { counts[c.value] = (counts[c.value] || 0) + 1; });
-    const winningValues = ['J', 'Q', 'K', 'A'];
-    const hasWinningPair = winningValues.some((v) => counts[v] >= 2);
-    if (hasWinningPair || Object.values(counts).some((c) => c >= 2)) {
-      newHand = [
-        { suit: '♠', value: '2' }, { suit: '♥', value: '4' }, { suit: '♣', value: '7' },
-        { suit: '♦', value: '9' }, { suit: '♠', value: 'Q' },
-      ];
-      held.forEach((idx) => { newHand[idx] = state.hand[idx]; });
-      const finalCounts = {};
-      newHand.forEach((c) => { finalCounts[c.value] = (finalCounts[c.value] || 0) + 1; });
-      newHand = newHand.map((card) => {
-        if (finalCounts[card.value] > 1) {
-          finalCounts[card.value]--;
-          return { ...card, value: card.value === '2' ? '3' : '2' };
-        }
-        return card;
-      });
-    }
-    finalHand = newHand;
-  }
+  const deck = Array.isArray(state.deck) ? [...state.deck] : newPokerDeck();
+  const finalHand = state.hand.map((card, idx) => (held.includes(idx) ? card : deck.shift()));
+  const tierName = evaluatePokerHand(finalHand);
+  const payout = tierName ? roundMoney(round.stake * VP_PAYS[tierName]) : 0;
 
   await pool.query(
     'UPDATE casino_rounds SET status = $1, state = $2, payout = $3, result = $4, resolved_at = $5 WHERE id = $6',
@@ -609,8 +522,7 @@ router.post('/videopoker/:id/draw', async (req, res) => {
 });
 
 // =====================================================================
-// DICE — two dice, bet on the sum: UNDER (2-6), SEVEN, OVER (8-12). Same house rule as the other
-// single-shot games: the dice are drawn so the shown result matches the house-controlled outcome.
+// DICE — two dice, bet on the sum: UNDER (2-6), SEVEN, OVER (8-12). Fair dice, pays the PAYOUT.DICE table.
 // =====================================================================
 export const DICE_BETS = ['UNDER', 'SEVEN', 'OVER'];
 export const diceOutcome = (a, b) => { const sum = a + b; return sum < 7 ? 'UNDER' : sum > 7 ? 'OVER' : 'SEVEN'; };
@@ -624,11 +536,9 @@ router.post('/dice/roll', async (req, res) => {
   const ok = await deductStake(req.user.id, stake);
   if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
 
-  const wantWin = Math.random() < WIN_CHANCE;
-  let dice = [rollDie(), rollDie()];
-  for (let i = 0; i < 300 && (diceOutcome(dice[0], dice[1]) === selectedBet) !== wantWin; i += 1) dice = [rollDie(), rollDie()];
+  const dice = [rollDie(), rollDie()];
   const result = diceOutcome(dice[0], dice[1]);
-  const payout = result === selectedBet ? Number((stake * smallProfitMultiplier()).toFixed(2)) : 0;
+  const payout = result === selectedBet ? roundMoney(stake * PAYOUT.DICE[selectedBet]) : 0;
   await creditPayout(req.user.id, payout);
   const balance = await getBalance(req.user.id);
   res.json({ dice, sum: dice[0] + dice[1], result, payout, balance });

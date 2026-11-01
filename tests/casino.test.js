@@ -6,7 +6,9 @@ import {
   resolveBlackjackResult,
   scoreBaccaratHand,
   dealBaccaratRound,
-  WIN_CHANCE,
+  PAYOUT,
+  evaluatePokerHand,
+  VP_PAYS,
 } from '../server/routes/casino.js';
 
 afterEach(() => {
@@ -75,44 +77,42 @@ describe('buildShuffledDeck', () => {
   });
 });
 
-describe('resolveBlackjackResult (house-gated payouts)', () => {
+describe('resolveBlackjackResult (fair payouts)', () => {
   const stake = 100;
 
-  it('a LOSS always pays 0', () => {
-    const outcome = resolveBlackjackResult(stake, { kind: 'LOSS', message: 'DEALER WINS' });
-    expect(outcome.payout).toBe(0);
-    expect(outcome.message).toBe('DEALER WINS');
+  it('a LOSS pays 0', () => {
+    expect(resolveBlackjackResult(stake, { kind: 'LOSS', message: 'DEALER WINS' }).payout).toBe(0);
   });
 
-  it('a PUSH always returns exactly the stake (no net gain/loss)', () => {
-    const outcome = resolveBlackjackResult(stake, { kind: 'PUSH', message: 'PUSH' });
-    expect(outcome.payout).toBe(stake);
+  it('a PUSH returns exactly the stake', () => {
+    expect(resolveBlackjackResult(stake, { kind: 'PUSH', message: 'PUSH' }).payout).toBe(stake);
   });
 
-  it('a WIN is downgraded to DEALER WINS (payout 0) outside the house win chance', () => {
-    vi.spyOn(Math, 'random').mockReturnValue(WIN_CHANCE + 0.5); // well above the win threshold
-    const outcome = resolveBlackjackResult(stake, { kind: 'WIN', message: 'YOU WIN' });
-    expect(outcome.payout).toBe(0);
-    expect(outcome.message).toBe('DEALER WINS');
+  it('a WIN always pays 2x the stake (no gate)', () => {
+    for (const r of [0, 0.5, 0.99]) {
+      vi.spyOn(Math, 'random').mockReturnValue(r);
+      const outcome = resolveBlackjackResult(stake, { kind: 'WIN', message: 'YOU WIN' });
+      expect(outcome.payout).toBe(stake * PAYOUT.WIN);
+      expect(outcome.message).toBe('YOU WIN');
+    }
   });
 
-  it('a WIN inside the house win chance pays a small capped profit (5%-50% of stake)', () => {
-    // First Math.random() call gates WIN_CHANCE (must be < WIN_CHANCE to win),
-    // second call feeds smallProfitMultiplier's own Math.random().
-    vi.spyOn(Math, 'random')
-      .mockReturnValueOnce(0) // wins the gate
-      .mockReturnValueOnce(0); // smallProfitMultiplier at its floor (1.05x)
-    const outcome = resolveBlackjackResult(stake, { kind: 'WIN', message: 'YOU WIN' });
-    expect(outcome.payout).toBeCloseTo(105, 5); // 100 * 1.05
-    expect(outcome.message).toBe('YOU WIN');
+  it('a natural BLACKJACK pays 3:2', () => {
+    expect(resolveBlackjackResult(stake, { kind: 'WIN', message: 'BLACKJACK' }).payout).toBe(250);
   });
+});
 
-  it('a winning payout never exceeds 1.5x stake (the capped profit ceiling)', () => {
-    vi.spyOn(Math, 'random')
-      .mockReturnValueOnce(0)   // wins the gate
-      .mockReturnValueOnce(1);  // smallProfitMultiplier at its ceiling
-    const outcome = resolveBlackjackResult(stake, { kind: 'WIN', message: 'YOU WIN' });
-    expect(outcome.payout).toBeLessThanOrEqual(stake * 1.5);
+describe('evaluatePokerHand (Jacks or Better)', () => {
+  const h = (...c) => c.map(([value, suit]) => ({ value, suit }));
+  it('recognises the pay tiers', () => {
+    expect(evaluatePokerHand(h(['10', '♠'], ['J', '♠'], ['Q', '♠'], ['K', '♠'], ['A', '♠']))).toBe('ROYAL FLUSH');
+    expect(evaluatePokerHand(h(['5', '♥'], ['6', '♥'], ['7', '♥'], ['8', '♥'], ['9', '♥']))).toBe('STRAIGHT FLUSH');
+    expect(evaluatePokerHand(h(['9', '♠'], ['9', '♥'], ['9', '♦'], ['9', '♣'], ['2', '♠']))).toBe('4 OF A KIND');
+    expect(evaluatePokerHand(h(['9', '♠'], ['9', '♥'], ['9', '♦'], ['2', '♣'], ['2', '♠']))).toBe('FULL HOUSE');
+    expect(evaluatePokerHand(h(['A', '♠'], ['2', '♥'], ['3', '♦'], ['4', '♣'], ['5', '♠']))).toBe('STRAIGHT');
+    expect(evaluatePokerHand(h(['J', '♠'], ['J', '♥'], ['3', '♦'], ['4', '♣'], ['6', '♠']))).toBe('JACKS OR BETTER');
+    expect(evaluatePokerHand(h(['10', '♠'], ['10', '♥'], ['3', '♦'], ['4', '♣'], ['6', '♠']))).toBe(null);
+    expect(VP_PAYS['JACKS OR BETTER']).toBe(1);
   });
 });
 
