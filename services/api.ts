@@ -357,7 +357,7 @@ export interface AdminExposureRow {
   ticket_count: number; total_exposure: number;
 }
 export async function adminFetchSettings() {
-  return request<{ ticketDeletionAllowed: boolean; casinoAccess?: CasinoMode }>('/admin/settings');
+  return request<{ ticketDeletionAllowed: boolean; casinoAccess?: CasinoMode; casinoDisabledGames?: string[]; casinoGameKeys?: string[] }>('/admin/settings');
 }
 /** Super admin: allow or forbid normal admins to delete tickets. */
 export async function adminSetTicketDeletion(allowed: boolean) {
@@ -707,7 +707,7 @@ export async function toggleFavorite(type: 'TEAM' | 'LEAGUE', value: string) {
 
 // ---- Casino: who may open it, and the slot games ----
 export type CasinoMode = 'off' | 'super' | 'all';
-export async function casinoAccess() { return request<{ mode: CasinoMode; allowed: boolean }>('/casino/access'); }
+export async function casinoAccess() { return request<{ mode: CasinoMode; allowed: boolean; disabledGames?: string[] }>('/casino/access'); }
 /** Super admin: off / only the super admin / everybody. */
 export async function adminSetCasinoAccess(mode: CasinoMode) {
   return request<{ casinoAccess: CasinoMode }>('/admin/settings/casino-access', { method: 'PUT', body: JSON.stringify({ mode }) });
@@ -727,4 +727,32 @@ export async function casinoSlotGames() {
 }
 export async function casinoSlotSpin(id: string, stake: number, currency: 'ALL' | 'EUR') {
   return request<SlotRound>(`/casino/slot-games/${id}/spin`, { method: 'POST', body: JSON.stringify({ stake, currency }) });
+}
+
+export async function adminSetCasinoGames(disabled: string[]) {
+  return request<{ casinoDisabledGames: string[] }>('/admin/settings/casino-games', { method: 'PUT', body: JSON.stringify({ disabled }) });
+}
+
+export type PlinkoRisk = 'LOW' | 'MEDIUM' | 'HIGH';
+export async function casinoPlinkoConfig() {
+  return request<{ rows: number[]; risks: PlinkoRisk[]; tables: Record<string, number[]> }>('/casino/plinko/config');
+}
+export async function casinoPlinkoDrop(stake: number, risk: PlinkoRisk, rows: number) {
+  return request<{ path: number[]; bucket: number; multiplier: number; payout: number; balance: number }>(
+    '/casino/plinko/drop', { method: 'POST', body: JSON.stringify({ stake, risk, rows }) });
+}
+export async function casinoMinesStart(stake: number, mines: number) {
+  return request<{ roundId: string; mines: number; multiplier: number; nextMultiplier: number; balance: number }>(
+    '/casino/mines/start', { method: 'POST', body: JSON.stringify({ stake, mines }) });
+}
+export async function casinoMinesReveal(roundId: string, index: number) {
+  return request<{ safe: boolean; finished?: boolean; multiplier?: number; nextMultiplier?: number; revealed?: number; payout?: number; mines?: number[]; balance?: number }>(
+    `/casino/mines/${roundId}/reveal`, { method: 'POST', body: JSON.stringify({ index }) });
+}
+export async function casinoMinesCashout(roundId: string) {
+  return request<{ multiplier: number; payout: number; mines: number[]; balance: number }>(`/casino/mines/${roundId}/cashout`, { method: 'POST' });
+}
+export async function casinoDragonTigerDeal(stake: number, bet: 'DRAGON' | 'TIGER' | 'TIE') {
+  return request<{ dragon: { suit: string; value: string }; tiger: { suit: string; value: string }; result: 'DRAGON' | 'TIGER' | 'TIE'; payout: number; balance: number }>(
+    '/casino/dragon-tiger/deal', { method: 'POST', body: JSON.stringify({ stake, bet }) });
 }

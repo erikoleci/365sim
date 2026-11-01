@@ -15,10 +15,13 @@ const CasinoAdmin: React.FC<CasinoAdminProps> = ({ userBalance, userBalanceEur =
   const [mode, setMode] = useState<api.CasinoMode | null>(null);
   const [report, setReport] = useState<api.CasinoReportRow[]>([]);
   const [error, setError] = useState('');
+  const [disabledGames, setDisabledGames] = useState<string[]>([]);
+  const [gameKeys, setGameKeys] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     try {
-      setMode((await api.adminFetchSettings()).casinoAccess ?? 'super');
+      const st = await api.adminFetchSettings();
+      setMode(st.casinoAccess ?? 'super'); setDisabledGames(st.casinoDisabledGames ?? []); setGameKeys(st.casinoGameKeys ?? []);
       setReport((await api.adminCasinoReport()).rows);
     } catch (e: any) { setError(e?.message || 'Gabim'); }
   }, []);
@@ -28,6 +31,11 @@ const CasinoAdmin: React.FC<CasinoAdminProps> = ({ userBalance, userBalanceEur =
     if (m === mode) return;
     if (m === 'all' && !window.confirm('Kazinoja do t\'u hapet TË GJITHË lojtarëve, që luajnë me paratë e tyre. Vazhdon?')) return;
     try { setMode((await api.adminSetCasinoAccess(m)).casinoAccess); } catch (e: any) { alert(e?.message || 'Gabim'); }
+  };
+
+  const toggleGame = async (key: string) => {
+    const next = disabledGames.includes(key) ? disabledGames.filter((g) => g !== key) : [...disabledGames, key];
+    try { setDisabledGames((await api.adminSetCasinoGames(next)).casinoDisabledGames); } catch (e: any) { alert(e?.message || 'Gabim'); }
   };
 
   return (
@@ -46,6 +54,19 @@ const CasinoAdmin: React.FC<CasinoAdminProps> = ({ userBalance, userBalanceEur =
       </div>
 
       <div className="bg-brand-panel border border-[#444] rounded p-4">
+        <div className="text-sm font-bold mb-1">Lojërat që lejohen për lojtarët</div>
+        <div className="text-[11px] text-brand-textMuted mb-2">Mbylle një lojë dhe lojtarët nuk futen më në të. Ti prapë e hap, për ta provuar.</div>
+        <div className="flex flex-wrap gap-2">
+          {gameKeys.map((g) => (
+            <button key={g} onClick={() => toggleGame(g)}
+              className={`px-3 py-1.5 rounded text-xs border ${disabledGames.includes(g) ? 'bg-red-900/40 text-red-300 border-red-700' : 'bg-green-900/30 text-green-300 border-green-700'}`}>
+              {g} · {disabledGames.includes(g) ? 'MBYLLUR' : 'HAPUR'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-brand-panel border border-[#444] rounded p-4">
         <div className="flex justify-between items-center mb-2"><div className="text-sm font-bold">Çfarë është luajtur</div><button className="text-xs text-brand-textMuted hover:text-white" onClick={load}>↻</button></div>
         {report.length === 0 ? <div className="text-xs text-brand-textMuted">Ende asnjë raund nga lojtarët.</div> : (
           <div className="overflow-x-auto"><table className="w-full text-xs">
@@ -60,7 +81,7 @@ const CasinoAdmin: React.FC<CasinoAdminProps> = ({ userBalance, userBalanceEur =
         )}
       </div>
 
-      <CasinoHub userBalance={userBalance} userBalanceEur={userBalanceEur} onSetBalance={onSetBalance} />
+      <CasinoHub userBalance={userBalance} userBalanceEur={userBalanceEur} onSetBalance={onSetBalance} showAllGames />
     </div>
   );
 };

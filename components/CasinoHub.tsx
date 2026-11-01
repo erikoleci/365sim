@@ -1,4 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { casinoAccess } from '../services/api';
+import Plinko from './casino/Plinko';
+import Mines from './casino/Mines';
+import DragonTiger from './casino/DragonTiger';
 import SlotMachine from './casino/SlotMachine';
 import Blackjack from './casino/Blackjack';
 import Roulette from './casino/Roulette';
@@ -11,16 +15,24 @@ interface CasinoHubProps {
   userBalance: number;
   userBalanceEur?: number;
   onSetBalance: (balance: number, balanceEur?: number) => void;
+  /** The super admin sees every game, also the ones closed to players (to test them). */
+  showAllGames?: boolean;
 }
 
-const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, onSetBalance }) => {
-  const [activeGame, setActiveGame] = useState<'slots' | 'blackjack' | 'roulette' | 'poker' | 'baccarat' | 'dice' | null>(null);
+const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, onSetBalance, showAllGames = false }) => {
+  const [activeGame, setActiveGame] = useState<'slots' | 'blackjack' | 'roulette' | 'poker' | 'baccarat' | 'dice' | 'plinko' | 'mines' | 'dragontiger' | null>(null);
+  const [disabled, setDisabled] = useState<string[]>([]);
+  useEffect(() => { casinoAccess().then((a) => setDisabled(a.disabledGames || [])).catch(() => {}); }, []);
+  const open = (key: string) => showAllGames || !disabled.includes(key);
 
   if (activeGame === 'slots') return <SlotMachine userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
   if (activeGame === 'blackjack') return <Blackjack userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
   if (activeGame === 'roulette') return <Roulette userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
   if (activeGame === 'poker') return <VideoPoker userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
   if (activeGame === 'baccarat') return <Baccarat userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
+  if (activeGame === 'plinko') return <Plinko userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
+  if (activeGame === 'mines') return <Mines userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
+  if (activeGame === 'dragontiger') return <DragonTiger userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
   if (activeGame === 'dice') return <Dice userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
 
   return (
@@ -41,7 +53,7 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
           <span className="w-1 h-6 bg-brand-yellow rounded-full"></span>
           Slots
       </h3>
-      <div className="mb-10"><SlotGames balance={userBalance} balanceEur={userBalanceEur} onBalances={onSetBalance} /></div>
+      {open('slots') && <div className="mb-10"><SlotGames balance={userBalance} balanceEur={userBalanceEur} onBalances={onSetBalance} /></div>}
 
       <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
           <span className="w-1 h-6 bg-brand-yellow rounded-full"></span>
@@ -50,7 +62,41 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
           
+          {open('plinko') && (
+          <div onClick={() => setActiveGame('plinko')} className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-brand-yellow/50">
+               <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"></div>
+               <div className="absolute bottom-4 left-4 z-20">
+                  <div className="bg-emerald-600 text-xs font-bold px-2 py-0.5 rounded w-fit mb-1">NEW</div>
+                  <h3 className="text-2xl font-bold text-white group-hover:text-brand-yellow transition-colors">Plinko</h3>
+                  <p className="text-xs text-gray-300">Drop the ball, pick your risk</p>
+               </div>
+               <div className="h-full w-full bg-gradient-to-br from-indigo-900 to-black flex items-center justify-center text-8xl group-hover:scale-110 transition-transform duration-500">🔴</div>
+          </div>
+          )}
+          {open('mines') && (
+          <div onClick={() => setActiveGame('mines')} className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-brand-yellow/50">
+               <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"></div>
+               <div className="absolute bottom-4 left-4 z-20">
+                  <div className="bg-emerald-600 text-xs font-bold px-2 py-0.5 rounded w-fit mb-1">NEW</div>
+                  <h3 className="text-2xl font-bold text-white group-hover:text-brand-yellow transition-colors">Mines</h3>
+                  <p className="text-xs text-gray-300">Open gems, avoid the bombs</p>
+               </div>
+               <div className="h-full w-full bg-gradient-to-br from-red-900 to-black flex items-center justify-center text-8xl group-hover:scale-110 transition-transform duration-500">💣</div>
+          </div>
+          )}
+          {open('dragontiger') && (
+          <div onClick={() => setActiveGame('dragontiger')} className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-brand-yellow/50">
+               <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"></div>
+               <div className="absolute bottom-4 left-4 z-20">
+                  <div className="bg-emerald-600 text-xs font-bold px-2 py-0.5 rounded w-fit mb-1">NEW</div>
+                  <h3 className="text-2xl font-bold text-white group-hover:text-brand-yellow transition-colors">Dragon Tiger</h3>
+                  <p className="text-xs text-gray-300">One card each, highest wins</p>
+               </div>
+               <div className="h-full w-full bg-gradient-to-br from-amber-900 to-black flex items-center justify-center text-8xl group-hover:scale-110 transition-transform duration-500">🐉</div>
+          </div>
+          )}
           {/* Baccarat */}
+          {open('baccarat') && (
           <div 
             onClick={() => setActiveGame('baccarat')}
             className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-[#d4af37]/50"
@@ -65,8 +111,9 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
                   <span className="text-7xl group-hover:scale-110 transition-transform duration-500">🎴</span>
               </div>
           </div>
-
+          )}
           {/* Slot Card */}
+          {open('slots') && (
           <div 
             onClick={() => setActiveGame('slots')}
             className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-brand-yellow/50"
@@ -81,8 +128,9 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
                   🍒
               </div>
           </div>
-
+          )}
           {/* Blackjack Card */}
+          {open('blackjack') && (
           <div 
             onClick={() => setActiveGame('blackjack')}
             className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-brand-yellow/50"
@@ -97,8 +145,9 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
                   ♠️
               </div>
           </div>
-
+          )}
           {/* Roulette Card */}
+          {open('roulette') && (
           <div 
              onClick={() => setActiveGame('roulette')}
              className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-brand-yellow/50"
@@ -113,8 +162,9 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
                    🎡
                </div>
           </div>
-
+          )}
           {/* Video Poker Card */}
+          {open('videopoker') && (
           <div 
              onClick={() => setActiveGame('poker')}
              className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-brand-yellow/50"
@@ -129,7 +179,9 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
                    🃏
                </div>
           </div>
+          )}
           {/* Dice Card */}
+          {open('dice') && (
           <div
              onClick={() => setActiveGame('dice')}
              className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-brand-yellow/50"
@@ -144,6 +196,7 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
                    🎲
                </div>
           </div>
+          )}
       </div>
     </div>
   );
