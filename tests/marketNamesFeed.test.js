@@ -27,3 +27,25 @@ describe('feed market names (Newcastle - Everton sample)', () => {
     expect(out('Double chance (match) & 1st half both teams score', 'DrawAway / No')).toBe('LOST');
   });
 });
+
+describe('Gol/JoGol and Dopio Shans (+ combos) at several scores', () => {
+  const c = (h, a) => ({ winner: h > a ? 'HOME' : a > h ? 'AWAY' : 'DRAW', totalGoals: h + a, bothScored: h > 0 && a > 0, homeScore: h, awayScore: a, htHome: 0, htAway: 0 });
+  const o = (m, s, h, a) => determineLegOutcome({ market_id: 'x_m', market_name: m, selection_id: s, selection_name: s, match_home: 'A', match_away: 'B' }, c(h, a));
+  it('Gol = both teams score, Jo Gol = not both', () => {
+    expect(o('Gol/JoGol', 'Po', 2, 1)).toBe('WON'); expect(o('Gol/JoGol', 'Jo', 2, 0)).toBe('WON'); expect(o('Gol/JoGol', 'Jo', 1, 1)).toBe('LOST');
+  });
+  it('Dopio Shans: 1X draw or home, X2 draw or away, 12 either wins (X1 / 2X written the other way too)', () => {
+    expect(o('Dopio Shans', '1X', 1, 1)).toBe('WON'); expect(o('Dopio Shans', 'X2', 2, 1)).toBe('LOST'); expect(o('Dopio Shans', '12', 1, 1)).toBe('LOST');
+    expect(o('Dopio Shans', 'X1', 0, 2)).toBe('LOST'); expect(o('Dopio Shans', '2X', 0, 2)).toBe('WON');
+  });
+  it('double chance + goals, separated by "/", "_" or a space ("X1 3+")', () => {
+    const m = 'Dopio Shans & Numri i Golave në Ndeshje';
+    expect(o(m, '1X/3+', 2, 1)).toBe('WON'); expect(o(m, 'X1 3+', 2, 1)).toBe('WON'); expect(o(m, 'X1 3+', 1, 0)).toBe('LOST');
+    expect(o(m, 'X2/0-2', 0, 1)).toBe('WON'); expect(o(m, 'X2/0-2', 1, 3)).toBe('LOST');
+  });
+  it('"Fiton Pritesi ose 3+", "Barazim ose 3+", "Fiton Udhetuesi ose 0-2 Gola"', () => {
+    expect(o('Fiton Pritesi ose 3+', 'Po', 1, 0)).toBe('WON'); expect(o('Fiton Pritesi ose 3+', 'Po', 0, 1)).toBe('LOST'); expect(o('Fiton Pritesi ose 3+', 'Po', 0, 3)).toBe('WON');
+    expect(o('Barazim ose 3+', 'Po', 0, 0)).toBe('WON'); expect(o('Barazim ose 3+', 'Po', 1, 0)).toBe('LOST');
+    expect(o('Fiton Udhetuesi ose 0-2 Gola', 'Po', 3, 1)).toBe('LOST'); expect(o('Fiton Udhetuesi ose 0-2 Gola', 'Po', 0, 1)).toBe('WON');
+  });
+});

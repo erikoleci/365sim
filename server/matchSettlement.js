@@ -35,7 +35,7 @@ function splitCombo(leg) {
   // "Rezultat Final & Numri i Golave" -> "X/5+", "45/90 & Numri i Golave" -> "2-X/0-4" (or "X-2/3+"),
   // "Dopio Shans & Gol/JGol" -> "X2_Gol".
   if (marketParts.length >= 2 && selectionParts.length !== marketParts.length) {
-    for (const sep of [/\s*\/\s*/, /\s*_\s*/]) {
+    for (const sep of [/\s*\/\s*/, /\s*_\s*/, /\s+/]) { // last: "X1 3+" (parts separated by a space)
       const parts = selection.split(sep);
       if (parts.length === marketParts.length) { selectionParts = parts; break; }
     }
