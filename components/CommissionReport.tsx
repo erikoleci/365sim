@@ -75,6 +75,34 @@ const CommissionReport: React.FC<{ scope: 'owner' | 'agent' }> = ({ scope }) => 
       <div className="text-[11px] text-brand-textMuted mb-3">
         {t('Komisioni: {single}% rezultat tek, {multi}% dy ose më shumë rezultate (edhe me live). Llogaritet mbi stake-un e çdo bilete të vendosur (jo të anuluarat dhe të rimbursuarat). Diferenca = Xhiro − Fitim − Komisioni. Muaji: {month}', { single: data.rates.single, multi: data.rates.multi, month: data.month })}
       </div>
+      {(() => {
+        // What the admin has to pay out: the commission of every agent, in lek and in euro (never added together).
+        const agentRows = data.groups.flatMap((g) => g.rows.filter((r) => !r.direct));
+        const sum = (c: Cur) => (scope === 'agent' ? data.totals[c].percAgjentit : agentRows.reduce((a, r) => a + (r.currencies[c].percAgjentit || 0), 0));
+        const shown = scope === 'agent' ? [] : agentRows.filter((r) => curs.some((c) => r.currencies[c].percAgjentit > 0));
+        return (
+          <div className="mb-4 rounded-lg border-2 border-brand-yellow/70 bg-brand-yellow/10 p-3">
+            <div className="text-xs uppercase tracking-wide text-brand-yellow font-bold">{scope === 'agent' ? t('Komisioni yt') : t('Komisioni që duhet t\'u jepet agjentëve')}</div>
+            <div className="flex flex-wrap gap-x-8 gap-y-1 mt-1">
+              {curs.map((c) => (
+                <div key={c} className="text-2xl font-extrabold text-white tabular-nums">{money(sum(c))} <span className="text-base text-brand-textMuted">{SYMBOL[c]}</span></div>
+              ))}
+            </div>
+            {shown.length > 0 && (
+              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                {shown.map((r) => (
+                  <div key={r.id ?? 'x'} className="flex justify-between gap-3 border-b border-white/10 py-1">
+                    <span><b>{r.name}</b> <span className="text-brand-textMuted text-xs">@{r.username}</span></span>
+                    <span className="tabular-nums font-bold">
+                      {curs.filter((c) => r.currencies[c].percAgjentit > 0).map((c) => `${money(r.currencies[c].percAgjentit)} ${SYMBOL[c]}`).join(' · ')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
       {currency !== 'BOTH' && data.totals[currency === 'ALL' ? 'EUR' : 'ALL'].tickets > 0 && data.totals[currency].tickets === 0 && (
         <div className="text-xs text-yellow-400 mb-2">{t('Nuk ka kupona në këtë monedhë, por ka në tjetrën. Zgjidh "Të gjitha".')}</div>
       )}
