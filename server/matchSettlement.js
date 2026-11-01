@@ -229,6 +229,38 @@ function minuteOutcome(leg, marketName, goalMinutes) {
 // only if they add up to the final score for each team (a match first seen at 2-1 or a server
 // gap leaves events missing); a first/last goal tied in time with a goal of the other team is
 // not trusted either.
+// The half-time score rebuilt from the goal events, for a match whose break was never captured (the server was down or
+// restarted during it). It is used ONLY when it is certain: every goal of the final score is in the log, each is filed
+// under a half (1 / 2) that its minute agrees with, and no second-half goal was logged before a first-half one. Anything
+// doubtful gives undefined and the ticket then waits for a person (never a guess about money).
+export function halfTimeFromGoalEvents(events, homeTeam, awayTeam, homeScore, awayScore) {
+  if (!Number.isInteger(homeScore) || !Number.isInteger(awayScore)) return undefined;
+  if (homeScore + awayScore === 0) return { htHome: 0, htAway: 0 };
+  const side = (e) => (e.team === homeTeam || e.team === 'home' ? 'home' : e.team === awayTeam || e.team === 'away' ? 'away' : null);
+  const goals = events.filter((e) => side(e));
+  if (goals.filter((e) => side(e) === 'home').length !== homeScore || goals.filter((e) => side(e) === 'away').length !== awayScore) return undefined;
+  const ordered = [...goals].sort((a, b) => Number(a.created_at) - Number(b.created_at) || Number(a.id) - Number(b.id));
+  let htHome = 0; let htAway = 0; let secondSeen = false;
+  for (const e of ordered) {
+    const half = Number(e.half); const minute = Number(e.minute);
+    if ((half !== 1 && half !== 2) || !Number.isFinite(minute)) return undefined;
+    if (half === 1) {
+      if (secondSeen || minute > 50) return undefined; // first-half stoppage time does not reach past ~50'
+      if (side(e) === 'home') htHome++; else htAway++;
+    } else {
+      if (minute < 46) return undefined;
+      secondSeen = true;
+    }
+  }
+  return { htHome, htAway };
+}
+async function loadHalfTimeScore(client, match, homeScore, awayScore) {
+  try {
+    const { rows } = await client.query(`SELECT id, team, minute, half, created_at FROM match_events WHERE match_id = $1 AND type = 'GOAL' ORDER BY created_at, id`, [match.id]);
+    return halfTimeFromGoalEvents(rows, match.home_team, match.away_team, homeScore, awayScore);
+  } catch { return undefined; }
+}
+
 async function loadGoalOrder(client, match, homeScore, awayScore) {
   try {
     const { rows } = await client.query(
@@ -1007,6 +1039,10 @@ export async function settleMatch(matchId, homeScore, awayScore, { force = false
 
     const stats = legs.some(legNeedsStats) ? await loadMatchStats(client, matchId) : undefined;
     const htStats = legs.some(legNeedsStats) ? await loadHtStats(client, matchId, match) : undefined;
+    // The stored half-time score; when the break was never captured, the one the goal events prove (see halfTimeFromGoalEvents).
+    const htScore = match.ht_home != null && match.ht_away != null
+      ? { htHome: Number(match.ht_home), htAway: Number(match.ht_away) }
+      : await loadHalfTimeScore(client, match, homeScore, awayScore);
     const goalOrder = legs.some(legNeedsFirstScorer) ? await loadGoalOrder(client, match, homeScore, awayScore) : undefined;
     const goalMinutes = legs.some(legNeedsGoalMinutes) ? await loadGoalMinutes(client, matchId, homeScore, awayScore) : undefined;
     const nextEvents = legs.some(legNeedsNextEvent) ? await loadNextEvents(client, match, homeScore, awayScore) : undefined;
@@ -1019,8 +1055,8 @@ export async function settleMatch(matchId, homeScore, awayScore, { force = false
         const outcome = determineLegOutcome(leg, {
           winner, totalGoals, bothScored, homeScore, awayScore, stats, goalOrder, goalMinutes, nextEvents, goalTimeline,
           htStats,
-          htHome: match.ht_home == null ? undefined : Number(match.ht_home),
-          htAway: match.ht_away == null ? undefined : Number(match.ht_away),
+          htHome: htScore ? htScore.htHome : undefined,
+          htAway: htScore ? htScore.htAway : undefined,
         });
 
         if (outcome) {
@@ -1135,6 +1171,7 @@ export async function settleStuckBets() {
     let settledLegs = 0;
     const statsByMatch = new Map();
     const htStatsByMatch = new Map();
+    const htScoreByMatch = new Map();
     const firstByMatch = new Map();
     const minutesByMatch = new Map();
     const nextByMatch = new Map();
@@ -1154,6 +1191,13 @@ export async function settleStuckBets() {
       }
       if (legNeedsStats(leg) && !statsByMatch.has(leg.match_id)) statsByMatch.set(leg.match_id, await loadMatchStats(client, leg.match_id));
       if (legNeedsStats(leg) && !htStatsByMatch.has(leg.match_id)) htStatsByMatch.set(leg.match_id, await loadHtStats(client, leg.match_id, leg));
+      if (!htScoreByMatch.has(leg.match_id)) {
+        if (leg.ht_home != null && leg.ht_away != null) htScoreByMatch.set(leg.match_id, { htHome: Number(leg.ht_home), htAway: Number(leg.ht_away) });
+        else {
+          const { rows: mr } = await client.query('SELECT id, home_team, away_team FROM matches_cache WHERE id = $1', [leg.match_id]);
+          htScoreByMatch.set(leg.match_id, mr[0] ? await loadHalfTimeScore(client, mr[0], Number(leg.result_home), Number(leg.result_away)) : undefined);
+        }
+      }
       if (legNeedsGoalMinutes(leg) && !minutesByMatch.has(leg.match_id)) {
         minutesByMatch.set(leg.match_id, await loadGoalMinutes(client, leg.match_id, Number(leg.result_home), Number(leg.result_away)));
       }
@@ -1176,8 +1220,8 @@ export async function settleStuckBets() {
           bothScored: home > 0 && away > 0,
           homeScore: home,
           awayScore: away,
-          htHome: leg.ht_home == null ? undefined : Number(leg.ht_home),
-          htAway: leg.ht_away == null ? undefined : Number(leg.ht_away),
+          htHome: (htScoreByMatch.get(leg.match_id) || {}).htHome,
+          htAway: (htScoreByMatch.get(leg.match_id) || {}).htAway,
         });
         if (!outcome) { noteUnrecognizedMarket(leg); continue; }
         await client.query(`UPDATE bet_selections SET status = $1 WHERE id = $2 AND status = 'PENDING'`, [outcome, leg.id]);
