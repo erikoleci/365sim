@@ -37,7 +37,6 @@ const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, onBalances })
 
   return (
     <div>
-      {data.demo && <div className="mb-3 text-xs bg-yellow-500/10 border border-yellow-500/40 text-yellow-300 rounded px-3 py-2">Modaliteti DEMO: luan me para virtuale. Asgjë nuk zbritet dhe nuk shtohet te asnjë llogari.</div>}
       <div className="flex gap-2 overflow-x-auto pb-3 mb-1">
         {['Të gjitha', ...Array.from(new Set(data.games.map((g) => g.category || 'Klasike')))].map((c) => (
           <button key={c} onClick={() => setCat(c)} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors ${cat === c ? 'bg-brand-yellow text-black border-brand-yellow' : 'bg-white/5 text-gray-200 border-white/15 hover:bg-white/10'}`}>{c}</button>
@@ -151,7 +150,6 @@ const SlotGame: React.FC<{
       </div>
 
       <div className="p-4">
-        {demo && <div className="mb-2 text-[11px] text-yellow-300 text-center">DEMO · para virtuale</div>}
         <div className="flex items-center justify-between text-sm mb-3">
           <div className="flex rounded overflow-hidden border border-white/20">
             {(['ALL', 'EUR'] as const).map((c) => (

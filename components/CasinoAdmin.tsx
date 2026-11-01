@@ -4,7 +4,7 @@ import CasinoHub from './CasinoHub';
 
 const MODES: { value: api.CasinoMode; label: string; hint: string }[] = [
   { value: 'off', label: 'Fshehur', hint: 'Askush nuk e sheh kazinon' },
-  { value: 'super', label: 'Vetëm superadmini', hint: 'Vetëm ti e sheh (demo)' },
+  { value: 'super', label: 'Vetëm superadmini', hint: 'Vetëm ti e sheh' },
   { value: 'all', label: 'Të gjithë', hint: 'Lojtarët e shohin dhe luajnë me paratë e tyre' },
 ];
 const money = (n: number) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });

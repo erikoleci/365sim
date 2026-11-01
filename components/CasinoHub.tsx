@@ -4,7 +4,6 @@ import Blackjack from './casino/Blackjack';
 import Roulette from './casino/Roulette';
 import VideoPoker from './casino/VideoPoker';
 import Baccarat from './casino/Baccarat';
-import Crash from './casino/Crash';
 import Dice from './casino/Dice';
 import SlotGames from './casino/SlotGames';
 
@@ -15,7 +14,7 @@ interface CasinoHubProps {
 }
 
 const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, onSetBalance }) => {
-  const [activeGame, setActiveGame] = useState<'slots' | 'blackjack' | 'roulette' | 'poker' | 'baccarat' | 'crash' | 'dice' | null>(null);
+  const [activeGame, setActiveGame] = useState<'slots' | 'blackjack' | 'roulette' | 'poker' | 'baccarat' | 'dice' | null>(null);
 
   if (activeGame === 'slots') return <SlotMachine userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
   if (activeGame === 'blackjack') return <Blackjack userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
@@ -23,7 +22,6 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
   if (activeGame === 'poker') return <VideoPoker userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
   if (activeGame === 'baccarat') return <Baccarat userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
   if (activeGame === 'dice') return <Dice userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
-  if (activeGame === 'crash') return <Crash userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
 
   return (
     <div className="p-6 text-white min-h-[80vh]">
@@ -52,23 +50,6 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
           
-          {/* Crash / Aviator */}
-          <div 
-            onClick={() => setActiveGame('crash')}
-            className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-brand-accent/50"
-          >
-              <div className="absolute inset-0 bg-gradient-to-br from-[#161b2e] to-black z-10"></div>
-              <div className="absolute bottom-4 left-4 z-20">
-                  <div className="bg-brand-accent text-brand-bg text-xs font-bold px-2 py-0.5 rounded w-fit mb-1 animate-pulse">TRENDING</div>
-                  <h3 className="text-2xl font-bold text-white group-hover:text-brand-accent transition-colors">CRASH</h3>
-                  <p className="text-xs text-gray-300">Cash out before it crashes!</p>
-              </div>
-              <div className="absolute top-4 right-4 z-20 text-brand-accent font-mono text-xl group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform">↗</div>
-              <div className="h-full w-full flex items-center justify-center z-10 relative">
-                  <span className="text-7xl group-hover:scale-110 transition-transform duration-500">🚀</span>
-              </div>
-          </div>
-
           {/* Baccarat */}
           <div 
             onClick={() => setActiveGame('baccarat')}

@@ -656,24 +656,6 @@ export async function casinoDiceRoll(stake: number, selectedBet: 'UNDER' | 'SEVE
   );
 }
 
-export async function casinoCrashStart(stake: number) {
-  return request<{ roundId: string; startTime: number; balance: number }>('/casino/crash/start', {
-    method: 'POST',
-    body: JSON.stringify({ stake }),
-  });
-}
-
-export async function casinoCrashStatus(roundId: string) {
-  return request<{ crashed: boolean; multiplier: number | null; resolved: boolean }>(`/casino/crash/${roundId}/status`);
-}
-
-export async function casinoCrashCashout(roundId: string) {
-  return request<{ crashed: boolean; multiplier: number; payout: number; balance: number }>(
-    `/casino/crash/${roundId}/cashout`,
-    { method: 'POST' }
-  );
-}
-
 export async function casinoBlackjackDeal(stake: number) {
   return request<{
     roundId: string; status: 'PLAYING' | 'FINISHED';
