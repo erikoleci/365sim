@@ -907,7 +907,7 @@ router.post('/bets/:id/resolve', async (req, res) => {
     if (plan.error) { await client.query('ROLLBACK'); return res.status(400).json({ error: plan.error.message, code: plan.error.code }); }
     if (plan.noop) { await client.query('ROLLBACK'); return res.json({ ok: true, unchanged: true, status: bet.status }); }
     for (const u of plan.legUpdates) await client.query('UPDATE bet_selections SET status = $1 WHERE id = $2', [u.status, u.id]);
-    if (plan.takeBack > 0) await creditWithLedger(client, bet.user_id, -plan.takeBack, 'BET_WIN_REVERSAL', bet.id, bet.currency);
+    if (plan.takeBack > 0) await creditWithLedger(client, bet.user_id, -plan.takeBack, bet.status === 'VOID' ? 'BET_VOID_REFUND_REVERSAL' : 'BET_WIN_REVERSAL', bet.id, bet.currency);
     await recomputeBetStatus(bet.id, client);
     await client.query('COMMIT');
   } catch (err) {

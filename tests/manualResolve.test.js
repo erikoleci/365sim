@@ -26,9 +26,16 @@ describe('super admin closes a ticket by hand', () => {
   it('void legs are left alone; cancelled / void tickets and same-status requests change nothing', () => {
     expect(planManualResolve({ status: 'PENDING' }, legs('VOID', 'PENDING'), 'WON').legUpdates).toEqual([{ id: 2, status: 'WON' }]);
     expect(planManualResolve({ status: 'CANCELLED' }, legs('PENDING'), 'WON').error.code).toBe('BET_NOT_RESOLVABLE');
-    expect(planManualResolve({ status: 'VOID' }, legs('VOID'), 'LOST').error.code).toBe('BET_NOT_RESOLVABLE');
     expect(planManualResolve({ status: 'WON' }, legs('WON'), 'WON').noop).toBe(true);
     expect(planManualResolve({ status: 'PENDING' }, legs('VOID'), 'WON').error.code).toBe('NO_ACTIVE_LEGS');
     expect(planManualResolve({ status: 'PENDING' }, legs('PENDING'), 'DRAW').error.code).toBe('BAD_OUTCOME');
+  });
+  it('a refunded (VOID) ticket can be closed: the refunded stake is taken back, then it is won or lost', () => {
+    const won = planManualResolve({ status: 'VOID', stake: 20, potential_return: 388 }, legs('VOID'), 'WON');
+    expect(won.legUpdates).toEqual([{ id: 1, status: 'WON' }]);
+    expect(won.takeBack).toBe(20);
+    const lost = planManualResolve({ status: 'VOID', stake: 20, potential_return: 388 }, legs('VOID', 'VOID'), 'LOST');
+    expect(lost.legUpdates).toEqual([{ id: 1, status: 'LOST' }, { id: 2, status: 'LOST' }]);
+    expect(lost.takeBack).toBe(20);
   });
 });

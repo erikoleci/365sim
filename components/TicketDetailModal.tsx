@@ -18,7 +18,7 @@ export interface TicketView {
 
 const legStyle = (s: string) => (s === 'WON' || s === 'HALF_WON' ? 'text-brand-accent' : s === 'LOST' || s === 'HALF_LOST' ? 'text-red-400' : s === 'VOID' ? 'text-gray-400' : 'text-brand-yellow');
 
-const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => void }> = ({ ticket, onClose }) => {
+const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => void; actions?: React.ReactNode }> = ({ ticket, onClose, actions }) => {
   const { t, locale } = useI18n();
   useEffect(() => {
     if (!ticket) return;
@@ -68,6 +68,7 @@ const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => vo
           <div className="flex justify-between"><span className="text-brand-textMuted">Stake</span><span className="text-white font-bold">{Number(ticket.stake).toFixed(2)} {sym}</span></div>
           <div className="flex justify-between"><span className="text-brand-textMuted">{returnLabel}</span><span className="text-white font-bold">{Number(ticket.potentialReturn).toFixed(2)} {sym}</span></div>
         </div>
+        {actions ? <div className="p-4 pt-0 flex flex-wrap gap-2">{actions}</div> : null}
       </div>
     </div>
   );

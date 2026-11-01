@@ -588,7 +588,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                                         </span>
                                     </td>
                                     <td className="p-3 text-right whitespace-nowrap">
-                                        {onResolveBet && (bet.status === BetStatus.PENDING || bet.status === BetStatus.WON || bet.status === BetStatus.LOST) && (
+                                        {onResolveBet && (bet.status === BetStatus.PENDING || bet.status === BetStatus.WON || bet.status === BetStatus.LOST || bet.status === BetStatus.VOID) && (
                                         <span className="inline-flex gap-1 mr-1">
                                             {bet.status !== BetStatus.WON && (
                                             <button
@@ -661,7 +661,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
           </div>
         )}
       </div>
-      <TicketDetailModal ticket={openTicket} onClose={() => setOpenTicket(null)} />
+      <TicketDetailModal
+        ticket={openTicket}
+        onClose={() => setOpenTicket(null)}
+        actions={onResolveBet && openTicket && ['PENDING', 'WON', 'LOST', 'VOID'].includes(openTicket.status) ? (
+          <>
+            {openTicket.status !== 'WON' && (
+              <button onClick={() => { const id = openTicket.id; const st = openTicket.status; setOpenTicket(null); onResolveBet(id, 'WON', st); }} className="flex-1 px-3 py-2 rounded bg-green-900/40 text-green-300 hover:bg-green-800 hover:text-white text-xs font-bold uppercase">{t('Bëje fituese')}</button>
+            )}
+            {openTicket.status !== 'LOST' && (
+              <button onClick={() => { const id = openTicket.id; const st = openTicket.status; setOpenTicket(null); onResolveBet(id, 'LOST', st); }} className="flex-1 px-3 py-2 rounded bg-orange-900/40 text-orange-300 hover:bg-orange-800 hover:text-white text-xs font-bold uppercase">{t('Bëje humbëse')}</button>
+            )}
+          </>
+        ) : undefined}
+      />
     </div>
   );
 };
