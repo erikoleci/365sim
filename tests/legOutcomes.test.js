@@ -38,10 +38,11 @@ describe('single-result markets settle correctly (1, X, 2, goals 2+/3+/4+, GG, J
     it('Racing 0-3 Real Madrid, ticket 1/2 -> LOST even without the half-time score', () => {
       expect(htft('1/2', 0, 3)).toBe('LOST');
     });
-    it('a loss is proven when the full-time part is wrong, or the half-time side never scored', () => {
-      expect(htft('1/1', 0, 3)).toBe('LOST');
-      expect(htft('2/1', 2, 2)).toBe('LOST');
+    it('a loss is proven when a side that must win a half did not score enough goals in the whole match', () => {
+      expect(htft('1/1', 0, 3)).toBe('LOST');   // two home half-wins need two home goals
+      expect(htft('1/1', 1, 3)).toBe('LOST');
       expect(htft('2/2', 3, 0)).toBe('LOST');
+      expect(htft('2/1', 2, 2)).toBeNull();     // 0-1 at the break, 2-1 in the second half is possible
     });
     it('a win (or anything not provable) stays open without the half-time score', () => {
       expect(htft('1/2', 1, 3)).toBeNull();
@@ -51,6 +52,14 @@ describe('single-result markets settle correctly (1, X, 2, goals 2+/3+/4+, GG, J
       expect(htft('1/2', 1, 3, [1, 0])).toBe('WON');
       expect(htft('1/2', 1, 3, [0, 0])).toBe('LOST');
       expect(htft('x/2', 0, 3, [0, 0])).toBe('WON');
+    });
+    it('Real Madrid - Barcelona: each half is decided on its own goals', () => {
+      expect(htft('1/2', 1, 2, [1, 0])).toBe('WON');   // Real take the 1st half 1-0, Barcelona the 2nd 0-2
+      expect(htft('2/1', 1, 2, [1, 0])).toBe('LOST');
+      expect(htft('2/1', 3, 1, [0, 1])).toBe('WON');   // Barcelona 0-1 up, then Real win the 2nd half 3-0
+      expect(htft('1/1', 3, 2, [2, 0])).toBe('LOST');  // 2-0, then 1-2: Real do not win the 2nd half
+      expect(htft('1/2', 3, 2, [2, 0])).toBe('WON');
+      expect(htft('x/x', 2, 2, [1, 1])).toBe('WON');   // 1-1 and 1-1
     });
   });
 });

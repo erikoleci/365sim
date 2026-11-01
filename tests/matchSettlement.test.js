@@ -371,11 +371,12 @@ describe('markets seen on real tickets: team totals by side, 45/90, goal ranges,
     expect(det(L('Numri i Golave në Ndeshje', '3+'), c)).toBe('WON');
     expect(det(L('Numri i Golave në Ndeshje', '4+'), c)).toBe('LOST');
   });
-  it('"45/90" is the half-time / full-time double; combos with "/" between the parts split correctly', () => {
-    expect(det(L('45/90', '2-2'), c)).toBe('WON');
-    expect(det(L('45/90', '2-X'), c)).toBe('LOST');
-    expect(det(L('45/90 & Numri i Golave në Ndeshje', '2-2/2-3'), c)).toBe('WON');
-    expect(det(L('45/90 & Numri i Golave në Ndeshje', '2-X/0-4'), c)).toBe('LOST');
+  it('"45/90" is played by halves (first half winner / second half winner); combos with "/" between the parts split correctly', () => {
+    // 0-1 at the break (away win the 1st half), 1-1 in the 2nd half (draw): "2-X" wins, "2-2" does not
+    expect(det(L('45/90', '2-X'), c)).toBe('WON');
+    expect(det(L('45/90', '2-2'), c)).toBe('LOST');
+    expect(det(L('45/90 & Numri i Golave në Ndeshje', '2-X/2-3'), c)).toBe('WON');
+    expect(det(L('45/90 & Numri i Golave në Ndeshje', '2-2/0-4'), c)).toBe('LOST');
     expect(det(L('Rezultat Final & Numri i Golave në Ndeshje', '2/2-3'), c)).toBe('WON');
     expect(det(L('Rezultat Final & Numri i Golave në Ndeshje', 'X/5+'), c)).toBe('LOST');
     expect(det(L('Rezultat Final & Numri i Golave në Ndeshje', '2/2-3 & x'), c)).toBeNull(); // not a valid shape

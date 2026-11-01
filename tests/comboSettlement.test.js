@@ -72,3 +72,17 @@ describe('"Numri i Golave" options: exactly N, a-b, N+ (full match and each half
     expect(o('Numri i Golave Pjesa II', '2')).toBe('LOST');
   });
 });
+
+describe('"45/90 & Numri i Golave": the halves AND the goals of the whole match', () => {
+  // Real Madrid 1-3 Barcelona: 0-1 at the break (Barcelona win the 1st half), 1-2 in the 2nd half (Barcelona again), 4 goals
+  const c = { winner: 'AWAY', totalGoals: 4, bothScored: true, homeScore: 1, awayScore: 3, htHome: 0, htAway: 1 };
+  const o = (market, sel) => determineLegOutcome(leg(market, sel), c);
+  it('2/2 with 3+ goals wins, with 0-3 goals loses (4 goals were scored)', () => {
+    expect(o('45/90 & Numri i Golave në Ndeshje', '2/2/3+')).toBe('WON');
+    expect(o('45/90 & Numri i Golave në Ndeshje', '2/2/2+')).toBe('WON');
+    expect(o('45/90 & Numri i Golave në Ndeshje', '2/2/0-3')).toBe('LOST');
+  });
+  it('2/1 loses: Barcelona won the 2nd half too', () => {
+    expect(o('45/90 & Numri i Golave në Ndeshje', '2/1/3+')).toBe('LOST');
+  });
+});

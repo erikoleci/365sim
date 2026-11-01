@@ -605,20 +605,29 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
     if (kind) return halfWithMoreOutcome(leg, kind, { homeScore, awayScore, htHome, htAway, stats, htStats });
   }
 
-  // ---- half-time / full-time double: "Pushim/Fund" -> "1/2" ----
+  // ---- "45/90" ("Pushim/Fund") -> "1/2": played BY HALVES ----
+  // The first sign is who WINS THE FIRST HALF (goals of the first 45'), the second sign who WINS THE SECOND
+  // HALF on its own (goals of the second half = final minus half-time) -- not the final result. Real - Barcelona
+  // "1/2" = Real win the first half, Barcelona win the second half. Combos ("2/1 & 3+") add the usual
+  // whole-match condition (goals of the whole game) on top.
   if (HTFT_NAMES.has(marketName)) {
     const m = String(leg.selection_name || leg.selection_id).trim().toLowerCase().match(/^([12x])\s*[\/-]\s*([12x])$/);
     if (!m || !hasScore) return null;
     const sign = (h, a) => (h > a ? '1' : a > h ? '2' : 'x');
     if (!Number.isFinite(htHome) || !Number.isFinite(htAway)) {
-      // The half-time score was never stored (e.g. the server restarted during the match). A LOSS can still be proven
-      // from the final score alone; a win cannot, so that case stays open for the admin.
-      if (sign(homeScore, awayScore) !== m[2]) return 'LOST';       // the full-time part is wrong
-      if (m[1] === '1' && homeScore < 1) return 'LOST';             // "home ahead at the break" with no home goal at all
-      if (m[1] === '2' && awayScore < 1) return 'LOST';             // "away ahead at the break" with no away goal at all
+      // The half-time score was never stored (e.g. the server restarted during the match), so the halves cannot be
+      // told apart. A LOSS can still be proven from the final score alone: every half won by a side needs at
+      // least one goal of that side ("1/1" needs two home goals, "1/2" one home and one away goal ...).
+      // A win cannot be proven, so that case stays open for the admin.
+      const needHome = (m[1] === '1' ? 1 : 0) + (m[2] === '1' ? 1 : 0);
+      const needAway = (m[1] === '2' ? 1 : 0) + (m[2] === '2' ? 1 : 0);
+      if (homeScore < needHome || awayScore < needAway) return 'LOST';
       return null;
     }
-    return sign(htHome, htAway) === m[1] && sign(homeScore, awayScore) === m[2] ? 'WON' : 'LOST';
+    const secondHome = homeScore - htHome;
+    const secondAway = awayScore - htAway;
+    if (secondHome < 0 || secondAway < 0) return null;
+    return sign(htHome, htAway) === m[1] && sign(secondHome, secondAway) === m[2] ? 'WON' : 'LOST';
   }
 
   // First goal of the first half: no goal before the break -> "None 1"; otherwise the first goal of the
