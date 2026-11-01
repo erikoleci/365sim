@@ -736,7 +736,7 @@ export async function adminCasinoReport() { return request<{ rows: CasinoReportR
 export interface VideoSlotInfo {
   id: string; name: string; tagline: string; volatility: string; color: [string, string]; symbols: Record<string, string>;
   rtp: number; lines: number; paytable: Record<string, Record<string, number>>; scatterPay: Record<string, number>;
-  freeSpins: Record<string, number>; freeSpinMultiplier: number; wildExpand: boolean; scatterName: string; wildName: string;
+  freeSpins: Record<string, number>; category?: string; freeSpinMultiplier: number; wildExpand: boolean; scatterName: string; wildName: string;
 }
 export interface SlotSpin { grid: string[][]; wins: { line: number; symbol: string; count: number; pay: number }[]; scatters: number; free: boolean; win: number }
 export interface SlotRound { spins: SlotSpin[]; payout: number; freeSpins: number; demo: boolean; balance?: number; balanceEur?: number }

@@ -27,6 +27,7 @@ const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, onBalances })
   const [data, setData] = useState<Awaited<ReturnType<typeof api.casinoSlotGames>> | null>(null);
   const [game, setGame] = useState<api.VideoSlotInfo | null>(null);
   const [error, setError] = useState('');
+  const [cat, setCat] = useState('Të gjitha');
 
   useEffect(() => { api.casinoSlotGames().then(setData).catch((e) => setError(e?.message || 'Gabim')); }, []);
   if (error) return <div className="text-red-400 text-sm p-4">{error}</div>;
@@ -37,9 +38,14 @@ const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, onBalances })
   return (
     <div>
       {data.demo && <div className="mb-3 text-xs bg-yellow-500/10 border border-yellow-500/40 text-yellow-300 rounded px-3 py-2">Modaliteti DEMO: luan me para virtuale. Asgjë nuk zbritet dhe nuk shtohet te asnjë llogari.</div>}
+      <div className="flex gap-2 overflow-x-auto pb-3 mb-1">
+        {['Të gjitha', ...Array.from(new Set(data.games.map((g) => g.category || 'Klasike')))].map((c) => (
+          <button key={c} onClick={() => setCat(c)} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors ${cat === c ? 'bg-brand-yellow text-black border-brand-yellow' : 'bg-white/5 text-gray-200 border-white/15 hover:bg-white/10'}`}>{c}</button>
+        ))}
+      </div>
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        {data.games.map((g) => (
-          <button key={g.id} onClick={() => setGame(g)} className="text-left rounded-xl overflow-hidden border border-white/10 hover:border-brand-yellow/60 hover:scale-[1.02] transition-all shadow-lg"
+        {data.games.filter((g) => cat === 'Të gjitha' || (g.category || 'Klasike') === cat).map((g) => (
+          <button key={g.id} onClick={() => setGame(g)} className="lobby-card lobby-shine relative text-left rounded-xl overflow-hidden border border-white/10 hover:border-brand-yellow/60 shadow-lg"
             style={{ background: `linear-gradient(145deg, ${g.color[0]}, ${g.color[1]})` }}>
             <div className="flex justify-center gap-1 text-3xl pt-5 pb-3">{['WILD', Object.keys(g.paytable).find((k) => k !== 'WILD' && g.paytable[k][5] === Math.max(...Object.keys(g.paytable).filter((x) => x !== 'WILD').map((x) => g.paytable[x][5])))!, 'SCATTER'].map((k, i) => <span key={i}>{g.symbols[k]}</span>)}</div>
             <div className="px-3 pb-3 bg-black/40 pt-2">
