@@ -75,6 +75,7 @@ const SlotMachine: React.FC<SlotMachineProps> = ({ onSetBalance, userBalance, on
       
       <h2 className="text-4xl font-bold text-yellow-400 mb-8 tracking-widest drop-shadow-md">SUPER SLOTS</h2>
 
+      <div className="bulbs w-full max-w-xs" />
       <div className="flex gap-3 mb-8 bg-black/80 p-4 rounded-xl border-4 border-yellow-600 shadow-[inset_0_0_30px_rgba(0,0,0,0.8),0_0_30px_rgba(212,175,55,0.3)]">
         {reels.map((rows, idx) => (
           <SlotReel key={idx} symbols={rows} spinning={reelSpin[idx]} pool={SYMBOLS} className="w-24" rowCount={3} litRows={winAmount > 0 && !isSpinning ? [1] : []} />

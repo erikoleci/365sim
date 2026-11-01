@@ -155,6 +155,7 @@ const SlotGame: React.FC<{
           <div className="text-white">Gjendja: <b className="tabular-nums">{fmt(bal, currency)}</b></div>
         </div>
 
+        <div className="bulbs w-full" />
         <div className="bg-black/60 rounded-xl p-2 sm:p-3 border-4 border-yellow-600/70 shadow-[inset_0_0_30px_rgba(0,0,0,0.8),0_0_24px_rgba(212,175,55,0.25)]">
           <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
             {grid.map((col, r) => (

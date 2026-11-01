@@ -649,6 +649,13 @@ export async function casinoBaccaratDeal(stake: number, selectedBet: 'PLAYER' | 
   );
 }
 
+export async function casinoDiceRoll(stake: number, selectedBet: 'UNDER' | 'SEVEN' | 'OVER') {
+  return request<{ dice: [number, number]; sum: number; result: 'UNDER' | 'SEVEN' | 'OVER'; payout: number; balance: number }>(
+    '/casino/dice/roll',
+    { method: 'POST', body: JSON.stringify({ stake, selectedBet }) }
+  );
+}
+
 export async function casinoCrashStart(stake: number) {
   return request<{ roundId: string; startTime: number; balance: number }>('/casino/crash/start', {
     method: 'POST',

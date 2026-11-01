@@ -694,4 +694,30 @@ router.post('/videopoker/:id/draw', async (req, res) => {
   res.json({ hand: finalHand, tier: tierName, payout, balance });
 });
 
+// =====================================================================
+// DICE — two dice, bet on the sum: UNDER (2-6), SEVEN, OVER (8-12). Same house rule as the other
+// single-shot games: the dice are drawn so the shown result matches the house-controlled outcome.
+// =====================================================================
+export const DICE_BETS = ['UNDER', 'SEVEN', 'OVER'];
+export const diceOutcome = (a, b) => { const sum = a + b; return sum < 7 ? 'UNDER' : sum > 7 ? 'OVER' : 'SEVEN'; };
+const rollDie = () => randomInt(1, 7);
+
+router.post('/dice/roll', async (req, res) => {
+  const { stake, selectedBet } = req.body || {};
+  if (!DICE_BETS.includes(selectedBet)) return res.status(400).json({ error: 'Invalid bet selection' });
+  if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
+
+  const ok = await deductStake(req.user.id, stake);
+  if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
+
+  const wantWin = Math.random() < WIN_CHANCE;
+  let dice = [rollDie(), rollDie()];
+  for (let i = 0; i < 300 && (diceOutcome(dice[0], dice[1]) === selectedBet) !== wantWin; i += 1) dice = [rollDie(), rollDie()];
+  const result = diceOutcome(dice[0], dice[1]);
+  const payout = result === selectedBet ? Number((stake * smallProfitMultiplier()).toFixed(2)) : 0;
+  await creditPayout(req.user.id, payout);
+  const balance = await getBalance(req.user.id);
+  res.json({ dice, sum: dice[0] + dice[1], result, payout, balance });
+});
+
 export default router;

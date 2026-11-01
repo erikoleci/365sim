@@ -5,6 +5,7 @@ import Roulette from './casino/Roulette';
 import VideoPoker from './casino/VideoPoker';
 import Baccarat from './casino/Baccarat';
 import Crash from './casino/Crash';
+import Dice from './casino/Dice';
 import SlotGames from './casino/SlotGames';
 
 interface CasinoHubProps {
@@ -14,13 +15,14 @@ interface CasinoHubProps {
 }
 
 const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, onSetBalance }) => {
-  const [activeGame, setActiveGame] = useState<'slots' | 'blackjack' | 'roulette' | 'poker' | 'baccarat' | 'crash' | null>(null);
+  const [activeGame, setActiveGame] = useState<'slots' | 'blackjack' | 'roulette' | 'poker' | 'baccarat' | 'crash' | 'dice' | null>(null);
 
   if (activeGame === 'slots') return <SlotMachine userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
   if (activeGame === 'blackjack') return <Blackjack userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
   if (activeGame === 'roulette') return <Roulette userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
   if (activeGame === 'poker') return <VideoPoker userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
   if (activeGame === 'baccarat') return <Baccarat userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
+  if (activeGame === 'dice') return <Dice userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
   if (activeGame === 'crash') return <Crash userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
 
   return (
@@ -144,6 +146,21 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
                </div>
                <div className="h-full w-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900 to-black flex items-center justify-center text-8xl group-hover:scale-110 transition-transform duration-500">
                    🃏
+               </div>
+          </div>
+          {/* Dice Card */}
+          <div
+             onClick={() => setActiveGame('dice')}
+             className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-brand-yellow/50"
+          >
+               <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"></div>
+               <div className="absolute bottom-4 left-4 z-20">
+                  <div className="bg-rose-600 text-xs font-bold px-2 py-0.5 rounded w-fit mb-1">NEW 3D</div>
+                  <h3 className="text-2xl font-bold text-white group-hover:text-brand-yellow transition-colors">Dice</h3>
+                  <p className="text-xs text-gray-300">Under, Seven or Over</p>
+               </div>
+               <div className="h-full w-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-rose-900 to-black flex items-center justify-center text-8xl group-hover:scale-110 transition-transform duration-500">
+                   🎲
                </div>
           </div>
       </div>

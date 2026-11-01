@@ -55,17 +55,33 @@
 .chip-pop { animation: chip-pop 0.28s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
 @keyframes chip-pop { 0% { transform: translateY(-14px) scale(0.6); opacity: 0; } 100% { transform: none; opacity: 1; } }
 
-/* ---- slot reels ---- */
+/* ---- slot reels (3D drum) ---- */
 .reel-window { position: relative; overflow: hidden; }
-.reel-window::before, .reel-window::after { content: ''; position: absolute; left: 0; right: 0; height: 22%; z-index: 2; pointer-events: none; }
-.reel-window::before { top: 0; background: linear-gradient(180deg, rgba(0,0,0,0.55), transparent); }
-.reel-window::after { bottom: 0; background: linear-gradient(0deg, rgba(0,0,0,0.55), transparent); }
-.reel-run { animation: reel-run 0.32s linear infinite; filter: blur(2.2px); will-change: transform; }
-@keyframes reel-run { from { transform: translateY(0); } to { transform: translateY(-50%); } }
-.reel-stop { animation: reel-stop 0.55s cubic-bezier(0.25, 0.9, 0.3, 1) both; }
-@keyframes reel-stop { 0% { transform: translateY(-62%); } 62% { transform: translateY(7%); } 80% { transform: translateY(-2.5%); } 100% { transform: translateY(0); } }
-.cell-win { animation: cell-win 0.9s ease-in-out infinite; z-index: 1; }
-@keyframes cell-win { 0%,100% { box-shadow: 0 0 0 2px #facc15, 0 0 10px rgba(250,204,21,0.5); transform: scale(1); } 50% { box-shadow: 0 0 0 3px #fff3a0, 0 0 22px rgba(250,204,21,0.95); transform: scale(1.06); } }
+.reel-3d { --reel-r: 154cqw; perspective: 520cqw; background: linear-gradient(90deg, #0b0b10, #1b1b24 50%, #0b0b10); box-shadow: inset 0 0 14px rgba(0,0,0,0.9); }
+.reel-3d::before, .reel-3d::after { content: ''; position: absolute; left: 0; right: 0; height: 32%; z-index: 3; pointer-events: none; }
+.reel-3d::before { top: 0; background: linear-gradient(180deg, rgba(0,0,0,0.78), transparent); }
+.reel-3d::after { bottom: 0; background: linear-gradient(0deg, rgba(0,0,0,0.78), transparent); }
+.reel-drum { position: absolute; left: 0; width: 100%; height: 100cqw; top: calc(50% - 50cqw); transform-style: preserve-3d; will-change: transform; transform: translateZ(calc(var(--reel-r) * -1)); }
+.reel-face { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  background: linear-gradient(90deg, #bdb6a3, #fffdf3 18%, #fffdf3 82%, #bdb6a3); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12); }
+.reel-drum-spin { animation: reel3d-spin 0.38s linear infinite; filter: blur(1.6px); }
+@keyframes reel3d-spin { from { transform: translateZ(calc(var(--reel-r) * -1)) rotateX(0deg); } to { transform: translateZ(calc(var(--reel-r) * -1)) rotateX(-360deg); } }
+.reel-drum-land { animation: reel3d-land 0.8s cubic-bezier(0.2, 0.75, 0.25, 1) both; }
+@keyframes reel3d-land {
+  0%   { transform: translateZ(calc(var(--reel-r) * -1)) rotateX(288deg); }
+  68%  { transform: translateZ(calc(var(--reel-r) * -1)) rotateX(-9deg); }
+  84%  { transform: translateZ(calc(var(--reel-r) * -1)) rotateX(3deg); }
+  100% { transform: translateZ(calc(var(--reel-r) * -1)) rotateX(0deg); }
+}
+.cell-win { animation: cell-win 0.9s ease-in-out infinite; }
+@keyframes cell-win { 0%,100% { box-shadow: inset 0 0 0 3px #facc15, inset 0 0 18px rgba(250,204,21,0.6); filter: brightness(1); } 50% { box-shadow: inset 0 0 0 4px #fff3a0, inset 0 0 30px rgba(250,204,21,1); filter: brightness(1.12); } }
+
+/* marquee bulbs on the cabinet */
+.bulbs { height: 10px; margin: 0 auto 10px; position: relative; }
+.bulbs::before, .bulbs::after { content: ''; position: absolute; inset: 0; background: radial-gradient(circle, #ffe27a 38%, rgba(255,226,122,0.0) 46%) 0 0 / 20px 10px repeat-x; filter: drop-shadow(0 0 4px rgba(255,214,90,0.9)); }
+.bulbs::before { animation: bulbs-a 0.9s steps(1) infinite; }
+.bulbs::after { background-position: 10px 0; animation: bulbs-a 0.9s steps(1) infinite reverse; }
+@keyframes bulbs-a { 0% { opacity: 1; } 50% { opacity: 0.12; } 100% { opacity: 1; } }
 
 /* ---- coins / win effects ---- */
 .coin { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 9999px; pointer-events: none;
@@ -99,6 +115,19 @@
 .lobby-card:hover .lobby-shine::after, .lobby-card:hover.lobby-shine::after { transform: translateX(120%); }
 
 @media (prefers-reduced-motion: reduce) {
-  .pc, .pc-inner, .chip-pop, .reel-run, .reel-stop, .cell-win, .coin, .win-pop, .crash-shake, .crash-ring, .crash-spark, .crash-flame, .crash-star, .lobby-card { animation: none !important; transition: none !important; }
-  .reel-run { filter: none; }
+  .pc, .pc-inner, .chip-pop, .reel-drum-spin, .reel-drum-land, .die-hop-a, .die-hop-b, .die-cube, .cell-win, .bulbs::before, .bulbs::after, .coin, .win-pop, .crash-shake, .crash-ring, .crash-spark, .crash-flame, .crash-star, .lobby-card { animation: none !important; transition: none !important; }
+  .reel-drum-spin { filter: none; }
 }
+
+/* ---- 3D dice ---- */
+.die-wrap { position: relative; perspective: 700px; }
+.die-cube { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform 1.5s cubic-bezier(0.15, 0.8, 0.25, 1); }
+.die-face { position: absolute; inset: 0; border-radius: 14%; display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); padding: 14%; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  background: radial-gradient(circle at 30% 25%, #ffffff, #e9e3d3 70%, #cfc7b1); box-shadow: inset 0 0 0 2px rgba(0,0,0,0.08), inset -6px -8px 14px rgba(0,0,0,0.12); }
+.die-face span { display: block; place-self: center; width: 78%; aspect-ratio: 1; border-radius: 9999px; }
+.die-face .die-pip { background: radial-gradient(circle at 35% 30%, #5a1a1a, #b3201f 45%, #7d1010); box-shadow: inset 0 2px 3px rgba(0,0,0,0.5); }
+.die-hop-a { animation: die-hop-a 1.5s ease-out both; }
+.die-hop-b { animation: die-hop-b 1.5s ease-out both; }
+@keyframes die-hop-b { 0% { transform: translateY(-120px) rotate(-8deg); } 28% { transform: translateY(0); } 42% { transform: translateY(-46px); } 56% { transform: translateY(0); } 68% { transform: translateY(-16px); } 80%,100% { transform: translateY(0); } }
+@keyframes die-hop-a { 0% { transform: translateY(-120px) rotate(-8deg); } 28% { transform: translateY(0); } 42% { transform: translateY(-46px); } 56% { transform: translateY(0); } 68% { transform: translateY(-16px); } 80%,100% { transform: translateY(0); } }
+.die-shadow { position: absolute; left: 8%; right: 8%; bottom: -14px; height: 14px; border-radius: 50%; background: rgba(0,0,0,0.45); filter: blur(5px); }
