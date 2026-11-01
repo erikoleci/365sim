@@ -18,9 +18,11 @@ interface AdminPanelProps {
   onAddCredit: (userId: string, amount: number, amountEur?: number) => void;
   onResetPassword: (userId: string, newPass: string) => void;
   onCancelBet: (betId: string, origin: 'USER' | 'ADMIN') => void;
+  /** Super admin only: close any ticket by hand as won or lost. */
+  onResolveBet?: (betId: string, outcome: 'WON' | 'LOST', currentStatus?: string) => void;
 }
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet, viewerRole }) => {
+const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet, onResolveBet, viewerRole }) => {
   const viewerIsSuper = isSuperAdminRole(viewerRole);
   const { t, locale } = useI18n();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'tickets' | 'audit' | 'markets' | 'pending'>('dashboard');
@@ -545,7 +547,27 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                                             {bet.status === BetStatus.CANCELLED ? t('ANULUAR') : bet.status}
                                         </span>
                                     </td>
-                                    <td className="p-3 text-right">
+                                    <td className="p-3 text-right whitespace-nowrap">
+                                        {viewerIsSuper && onResolveBet && (bet.status === BetStatus.PENDING || bet.status === BetStatus.WON || bet.status === BetStatus.LOST) && (
+                                        <span className="inline-flex gap-1 mr-1">
+                                            {bet.status !== BetStatus.WON && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); onResolveBet(bet.id, 'WON', bet.status); }}
+                                                className="text-green-300 hover:text-white bg-green-900/30 hover:bg-green-800 px-2 py-1 rounded text-xs transition-colors"
+                                            >
+                                                {t('Fituese')}
+                                            </button>
+                                            )}
+                                            {bet.status !== BetStatus.LOST && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); onResolveBet(bet.id, 'LOST', bet.status); }}
+                                                className="text-orange-300 hover:text-white bg-orange-900/30 hover:bg-orange-800 px-2 py-1 rounded text-xs transition-colors"
+                                            >
+                                                {t('Humbëse')}
+                                            </button>
+                                            )}
+                                        </span>
+                                        )}
                                         {canDeleteTickets && bet.status === BetStatus.PENDING && (
                                         <button 
                                             onClick={(e) => { e.stopPropagation(); onCancelBet(bet.id, 'ADMIN'); }}

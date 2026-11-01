@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { readLiveCorners, readLiveCards } from '../matchSettlement.js';
-import { settleMatch, recomputeBetStatus, settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult, explainSettleBlock } from '../matchSettlement.js';
+import { settleMatch, recomputeBetStatus, creditWithLedger, settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult, explainSettleBlock } from '../matchSettlement.js';
 import { missedLiveCycles } from '../london365/liveState.js';
 import { logAudit } from '../auditLog.js';
 import { buildCoverageReport, formatCoverageText } from '../marketCoverage.js';
@@ -25,6 +25,7 @@ import { importLondon365, getLondon365Status, getLondon365CountryDebug } from '.
 import { monthRange } from './agent.js';
 import { userMetrics, buildCommissionReport, periodRange } from '../commission.js';
 import { buildCreditLedger, feeRateFromEnv } from '../creditLedger.js';
+import { planManualResolve } from '../manualResolve.js';
 import { deleteUserIfUnused, deleteBlockedMessage, forceDeleteUser } from '../userDeletion.js';
 
 const router = express.Router();
@@ -852,6 +853,38 @@ router.post('/bets/:id/cancel', async (req, res) => {
   }
   await logAudit(req.user, 'BET_CANCEL', bet.id, { userId: bet.user_id, stake: bet.stake, wasStatus: bet.status, balanceChange: delta });
   res.json({ ok: true });
+});
+
+// SUPER ADMIN ONLY: close ANY ticket (of any user) by hand as WON or LOST. A win is paid exactly once by the normal
+// settlement code; a won ticket made lost gives the winnings back (written in the ledger). Not for cancelled / refunded tickets.
+router.post('/bets/:id/resolve', requireSuperAdmin, async (req, res) => {
+  const outcome = String((req.body && req.body.outcome) || '').toUpperCase();
+  if (outcome !== 'WON' && outcome !== 'LOST') return res.status(400).json({ error: "outcome must be 'WON' or 'LOST'" });
+  const client = await pool.connect();
+  let bet;
+  let plan;
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT * FROM bets WHERE id = $1 FOR UPDATE', [req.params.id]);
+    bet = rows[0];
+    if (!bet) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Bet not found' }); }
+    const { rows: legs } = await client.query('SELECT id, status FROM bet_selections WHERE bet_id = $1 ORDER BY id', [bet.id]);
+    plan = planManualResolve(bet, legs, outcome);
+    if (plan.error) { await client.query('ROLLBACK'); return res.status(400).json({ error: plan.error.message, code: plan.error.code }); }
+    if (plan.noop) { await client.query('ROLLBACK'); return res.json({ ok: true, unchanged: true, status: bet.status }); }
+    for (const u of plan.legUpdates) await client.query('UPDATE bet_selections SET status = $1 WHERE id = $2', [u.status, u.id]);
+    if (plan.takeBack > 0) await creditWithLedger(client, bet.user_id, -plan.takeBack, 'BET_WIN_REVERSAL', bet.id, bet.currency);
+    await recomputeBetStatus(bet.id, client);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[admin] manual ticket resolve failed:', err.message);
+    return res.status(500).json({ error: 'Could not close this ticket' });
+  } finally {
+    client.release();
+  }
+  await logAudit(req.user, 'BET_RESOLVE_MANUAL', bet.id, { userId: bet.user_id, from: bet.status, to: outcome, stake: bet.stake, potentialReturn: bet.potential_return, tookBack: plan.takeBack, currency: bet.currency });
+  res.json({ ok: true, status: outcome });
 });
 
 // Manually override a single bet leg's outcome. Needed for markets where

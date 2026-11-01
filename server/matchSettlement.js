@@ -816,7 +816,7 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
 // could change with no trace. A failed ledger write fails (and rolls back) the whole
 // settlement, which the sweeps then retry: money must never move without a record.
 // type: 'BET_WIN_PAYOUT' | 'BET_VOID_REFUND'; reference: the bet id.
-async function creditWithLedger(client, userId, amount, type, betId, currency = 'ALL') {
+export async function creditWithLedger(client, userId, amount, type, betId, currency = 'ALL') {
   const col = currency === 'EUR' ? 'balance_eur' : 'balance';
   const { rows } = await client.query(`SELECT ${col} FROM users WHERE id = $1 FOR UPDATE`, [userId]);
   if (!rows[0]) return; // user no longer exists: nothing to credit

@@ -106,6 +106,22 @@ export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reload
     }
   };
 
+  // Super admin: close any ticket as won or lost.
+  const resolveBet = useCallback(async (betId: string, outcome: 'WON' | 'LOST', currentStatus?: string) => {
+    const msg = outcome === 'WON'
+      ? t('Ta bëj këtë biletë FITUESE dhe t\'ia paguaj fitimin lojtarit?')
+      : currentStatus === 'WON'
+        ? t('Ta bëj këtë biletë HUMBËSE? Fitimi që i është paguar do t\'i merret mbrapsht.')
+        : t('Ta mbyll këtë biletë si HUMBËSE?');
+    if (!window.confirm(msg)) return;
+    try {
+      await api.adminResolveBet(betId, outcome);
+      await loadAdminData();
+    } catch (e: any) {
+      alert(e.message || t('Veprimi deshtoi'));
+    }
+  }, [loadAdminData, t]);
+
   const cancelBet = useCallback(async (betId: string, origin: 'USER' | 'ADMIN') => {
     if (origin === 'ADMIN') {
       if (!window.confirm(t('Ta anuloj këtë biletë dhe t\'i kthej paratë? Bileta mbetet në listë e shënuar si e anuluar.'))) return;
@@ -149,5 +165,5 @@ export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reload
 
   const reset = useCallback(() => { setAdminUsers([]); setAdminAllBets([]); }, []);
 
-  return { adminUsers, adminAllBets, simulatingMatchId, createUser, deleteUser, addCredit, resetPassword, cancelBet, settleMatch, reset };
+  return { adminUsers, adminAllBets, simulatingMatchId, createUser, deleteUser, addCredit, resetPassword, cancelBet, resolveBet, settleMatch, reset };
 }

@@ -369,6 +369,11 @@ export async function adminFetchExposure() {
   return data.exposure;
 }
 
+// Super admin only: close any ticket by hand as won or lost (a win is paid once; a won ticket made lost gives the winnings back).
+export async function adminResolveBet(betId: string, outcome: 'WON' | 'LOST') {
+  return request<{ ok: true; status: string; unchanged?: boolean }>(`/admin/bets/${betId}/resolve`, { method: 'POST', body: JSON.stringify({ outcome }) });
+}
+
 export async function adminCancelBet(betId: string) {
   return request<{ ok: true }>(`/admin/bets/${betId}/cancel`, { method: 'POST' });
 }

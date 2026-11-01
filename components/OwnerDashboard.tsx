@@ -19,6 +19,7 @@ interface OwnerDashboardProps {
   onAddCredit: (userId: string, amount: number, amountEur?: number) => void;
   onResetPassword: (userId: string, newPass: string) => void;
   onCancelBet: (betId: string, origin: 'USER' | 'ADMIN') => void;
+  onResolveBet?: (betId: string, outcome: 'WON' | 'LOST', currentStatus?: string) => void;
   // Super admin only: the casino tab plays on the super admin's own balance.
   onSetBalance?: (balance: number, balanceEur?: number) => void;
 }
@@ -41,7 +42,7 @@ const dual = (lek: any, eur: any) => (<>{money(lek)} L<br />€{money(eur ?? 0)}
 // when actual changes (create agent, credit, reset password) are needed.
 const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   currentUser, onLogout, users, allBets,
-  onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet, onSetBalance,
+  onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet, onResolveBet, onSetBalance,
 }) => {
   const { t } = useI18n();
   const isSuper = currentUser.role === 'SUPER_ADMIN';
@@ -512,6 +513,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             onCreateUser={onCreateUser} onDeleteUser={onDeleteUser}
             onAddCredit={onAddCredit} onResetPassword={onResetPassword}
             onCancelBet={onCancelBet}
+            onResolveBet={onResolveBet}
           />
         )}
       </main>
