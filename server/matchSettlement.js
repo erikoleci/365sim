@@ -735,8 +735,9 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
     // the provider's "Gol Jo Gol Live" / "Gol / Jo Gol Ne P2" label the options 1 = Gol, 2 = Jo Gol
     const numeric = marketName === 'gol jo gol live';
     const tight = sel.replace(/[\s_-]/g, ''); // "Jo Gol", "J_Gol", "JGol" ...
-    if (sel === 'po' || sel === 'yes' || sel === 'gol' || (numeric && sel === '1')) return bothScored ? 'WON' : 'LOST';
-    if (sel === 'jo' || sel === 'no' || tight === 'jogol' || tight === 'jgol' || tight === 'nogoal' || (numeric && sel === '2')) return !bothScored ? 'WON' : 'LOST';
+    // GG = both score; JG / NG = not both (the short labels used on the slip). Before they were left undecided (null).
+    if (sel === 'po' || sel === 'yes' || sel === 'gol' || tight === 'gg' || (numeric && sel === '1')) return bothScored ? 'WON' : 'LOST';
+    if (sel === 'jo' || sel === 'no' || tight === 'jogol' || tight === 'jgol' || tight === 'nogoal' || tight === 'jg' || tight === 'ng' || (numeric && sel === '2')) return !bothScored ? 'WON' : 'LOST';
     return null;
   }
 
