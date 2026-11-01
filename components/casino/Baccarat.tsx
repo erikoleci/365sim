@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { casinoBaccaratDeal } from '../../services/api';
 import PlayingCard from './PlayingCard';
-import Croupier, { CroupierMood } from './Croupier';
+import { CroupierMood } from './Croupier';
+import DealerPhoto from './DealerPhoto';
 import { ChipStack } from './Chip';
 import CoinBurst from './CoinBurst';
 
@@ -108,7 +109,7 @@ const Baccarat: React.FC<BaccaratProps> = ({ onSetBalance, userBalance, onClose 
        
        <div className="relative z-10 w-full max-w-4xl flex flex-col items-center">
             <h2 className="text-4xl font-serif font-bold casino-gold-text mb-2 tracking-widest drop-shadow-md">BACCARAT</h2>
-            <div className="mb-4"><Croupier mood={mood} size={120} /></div>
+            <div className="mb-4"><DealerPhoto dealer={3} mood={mood} size={110} /></div>
 
             {/* Table Area */}
             <div className="flex justify-between w-full mb-8 px-10 gap-20">

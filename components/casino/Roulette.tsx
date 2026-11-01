@@ -1,7 +1,8 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { casinoRouletteSpin } from '../../services/api';
 import RouletteWheel, { WheelPhase } from './RouletteWheel';
-import Croupier, { CroupierMood } from './Croupier';
+import { CroupierMood } from './Croupier';
+import DealerPhoto from './DealerPhoto';
 
 interface RouletteProps {
   onSetBalance: (balance: number) => void;
@@ -111,7 +112,7 @@ const Roulette: React.FC<RouletteProps> = ({ onSetBalance, userBalance, onClose 
       {/* Table: the croupier behind the wheel, the ball and the result */}
       <div className="mb-6 w-full max-w-2xl flex flex-col items-center">
           <div className="flex items-end justify-center gap-2 sm:gap-6 w-full">
-              <div className="shrink-0 w-[96px] sm:w-[140px]"><Croupier mood={mood} size={140} /></div>
+              <div className="shrink-0 w-[96px] sm:w-[140px]"><DealerPhoto dealer={2} mood={mood} size={110} /></div>
               <div className="relative shrink min-w-0 w-[220px] sm:w-[290px]">
                   <RouletteWheel phase={phase} result={landResult} onLanded={onLanded} size={290} />
                   {resultNumber !== null && !spinning && (

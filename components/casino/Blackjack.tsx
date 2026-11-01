@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { casinoBlackjackDeal, casinoBlackjackHit, casinoBlackjackStand } from '../../services/api';
 import PlayingCard from './PlayingCard';
-import Croupier, { CroupierMood } from './Croupier';
-import { ChipStack } from './Chip';
+import { CroupierMood } from './Croupier';
+import DealerPhoto from './DealerPhoto';
+import Chip, { ChipStack } from './Chip';
 import CoinBurst from './CoinBurst';
 
 interface BlackjackProps {
@@ -34,6 +35,7 @@ const Blackjack: React.FC<BlackjackProps> = ({ onSetBalance, userBalance, onClos
   const [playerHand, setPlayerHand] = useState<Card[]>([]);
   const [dealerHand, setDealerHand] = useState<Card[]>([]);
   const [stake, setStake] = useState(25);
+  const [touched, setTouched] = useState(false);
   const [message, setMessage] = useState('Place your bet');
   const [roundId, setRoundId] = useState<string | null>(null);
   const [dealing, setDealing] = useState(false); // true for a moment after a deal: the first cards are staggered
@@ -42,6 +44,7 @@ const Blackjack: React.FC<BlackjackProps> = ({ onSetBalance, userBalance, onClos
   const mood: CroupierMood = gameState === 'FINISHED' ? resultMood : dealing ? 'spinning' : 'idle';
 
   const dealGame = async () => {
+    if (stake < 1) { setMessage('Place your bet'); return; }
     if (userBalance < stake) {
         setMessage('Insufficient Funds');
         return;
@@ -102,8 +105,8 @@ const Blackjack: React.FC<BlackjackProps> = ({ onSetBalance, userBalance, onClos
        
        <div className="text-center w-full">
            <h2 className="font-bold tracking-widest casino-gold-text mb-1">BLACKJACK PRO</h2>
-           <div className="flex justify-center mb-2"><Croupier mood={mood} size={104} /></div>
-           <div className="flex justify-center gap-2 min-h-[100px] mb-4">
+           <div className="flex justify-center mb-2"><DealerPhoto dealer={1} mood={mood} size={104} /></div>
+           <div className="flex justify-center gap-2 min-h-[100px] mb-4" style={{ transform: "perspective(700px) rotateX(14deg)" }}>
                 {gameState === 'BETTING' ? (
                     <div className="w-16 h-[92px] border-2 border-dashed border-white/20 rounded-lg"></div>
                 ) : (
@@ -123,7 +126,7 @@ const Blackjack: React.FC<BlackjackProps> = ({ onSetBalance, userBalance, onClos
            {gameState !== 'BETTING' && (
              <div className="text-white font-bold bg-black/50 inline-block px-3 rounded-full border border-white/10 mb-2">{calcScore(playerHand)}</div>
            )}
-           <div className="flex justify-center gap-2 min-h-[100px]">
+           <div className="flex justify-center gap-2 min-h-[100px]" style={{ transform: "perspective(700px) rotateX(-8deg)" }}>
                 {gameState === 'BETTING' ? (
                     <div className="w-16 h-[92px] border-2 border-dashed border-white/20 rounded-lg"></div>
                 ) : (
@@ -139,10 +142,19 @@ const Blackjack: React.FC<BlackjackProps> = ({ onSetBalance, userBalance, onClos
                        <div className="text-xs opacity-70">Balance</div>
                        <div className="font-bold text-yellow-400">{userBalance.toFixed(2)}</div>
                    </div>
-                   <div className="flex items-center gap-2">
-                       <button onClick={() => setStake(Math.max(5, stake - 5))} className="bg-white/10 hover:bg-white/20 text-white w-8 h-8 rounded">-</button>
-                       <div className="w-12 flex justify-center"><ChipStack value={stake} count={Math.min(5, Math.max(1, Math.ceil(stake / 25)))} size={34} /></div>
-                       <button onClick={() => setStake(stake + 5)} className="bg-white/10 hover:bg-white/20 text-white w-8 h-8 rounded">+</button>
+                   <div className="flex flex-col items-center gap-2">
+                       <div className="flex items-center gap-2">
+                           {[5, 25, 100, 500].map((v) => (
+                               <button key={v} onClick={() => { setTouched(true); setStake((cur) => Math.min(5000, (cur === 25 && !touched ? 0 : cur) + v)); }} className="transition-transform hover:-translate-y-1 active:scale-95" aria-label={`Add ${v}`}>
+                                   <Chip value={v} size={38} />
+                               </button>
+                           ))}
+                       </div>
+                       <div className="flex items-center gap-2 text-xs text-white">
+                           <ChipStack value={stake} count={Math.min(5, Math.max(1, Math.ceil(stake / 100)))} size={24} />
+                           <span className="font-bold text-yellow-400">{stake}</span>
+                           <button onClick={() => { setTouched(true); setStake(0); }} className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20">Clear</button>
+                       </div>
                    </div>
                    <button onClick={dealGame} className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold px-8 py-2 rounded-full shadow-lg transition-transform hover:scale-105">
                        {gameState === 'FINISHED' ? 'NEW DEAL' : 'DEAL'}
