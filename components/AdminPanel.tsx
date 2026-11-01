@@ -182,26 +182,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
       <div className="flex overflow-x-auto border-b border-brand-divider bg-brand-bg">
         <button
           onClick={() => setActiveTab('dashboard')}
-          className={`px-6 py-3 text-sm font-bold ${activeTab === 'dashboard' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
+          className={`px-3 sm:px-6 py-3 text-sm font-bold whitespace-nowrap ${activeTab === 'dashboard' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
         >
           Dashboard
         </button>
         <button
           onClick={() => setActiveTab('users')}
-          className={`px-6 py-3 text-sm font-bold ${activeTab === 'users' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
+          className={`px-3 sm:px-6 py-3 text-sm font-bold whitespace-nowrap ${activeTab === 'users' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
         >
           User Management
         </button>
         <button
           onClick={() => setActiveTab('tickets')}
-          className={`px-6 py-3 text-sm font-bold ${activeTab === 'tickets' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
+          className={`px-3 sm:px-6 py-3 text-sm font-bold whitespace-nowrap ${activeTab === 'tickets' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
         >
           All Tickets ({allBets.length})
         </button>
         {viewerIsSuper && (
           <button
             onClick={() => setActiveTab('audit')}
-            className={`px-6 py-3 text-sm font-bold ${activeTab === 'audit' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
+            className={`px-3 sm:px-6 py-3 text-sm font-bold whitespace-nowrap ${activeTab === 'audit' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
           >
             Audit Log
           </button>
@@ -209,20 +209,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
         {viewerIsSuper && (<>
         <button
           onClick={() => setActiveTab('markets')}
-          className={`px-6 py-3 text-sm font-bold whitespace-nowrap ${activeTab === 'markets' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
+          className={`px-3 sm:px-6 py-3 text-sm font-bold whitespace-nowrap ${activeTab === 'markets' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
         >
           Tregjet
         </button>
         <button
           onClick={() => setActiveTab('pending')}
-          className={`px-6 py-3 text-sm font-bold whitespace-nowrap ${activeTab === 'pending' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
+          className={`px-3 sm:px-6 py-3 text-sm font-bold whitespace-nowrap ${activeTab === 'pending' ? 'bg-brand-panel text-white border-t-2 border-brand-yellow' : 'text-brand-textMuted hover:text-white'}`}
         >
           Pezull
         </button>
         </>)}
       </div>
 
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
         {activeTab === 'pending' ? (
           <PendingLegsPanel />
         ) : activeTab === 'markets' ? (
@@ -292,7 +292,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                     <div className="text-brand-textMuted text-sm">No pending exposure.</div>
                   ) : (
                     <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-                      <table className="w-full text-left text-xs text-brand-text">
+                      <table className="w-full min-w-[520px] text-left text-xs text-brand-text">
                         <thead className="bg-brand-bg text-brand-textMuted uppercase sticky top-0">
                           <tr>
                             <th className="p-2">Match</th>
@@ -366,7 +366,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
             <div>
               <h3 className="text-brand-yellow font-bold mb-4 uppercase text-xs tracking-wider">Existing Users & Stats</h3>
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm text-brand-text">
+                <table className="w-full min-w-[640px] text-left text-sm text-brand-text">
                   <thead className="bg-brand-bg text-brand-textMuted text-xs uppercase">
                     <tr>
                       <th className="p-3">User</th>
@@ -469,9 +469,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
         ) : activeTab === 'tickets' ? (
           <div>
             {/* Global Tickets Table */}
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
                <h3 className="text-brand-yellow font-bold uppercase text-xs tracking-wider">Global Ticket History</h3>
-               <div className="flex items-center gap-3">
+               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                  {viewerIsSuper && (
                    <button
                      onClick={toggleTicketDeletion}
@@ -487,7 +487,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
             </div>
             
             <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-                <table className="w-full text-left text-sm text-brand-text">
+                <table className="w-full min-w-[640px] text-left text-sm text-brand-text">
                   <thead className="bg-brand-bg text-brand-textMuted text-xs uppercase sticky top-0">
                     <tr>
                       <th className="p-3">Time</th>
@@ -572,7 +572,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
               <div className="text-brand-textMuted text-sm">No audit entries yet.</div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-xs">
+                <table className="w-full min-w-[520px] text-xs">
                   <thead>
                     <tr className="text-left text-brand-textMuted border-b border-brand-divider">
                       <th className="p-2">Time</th>

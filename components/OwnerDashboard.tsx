@@ -172,9 +172,9 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
 
   return (
     <div className="min-h-screen bg-brand-bg text-brand-text font-sans">
-      <header className="bg-brand-header border-b border-[#444] px-4 py-3 flex items-center justify-between sticky top-0 z-10">
+      <header className="bg-brand-header border-b border-[#444] px-3 sm:px-4 py-3 flex items-center justify-between gap-2 sticky top-0 z-10">
         <div className="flex items-center gap-3">
-          <span className="text-brand-yellow font-extrabold text-lg tracking-wide">365SIM - OWNER</span>
+          <span className="text-brand-yellow font-extrabold text-base sm:text-lg tracking-wide">365SIM - OWNER</span>
           <span className="text-xs text-brand-textMuted hidden sm:inline">{currentUser.name}{currentUser.role === 'SUPER_ADMIN' ? ' · SUPER ADMIN' : ''}</span>
         </div>
         <button onClick={onLogout} className="text-xs px-3 py-1.5 rounded bg-brand-panel hover:bg-[#444] border border-[#444]">
@@ -182,19 +182,19 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
         </button>
       </header>
 
-      <nav className="flex gap-1 px-4 pt-3 border-b border-[#333]">
+      <nav className="flex gap-1 px-2 sm:px-4 pt-3 border-b border-[#333] overflow-x-auto whitespace-nowrap">
         {(isSuper ? ['reports', 'admins', 'credit', 'hierarchy', 'commission', 'monthly', 'manage', 'vc', 'casino'] as const : ['reports', 'commission', 'monthly', 'manage'] as const).map((tabKey) => (
           <button
             key={tabKey}
             onClick={() => setTab(tabKey)}
-            className={`px-4 py-2 text-sm font-bold rounded-t uppercase tracking-wide ${tab === tabKey ? 'bg-brand-panel text-brand-yellow border border-b-0 border-[#444]' : 'text-brand-textMuted hover:text-white'}`}
+            className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold rounded-t uppercase tracking-wide shrink-0 ${tab === tabKey ? 'bg-brand-panel text-brand-yellow border border-b-0 border-[#444]' : 'text-brand-textMuted hover:text-white'}`}
           >
             {tabKey === 'reports' ? t('Raporte') : tabKey === 'admins' ? t('Adminët') : tabKey === 'credit' ? t('Kredia') : tabKey === 'hierarchy' ? t('Struktura') : tabKey === 'commission' ? t('Komisioni') : tabKey === 'monthly' ? t('Raporti Mujor') : tabKey === 'vc' ? t('Kodet live') : tabKey === 'casino' ? 'Casino' : t('Menaxho')}
           </button>
         ))}
       </nav>
 
-      <main className="p-4 max-w-[1300px] mx-auto">
+      <main className="p-2 sm:p-4 max-w-[1300px] mx-auto">
         {tab === 'reports' && (
           <div className="space-y-6">
             {loading && !overview ? (
@@ -237,13 +237,13 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                     {agents.length === 0 && <div className="px-4 py-6 text-sm text-brand-textMuted">{t("Ende s'ka agjente.")}</div>}
                     {agents.map((a) => (
                       <div key={a.id}>
-                        <div className="w-full flex items-center justify-between px-4 py-3 hover:bg-[#333]">
+                        <div className="w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 sm:px-4 py-3 hover:bg-[#333]">
                           <button onClick={() => toggleAgent(a.id)} className="flex items-center gap-2 text-left flex-1">
                             <span className={'w-2 h-2 rounded-full ' + (a.isActive === false ? 'bg-red-500' : 'bg-green-500')} />
                             <span className="font-semibold">{a.name}</span>
                             <span className="text-xs text-brand-textMuted">@{a.username}</span>
                           </button>
-                          <div className="flex items-center gap-2 text-sm" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex flex-wrap items-center gap-2 text-sm" onClick={(e) => e.stopPropagation()}>
                             <input
                               type="number" placeholder={t('Shuma')} value={agentAmount[a.id] || ''}
                               onChange={(e) => setAgentAmount((p) => ({ ...p, [a.id]: e.target.value }))}
@@ -289,7 +289,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                             ) : agentDetail[a.id].length === 0 ? (
                               <div className="text-xs text-brand-textMuted">{t("Ky agjent s'ka usera ende.")}</div>
                             ) : (
-                              <div className="overflow-x-auto"><table className="w-full text-xs">
+                              <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-xs">
                                 <thead>
                                   <tr className="text-brand-textMuted text-left border-b border-[#444]">
                                     <th className="py-1.5 pr-2">User</th>
@@ -354,7 +354,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                     <KpiCard label={t('Kanë humbur bastorët')} value={money(sum('losses'))} positive={false} eur={money(sum('losses_eur'))} />
                     <KpiCard label={t('Neto (fitimi yt)')} value={money(net)} positive={net >= 0} eur={money(netEur)} eurPositive={netEur >= 0} />
                   </div>
-                  <div className="overflow-x-auto"><table className="w-full text-xs">
+                  <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-xs">
                     <thead>
                       <tr className="text-brand-textMuted text-left border-b border-[#444]">
                         <th className="py-1.5 pr-2">Admin</th>
@@ -393,7 +393,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                               ) : openAdminBets.length === 0 ? (
                                 <div className="text-brand-textMuted">{t("S'ka kupona.")}</div>
                               ) : (
-                                <div className="overflow-x-auto"><table className="w-full text-xs">
+                                <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-xs">
                                   <thead><tr className="text-brand-textMuted text-left">
                                     <th className="py-1 pr-2">{t('Data')}</th><th className="py-1 pr-2">User</th><th className="py-1 pr-2">{t('Vënë')}</th><th className="py-1 pr-2">{t('Statusi')}</th><th className="py-1 pr-2">{t('Fitim i mundshëm')}</th>
                                   </tr></thead>
@@ -455,7 +455,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                   <KpiCard label={t('Humbje')} value={money(monthly.totals.losses)} positive={false} eur={money(monthly.totals.lossesEur)} />
                   <KpiCard label={t('Neto')} value={money(monthly.totals.netResult)} positive={monthly.totals.netResult >= 0} eur={money(monthly.totals.netResultEur)} eurPositive={monthly.totals.netResultEur >= 0} />
                 </div>
-                <div className="overflow-x-auto"><table className="w-full text-xs">
+                <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-xs">
                   <thead>
                     <tr className="text-brand-textMuted text-left border-b border-[#444]">
                       <th className="py-1.5 pr-2">{t('Agjenti')}</th>

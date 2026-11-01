@@ -69,7 +69,7 @@ const HierarchyPanel: React.FC = () => {
   const match = (u: api.HierarchyUser) => !filter || `${u.name} ${u.username}`.toLowerCase().includes(filter.toLowerCase());
 
   const userRow = (u: api.HierarchyUser) => (
-    <div key={u.id} className="flex items-center justify-between gap-2 py-1 text-xs border-t border-[#333]">
+    <div key={u.id} className="flex flex-wrap items-center justify-between gap-2 py-1 text-xs border-t border-[#333]">
       <div className="min-w-0 truncate">
         <span className={u.isActive ? '' : 'line-through text-brand-textMuted'}>{u.name}</span> <span className="text-brand-textMuted">@{u.username}</span>
       </div>
@@ -84,7 +84,7 @@ const HierarchyPanel: React.FC = () => {
       <div className="pl-3 border-l border-[#444] ml-1 mt-2 space-y-2">
         {b.agents.filter((ag) => match(ag) || ag.users.some(match)).map((ag) => (
           <div key={ag.id} className="bg-brand-bg/40 rounded p-2">
-            <div className="flex items-center justify-between gap-2 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
               <div className="min-w-0 truncate"><span className="text-[10px] uppercase text-brand-textMuted mr-1">{t('Agjent')}</span><b>{ag.name}</b> <span className="text-brand-textMuted">@{ag.username}</span> · {ag.users.length} {t('usera')}</div>
               <div className="flex items-center gap-2 shrink-0"><Bal lek={ag.balance} eur={ag.balanceEur} />{mover(ag.id, ag.name, true)}</div>
             </div>
