@@ -73,7 +73,7 @@ const CommissionReport: React.FC<{ scope: 'owner' | 'agent' }> = ({ scope }) => 
         <button className="px-3 py-2 rounded bg-green-700 hover:bg-green-600 font-bold" onClick={load}>{t('Filtro')}</button>
       </div>
       <div className="text-[11px] text-brand-textMuted mb-3">
-        {t('Komisioni: {single}% live dhe rezultat tek, {multi}% dy ose më shumë rezultate. Llogaritet mbi kuponat e mbyllur. Muaji: {month}', { single: data.rates.single, multi: data.rates.multi, month: data.month })}
+        {t('Komisioni: {single}% live dhe rezultat tek, {multi}% dy ose më shumë rezultate. Llogaritet mbi stake-un e çdo bilete të vendosur (jo të anuluarat dhe të rimbursuarat). Muaji: {month}', { single: data.rates.single, multi: data.rates.multi, month: data.month })}
       </div>
       {currency !== 'BOTH' && data.totals[currency === 'ALL' ? 'EUR' : 'ALL'].tickets > 0 && data.totals[currency].tickets === 0 && (
         <div className="text-xs text-yellow-400 mb-2">{t('Nuk ka kupona në këtë monedhë, por ka në tjetrën. Zgjidh "Të gjitha".')}</div>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { finishMetrics, buildCommissionReport, emptyMetrics, COMMISSION_SINGLE_PCT, COMMISSION_MULTI_PCT } from '../server/commission.js';
+import { finishMetrics, buildCommissionReport, emptyMetrics, COMMISSION_SINGLE_PCT, COMMISSION_MULTI_PCT, COMMISSION_STATUSES, userMetrics } from '../server/commission.js';
 
 const m = (o) => ({ ...emptyMetrics(), ...o });
 
@@ -7,6 +7,17 @@ describe('agent commission report', () => {
   it('defaults to 4% (live / single result) and 8% (two or more results)', () => {
     expect(COMMISSION_SINGLE_PCT).toBe(4);
     expect(COMMISSION_MULTI_PCT).toBe(8);
+  });
+  it('earns commission from the moment a ticket is placed, never on cancelled or refunded ones', () => {
+    expect(COMMISSION_STATUSES).toEqual(['PENDING', 'WON', 'LOST']);
+  });
+  it('passes those statuses to the query (20 stake, single result = 0.80 while the ticket is still open)', async () => {
+    let args;
+    const pool = { query: async (_sql, a) => { args = a; return { rows: [{ user_id: 'u1', currency: 'EUR', tickets: 1, xhiro: '20', fitim: '0', pending: '20', active_tickets: 1, commission: '0.8' }] }; } };
+    const rows = await userMetrics(pool, { rangeStart: 0, rangeEnd: 1 });
+    expect(args[6]).toEqual(['PENDING', 'WON', 'LOST']);
+    const r = finishMetrics(rows[0]);
+    expect(r).toMatchObject({ xhiro: 20, pending: 20, diferenca: 0, percAgjentit: -0.8 });
   });
   it('uses the owner sheet convention: kompania = diferenca + commission, % agjentit shown negative', () => {
     // 2,500 staked, nothing won, 8% commission = 200  ->  -2,500 / -200 / -2,300

@@ -1,14 +1,18 @@
 // Agent commission.
 //   - live tickets and tickets with a single result .......... COMMISSION_SINGLE_PCT  (default 4%)
 //   - pre-match tickets with two or more results ............ COMMISSION_MULTI_PCT   (default 8%)
-// It is paid on the stake of SETTLED tickets (won or lost) -- never on open or cancelled ones -- and lek and
-// euro are kept apart (currency 'ALL' = lek, 'EUR' = euro).
+// It is counted on the stake the moment the ticket is placed (open, won or lost), so the agent sees what he earns from
+// every bet straight away. Cancelled and refunded (void) tickets earn nothing. Lek and euro are kept apart
+// (currency 'ALL' = lek, 'EUR' = euro).
 const pct = (v, fallback) => {
   const n = Number(v);
   return Number.isFinite(n) && n >= 0 && n <= 100 ? n : fallback;
 };
 export const COMMISSION_SINGLE_PCT = pct(process.env.COMMISSION_SINGLE_PCT, 4);
 export const COMMISSION_MULTI_PCT = pct(process.env.COMMISSION_MULTI_PCT, 8);
+
+// Ticket statuses that earn commission.
+export const COMMISSION_STATUSES = ['PENDING', 'WON', 'LOST'];
 
 export const emptyMetrics = () => ({ xhiro: 0, fitim: 0, pending: 0, activeTickets: 0, tickets: 0, commission: 0 });
 
@@ -31,9 +35,9 @@ export async function userMetrics(pool, { rangeStart, rangeEnd, adminId = null, 
             COALESCE(SUM(potential_return) FILTER (WHERE status = 'WON'), 0) AS fitim,
             COALESCE(SUM(stake) FILTER (WHERE status = 'PENDING'), 0) AS pending,
             COUNT(*) FILTER (WHERE status = 'PENDING')::int AS active_tickets,
-            COALESCE(SUM(stake * rate / 100) FILTER (WHERE status IN ('WON','LOST')), 0) AS commission
+            COALESCE(SUM(stake * rate / 100) FILTER (WHERE status = ANY($7::text[])), 0) AS commission
      FROM t GROUP BY user_id, currency`,
-    [rangeStart, rangeEnd, COMMISSION_SINGLE_PCT, COMMISSION_MULTI_PCT, adminId, agentId]
+    [rangeStart, rangeEnd, COMMISSION_SINGLE_PCT, COMMISSION_MULTI_PCT, adminId, agentId, COMMISSION_STATUSES]
   );
   return rows.map((r) => ({
     userId: r.user_id, currency: r.currency === 'EUR' ? 'EUR' : 'ALL',
@@ -51,7 +55,7 @@ const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 // The columns of the report, derived from the raw sums (same convention as the agents table the owner uses):
 //   diferenca = fitim - settled xhiro      (negative: what the agent's players lost = what the agent owes the company)
-//   percAgjentit = -commission             (what the agent keeps, shown negative)
+//   percAgjentit = -commission             (what the agent keeps from every placed bet, shown negative)
 //   kompania = diferenca + commission      (what is left for the company)
 export function finishMetrics(m) {
   const settledXhiro = m.xhiro - m.pending;
