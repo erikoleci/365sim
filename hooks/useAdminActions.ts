@@ -124,9 +124,9 @@ export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reload
 
   const cancelBet = useCallback(async (betId: string, origin: 'USER' | 'ADMIN') => {
     if (origin === 'ADMIN') {
-      if (!window.confirm(t('Ta anuloj këtë biletë dhe t\'i kthej paratë? Bileta mbetet në listë e shënuar si e anuluar.'))) return;
+      if (!window.confirm(t('Ta anuloj këtë biletë dhe t\'i kthej paratë? Bileta hiqet nga lista.'))) return;
       try {
-        // Nobody deletes a ticket any more: it is cancelled and stays in the list with its mark
+        // Cancel = refund + the ticket disappears from the list
         await api.adminCancelBet(betId);
         await loadAdminData();
       } catch (e: any) {

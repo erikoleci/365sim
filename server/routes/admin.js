@@ -858,8 +858,9 @@ router.post('/bets/:id/cancel', async (req, res) => {
     // are taken back; VOID: it was refunded already, nothing to give twice).
     delta = betBalanceReversal(bet);
     if (delta !== 0) await client.query(`UPDATE users SET ${walletColumn(bet.currency)} = ${walletColumn(bet.currency)} + $1 WHERE id = $2`, [delta, bet.user_id]);
-    // The ticket is NOT deleted: it stays in the lists, marked CANCELLED (its legs stay too).
-    await client.query(`UPDATE bets SET status = 'CANCELLED' WHERE id = $1`, [bet.id]);
+    // Cancelled = refunded AND removed from the lists right away (legs included); the audit log keeps the trace.
+    await client.query('DELETE FROM bet_selections WHERE bet_id = $1', [bet.id]);
+    await client.query('DELETE FROM bets WHERE id = $1', [bet.id]);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');
