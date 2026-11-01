@@ -64,6 +64,8 @@ const mocks = vi.hoisted(() => {
     if (s.startsWith("SELECT id, username, role, admin_id, agent_id FROM users WHERE id = $1 AND role IN ('AGENT','USER')")) { const r = users.get(params[0]); return { rows: r && (r.role === 'AGENT' || r.role === 'USER') ? [{ id: r.id, username: r.username, role: r.role, admin_id: r.admin_id ?? null, agent_id: r.agent_id ?? null }] : [] }; }
     if (s.startsWith("SELECT admin_id FROM users WHERE id = $1 AND role = 'AGENT'")) { const r = users.get(params[0]); return { rows: r?.role === 'AGENT' ? [{ admin_id: r.admin_id ?? null }] : [] }; }
     if (s.startsWith('UPDATE users SET admin_id = $1, agent_id = $2 WHERE id = $3')) { const u = users.get(params[2]); u.admin_id = params[0]; u.agent_id = params[1]; return { rows: [], rowCount: 1 }; }
+    if (s.startsWith('SELECT id, role, admin_id, balance, balance_eur, account_currency FROM users WHERE id = $1')) { const r = users.get(params[0]); return { rows: r ? [{ id: r.id, role: r.role, admin_id: r.admin_id ?? null, balance: r.balance ?? 0, balance_eur: r.balance_eur ?? 0, account_currency: r.account_currency || 'BOTH' }] : [] }; }
+    if (s.startsWith('UPDATE users SET account_currency = $1 WHERE id = $2')) { users.get(params[1]).account_currency = params[0]; return { rows: [] }; }
     if (s.startsWith('SELECT COUNT(*)::int AS c FROM users')) return { rows: [{ c: users.size }] };
     if (s.startsWith('SELECT * FROM bets WHERE id = $1')) { const b = bets.get(params[0]); return { rows: b ? [b] : [] }; }
     if (s.startsWith("UPDATE bets SET status = 'CANCELLED' WHERE id = $1")) { bets.get(params[0]).status = 'CANCELLED'; return { rows: [] }; }
@@ -426,5 +428,20 @@ describe('moving accounts between admins (super admin)', () => {
   });
   it('refuses a target that is not an admin', async () => {
     expect((await call('PATCH', '/accounts/user-1/admin', SUPER, { adminId: 'agent-2' })).status).toBe(400);
+  });
+});
+
+describe('admin sets the currency of his agents / players', () => {
+  it('an admin switches his own agent to euro-only once the lek wallet is empty, never a stranger\'s account', async () => {
+    expect((await call('PATCH', '/users/agent-1/currency', ADMIN, { currency: 'EUR' })).status).toBe(400); // still holds lek
+    mocks.users.get('agent-1').balance = 0;
+    expect((await call('PATCH', '/users/agent-1/currency', ADMIN, { currency: 'EUR' })).status).toBe(200);
+    expect(mocks.users.get('agent-1').account_currency).toBe('EUR');
+    expect((await call('PATCH', '/users/agent-2/currency', ADMIN, { currency: 'ALL' })).status).toBe(404); // belongs to admin-2
+    expect((await call('PATCH', '/users/user-1/currency', ADMIN, { currency: 'ALL' })).status).toBe(200);
+    expect((await call('PATCH', '/users/user-1/currency', ADMIN, { currency: 'nope' })).status).toBe(400);
+  });
+  it('the super admin may change any agent', async () => {
+    expect((await call('PATCH', '/users/agent-2/currency', SUPER, { currency: 'BOTH' })).status).toBe(200);
   });
 });

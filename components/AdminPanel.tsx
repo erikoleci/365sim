@@ -20,9 +20,10 @@ interface AdminPanelProps {
   onCancelBet: (betId: string, origin: 'USER' | 'ADMIN') => void;
   /** Super admin only: close any ticket by hand as won or lost. */
   onResolveBet?: (betId: string, outcome: 'WON' | 'LOST', currentStatus?: string) => void;
+  onSetCurrency?: (userId: string, currency: 'ALL' | 'EUR' | 'BOTH') => void;
 }
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet, onResolveBet, viewerRole }) => {
+const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet, onResolveBet, onSetCurrency, viewerRole }) => {
   const viewerIsSuper = isSuperAdminRole(viewerRole);
   const { t, locale } = useI18n();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'tickets' | 'audit' | 'markets' | 'pending'>('dashboard');
@@ -427,6 +428,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                           <span className={`text-xs px-2 py-1 rounded ${isAdminRole(u.role) ? 'bg-purple-900 text-purple-200' : 'bg-brand-headerDark text-white'}`}>
                             {u.role}
                           </span>
+                          {onSetCurrency && (u.role === UserRole.USER || u.role === UserRole.AGENT) && (
+                            <select
+                              value={u.accountCurrency || 'BOTH'}
+                              onChange={(e) => onSetCurrency(u.id, e.target.value as 'ALL' | 'EUR' | 'BOTH')}
+                              className="block mt-1 bg-brand-bg border border-brand-divider rounded p-1 text-[11px] text-white"
+                              title={t('Monedha e llogarisë')}
+                            >
+                              <option value="ALL">{t('Vetëm lek')}</option>
+                              <option value="EUR">{t('Vetëm euro')}</option>
+                              <option value="BOTH">{t('Lek + euro')}</option>
+                            </select>
+                          )}
                         </td>
                         <td className="p-3 font-mono text-brand-yellow font-bold">{u.accountCurrency !== 'EUR' && <>{u.balance.toFixed(2)} L</>}{u.accountCurrency === 'BOTH' || !u.accountCurrency ? <br /> : null}{u.accountCurrency !== 'ALL' && <>{(u.balanceEur ?? 0).toFixed(2)} €</>}</td>
                         
@@ -575,7 +588,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                                         </span>
                                     </td>
                                     <td className="p-3 text-right whitespace-nowrap">
-                                        {viewerIsSuper && onResolveBet && (bet.status === BetStatus.PENDING || bet.status === BetStatus.WON || bet.status === BetStatus.LOST) && (
+                                        {onResolveBet && (bet.status === BetStatus.PENDING || bet.status === BetStatus.WON || bet.status === BetStatus.LOST) && (
                                         <span className="inline-flex gap-1 mr-1">
                                             {bet.status !== BetStatus.WON && (
                                             <button

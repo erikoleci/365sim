@@ -835,6 +835,21 @@ router.delete('/bets/:id', requireSuperAdmin, async (req, res) => {
   res.json({ ok: true, balanceChange: delta });
 });
 
+// Change the currency an agent / player account works in: ALL (lek only), EUR (euro only) or BOTH.
+// A normal admin only changes his own people. A wallet that still holds money cannot be switched off.
+router.patch('/users/:id/currency', async (req, res) => {
+  const currency = String((req.body || {}).currency || '');
+  if (!['ALL', 'EUR', 'BOTH'].includes(currency)) return res.status(400).json({ error: "currency must be 'ALL', 'EUR' or 'BOTH'" });
+  const { rows } = await pool.query('SELECT id, role, admin_id, balance, balance_eur, account_currency FROM users WHERE id = $1', [req.params.id]);
+  const acc = rows[0];
+  if (!acc || !ownsRow(req.user, acc) || !['USER', 'AGENT'].includes(acc.role)) return res.status(404).json({ error: 'Account not found' });
+  if (currency === 'ALL' && Number(acc.balance_eur) !== 0) return res.status(400).json({ error: 'Llogaria ka ende euro: zbrita euro-t para se ta kalosh vetëm në lek' });
+  if (currency === 'EUR' && Number(acc.balance) !== 0) return res.status(400).json({ error: 'Llogaria ka ende lek: zbrita lek-ët para se ta kalosh vetëm në euro' });
+  await pool.query('UPDATE users SET account_currency = $1 WHERE id = $2', [currency, acc.id]);
+  await logAudit(req.user, 'ACCOUNT_CURRENCY', acc.id, { from: acc.account_currency, to: currency });
+  res.json({ ok: true, accountCurrency: currency });
+});
+
 router.post('/bets/:id/cancel', async (req, res) => {
   if (!isSuperAdmin(req.user.role) && !(await getTicketDeletionAllowed())) {
     return res.status(403).json({ error: 'Fshirja e biletave është çaktivizuar nga super admini', code: 'TICKET_DELETE_DISABLED' });
@@ -872,9 +887,9 @@ router.post('/bets/:id/cancel', async (req, res) => {
   res.json({ ok: true });
 });
 
-// SUPER ADMIN ONLY: close ANY ticket (of any user) by hand as WON or LOST. A win is paid exactly once by the normal
+// Close a ticket by hand as WON or LOST. The super admin may close any ticket; a normal admin only the tickets of his own people. A win is paid exactly once by the normal
 // settlement code; a won ticket made lost gives the winnings back (written in the ledger). Not for cancelled / refunded tickets.
-router.post('/bets/:id/resolve', requireSuperAdmin, async (req, res) => {
+router.post('/bets/:id/resolve', async (req, res) => {
   const outcome = String((req.body && req.body.outcome) || '').toUpperCase();
   if (outcome !== 'WON' && outcome !== 'LOST') return res.status(400).json({ error: "outcome must be 'WON' or 'LOST'" });
   const client = await pool.connect();
@@ -885,6 +900,8 @@ router.post('/bets/:id/resolve', requireSuperAdmin, async (req, res) => {
     const { rows } = await client.query('SELECT * FROM bets WHERE id = $1 FOR UPDATE', [req.params.id]);
     bet = rows[0];
     if (!bet) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Bet not found' }); }
+    const { rows: ownerRows } = await client.query('SELECT admin_id FROM users WHERE id = $1', [bet.user_id]);
+    if (!ownsRow(req.user, ownerRows[0])) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Bet not found' }); }
     const { rows: legs } = await client.query('SELECT id, status FROM bet_selections WHERE bet_id = $1 ORDER BY id', [bet.id]);
     plan = planManualResolve(bet, legs, outcome);
     if (plan.error) { await client.query('ROLLBACK'); return res.status(400).json({ error: plan.error.message, code: plan.error.code }); }

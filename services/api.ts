@@ -370,6 +370,10 @@ export async function adminFetchExposure() {
 }
 
 // Super admin only: close any ticket by hand as won or lost (a win is paid once; a won ticket made lost gives the winnings back).
+export async function adminSetAccountCurrency(userId: string, currency: 'ALL' | 'EUR' | 'BOTH') {
+  return request<{ ok: true; accountCurrency: string }>(`/admin/users/${userId}/currency`, { method: 'PATCH', body: JSON.stringify({ currency }) });
+}
+
 export async function adminResolveBet(betId: string, outcome: 'WON' | 'LOST') {
   return request<{ ok: true; status: string; unchanged?: boolean }>(`/admin/bets/${betId}/resolve`, { method: 'POST', body: JSON.stringify({ outcome }) });
 }

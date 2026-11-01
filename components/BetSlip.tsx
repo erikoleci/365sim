@@ -32,6 +32,8 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
   const { t, locale } = useI18n();
   // A ticket is placed in ONE wallet: lek or euro.
   const [currency, setCurrency] = useState<'ALL' | 'EUR'>(accountCurrency === 'EUR' ? 'EUR' : 'ALL');
+  // The slip opens in the account's own currency (lek-only -> lek, euro-only -> euro); a two-currency account keeps its choice.
+  useEffect(() => { if (accountCurrency === 'EUR' || accountCurrency === 'ALL') setCurrency(accountCurrency); }, [accountCurrency]);
   const { min: MIN_STAKE, maxStake: MAX_STAKE, maxReturn: MAX_POTENTIAL_RETURN, symbol: sym } = LIMITS[currency];
   const walletBalance = currency === 'EUR' ? userBalanceEur : userBalance;
   const [stake, setStake] = useState<string>('');

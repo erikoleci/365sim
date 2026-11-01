@@ -143,6 +143,7 @@ const App: React.FC = () => {
         onResetPassword={admin.resetPassword}
         onCancelBet={admin.cancelBet}
         onResolveBet={admin.resolveBet}
+        onSetCurrency={admin.setAccountCurrency}
         onSetBalance={applyBalance}
       />
     );

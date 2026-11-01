@@ -106,7 +106,7 @@ export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reload
     }
   };
 
-  // Super admin: close any ticket as won or lost.
+  // Admin / super admin: close a ticket as won or lost.
   const resolveBet = useCallback(async (betId: string, outcome: 'WON' | 'LOST', currentStatus?: string) => {
     const msg = outcome === 'WON'
       ? t('Ta bëj këtë biletë FITUESE dhe t\'ia paguaj fitimin lojtarit?')
@@ -116,6 +116,15 @@ export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reload
     if (!window.confirm(msg)) return;
     try {
       await api.adminResolveBet(betId, outcome);
+      await loadAdminData();
+    } catch (e: any) {
+      alert(e.message || t('Veprimi deshtoi'));
+    }
+  }, [loadAdminData, t]);
+
+  const setAccountCurrency = useCallback(async (userId: string, currency: 'ALL' | 'EUR' | 'BOTH') => {
+    try {
+      await api.adminSetAccountCurrency(userId, currency);
       await loadAdminData();
     } catch (e: any) {
       alert(e.message || t('Veprimi deshtoi'));
@@ -165,5 +174,5 @@ export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reload
 
   const reset = useCallback(() => { setAdminUsers([]); setAdminAllBets([]); }, []);
 
-  return { adminUsers, adminAllBets, simulatingMatchId, createUser, deleteUser, addCredit, resetPassword, cancelBet, resolveBet, settleMatch, reset };
+  return { adminUsers, adminAllBets, simulatingMatchId, createUser, deleteUser, addCredit, resetPassword, cancelBet, resolveBet, setAccountCurrency, settleMatch, reset };
 }
