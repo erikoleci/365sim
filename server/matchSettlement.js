@@ -1285,11 +1285,12 @@ export async function recoverFinishedWithoutResult({ now = Date.now() } = {}) {
 // after everything above: a market no rule can decide (the provider's own naming,
 // manual settlement never done) and a match that never produces a result
 // (postponed, abandoned, dropped by the feed). Once the match is more than
-// UNSETTLED_BET_VOID_AFTER_HOURS (default 24h) past kickoff, such a leg is VOIDed:
+// UNSETTLED_BET_VOID_AFTER_HOURS past kickoff (OFF by default: a ticket that cannot be decided stays open for the
+// admin / super admin to close by hand as won or lost, it is never refunded on its own), such a leg is VOIDed:
 // it drops out of the ticket (a single bet is refunded, an accumulator is paid on
 // its remaining legs) -- the same treatment a bookmaker gives a postponed match.
-// 0 disables it. Admins can still settle any of these by hand before the deadline.
-const UNSETTLED_VOID_AFTER_MS = Math.max(0, Number(process.env.UNSETTLED_BET_VOID_AFTER_HOURS ?? 4)) * 3600 * 1000;
+// 0 (the default) disables it. Admins settle these by hand (Fituese / Humbëse on the ticket, or the Pezull panel).
+const UNSETTLED_VOID_AFTER_MS = Math.max(0, Number(process.env.UNSETTLED_BET_VOID_AFTER_HOURS ?? 0)) * 3600 * 1000;
 
 export function isLegOverdue({ matchStart, betCreatedAt }, now, olderThanMs) {
   if (!(olderThanMs > 0)) return false;

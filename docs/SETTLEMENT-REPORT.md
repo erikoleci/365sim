@@ -7,7 +7,7 @@ Gjendja e secilit treg nga raporti i adminit ("Tregjet"). Katër nivele, sipas k
 3. **Verifikuar me të dhëna reale** — formati i opsioneve është nga feed-i real (raporti i tregjeve ose bileta reale). Kuptimi i tregut mbetet interpretim derisa të konfirmohet nga ty.
 4. **Në pritje** — nuk shlyhet vetë; arsyeja është shkruar.
 
-Çdo rregull që nuk është i sigurt kthen "pezull" (nuk hamendëson). Bileta pezull kthehet automatikisht pas 24 orësh.
+Çdo rregull që nuk është i sigurt kthen "pezull" (nuk hamendëson). Bileta pezull NUK kthehet më automatikisht: mbetet e hapur derisa admini ose super admini ta mbyllë me dorë (Fituese / Humbëse).
 
 ## A. Implementuar + testuar (format real, kuptim i qartë)
 
@@ -68,8 +68,8 @@ Nëse formati i opsionit nuk përputhet me atë që pritet (p.sh. "Rezultat Fina
 
 | Tregu | Çfarë ndodh |
 |---|---|
-| Penallti gjatë ndeshjes | Feed-i nuk jep ngjarje penalltie. Shlyhet me dorë nga admini (skeda **Pezull**), përndryshe rimbursohet automatikisht 4 orë pas fillimit të ndeshjes. |
-| Çdo bilet që nuk shlyhet për arsye të tjera (të dhëna që mungojnë, format i panjohur, ngjarje pa renditje) | Rimbursohet automatikisht 4 orë pas fillimit të ndeshjes (`UNSETTLED_BET_VOID_AFTER_HOURS`, më parë 24 orë). Askush nuk humbet para, dhe asnjë bilet nuk mbetet i hapur. |
+| Penallti gjatë ndeshjes | Feed-i nuk jep ngjarje penalltie. Shlyhet me dorë nga admini (skeda **Pezull**), përndryshe mbetet e hapur derisa admini ta mbyllë me dorë (Fituese / Humbëse); rimbursimi automatik është fikur (`UNSETTLED_BET_VOID_AFTER_HOURS=0`). |
+| Çdo bilet që nuk shlyhet për arsye të tjera (të dhëna që mungojnë, format i panjohur, ngjarje pa renditje) | Mbetet e hapur për t'u mbyllur me dorë nga admini (rimbursimi automatik është fikur; mund të ndizet me `UNSETTLED_BET_VOID_AFTER_HOURS` > 0). Askush nuk humbet para, dhe asnjë bilet nuk mbetet i hapur. |
 
 **Shlyerja me dorë (skeda "Pezull" te admini).** Liston, për ndeshjet e mbaruara, çdo treg dhe selektim që ende ka bileta pezull. Me butonat Fitues / Humbës / Rimburso vendos të gjitha biletat e atij rreshti njëherësh. Thirrja e dytë nuk paguan përsëri.
 

@@ -68,6 +68,9 @@ describe('isLegOverdue', () => {
 });
 
 describe('voidOverdueLegs', () => {
+  it('does nothing by default: a stuck ticket is never refunded on its own, the admin closes it by hand', async () => {
+    expect(await voidOverdueLegs({ now: NOW })).toMatchObject({ voidedLegs: 0, recomputedBets: 0, disabled: true });
+  });
   beforeEach(() => { db.bets.clear(); db.legs.length = 0; db.matches.clear(); db.balances.clear(); db.ledger.length = 0; db.log.length = 0; });
 
   it('a single bet on a match that never resolved is voided and the stake refunded', async () => {
