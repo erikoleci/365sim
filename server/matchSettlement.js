@@ -50,6 +50,13 @@ function splitCombo(leg) {
     }
   }
   if (marketParts.length < 2 || marketParts.length > 3 || marketParts.length !== selectionParts.length) return null;
+  // "1st half - double chance & both teams to score": the half named at the start covers EVERY part of the combo
+  // (otherwise the second part would be settled on the full match, which is a different bet).
+  const lead = String(marketParts[0]).match(/^\s*((?:1st|2nd) half\s*-\s*)/i);
+  if (lead) {
+    const periodWord = /(1st|2nd) half|pjes|half|\bht\b/i;
+    for (let i = 1; i < marketParts.length; i++) if (!periodWord.test(marketParts[i])) marketParts[i] = lead[1] + marketParts[i].trim();
+  }
   return marketParts.map((m, i) => ({
     ...leg,
     market_id: '',
@@ -60,8 +67,8 @@ function splitCombo(leg) {
 }
 
 // "Shtëpiaku" / "Udhëtuesi" are how the feed names the home / away side in team-total markets.
-const HOME_SIDE_WORDS = ['shtepiaku', 'vendasi', 'shtepise', 'home', 'host'];
-const AWAY_SIDE_WORDS = ['udhetuesi', 'mysafiri', 'mysafir', 'vizitori', 'vizitor', 'away', 'guest'];
+const HOME_SIDE_WORDS = ['shtepiaku', 'vendasi', 'shtepise', 'pritesi', 'pritesit', 'home', 'host'];
+const AWAY_SIDE_WORDS = ['udhetuesi', 'udhetuesit', 'mysafiri', 'mysafir', 'vizitori', 'vizitor', 'away', 'guest'];
 // "0-4", "2-3" (inclusive) or "5+" -> [lo, hi]; anything else -> null
 function goalCountRange(selection) {
   const o = goalCountOption(selection); // "0-4", "2-3", "5+" or exactly "2"
@@ -460,7 +467,8 @@ function overUnderOutcome(side, point, goals) {
 
 // "1X" / "x2" / "1-2" / "1/X" -> canonical "1X" | "X2" | "12" | null
 function normDoubleChance(text) {
-  const t = String(text ?? '').toUpperCase().replace(/[\s/\-_]/g, '');
+  const t = String(text ?? '').toUpperCase().replace(/[\s/\-_]/g, '')
+    .replace('HOMEDRAW', '1X').replace('DRAWAWAY', 'X2').replace('HOMEAWAY', '12'); // feed words: HomeDraw / DrawAway / HomeAway
   if (t === '1X' || t === 'X1') return '1X';
   if (t === 'X2' || t === '2X') return 'X2';
   if (t === '12' || t === '21') return '12';

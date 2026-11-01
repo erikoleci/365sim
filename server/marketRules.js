@@ -28,8 +28,8 @@ import { normMarketText as norm, splitPeriod, PERIOD_BASE_ALIASES, isPastFirstHa
 // 'totali' / 'total' are the short names used inside combination markets ("Rezultat Final & Totali").
 export const TOTAL_GOALS_PREFIXES = ['numri i golave ne ndeshje', 'numri i golave', 'totali i golave', 'total goals', 'total gola', 'totali gola', 'golat ne ndeshje', 'totali', 'total'];
 export const H2H_NAMES = new Set(['rezultat final', 'rezultati final', '1x2', 'rezultati i ndeshjes', 'fituesi i ndeshjes']);
-export const BTTS_NAMES = new Set(['gol/jogol', 'gol/jgol', 'gol / jgol', 'gol/jo gol', 'gol / jo gol', 'gol-jogol', 'gol / jogol', 'gol jo gol live', 'te dy skuadrat shenojne', 'both teams to score']);
-export const DOUBLE_CHANCE_NAMES = new Set(['dopioshans live', 'dopioshans', 'dopio shans', 'double chance', 'shans i dyfishte']);
+export const BTTS_NAMES = new Set(['gol/jogol', 'gol/jgol', 'gol / jgol', 'gol/jo gol', 'gol / jo gol', 'gol-jogol', 'gol / jogol', 'gol jo gol live', 'te dy skuadrat shenojne', 'both teams to score', 'both teams score']);
+export const DOUBLE_CHANCE_NAMES = new Set(['dopioshans live', 'dopioshans', 'dopio shans', 'double chance', 'double chance (match)', 'shans i dyfishte']);
 export const CORRECT_SCORE_NAMES = new Set(['rezultati sakte live', 'rezultati i sakte', 'rezultati ekzakt', 'correct score']);
 // "Skuadra që shënon e para" / "First team to score": decided from the logged goal order
 // (matchSettlement.js). Only these explicit team-based names; "Goli i Parë" may be a player
@@ -117,8 +117,8 @@ export function classifyMarket(marketId, marketName, { home, away } = {}) {
   for (const prefix of TOTAL_GOALS_PREFIXES) {
     if (home && base === `${prefix} ${norm(home)}`) return { kind: 'team_totals', period, side: 'home' };
     if (away && base === `${prefix} ${norm(away)}`) return { kind: 'team_totals', period, side: 'away' };
-    if (['shtepiaku', 'vendasi', 'shtepise', 'home', 'host'].some((w) => base === `${prefix} ${w}`)) return { kind: 'team_totals', period, side: 'home' };
-    if (['udhetuesi', 'mysafiri', 'mysafir', 'vizitori', 'vizitor', 'away', 'guest'].some((w) => base === `${prefix} ${w}`)) return { kind: 'team_totals', period, side: 'away' };
+    if (['shtepiaku', 'vendasi', 'shtepise', 'pritesi', 'pritesit', 'home', 'host'].some((w) => base === `${prefix} ${w}`)) return { kind: 'team_totals', period, side: 'home' };
+    if (['udhetuesi', 'udhetuesit', 'mysafiri', 'mysafir', 'vizitori', 'vizitor', 'away', 'guest'].some((w) => base === `${prefix} ${w}`)) return { kind: 'team_totals', period, side: 'away' };
   }
   if (/\b(tek|odd)\b/.test(full) && /\b(cift|even)\b/.test(full)) return { kind: 'odd_even', period };
   if ((FIRST_TEAM_TO_SCORE_NAMES.has(base) || LAST_TEAM_TO_SCORE_NAMES.has(base)) && !period) return { kind: 'first_scorer', period };

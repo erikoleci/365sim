@@ -352,9 +352,9 @@ describe('ticket deletion switch', () => {
     expect((await (await call('GET', '/settings', ADMIN)).json()).ticketDeletionAllowed).toBe(true);
     const res = await call('POST', '/bets/bet-pending/cancel', ADMIN);
     expect(res.status).toBe(200);
-    expect(mocks.bets.get('bet-pending').status).toBe('CANCELLED'); // not deleted: it stays, marked cancelled
+    expect(mocks.bets.has('bet-pending')).toBe(false);          // cancelled = refunded and removed from the list
     expect(mocks.users.get('user-1').balance).toBe(20);        // stake of 10 back
-    expect((await call('POST', '/bets/bet-pending/cancel', ADMIN)).status).toBe(400); // and cannot be cancelled (refunded) twice
+    expect((await call('POST', '/bets/bet-pending/cancel', ADMIN)).status).toBe(404); // gone: cannot be refunded twice
     expect(mocks.users.get('user-1').balance).toBe(20);
   });
   it('only the super admin flips it, and then admins can no longer delete', async () => {
