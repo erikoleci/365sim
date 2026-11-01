@@ -29,10 +29,10 @@ router.use(async (req, res, next) => {
 // simulator, not a full enterprise risk-limits system) ---
 const MIN_STAKE = 1;
 const MAX_STAKE = 5000;
-// The house allows a real win on ~1% of rounds; the other ~99% are forced
+// The house allows a real win on 20% of rounds; the other 80% are forced
 // to a loss. Wins are also capped to a small profit (5%-50% of stake)
 // instead of each game's "natural" payout table.
-export const WIN_CHANCE = 0.01;
+export const WIN_CHANCE = 0.2;
 export const smallProfitMultiplier = () => 1.05 + Math.random() * 0.45;
 
 export function validateStake(stake) {
