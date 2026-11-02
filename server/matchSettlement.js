@@ -1,4 +1,5 @@
 import pool from './db.js';
+import { sameFixture } from './fixtureDedupe.js';
 import { minuteOf, splitPeriod, PERIOD_BASE_ALIASES } from './marketPeriods.js';
 import { extraMarketOutcome } from './extraMarkets.js';
 import { asianHandicapOutcome, asianTotalOutcome } from './asianLines.js';
@@ -1250,6 +1251,66 @@ export async function settleStuckBets() {
   } finally {
     client.release();
   }
+}
+
+// ---- legs pinned to the pre-match twin of a fixture ---------------------------
+// The provider keeps the SAME real fixture under two ids: the pre-match catalogue record (full markets,
+// the one a ticket usually gets pinned to) and the in-play record that actually receives the score,
+// the clock and the FINISHED status. The twin a ticket points at can stay UPCOMING for ever, so none of
+// the sweeps above ever sees a result for it and the ticket sits open until an admin closes it by hand.
+// pickLiveTwin() finds the finished twin; rebindLegsToLiveTwin() re-points the still-PENDING legs at it so
+// the normal sweep (with that twin's score and event log) settles them like any other leg.
+export const TWIN_KICKOFF_WINDOW_MS = 3 * 3600 * 1000;
+const TWIN_WAIT_AFTER_KICKOFF_MS = 130 * 60 * 1000;
+
+export function pickLiveTwin(leg, candidates, now = Date.now()) {
+  const own = Date.parse(leg.start_time);
+  const placed = Number(leg.bet_created_at);
+  // Reference time of the fixture: its own kickoff, or (row gone) the moment the ticket was placed.
+  const ref = Number.isFinite(own) ? own : placed;
+  const window = Number.isFinite(own) ? TWIN_KICKOFF_WINDOW_MS : 36 * 3600 * 1000;
+  if (!Number.isFinite(ref) || now - ref < TWIN_WAIT_AFTER_KICKOFF_MS) return null;
+  const wanted = { homeTeam: leg.match_home, awayTeam: leg.match_away };
+  let best = null;
+  for (const c of candidates) {
+    if (c.id === leg.match_id) continue;
+    const ready = c.status === 'FINISHED' && ((c.result_home != null && c.result_away != null) || canSettleFromLiveScore(c, now));
+    if (!ready) continue;
+    const start = Date.parse(c.start_time);
+    if (!Number.isFinite(start) || Math.abs(start - ref) > window) continue;
+    if (!sameFixture(wanted, { homeTeam: c.home_team, awayTeam: c.away_team })) continue;
+    const gap = Math.abs(start - ref);
+    if (!best || gap < best.gap) best = { id: c.id, gap };
+  }
+  return best ? best.id : null;
+}
+
+export async function rebindLegsToLiveTwin({ now = Date.now() } = {}) {
+  const { rows: legs } = await pool.query(
+    `SELECT bs.id, bs.bet_id, bs.match_id, bs.match_home, bs.match_away, bs.market_name,
+            m.start_time, m.status AS match_status, b.created_at AS bet_created_at
+       FROM bet_selections bs
+       JOIN bets b ON b.id = bs.bet_id AND b.status = 'PENDING'
+       LEFT JOIN matches_cache m ON m.id = bs.match_id
+      WHERE bs.status = 'PENDING' AND (m.id IS NULL OR m.status <> 'FINISHED')`
+  );
+  if (legs.length === 0) return { reboundLegs: 0 };
+  const { rows: candidates } = await pool.query(
+    `SELECT id, home_team, away_team, start_time, status, result_home, result_away,
+            live_home_score, live_away_score, live_minute
+       FROM matches_cache WHERE status = 'FINISHED'`
+  );
+  let reboundLegs = 0;
+  for (const leg of legs) {
+    const twin = pickLiveTwin(leg, candidates, now);
+    if (!twin) continue;
+    const r = await pool.query(`UPDATE bet_selections SET match_id = $1 WHERE id = $2 AND status = 'PENDING'`, [twin, leg.id]);
+    if (r.rowCount) {
+      reboundLegs++;
+      console.log('[settle] leg ' + leg.id + ' (' + leg.match_home + ' v ' + leg.match_away + ', "' + leg.market_name + '") was pinned to a fixture record that never finished: moved ' + leg.match_id + ' -> ' + twin);
+    }
+  }
+  return { reboundLegs };
 }
 
 // ---- recovery of matches closed without a stored result -----------------------
