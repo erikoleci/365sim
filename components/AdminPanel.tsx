@@ -6,6 +6,7 @@ import { User, UserRole, Bet, BetStatus } from '../types';
 import * as api from '../services/api';
 import { useI18n } from '../i18n';
 import TicketDetailModal, { TicketView } from './TicketDetailModal';
+import TicketWhy from './TicketWhy';
 import MatchupLabel from './MatchupLabel';
 
 interface AdminPanelProps {
@@ -666,6 +667,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
         onClose={() => setOpenTicket(null)}
         actions={onResolveBet && openTicket && ['PENDING', 'WON', 'LOST', 'VOID'].includes(openTicket.status) ? (
           <>
+            {openTicket.status === 'PENDING' && <TicketWhy key={openTicket.id} betId={openTicket.id} />}
             {openTicket.status !== 'WON' && (
               <button onClick={() => { const id = openTicket.id; const st = openTicket.status; setOpenTicket(null); onResolveBet(id, 'WON', st); }} className="flex-1 px-3 py-2 rounded bg-green-900/40 text-green-300 hover:bg-green-800 hover:text-white text-xs font-bold uppercase">{t('Bëje fituese')}</button>
             )}

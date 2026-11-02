@@ -410,6 +410,11 @@ export async function adminResolveBet(betId: string, outcome: 'WON' | 'LOST') {
   return request<{ ok: true; status: string; unchanged?: boolean }>(`/admin/bets/${betId}/resolve`, { method: 'POST', body: JSON.stringify({ outcome }) });
 }
 
+export interface OpenLegWhy { legId: number; matchId: string; match: string; selection: string; code: string; text: string }
+export async function adminBetWhy(betId: string) {
+  return request<{ status: string; legs: OpenLegWhy[] }>(`/admin/bets/${betId}/why`);
+}
+
 export async function adminCancelBet(betId: string) {
   return request<{ ok: true }>(`/admin/bets/${betId}/cancel`, { method: 'POST' });
 }

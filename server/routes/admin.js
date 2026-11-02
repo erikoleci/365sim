@@ -26,6 +26,7 @@ import { monthRange } from './agent.js';
 import { userMetrics, buildCommissionReport, periodRange } from '../commission.js';
 import { buildCreditLedger, feeRateFromEnv } from '../creditLedger.js';
 import { planManualResolve } from '../manualResolve.js';
+import { describeOpenLeg } from '../legWhy.js';
 import { deleteUserIfUnused, deleteBlockedMessage, forceDeleteUser } from '../userDeletion.js';
 
 const router = express.Router();
@@ -885,6 +886,27 @@ router.post('/bets/:id/cancel', async (req, res) => {
   }
   await logAudit(req.user, 'BET_CANCEL', bet.id, { userId: bet.user_id, stake: bet.stake, wasStatus: bet.status, balanceChange: delta });
   res.json({ ok: true });
+});
+
+// Why is this ticket still open? For every open leg: the state of its match and what is missing, in words.
+router.get('/bets/:id/why', async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM bets WHERE id = $1', [req.params.id]);
+  const bet = rows[0];
+  if (!bet) return res.status(404).json({ error: 'Bet not found' });
+  const { rows: ownerRows } = await pool.query('SELECT admin_id FROM users WHERE id = $1', [bet.user_id]);
+  if (!ownsRow(req.user, ownerRows[0])) return res.status(404).json({ error: 'Bet not found' });
+  const { rows: legs } = await pool.query(`SELECT * FROM bet_selections WHERE bet_id = $1 AND status = 'PENDING' ORDER BY id`, [bet.id]);
+  const ids = [...new Set(legs.map((l) => l.match_id))];
+  const { rows: matches } = ids.length ? await pool.query('SELECT * FROM matches_cache WHERE id = ANY($1::text[])', [ids]) : { rows: [] };
+  const byId = new Map(matches.map((m) => [m.id, m]));
+  const now = Date.now();
+  res.json({
+    status: bet.status,
+    legs: legs.map((l) => {
+      const match = byId.get(l.match_id);
+      return describeOpenLeg({ leg: l, match, now, blockReason: match && match.status === 'FINISHED' && match.result_home == null ? explainSettleBlock(match, now) : '' });
+    }),
+  });
 });
 
 // Close a ticket by hand as WON or LOST. The super admin may close any ticket; a normal admin only the tickets of his own people. A win is paid exactly once by the normal
