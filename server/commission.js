@@ -66,8 +66,8 @@ const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 //   fitim      = what the winning tickets pay out
 //   diferenca  = xhiro - fitim - commission     (a new ticket adds to it, a win takes its payout out of it)
 //   percAgjentit = commission                   (what the agent keeps: 4% / 8% of every stake)
-//   kompania   = diferenca   (the commission is already out of diferenca: it must NOT be taken a second time)
-// e.g. 2 open tickets of 20 and 10 at 8%: diferenca 30 - 2.40 = 27.60, % agjentit 2.40, kompania 27.60.
+//   kompania   = diferenca - % agjentit         (the owner's rule: the commission is deducted a second time here, on purpose)
+// e.g. 2 open tickets of 20 and 10 at 8%: diferenca 30 - 1.60 - 0.80 = 27.60, % agjentit 2.40, kompania 27.60 - 2.40 = 25.20.
 export function finishMetrics(m) {
   const diferenca = m.xhiro - m.fitim - m.commission;
   return {
@@ -75,7 +75,7 @@ export function finishMetrics(m) {
     activeTickets: m.activeTickets, tickets: m.tickets,
     diferenca: round2(diferenca),
     percAgjentit: round2(m.commission),
-    kompania: round2(diferenca),
+    kompania: round2(diferenca - m.commission),
   };
 }
 
@@ -122,4 +122,46 @@ export function periodRange(param, monthRange) {
   if (param === 'all') return { rangeStart: 0, rangeEnd: Date.UTC(2100, 0, 1), label: 'all' };
   const { rangeStart, rangeEnd, label } = monthRange(param);
   return { rangeStart, rangeEnd, label };
+}
+
+// Reporting day boundaries follow the business' local time (not UTC), so a ticket placed at 00:30 local time
+// lands on its own day. DST is handled by Intl.
+export const REPORT_TZ = process.env.REPORT_TIMEZONE || 'Europe/Tirane';
+const tzOffsetMs = (utcMs, tz) => {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(new Date(utcMs));
+  const g = (type) => Number(parts.find((x) => x.type === type).value);
+  return Date.UTC(g('year'), g('month') - 1, g('day'), g('hour'), g('minute'), g('second')) - Math.floor(utcMs / 1000) * 1000;
+};
+// The instant (ms) at which the calendar day y-m-d starts in the time zone.
+export function zonedMidnight(y, m, d, tz = REPORT_TZ) {
+  const wall = Date.UTC(y, m - 1, d);
+  let t = wall;
+  for (let i = 0; i < 3; i++) t = wall - tzOffsetMs(t, tz);
+  return t;
+}
+// 'YYYY-MM-DD' -> { y, m, d, key } or null when it is not a real calendar day.
+export function parseDay(v) {
+  const mt = typeof v === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(v) : null;
+  if (!mt) return null;
+  const [y, m, d] = [Number(mt[1]), Number(mt[2]), Number(mt[3])];
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+  return { y, m, d, key: v };
+}
+// ?from=YYYY-MM-DD&to=YYYY-MM-DD (both days included, either alone = that single day), otherwise the old
+// ?month=YYYY-MM / ?month=all. Returns the [rangeStart, rangeEnd) window, a label and (for a day range) from / to.
+export function reportRange(query, monthRange, tz = REPORT_TZ) {
+  const from = parseDay(query?.from);
+  const to = parseDay(query?.to);
+  if (!from && !to) return periodRange(query?.month, monthRange);
+  let a = from || to;
+  let b = to || from;
+  if (a.key > b.key) [a, b] = [b, a];
+  const next = new Date(Date.UTC(b.y, b.m - 1, b.d + 1));
+  return {
+    rangeStart: zonedMidnight(a.y, a.m, a.d, tz),
+    rangeEnd: zonedMidnight(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), tz),
+    label: a.key === b.key ? a.key : `${a.key} – ${b.key}`,
+    from: a.key, to: b.key,
+  };
 }

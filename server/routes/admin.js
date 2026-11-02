@@ -23,7 +23,7 @@ import { isAdminRole, isSuperAdmin, ROLE_ADMIN } from '../roles.js';
 import { scopeOf, ownsRow } from '../adminScope.js';
 import { importLondon365, getLondon365Status, getLondon365CountryDebug } from '../london365.js';
 import { monthRange } from './agent.js';
-import { userMetrics, buildCommissionReport, periodRange } from '../commission.js';
+import { userMetrics, buildCommissionReport, reportRange } from '../commission.js';
 import { buildCreditLedger, feeRateFromEnv } from '../creditLedger.js';
 import { planManualResolve } from '../manualResolve.js';
 import { describeOpenLeg } from '../legWhy.js';
@@ -729,7 +729,7 @@ router.patch('/agents/:id/admin', requireSuperAdmin, async (req, res) => {
 // Agent commission report (super admin: every admin's agents grouped by admin; admin: his own agents).
 // ?month=YYYY-MM (default: this month) or ?month=all. Every agent row carries the commission each of his players made.
 router.get('/reports/commission', async (req, res) => {
-  const { rangeStart, rangeEnd, label } = periodRange(req.query.month, monthRange);
+  const { rangeStart, rangeEnd, label, from = null, to = null } = reportRange(req.query, monthRange);
   const scope = scopeOf(req.user);
   const { rows: people } = await pool.query(
     `SELECT u.id, u.name, u.username, u.role, u.is_active, COALESCE(u.admin_id, ag.admin_id) AS admin_id, u.agent_id
@@ -744,7 +744,7 @@ router.get('/reports/commission', async (req, res) => {
     users: people.filter((p) => p.role === 'USER'),
     metrics,
   });
-  res.json({ month: label, ...report });
+  res.json({ month: label, from, to, ...report });
 });
 
 // SUPER ADMIN: the whole tree -- every admin with his agents, every agent with his users, the users an admin

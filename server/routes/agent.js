@@ -6,7 +6,7 @@ import { requireAuth } from './auth.js';
 import { logAudit } from '../auditLog.js';
 import { transferBalance, transferBalances, amountParts, readWallet, normalizeAccountCurrency, disallowedPart, accountCurrencyError } from '../ledger.js';
 import { deleteUserIfUnused, deleteBlockedMessage } from '../userDeletion.js';
-import { userMetrics, buildCommissionReport, periodRange } from '../commission.js';
+import { userMetrics, buildCommissionReport, reportRange } from '../commission.js';
 
 // Lek (bets.currency = 'ALL') and euro are never added together: each money column exists once per currency (_eur = euro).
 const sumsIn = (cur, sfx) => `COALESCE(SUM(b.stake) FILTER (WHERE b.currency = '${cur}'), 0) AS turnover${sfx},
@@ -348,7 +348,7 @@ router.get('/reports/monthly', async (req, res) => {
 
 // The agent's own commission: one row (himself) with the commission each of his players generated.
 router.get('/reports/commission', async (req, res) => {
-  const { rangeStart, rangeEnd, label } = periodRange(req.query.month, monthRange);
+  const { rangeStart, rangeEnd, label, from = null, to = null } = reportRange(req.query, monthRange);
   const self = await loadSelf(req);
   const { rows: players } = await pool.query(
     `SELECT id, name, username, role, is_active, admin_id, agent_id FROM users WHERE role = 'USER' AND agent_id = $1 ORDER BY name`,
@@ -357,7 +357,7 @@ router.get('/reports/commission', async (req, res) => {
   const metrics = await userMetrics(pool, { rangeStart, rangeEnd, agentId: req.user.id });
   const me = { id: req.user.id, name: self?.name ?? '', username: self?.username ?? '', is_active: true, admin_id: self?.admin_id ?? null, agent_id: null };
   const report = buildCommissionReport({ admins: [{ id: me.admin_id, name: '', username: '' }], agents: [me], users: players, metrics });
-  res.json({ month: label, ...report });
+  res.json({ month: label, from, to, ...report });
 });
 
 export default router;

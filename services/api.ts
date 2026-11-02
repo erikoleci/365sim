@@ -638,15 +638,26 @@ export interface CommissionMetricsByCur { ALL: CommissionMetrics; EUR: Commissio
 export interface CommissionPlayer { id: string; name: string; username: string; isActive: boolean; currencies: CommissionMetricsByCur }
 export interface CommissionRow { id: string | null; name: string; username: string; isActive: boolean; direct: boolean; currencies: CommissionMetricsByCur; players: CommissionPlayer[] }
 export interface CommissionReportData {
-  month: string; rates: { single: number; multi: number };
+  month: string; from?: string | null; to?: string | null; rates: { single: number; multi: number };
   groups: { admin: { id: string | null; name: string; username: string }; rows: CommissionRow[]; totals: CommissionMetricsByCur }[];
   totals: CommissionMetricsByCur;
 }
-export async function adminFetchCommissionReport(month?: string) {
-  return request<CommissionReportData>(`/admin/reports/commission${month ? `?month=${encodeURIComponent(month)}` : ''}`);
+// A report period: a day range (from / to, both included) or the old month ('YYYY-MM' / 'all').
+export interface ReportPeriod { month?: string; from?: string; to?: string }
+const periodQuery = (p?: string | ReportPeriod) => {
+  const o: ReportPeriod = typeof p === 'string' ? { month: p } : (p || {});
+  const qs = new URLSearchParams();
+  if (o.from) qs.set('from', o.from);
+  if (o.to) qs.set('to', o.to);
+  if (!o.from && !o.to && o.month) qs.set('month', o.month);
+  const q = qs.toString();
+  return q ? `?${q}` : '';
+};
+export async function adminFetchCommissionReport(period?: string | ReportPeriod) {
+  return request<CommissionReportData>(`/admin/reports/commission${periodQuery(period)}`);
 }
-export async function agentFetchCommissionReport(month?: string) {
-  return request<CommissionReportData>(`/agent/reports/commission${month ? `?month=${encodeURIComponent(month)}` : ''}`);
+export async function agentFetchCommissionReport(period?: string | ReportPeriod) {
+  return request<CommissionReportData>(`/agent/reports/commission${periodQuery(period)}`);
 }
 
 export async function adminFetchMonthlyReport(month?: string) {

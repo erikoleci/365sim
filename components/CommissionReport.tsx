@@ -10,22 +10,37 @@ const SYMBOL: Record<Cur, string> = { ALL: 'L', EUR: '€' };
 
 // Agents table in the owner's style: Xhiro, Fitim, Në pritje, Bileta aktive, Nr biletave, Përqindja (4/8),
 // Diferenca, % Agjentit, Kompania. A click on an agent shows the commission each of his players generated.
+const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// First and last day of the month `offset` months from now (0 = this month, -1 = last month).
+const monthBounds = (offset: number) => {
+  const n = new Date();
+  return { from: ymd(new Date(n.getFullYear(), n.getMonth() + offset, 1)), to: ymd(new Date(n.getFullYear(), n.getMonth() + offset + 1, 0)) };
+};
+const monthName = (offset: number) => {
+  const n = new Date();
+  const s = new Date(n.getFullYear(), n.getMonth() + offset, 1).toLocaleString(getLocale(), { month: 'long' });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+};
+
 const CommissionReport: React.FC<{ scope: 'owner' | 'agent' }> = ({ scope }) => {
   const { t } = useI18n();
   const [data, setData] = useState<api.CommissionReportData | null>(null);
   const [error, setError] = useState('');
-  const [month, setMonth] = useState('');
+  // Period like the agents' finance page: two dates + quick buttons (Sot, Dje, this month, last month, the year, all).
+  const [from, setFrom] = useState(() => monthBounds(0).from);
+  const [to, setTo] = useState(() => monthBounds(0).to);
+  const [preset, setPreset] = useState('thisMonth');
+  const [applied, setApplied] = useState<api.ReportPeriod>(() => monthBounds(0));
   const [currency, setCurrency] = useState<'ALL' | 'EUR' | 'BOTH'>('BOTH');
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     try {
-      const m = month || undefined;
-      setData(scope === 'agent' ? await api.agentFetchCommissionReport(m) : await api.adminFetchCommissionReport(m));
+      setData(scope === 'agent' ? await api.agentFetchCommissionReport(applied) : await api.adminFetchCommissionReport(applied));
       setError('');
     } catch (e: any) { setError(e?.message || t('Veprimi deshtoi')); }
-  }, [month, scope, t]);
+  }, [applied, scope, t]);
   useEffect(() => { load(); }, [load]);
 
   const curs: Cur[] = currency === 'BOTH' ? ['ALL', 'EUR'] : [currency];
@@ -67,13 +82,32 @@ const CommissionReport: React.FC<{ scope: 'owner' | 'agent' }> = ({ scope }) => 
           <option value="EUR">Euro (€)</option>
           <option value="BOTH">{t('Të gjitha')}</option>
         </select>
-        <input type="month" className="input w-40" value={month} onChange={(e) => setMonth(e.target.value)} />
-        <button className="px-3 py-2 rounded bg-[#333] hover:bg-[#444] font-bold" onClick={() => setMonth('all')}>{t('Gjithë periudha')}</button>
+        <input type="date" className="input w-36" value={from} onChange={(e) => { setFrom(e.target.value); setPreset('custom'); }} />
+        <input type="date" className="input w-36" value={to} onChange={(e) => { setTo(e.target.value); setPreset('custom'); }} />
         <input className="input w-44" placeholder={t('Kërko…')} value={search} onChange={(e) => setSearch(e.target.value)} />
-        <button className="px-3 py-2 rounded bg-green-700 hover:bg-green-600 font-bold" onClick={load}>{t('Filtro')}</button>
+        <button className="px-3 py-2 rounded bg-green-700 hover:bg-green-600 font-bold" onClick={() => { setPreset('custom'); setApplied({ from, to }); }}>{t('Filtro')}</button>
+      </div>
+      <div className="flex flex-wrap items-center justify-center gap-5 mb-3 text-sm">
+        {([
+          { key: 'today', label: t('Sot'), from: ymd(new Date()), to: ymd(new Date()) },
+          { key: 'yesterday', label: t('Dje'), from: ymd(new Date(Date.now() - 86400000)), to: ymd(new Date(Date.now() - 86400000)) },
+          { key: 'thisMonth', label: monthName(0), ...monthBounds(0) },
+          { key: 'lastMonth', label: monthName(-1), ...monthBounds(-1) },
+          { key: 'year', label: String(new Date().getFullYear()), from: `${new Date().getFullYear()}-01-01`, to: `${new Date().getFullYear()}-12-31` },
+          { key: 'all', label: t('Gjithë periudha'), month: 'all' as string | undefined, from: '', to: '' },
+        ]).map((p) => (
+          <button
+            key={p.key}
+            className={'pb-1 font-bold border-b-2 ' + (preset === p.key ? 'border-brand-accent text-white' : 'border-transparent text-brand-textMuted hover:text-white')}
+            onClick={() => {
+              setPreset(p.key); setFrom(p.from); setTo(p.to);
+              setApplied(p.month ? { month: p.month } : { from: p.from, to: p.to });
+            }}
+          >{p.label}</button>
+        ))}
       </div>
       <div className="text-[11px] text-brand-textMuted mb-3">
-        {t('Komisioni: {single}% rezultat tek, {multi}% dy ose më shumë rezultate (edhe me live). Llogaritet mbi stake-un e çdo bilete të vendosur (jo të anuluarat dhe të rimbursuarat). Diferenca = Xhiro − Fitim − Komisioni. Muaji: {month}', { single: data.rates.single, multi: data.rates.multi, month: data.month })}
+        {t('Komisioni: {single}% rezultat tek, {multi}% dy ose më shumë rezultate (edhe me live). Llogaritet mbi stake-un e çdo bilete të vendosur (jo të anuluarat dhe të rimbursuarat). Diferenca = Xhiro − Fitim − Komisioni. Periudha: {month}', { single: data.rates.single, multi: data.rates.multi, month: data.month })}
       </div>
       {(() => {
         // What the admin has to pay out: the commission of every agent, in lek and in euro (never added together).
@@ -150,6 +184,7 @@ const CommissionReport: React.FC<{ scope: 'owner' | 'agent' }> = ({ scope }) => 
                 {scope === 'owner' && rowsOf(<b>{t('Totali')}</b>, g.totals, 'border-b-4 border-b-[#555] font-bold', undefined, `tot-${gi}`)}
               </React.Fragment>
             ))}
+            {scope === 'agent' && data.groups.length > 0 && rowsOf(<b>{t('Totali')}</b>, data.totals, 'border-b-4 border-b-[#555] font-bold', undefined, 'tot-agent')}
             {scope === 'owner' && data.groups.length > 1 && rowsOf(<b>{t('TOTALI I PËRGJITHSHËM')}</b>, data.totals, 'bg-[#c8102e]/30 font-bold', undefined, 'grand')}
             {data.groups.length === 0 && <tr><td colSpan={11} className="py-6 text-center text-brand-textMuted">{t('Asnjë e dhënë.')}</td></tr>}
           </tbody>
