@@ -1,4 +1,4 @@
-import { describeMarket } from './marketRules.js';
+import { describeMarket, isHiddenMarketName } from './marketRules.js';
 
 // Admin report: for every market name seen, what the system does with it. The classification
 // itself lives in marketRules.js (describeMarket), shared with the bet guards.
@@ -9,7 +9,7 @@ export function buildCoverageReport(entries) {
   const byName = new Map();
   for (const e of entries) {
     const name = String(e.name || '').trim();
-    if (!name) continue;
+    if (!name || isHiddenMarketName(name)) continue;
     const cur = byName.get(name) || { name, id: e.id || null, matches: 0, legs: 0, pending: 0, live: 0, liveOpen: 0, samples: [] };
     for (const smp of e.samples || []) {
       if (cur.samples.length < 4 && smp != null && !cur.samples.includes(String(smp))) cur.samples.push(String(smp));

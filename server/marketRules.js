@@ -215,6 +215,10 @@ export function unverifiedMarketsAllowed() {
 // only the side options (1 / 2 / a team / no goal) are kept; player-name options are dropped.
 const PLAYER_MARKET = /\b(lojtar\w*|shenues\w*|golashenues\w*|autor\w*|scorers?|goalscorers?|players?)\b/;
 export const isPlayerMarketName = (name) => PLAYER_MARKET.test(norm(name));
+// Markets the board never offers and the coverage report never lists (no way to settle them from our data).
+// "A do te kete kohe shtese?" / "Will there be extra time": no extra-time data in the feed.
+const HIDDEN_MARKET = /^(a do te kete kohe shtese|will there be (an )?extra time)\b/;
+export const isHiddenMarketName = (name) => HIDDEN_MARKET.test(norm(name));
 const NO_GOAL_OPTIONS = new Set(['asnje', 'asnje gol', 'pa gol', 'nuk ka gol', 'no goal', 'none', 'no scorer']);
 const SIDE_OPTIONS = new Set(['1', '2', 'x', 'home', 'away', 'draw', 'shtepi', 'mik', 'barazim']);
 const teamKey = (v) => norm(v).replace(/[^a-z0-9]+/g, '');
@@ -233,7 +237,7 @@ export function isPlayerOption(marketName, option, home, away) {
 export function hidePlayerOdds(markets, home, away) {
   const out = [];
   for (const m of markets || []) {
-    if (isPlayerMarketName(m.name)) continue;
+    if (isPlayerMarketName(m.name) || isHiddenMarketName(m.name)) continue;
     if (EVENT_ORDER_RE.test(norm(m.name))) {
       const options = (m.options || []).filter((o) => !isNoSideOption(o));
       if (options.length) out.push(options.length === (m.options || []).length ? m : { ...m, options });
@@ -321,6 +325,7 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
   if (market && isUnofferedEventOrderOption(market.name, selection)) return NO_RULE;
 
   // Player markets / player options: never offered (no scorer names to settle them with).
+  if (market && isHiddenMarketName(market.name)) return NO_RULE;
   if (market && isPlayerMarketName(market.name)) return NO_PLAYER_DATA;
   if (market && isPlayerOption(market.name, selection, row.home_team, row.away_team)) return NO_PLAYER_DATA;
 
