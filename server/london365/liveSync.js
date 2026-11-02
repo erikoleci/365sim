@@ -307,13 +307,17 @@ export async function syncLondon365LiveOnce() {
     );
     retainLiveKnown(rows.map((r) => r.id), endQueryStartedAt);
     for (const row of rows) {
-      if (liveIds.has(row.id)) {
+      // A match the provider still lists as live 3h+ after kickoff (frozen clock, never flipped to ended)
+      // is over in practice: treat it like one that left the feed so its tickets close.
+      const kickoffMs = Date.parse(row.start_time);
+      const overdue = Number.isFinite(kickoffMs) && Date.now() - kickoffMs >= 180 * 60000 && hasRealLiveResult(row);
+      if (liveIds.has(row.id) && !overdue) {
         missedLiveCycles.delete(row.id);
         continue;
       }
       const misses = (missedLiveCycles.get(row.id) || 0) + 1;
       missedLiveCycles.set(row.id, misses);
-      const shouldSettle = shouldSettleMissingLiveMatch({
+      const shouldSettle = overdue || shouldSettleMissingLiveMatch({
         consecutiveMisses: misses, fetchedAt: row.fetched_at, startTime: row.start_time,
       });
       if (!shouldSettle) continue;
