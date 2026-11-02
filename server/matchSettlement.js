@@ -1449,12 +1449,12 @@ export async function rebindLegsToLiveTwin({ now = Date.now() } = {}) {
 export const SETTLE_MIN_ELAPSED_MS = 105 * 60 * 1000;
 const SETTLE_MIN_CLOCK_MINUTE = 88;
 
-// SETTLE_SCORE_WITHOUT_CLOCK_AFTER_MIN (default 0 = off): a match whose provider score is stored but whose
+// SETTLE_SCORE_WITHOUT_CLOCK_AFTER_MIN (default 130; 0 = off): a match whose provider score is stored but whose
 // clock never was (the feed gave a result and no minute) is NOT settled by default, because such a score
 // could be a default 0-0 of a game that never went live, and its tickets end as 24h refunds. Set this to
 // e.g. 130 to trust a stored score once that many minutes have passed since kickoff (long after any
 // football match, extra time included). Use /api/admin/settle-diagnose to see whether this is your case.
-const scoreWithoutClockAfterMs = () => Math.max(0, Number(process.env.SETTLE_SCORE_WITHOUT_CLOCK_AFTER_MIN || 0)) * 60000;
+const scoreWithoutClockAfterMs = () => Math.max(0, Number(process.env.SETTLE_SCORE_WITHOUT_CLOCK_AFTER_MIN ?? 130)) * 60000;
 
 export function canSettleFromLiveScore(row, now = Date.now()) {
   if (!row) return false;
