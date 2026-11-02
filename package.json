@@ -12,6 +12,7 @@
     "migrate": "node server/runMigrationsCli.js",
     "super-admin": "node server/createSuperAdminCli.js",
     "db:check": "node server/checkDb.js",
+    "diagnose:pending": "node server/diagnosePending.js",
     "audit:live": "node server/auditLiveFixtures.js",
     "trace:match": "node server/tracePipeline.js",
     "test:watch": "vitest",
