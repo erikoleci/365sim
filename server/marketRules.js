@@ -218,9 +218,16 @@ export const isPlayerMarketName = (name) => PLAYER_MARKET.test(norm(name));
 // Markets the board never offers and the coverage report never lists (no way to settle them from our data).
 // "A do te kete kohe shtese?" / "Will there be extra time" / "Overtime & goal" / "Winning method": no extra-time data
 // in the feed. "Will there be a penalty shootout" / "A do te kete penallti gjate ndeshjes?": no penalty events.
-// "Home no bet" / "Away no bet": the meaning of the options is not confirmed.
-const HIDDEN_MARKET = /^(a do te kete kohe shtese|will there be (an )?extra time\b|(home|away) no bet$|overtime\b|winning method\b|will there be an? penalt|a do te kete penal)/;
+const HIDDEN_MARKET = /^(a do te kete kohe shtese|will there be (an )?extra time\b|overtime\b|winning method\b|will there be an? penalt|a do te kete penal)/;
 export const isHiddenMarketName = (name) => HIDDEN_MARKET.test(norm(name));
+// "Home no bet" (option 1: home win = won, draw = refund, away win = lost) and "Away no bet" (option 2: the same for the
+// away side). Only that one option has a confirmed meaning; every other option of these markets (X, or the other side)
+// is not offered and cannot be bet on.
+const NO_BET_ONLY_OPTION = { 'home no bet': '1', 'away no bet': '2' };
+export const isUnofferedNoBetOption = (marketName, o) => {
+  const only = NO_BET_ONLY_OPTION[norm(marketName)];
+  return only !== undefined && !(o && (norm(o.name) === only || norm(o.id) === only));
+};
 const NO_GOAL_OPTIONS = new Set(['asnje', 'asnje gol', 'pa gol', 'nuk ka gol', 'no goal', 'none', 'no scorer']);
 const SIDE_OPTIONS = new Set(['1', '2', 'x', 'home', 'away', 'draw', 'shtepi', 'mik', 'barazim']);
 const teamKey = (v) => norm(v).replace(/[^a-z0-9]+/g, '');
@@ -240,6 +247,11 @@ export function hidePlayerOdds(markets, home, away) {
   const out = [];
   for (const m of markets || []) {
     if (isPlayerMarketName(m.name) || isHiddenMarketName(m.name)) continue;
+    if (NO_BET_ONLY_OPTION[norm(m.name)] !== undefined) {
+      const options = (m.options || []).filter((o) => !isUnofferedNoBetOption(m.name, o));
+      if (options.length) out.push(options.length === (m.options || []).length ? m : { ...m, options });
+      continue;
+    }
     if (EVENT_ORDER_RE.test(norm(m.name))) {
       const options = (m.options || []).filter((o) => !isNoSideOption(o));
       if (options.length) out.push(options.length === (m.options || []).length ? m : { ...m, options });
@@ -328,6 +340,7 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
 
   // Player markets / player options: never offered (no scorer names to settle them with).
   if (market && isHiddenMarketName(market.name)) return NO_RULE;
+  if (market && isUnofferedNoBetOption(market.name, selection)) return NO_RULE;
   if (market && isPlayerMarketName(market.name)) return NO_PLAYER_DATA;
   if (market && isPlayerOption(market.name, selection, row.home_team, row.away_team)) return NO_PLAYER_DATA;
 

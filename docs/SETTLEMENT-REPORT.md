@@ -67,7 +67,7 @@ Nëse formati i opsionit nuk përputhet me atë që pritet (p.sh. "Rezultat Fina
 
 ## D. Pa rregull dhe mbyllja automatike
 
-Tregjet e fshehura (nuk dalin në tabelë, nuk pranojnë baste, nuk hyjnë në raportin e mbulimit): "A do të ketë kohë shtesë?", "Overtime & goal", "Winning method", "Will there be a penalty shootout", "A do te kete penallti gjate ndeshjes?", "Home no bet" dhe "Away no bet". Biletat që ishin vënë para fshehjes mbeten për mbyllje me dorë.
+Tregjet e fshehura (nuk dalin në tabelë, nuk pranojnë baste, nuk hyjnë në raportin e mbulimit): "A do të ketë kohë shtesë?", "Overtime & goal", "Winning method", "Will there be a penalty shootout", "A do te kete penallti gjate ndeshjes?". "Home no bet" (vetëm opsioni 1) dhe "Away no bet" (vetëm opsioni 2) ofrohen: fiton ekipi, barazimi kthen shumën, humbet tjetri; opsionet e tjera të tyre (X) nuk ofrohen. Biletat që ishin vënë para fshehjes mbeten për mbyllje me dorë.
 
 | Tregu | Çfarë ndodh |
 |---|---|
