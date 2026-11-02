@@ -76,3 +76,14 @@ describe('screenshot case: xhiro 91, no wins, 8% commission', () => {
     expect(r).toMatchObject({ xhiro: 91, fitim: 0, diferenca: 83.72, percAgjentit: 7.28, kompania: 83.72 });
   });
 });
+
+describe("owner's rule (confirmed): kompania = diferenca - % agjentit, so the commission is deducted twice on purpose", () => {
+  it('20 + 10 tickets at 8%: xhiro 30, diferenca 27.60, % agjentit 2.40, kompania 25.20', () => {
+    const r = finishMetrics(m({ xhiro: 30, pending: 30, activeTickets: 2, tickets: 2, commission: 2.4 }));
+    expect(r).toMatchObject({ xhiro: 30, fitim: 0, pending: 30, diferenca: 27.6, percAgjentit: 2.4, kompania: 25.2 });
+  });
+  it('screenshot case: xhiro 91, commission 7.28 -> diferenca 83.72, kompania 76.44 (correct as shown)', () => {
+    const r = finishMetrics(m({ xhiro: 91, pending: 21, activeTickets: 1, tickets: 5, commission: 7.28 }));
+    expect(r).toMatchObject({ diferenca: 83.72, percAgjentit: 7.28, kompania: 76.44 });
+  });
+});
