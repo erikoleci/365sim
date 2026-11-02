@@ -1501,7 +1501,7 @@ export function explainSettleBlock(row, now = Date.now()) {
 // guarded per bet row (recomputeBetStatus). Safe to run on every sweep and at boot.
 export async function recoverFinishedWithoutResult({ now = Date.now() } = {}) {
   const { rows } = await pool.query(
-    `SELECT m.id, m.start_time, m.live_home_score, m.live_away_score, m.live_minute
+    `SELECT m.id, m.status, m.start_time, m.live_home_score, m.live_away_score, m.live_minute
        FROM matches_cache m
       WHERE m.status = 'FINISHED'
         AND m.result_home IS NULL AND m.result_away IS NULL
