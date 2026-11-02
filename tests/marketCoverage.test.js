@@ -47,7 +47,7 @@ describe('buildCoverageReport', () => {
     expect(r).toMatchObject({ legs: 50, pending: 2, matches: 90 });
   });
   it('summarises how many tickets would end by manual settlement or refund', () => {
-    expect(report.summary).toEqual({ markets: 3, autoSettled: 1, withoutRule: 2, betLegsWithoutRule: 7, pendingLegsWithoutRule: 7 });
+    expect(report.summary).toEqual({ markets: 3, autoSettled: 1, withoutRule: 2, betLegsWithoutRule: 7, pendingLegsWithoutRule: 7, liveMarkets: 0, prematchMarkets: 0 });
   });
 });
 
@@ -76,5 +76,22 @@ describe('coverage text: live markets section', () => {
     expect(text).toContain('TREGJET E NDESHJEVE LIVE');
     expect(text).toMatch(/- Rezultat Final \| live: 3 \| hapur: 3 \|/);
     expect(text).toMatch(/- Korneri i Radhës \| live: 2 \| hapur: 0 \(MBYLLUR live: nuk shfaqet\)/);
+  });
+});
+
+describe('buildCoverageReport: LIVE and PREMATCH are counted separately', () => {
+  const report = buildCoverageReport([
+    { name: 'Rezultat Final', matches: 5, live: 2, liveOpen: 1, prematch: 3, prematchOpen: 3 },
+    { name: 'Rezultat Final', matches: 1, live: 0, liveOpen: 0, prematch: 1, prematchOpen: 0 },
+    { name: 'Gol/Jogol', matches: 4, live: 0, liveOpen: 0, prematch: 4, prematchOpen: 4 },
+    { name: 'Handikap', matches: 2, live: 2, liveOpen: 2, prematch: 0, prematchOpen: 0 },
+  ]);
+  it('sums live and prematch per market without mixing them', () => {
+    const rf = report.markets.find((r) => r.name === 'Rezultat Final');
+    expect(rf).toMatchObject({ live: 2, liveOpen: 1, prematch: 4, prematchOpen: 3, matches: 6 });
+  });
+  it('summary counts markets that appear live and prematch apart', () => {
+    expect(report.summary.liveMarkets).toBe(2);
+    expect(report.summary.prematchMarkets).toBe(2);
   });
 });

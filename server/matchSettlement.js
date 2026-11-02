@@ -707,6 +707,8 @@ function cornersP1P2Outcome(leg, stats, htStats) {
   return c1 >= r1[0] && c1 <= r1[1] && c2 >= r2[0] && c2 <= r2[1] ? 'WON' : 'LOST';
 }
 
+const isKnownWinner = (w) => w === 'HOME' || w === 'AWAY' || w === 'DRAW';
+
 export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeScore, awayScore, htHome, htAway, stats, htStats, goalOrder, goalMinutes, nextEvents, goalTimeline, aggregate }) {
   const marketId = String(leg.market_id ?? '');
   const hasScore = Number.isFinite(homeScore) && Number.isFinite(awayScore);
@@ -897,6 +899,7 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
 
   if (H2H_NAMES.has(marketName)) {
     const side = sideOfSelection(leg);
+    if (!isKnownWinner(winner)) return null; // no usable result: PENDING, never a guessed LOST
     return side ? (side === winner ? 'WON' : 'LOST') : null;
   }
 
@@ -913,7 +916,7 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
 
   if (DOUBLE_CHANCE_NAMES.has(marketName) || marketId.endsWith('-double_chance')) {
     const dc = normDoubleChance(leg.selection_id) || normDoubleChance(leg.selection_name);
-    if (!dc) return null;
+    if (!dc || !isKnownWinner(winner)) return null;
     const ok = dc === '1X' ? winner !== 'AWAY' : dc === 'X2' ? winner !== 'HOME' : winner !== 'DRAW';
     return ok ? 'WON' : 'LOST';
   }
@@ -921,6 +924,7 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
   if (marketId.endsWith('-draw_no_bet') || /\b(no bet|draw no bet)\b|barazimi = rimbursim/.test(marketName)) {
     const side = sideOfSelection(leg);
     if (side !== 'HOME' && side !== 'AWAY') return null;
+    if (!isKnownWinner(winner)) return null;
     if (winner === 'DRAW') return 'VOID';
     return side === winner ? 'WON' : 'LOST';
   }

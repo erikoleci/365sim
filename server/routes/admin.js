@@ -1056,19 +1056,40 @@ router.get('/market-coverage', async (req, res) => {
             (array_agg(DISTINCT selection_name))[1:4] AS samples
        FROM bet_selections GROUP BY market_id, market_name`
   );
-  const { rows: boardRows } = await pool.query(
-    `SELECT * FROM matches_cache WHERE status IN ('LIVE', 'UPCOMING') ORDER BY start_time LIMIT 300`
-  );
+  // LIVE and PREMATCH are read by separate queries: one shared "ORDER BY start_time LIMIT 300" let the
+  // upcoming rows crowd the live ones out (the report said LIVE = 0 while the table held live matches).
+  // Everything is scanned in batches (no cap), and LIVE/PREMATCH are counted apart per market.
+  const scanRows = async (status) => {
+    const out = [];
+    for (let offset = 0; ; offset += 250) {
+      const { rows } = await pool.query(
+        'SELECT * FROM matches_cache WHERE status = $1 ORDER BY start_time, id LIMIT 250 OFFSET $2', [status, offset]
+      );
+      out.push(...rows);
+      if (rows.length < 250) break;
+    }
+    return out;
+  };
+  const liveRows = await scanRows('LIVE');
+  const upcomingRows = await scanRows('UPCOMING');
+  const boardRows = [...liveRows, ...upcomingRows];
   const board = new Map();
+  const scanned = { live: 0, prematch: 0 };
   for (const row of boardRows) {
     let match;
     try { match = mapEventToMatch(row); } catch { continue; }
+    const isLive = row.status === 'LIVE';
+    if (isLive) scanned.live += 1; else scanned.prematch += 1;
     for (const mk of match.markets || []) {
-      const cur = board.get(mk.name) || { name: mk.name, id: mk.id, matches: 0, live: 0, liveOpen: 0, samples: [] };
+      const cur = board.get(mk.name) || { name: mk.name, id: mk.id, matches: 0, live: 0, liveOpen: 0, prematch: 0, prematchOpen: 0, samples: [] };
       cur.matches += 1;
-      if (row.status === 'LIVE') {
+      const open = (mk.options || []).some((o) => !o.suspended && o.odds > 0);
+      if (isLive) {
         cur.live += 1;
-        if ((mk.options || []).some((o) => !o.suspended && o.odds > 0)) cur.liveOpen += 1;
+        if (open) cur.liveOpen += 1;
+      } else {
+        cur.prematch += 1;
+        if (open) cur.prematchOpen += 1;
       }
       for (const o of mk.options || []) { if (cur.samples.length < 4 && o && o.name != null && !cur.samples.includes(String(o.name))) cur.samples.push(String(o.name)); }
       board.set(mk.name, cur);
@@ -1078,7 +1099,7 @@ router.get('/market-coverage', async (req, res) => {
     ...legRows.map((r) => ({ name: r.market_name, id: r.market_id, legs: r.legs, pending: r.pending, samples: r.samples || [] })),
     ...board.values(),
   ]);
-  res.json({ boardMatchesScanned: boardRows.length, requireSettlementRule: settlementRuleRequired(), ...report, text: formatCoverageText(report) });
+  res.json({ boardMatchesScanned: boardRows.length, liveMatchesScanned: scanned.live, prematchMatchesScanned: scanned.prematch, requireSettlementRule: settlementRuleRequired(), ...report, text: formatCoverageText(report) });
 });
 
 // Every raw provider field seen so far (REST list, REST live detail, live socket) with a few

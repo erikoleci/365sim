@@ -10,13 +10,15 @@ export function buildCoverageReport(entries) {
   for (const e of entries) {
     const name = String(e.name || '').trim();
     if (!name || isHiddenMarketName(name)) continue;
-    const cur = byName.get(name) || { name, id: e.id || null, matches: 0, legs: 0, pending: 0, live: 0, liveOpen: 0, samples: [] };
+    const cur = byName.get(name) || { name, id: e.id || null, matches: 0, legs: 0, pending: 0, live: 0, liveOpen: 0, prematch: 0, prematchOpen: 0, samples: [] };
     for (const smp of e.samples || []) {
       if (cur.samples.length < 4 && smp != null && !cur.samples.includes(String(smp))) cur.samples.push(String(smp));
     }
     cur.matches += Number(e.matches || 0);
     cur.live += Number(e.live || 0);
     cur.liveOpen += Number(e.liveOpen || 0);
+    cur.prematch += Number(e.prematch || 0);
+    cur.prematchOpen += Number(e.prematchOpen || 0);
     cur.legs += Number(e.legs || 0);
     cur.pending += Number(e.pending || 0);
     byName.set(name, cur);
@@ -32,6 +34,8 @@ export function buildCoverageReport(entries) {
       markets: rows.length,
       autoSettled: rows.length - without.length,
       withoutRule: without.length,
+      liveMarkets: rows.filter((r) => r.live > 0).length,
+      prematchMarkets: rows.filter((r) => r.prematch > 0).length,
       betLegsWithoutRule: without.reduce((n, r) => n + r.legs, 0),
       pendingLegsWithoutRule: without.reduce((n, r) => n + r.pending, 0),
     },
@@ -46,8 +50,9 @@ export function formatCoverageText(report) {
   const without = report.markets.filter((r) => !r.autoSettles);
   const withRule = report.markets.filter((r) => r.autoSettles);
   const liveMarkets = report.markets.filter((r) => r.live > 0).sort((a, b) => b.live - a.live || a.name.localeCompare(b.name));
+  const prematchMarkets = report.markets.filter((r) => r.prematch > 0).sort((a, b) => b.prematch - a.prematch || a.name.localeCompare(b.name));
   return [
-    `TREGJE GJITHSEJ: ${report.summary.markets} | ME RREGULL: ${report.summary.autoSettled} | PA RREGULL: ${report.summary.withoutRule}`,
+    `TREGJE GJITHSEJ: ${report.summary.markets} | ME RREGULL: ${report.summary.autoSettled} | PA RREGULL: ${report.summary.withoutRule} | LIVE: ${report.summary.liveMarkets} | PREMATCH: ${report.summary.prematchMarkets}`,
     '',
     '=== PA RREGULL (mbyllen vetëm me dorë ose kthehen pas 24 orësh) ===',
     without.map(fmt).join('\n') || '(asnjë)',
@@ -59,5 +64,8 @@ export function formatCoverageText(report) {
     // page) -- the place to look when a live market "does not show up".
     '=== TREGJET E NDESHJEVE LIVE (sa ndeshje live e kanë | sa e kanë të hapur) ===',
     liveMarkets.map((r) => `- ${r.name} | live: ${r.live} | hapur: ${r.liveOpen}${r.liveOpen === 0 ? ' (MBYLLUR live: nuk shfaqet)' : ''} | ${(r.samples || []).join(' ; ')}`).join('\n') || '(asnjë ndeshje live)',
+    '',
+    '=== TREGJET PREMATCH (sa ndeshje prematch e kanë | sa e kanë të hapur) ===',
+    prematchMarkets.map((r) => `- ${r.name} | prematch: ${r.prematch} | hapur: ${r.prematchOpen}`).join('\n') || '(asnjë ndeshje prematch)',
   ].join('\n');
 }
