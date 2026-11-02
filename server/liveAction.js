@@ -26,6 +26,9 @@
 //   11010          gjuajtje e lirë     (free kick, confirmed by the owner)
 //   1015           pushim              (end of first half; seen with T=2700, SC=2-1,
 //                                       Odd 2 v Viking 2, no team digit)
+//   1017           ndeshja mbaroi      (full time; seen with T=5400, TT=0, SC=3-3,
+//                                       Central Stallions v Deren FC, no team digit)
+//   11236          goditje denimi      (penalty kick; seen with T=4827, same match)
 // NOTE: the side of 21002 and 21007 is taken from the same first-digit rule;
 // no counter moved with those two to double-check it.
 
@@ -40,9 +43,11 @@ const ACTIONS = {
   '1011': { kind: 'shot_on_target', label: 'Goditje në portë' },
   '1013': { kind: 'substitution', label: 'Ndërrim' },
   '1015': { kind: 'half_time', label: 'Pushim' },
+  '1017': { kind: 'full_time', label: 'Ndeshja mbaroi' },
   '1024': { kind: 'throw_in', label: 'Rivënie anësore' },
   '1025': { kind: 'injury', label: 'Dëmtim' }, // player injured (owner-confirmed; seen VC="1025", FC Van v Gandzasar Kapan, T=3717)
   '1234': { kind: 'offside', label: 'Pozicion jashtë loje' },
+  '1236': { kind: 'penalty', label: 'Goditje dënimi' }, // owner-labelled: VC="11236", Central Stallions v Deren FC, T=4827
 };
 
 const LABELS = Object.fromEntries(Object.values(ACTIONS).map((a) => [a.kind, a.label]));
@@ -59,7 +64,7 @@ export function decodeLiveAction(vc) {
   if (!/^[12]\d+$/.test(s)) return null;
   const entry = ACTIONS[s.slice(1)];
   if (!entry) return null;
-  // The break belongs to neither team, whatever the first digit says.
-  const side = entry.kind === 'half_time' ? null : s[0] === '1' ? 'home' : 'away';
+  // The break / the final whistle belong to neither team, whatever the first digit says.
+  const side = entry.kind === 'half_time' || entry.kind === 'full_time' ? null : s[0] === '1' ? 'home' : 'away';
   return { side, kind: entry.kind, label: entry.label };
 }

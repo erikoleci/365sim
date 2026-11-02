@@ -103,11 +103,12 @@ const PRUNE_MIN_INTERVAL_MS = 30000;
 // The clock (with seconds) is re-sent at least this often even when nothing else changed, so the
 // seconds on every screen are re-anchored to the provider's T every few seconds, not every 15.
 const LIVE_TICK_RESYNC_MS = 5000;
-// How long the last decoded pitch action (corner, attack, ...) stays on the
+// How long the last decoded pitch action (corner, attack, penalty, ...) stays on the
 // pitch when the following messages carry no (decodable) VC. The provider's own
-// pitch keeps showing the last action until the next one; clearing it on the very
-// next ~1/sec tick made it flash for under a second -> "the pitch never shows it".
-const ACTION_HOLD_MS = 8000;
+// pitch keeps showing the last action until the NEXT one arrives; clearing it after a few seconds
+// made it flash ("it shows once and goes away until the next websocket"). So it is held until a
+// newer action replaces it; this is only the safety cap for a feed that goes quiet (default 2 min).
+const ACTION_HOLD_MS = Number(process.env.LIVE_ACTION_HOLD_MS) > 0 ? Number(process.env.LIVE_ACTION_HOLD_MS) : 120000;
 // VC codes we could not decode, logged once each so they can be labelled in
 // liveAction.js (never guessed). Bounded so a noisy feed cannot grow it.
 const unmappedVcSeen = new Set();
@@ -526,13 +527,14 @@ async function applyGameDetailsNow(raw) {
   const ctr = { c1: num('C1'), c2: num('C2'), h2: num('H2'), h3: num('H3'), h4: num('H4'), a2: num('A2'), a3: num('A3'), a4: num('A4') };
   const nowMs = Date.now();
   let recent = cardBaseline && cardBaseline.recent && cardBaseline.recent.until > nowMs ? cardBaseline.recent : null;
+  let foundNow = null; // an action read from a counter that moved in THIS message
   if (cardBaseline && cardBaseline.ctr) {
     const up = (k) => ctr[k] > cardBaseline.ctr[k];
     const found = up('c1') ? ['home', 'corner'] : up('c2') ? ['away', 'corner']
       : up('h4') ? ['home', 'dangerous_attack'] : up('a4') ? ['away', 'dangerous_attack']
       : up('h3') ? ['home', 'attack'] : up('a3') ? ['away', 'attack']
       : up('h2') ? ['home', 'offside'] : up('a2') ? ['away', 'offside'] : null;
-    if (found) recent = { ...makeAction(found[0], found[1]), until: nowMs + 7000 };
+    if (found) { foundNow = makeAction(found[0], found[1]); recent = { ...foundNow, until: nowMs + 7000 }; }
   }
   const decodedAction = decodeLiveAction(attrs.VC);
   recordVcSample(attrs.VC, decodedAction && decodedAction.label, { match: `${attrs.H} - ${attrs.A}`, score: attrs.SC, t: attrs.T });
@@ -542,16 +544,19 @@ async function applyGameDetailsNow(raw) {
     unmappedVcSeen.add(vcText);
     console.log('[gamedetails] unmapped VC code "' + vcText + '" (EID ' + eid + ', T=' + attrs.T + ', SC=' + (attrs.SC || '?') + ') -- label it in server/liveAction.js');
   }
-  // Last real action, kept for ACTION_HOLD_MS so a quiet/unknown next message
-  // does not wipe the pitch the instant after the action arrived.
+  // Last real action, kept (up to ACTION_HOLD_MS) until a NEWER action arrives, so a quiet / unknown next
+  // message does not wipe the pitch. A newer action always replaces it (decoded VC first, then a moved counter);
+  // the final whistle (VC 1017) clears it, the match is over.
   let held = cardBaseline && cardBaseline.held && cardBaseline.held.until > nowMs ? cardBaseline.held : null;
-  if (decodedAction && decodedAction.kind !== 'half_time') {
+  if (decodedAction && decodedAction.kind === 'full_time') {
+    held = null;
+  } else if (decodedAction && decodedAction.kind !== 'half_time') {
     held = { action: decodedAction, until: nowMs + ACTION_HOLD_MS };
-  } else if (recent) {
-    held = { action: { side: recent.side, kind: recent.kind, label: recent.label }, until: Math.max(held ? held.until : 0, recent.until) };
+  } else if (foundNow) {
+    held = { action: { side: foundNow.side, kind: foundNow.kind, label: foundNow.label }, until: nowMs + ACTION_HOLD_MS };
   }
   const liveAction = decodedAction
-    || (recent ? { side: recent.side, kind: recent.kind, label: recent.label } : null)
+    || (foundNow ? { side: foundNow.side, kind: foundNow.kind, label: foundNow.label } : null)
     || (held ? held.action : null);
   const actionKey = (a) => (a ? a.side + ':' + a.kind : null);
   // Half time. VC=1015 is the provider's own "pushim" (hand-labelled capture);

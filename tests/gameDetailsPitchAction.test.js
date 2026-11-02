@@ -92,12 +92,49 @@ describe('applyGameDetails - the pitch action reaches (and stays on) the client'
     expect(lastAction()).toMatchObject({ side: 'home', kind: 'corner' });
   });
 
-  it('the held action clears itself after the hold time instead of sticking forever', async () => {
+  it('the held action stays on the pitch until the next action arrives (not just a few seconds), and only a long silence clears it', async () => {
     await applyGameDetails(tag({ ...base, T: '600', VC: '21000' }));
     expect(lastAction()).toMatchObject({ side: 'away', kind: 'dangerous_attack' });
-    vi.advanceTimersByTime(9000);
-    await applyGameDetails(tag({ ...base, T: '609' }));
+    vi.advanceTimersByTime(60000);
+    await applyGameDetails(tag({ ...base, T: '660' }));
+    expect(lastAction()).toMatchObject({ side: 'away', kind: 'dangerous_attack' });
+    vi.advanceTimersByTime(125000); // past the safety cap with nothing newer
+    await applyGameDetails(tag({ ...base, T: '785' }));
     expect(lastAction()).toBeNull();
+  });
+
+  it('a penalty (VC 11236) stays on screen until the next action', async () => {
+    await applyGameDetails(tag({ ...base, T: '4827', VC: '11236' }));
+    expect(lastAction()).toEqual({ side: 'home', kind: 'penalty', label: 'Goditje dënimi' });
+    vi.advanceTimersByTime(30000);
+    await applyGameDetails(tag({ ...base, T: '4857' }));
+    expect(lastAction()).toMatchObject({ side: 'home', kind: 'penalty' });
+    vi.advanceTimersByTime(1000);
+    await applyGameDetails(tag({ ...base, T: '4858', VC: '21002' }));
+    expect(lastAction()).toMatchObject({ side: 'away', kind: 'possession' });
+  });
+
+  it('the final whistle (VC 1017) shows "Ndeshja mbaroi" with no side and the old action does not come back', async () => {
+    await applyGameDetails(tag({ ...base, T: '5300', VC: '11004' }));
+    vi.advanceTimersByTime(1000);
+    await applyGameDetails(tag({ ...base, T: '5400', TT: '0', VC: '1017' }));
+    expect(lastAction()).toEqual({ side: null, kind: 'full_time', label: 'Ndeshja mbaroi' });
+    vi.advanceTimersByTime(1000);
+    await applyGameDetails(tag({ ...base, T: '5401' }));
+    expect(lastAction()).toBeNull();
+  });
+
+  it('a decoded action that is newer than a counter-derived one is the one held on quiet messages', async () => {
+    await applyGameDetails(tag({ ...base, T: '600', C1: '0', C2: '0' })); // baseline
+    vi.advanceTimersByTime(1000);
+    await applyGameDetails(tag({ ...base, T: '601', C1: '1', C2: '0' })); // home corner read from the counter
+    expect(lastAction()).toMatchObject({ side: 'home', kind: 'corner' });
+    vi.advanceTimersByTime(1000);
+    await applyGameDetails(tag({ ...base, T: '602', C1: '1', C2: '0', VC: '21024' })); // then an away throw-in
+    expect(lastAction()).toMatchObject({ side: 'away', kind: 'throw_in' });
+    vi.advanceTimersByTime(1000);
+    await applyGameDetails(tag({ ...base, T: '603', C1: '1', C2: '0' })); // quiet message
+    expect(lastAction()).toMatchObject({ side: 'away', kind: 'throw_in' });
   });
 
   it('a newer action replaces the held one', async () => {
