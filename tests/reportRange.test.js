@@ -36,9 +36,9 @@ describe('finance report: day range in local time', () => {
 
 describe('finance report: the figures of the screenshots', () => {
   const m = (o) => ({ ...emptyMetrics(), ...o });
-  it('owner screen: xhiro 91, fitim 0, commission 7.28 (8%) -> diferenca 83.72, % agjentit 7.28, kompania 76.44', () => {
+  it('owner screen: xhiro 91, fitim 0, commission 7.28 (8%) -> diferenca 83.72, % agjentit 7.28, kompania 83.72', () => {
     expect(finishMetrics(m({ xhiro: 91, fitim: 0, pending: 21, activeTickets: 1, tickets: 5, commission: 7.28 })))
-      .toMatchObject({ xhiro: 91, fitim: 0, pending: 21, diferenca: 83.72, percAgjentit: 7.28, kompania: 76.44 });
+      .toMatchObject({ xhiro: 91, fitim: 0, pending: 21, diferenca: 83.72, percAgjentit: 7.28, kompania: 83.72 });
   });
   it('agent finance page: xhiro 5432.50 - fitimi 4920.52 - perqindja 203.00 = diferenca 308.98', () => {
     expect(finishMetrics(m({ xhiro: 5432.5, fitim: 4920.52, commission: 203 })).diferenca).toBe(308.98);

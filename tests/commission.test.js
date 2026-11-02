@@ -29,11 +29,11 @@ describe('agent commission report', () => {
     const rows = await userMetrics(pool, { rangeStart: 0, rangeEnd: 1 });
     expect(args[6]).toEqual(['PENDING', 'WON', 'LOST']);
     const r = finishMetrics(rows[0]);
-    expect(r).toMatchObject({ xhiro: 20, pending: 20, diferenca: 19.2, percAgjentit: 0.8, kompania: 18.4 });
+    expect(r).toMatchObject({ xhiro: 20, pending: 20, diferenca: 19.2, percAgjentit: 0.8, kompania: 19.2 });
   });
-  it('two open tickets of 20 and 10 at 8%: xhiro 30, pending 30, diferenca 27.60, % agjentit 2.40, kompania 25.20', () => {
+  it('two open tickets of 20 and 10 at 8%: xhiro 30, pending 30, diferenca 27.60, % agjentit 2.40, kompania 27.60 (commission taken once)', () => {
     const r = finishMetrics(m({ xhiro: 30, pending: 30, activeTickets: 2, tickets: 2, commission: 2.4 }));
-    expect(r).toMatchObject({ xhiro: 30, fitim: 0, pending: 30, activeTickets: 2, tickets: 2, diferenca: 27.6, percAgjentit: 2.4, kompania: 25.2 });
+    expect(r).toMatchObject({ xhiro: 30, fitim: 0, pending: 30, activeTickets: 2, tickets: 2, diferenca: 27.6, percAgjentit: 2.4, kompania: 27.6 });
   });
   it('a win takes its payout out of diferenca and kompania; a loss changes nothing (the stake was already counted)', () => {
     const open = finishMetrics(m({ xhiro: 30, pending: 30, tickets: 2, commission: 2.4 }));
@@ -41,7 +41,7 @@ describe('agent commission report', () => {
     const won = finishMetrics(m({ xhiro: 30, fitim: 50, pending: 20, tickets: 2, commission: 2.4 }));
     expect(lost.diferenca).toBe(open.diferenca);
     expect(won.diferenca).toBe(-22.4);
-    expect(won.kompania).toBe(-24.8);
+    expect(won.kompania).toBe(-22.4);
   });
   it('groups by admin, agent and player and keeps lek and euro apart', () => {
     const admins = [{ id: 'a1', name: 'Admin', username: 'admin' }];
@@ -70,13 +70,13 @@ describe('agent commission report', () => {
   });
 });
 
-describe("owner's rule (confirmed): kompania = diferenca - % agjentit, so the commission is deducted twice on purpose", () => {
-  it('20 + 10 tickets at 8%: xhiro 30, diferenca 27.60, % agjentit 2.40, kompania 25.20', () => {
+describe("owner's rule (confirmed): kompania = diferenca (the commission is already out of diferenca)", () => {
+  it('20 + 10 tickets at 8%: xhiro 30, diferenca 27.60, % agjentit 2.40, kompania 27.60', () => {
     const r = finishMetrics(m({ xhiro: 30, pending: 30, activeTickets: 2, tickets: 2, commission: 2.4 }));
-    expect(r).toMatchObject({ xhiro: 30, fitim: 0, pending: 30, diferenca: 27.6, percAgjentit: 2.4, kompania: 25.2 });
+    expect(r).toMatchObject({ xhiro: 30, fitim: 0, pending: 30, diferenca: 27.6, percAgjentit: 2.4, kompania: 27.6 });
   });
-  it('screenshot case: xhiro 91, commission 7.28 -> diferenca 83.72, kompania 76.44 (correct as shown)', () => {
+  it('screenshot case: xhiro 91, commission 7.28 -> diferenca 83.72, kompania 83.72', () => {
     const r = finishMetrics(m({ xhiro: 91, pending: 21, activeTickets: 1, tickets: 5, commission: 7.28 }));
-    expect(r).toMatchObject({ diferenca: 83.72, percAgjentit: 7.28, kompania: 76.44 });
+    expect(r).toMatchObject({ diferenca: 83.72, percAgjentit: 7.28, kompania: 83.72 });
   });
 });
