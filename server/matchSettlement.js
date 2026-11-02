@@ -1388,6 +1388,26 @@ export async function settleStuckBets() {
 export const TWIN_KICKOFF_WINDOW_MS = 3 * 3600 * 1000;
 const TWIN_WAIT_AFTER_KICKOFF_MS = 130 * 60 * 1000;
 
+
+// Looser club-name test used ONLY when two records kick off at (almost) the same minute: the feed spells
+// one club several ways ("Stade Brest 29" / "Brest", "CA Osasuna" / "Osasuna", "RC Deportivo de A Coruna" /
+// "Deportivo La Coruna"). Drops generic words and digits, then one name must contain the other's key words.
+const GENERIC_CLUB_WORDS = new Set(['fc', 'cf', 'ca', 'rc', 'sc', 'ac', 'as', 'cd', 'sd', 'ud', 'afc', 'sk', 'fk', 'stade', 'de', 'la', 'le', 'el', 'a', 'da', 'do', 'of', 'club', 'calcio', 'united', 'city']);
+function clubKeyWords(name) {
+  return String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z\s]/g, ' ').split(/\s+/).filter((t) => t.length > 1 && !GENERIC_CLUB_WORDS.has(t));
+}
+function looseSameClub(a, b) {
+  const ka = clubKeyWords(a), kb = clubKeyWords(b);
+  if (!ka.length || !kb.length) return false;
+  const [s, l] = ka.length <= kb.length ? [ka, kb] : [kb, ka];
+  return s.every((t) => l.some((u) => u === t || (t.length >= 4 && u.length >= 4 && (u.startsWith(t) || t.startsWith(u)))));
+}
+function looseSameFixture(wanted, c) {
+  return (looseSameClub(wanted.homeTeam, c.homeTeam) && looseSameClub(wanted.awayTeam, c.awayTeam))
+    || (looseSameClub(wanted.homeTeam, c.awayTeam) && looseSameClub(wanted.awayTeam, c.homeTeam));
+}
+
 export function pickLiveTwin(leg, candidates, now = Date.now()) {
   const own = Date.parse(leg.start_time);
   const placed = Number(leg.bet_created_at);
@@ -1403,7 +1423,9 @@ export function pickLiveTwin(leg, candidates, now = Date.now()) {
     if (!ready) continue;
     const start = Date.parse(c.start_time);
     if (!Number.isFinite(start) || Math.abs(start - ref) > window) continue;
-    if (!sameFixture(wanted, { homeTeam: c.home_team, awayTeam: c.away_team })) continue;
+    const candTeams = { homeTeam: c.home_team, awayTeam: c.away_team };
+    const sameKickoffMinute = Math.abs(start - ref) <= 10 * 60000;
+    if (!sameFixture(wanted, candTeams) && !(sameKickoffMinute && looseSameFixture(wanted, candTeams))) continue;
     const gap = Math.abs(start - ref);
     if (!best || gap < best.gap) best = { id: c.id, gap };
   }
