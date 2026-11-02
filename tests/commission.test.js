@@ -8,10 +8,10 @@ describe('results in a selection (4% for one result, 8% for two or more)', () =>
     for (const n of ['45/90', '45 / 90', 'HT/FT', 'Pushim/Fund', 'Pjesa e pare/Finale', 'Rezultati pjesa e pare / Rezultati final']) expect(resultsInSelection(n)).toBe(2);
   });
   it('a combined market counts as two results', () => {
-    for (const n of ['Rezultat Final & Numri i Golave', '45/90 & Numri i Golave në Ndeshje']) expect(resultsInSelection(n)).toBe(2);
+    for (const n of ['Rezultat Final & Numri i Golave', '45/90 & Numri i Golave në Ndeshje', 'RP1/RP2 & Gol/JoGol', 'Rezultat Final/Gol-Gol', 'Rezultat Final me Kartona', 'Rezultat i P1 me kartona', 'Rezultat i P2 me kartona', 'Rezultati Final Gola 3+', 'Rezultati Final Gola 4+']) expect(resultsInSelection(n)).toBe(2);
   });
   it('a plain market is one result', () => {
-    for (const n of ['Rezultat Final', 'Totali i golave', 'Të dyja shënojnë', 'Dyshe e mundshme']) expect(resultsInSelection(n)).toBe(1);
+    for (const n of ['Rezultat Final', 'Totali i golave', 'Të dyja shënojnë', 'Dyshe e mundshme', '1X2', 'Gol/JoGol', 'Gol / Jo Gol Ne P1', '2+ Gola', '3+ Gola', '4+ Gola', 'Totali 2.5']) expect(resultsInSelection(n)).toBe(1);
   });
 });
 

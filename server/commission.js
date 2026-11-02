@@ -12,9 +12,11 @@ export const COMMISSION_SINGLE_PCT = pct(process.env.COMMISSION_SINGLE_PCT, 4);
 export const COMMISSION_MULTI_PCT = pct(process.env.COMMISSION_MULTI_PCT, 8);
 
 // "Results" of a selection: a half-time/full-time pick ("45/90", "1/2") is TWO results (the half-time and the full-time
-// one), and so is a combined market ("Rezultat Final & Numri i Golave"). Everything else is one result. A ticket with
+// one), and so is a combined market ("Rezultat Final & Numri i Golave", "Rezultat Final/Gol-Gol", "Rezultat Final me Kartona",
+// "Rezultati Final Gola 3+": a 1/X/2 together with a goals or cards condition). Everything else is one result: 1, X, 2,
+// 2+ / 3+ / 4+, GG, JG, over/under, double chance. A ticket with
 // two or more results in total earns the higher rate -- also a single "Bast i Thjeshte" on 45/90.
-export const MULTI_RESULT_MARKET_RE = '(&|^\\s*(45\\s*/\\s*90|ht\\s*/?\\s*ft|pushimi?\\s*/?\\s*fund|pjesa e par[eë]\\s*/\\s*(finale|fund)|rezultati (i )?(pjesa|pjeses|ne)\\s.*pushim?.*/|rezultati pjesa e par[eë]\\s*/))';
+export const MULTI_RESULT_MARKET_RE = '(&|^\\s*(45\\s*/\\s*90|ht\\s*/?\\s*ft|pushimi?\\s*/?\\s*fund|pjesa e par[eë]\\s*/\\s*(finale|fund)|rezultati (i )?(pjesa|pjeses|ne)\\s.*pushim?.*/|rezultati pjesa e par[eë]\\s*/|rezultat final\\s*/\\s*gol|rezultat (final|i p[12]) me kartona|rezultati final gola))';
 export const resultsInSelection = (marketName) => (new RegExp(MULTI_RESULT_MARKET_RE, 'i').test(String(marketName || '')) ? 2 : 1);
 
 // Ticket statuses that earn commission.
