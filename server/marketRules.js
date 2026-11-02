@@ -217,7 +217,7 @@ const PLAYER_MARKET = /\b(lojtar\w*|shenues\w*|golashenues\w*|autor\w*|scorers?|
 export const isPlayerMarketName = (name) => PLAYER_MARKET.test(norm(name));
 // Markets the board never offers and the coverage report never lists (no way to settle them from our data).
 // "A do te kete kohe shtese?" / "Will there be extra time": no extra-time data in the feed.
-const HIDDEN_MARKET = /^(a do te kete kohe shtese|will there be (an )?extra time)\b/;
+const HIDDEN_MARKET = /^(a do te kete kohe shtese|will there be (an )?extra time\b|(home|away) no bet$)/;
 export const isHiddenMarketName = (name) => HIDDEN_MARKET.test(norm(name));
 const NO_GOAL_OPTIONS = new Set(['asnje', 'asnje gol', 'pa gol', 'nuk ka gol', 'no goal', 'none', 'no scorer']);
 const SIDE_OPTIONS = new Set(['1', '2', 'x', 'home', 'away', 'draw', 'shtepi', 'mik', 'barazim']);

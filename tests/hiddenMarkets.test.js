@@ -9,6 +9,9 @@ describe('hidden markets', () => {
   it('recognises the extra-time market', () => {
     expect(isHiddenMarketName('A do te kete kohe shtese?')).toBe(true);
     expect(isHiddenMarketName('Gol/JoGol')).toBe(false);
+    expect(isHiddenMarketName('Home  no bet')).toBe(true);
+    expect(isHiddenMarketName('Away no bet')).toBe(true);
+    expect(isHiddenMarketName('Draw no bet')).toBe(false);
   });
   it('is removed from the board but other markets stay', () => {
     expect(hidePlayerOdds([ET, OK], 'A', 'B').map((m) => m.id)).toEqual(['x2']);
