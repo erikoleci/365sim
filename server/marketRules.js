@@ -216,8 +216,10 @@ export function unverifiedMarketsAllowed() {
 const PLAYER_MARKET = /\b(lojtar\w*|shenues\w*|golashenues\w*|autor\w*|scorers?|goalscorers?|players?)\b/;
 export const isPlayerMarketName = (name) => PLAYER_MARKET.test(norm(name));
 // Markets the board never offers and the coverage report never lists (no way to settle them from our data).
-// "A do te kete kohe shtese?" / "Will there be extra time": no extra-time data in the feed.
-const HIDDEN_MARKET = /^(a do te kete kohe shtese|will there be (an )?extra time\b|(home|away) no bet$)/;
+// "A do te kete kohe shtese?" / "Will there be extra time" / "Overtime & goal" / "Winning method": no extra-time data
+// in the feed. "Will there be a penalty shootout" / "A do te kete penallti gjate ndeshjes?": no penalty events.
+// "Home no bet" / "Away no bet": the meaning of the options is not confirmed.
+const HIDDEN_MARKET = /^(a do te kete kohe shtese|will there be (an )?extra time\b|(home|away) no bet$|overtime\b|winning method\b|will there be an? penalt|a do te kete penal)/;
 export const isHiddenMarketName = (name) => HIDDEN_MARKET.test(norm(name));
 const NO_GOAL_OPTIONS = new Set(['asnje', 'asnje gol', 'pa gol', 'nuk ka gol', 'no goal', 'none', 'no scorer']);
 const SIDE_OPTIONS = new Set(['1', '2', 'x', 'home', 'away', 'draw', 'shtepi', 'mik', 'barazim']);

@@ -632,6 +632,11 @@ export async function cleanupOldData() {
       [now - RETENTION_MS.finishedMatchesDays * day]
     )).rowCount;
 
+    // The archive of final scores that lets the second leg of a tie settle "To qualify" (migration 0019).
+    try {
+      results.match_results = (await pool.query('DELETE FROM match_results WHERE saved_at < $1', [now - 90 * day])).rowCount;
+    } catch { /* archive not migrated yet */ }
+
     // Results are kept only for the main competitions (Champions/Europa League, World Cup, Euros, the top flight of
     // Italy/Germany/France/Spain/England/Portugal). Every other finished match goes once it is settled and a day old,
     // unless a ticket still points at it (the admin ticket views join on it).

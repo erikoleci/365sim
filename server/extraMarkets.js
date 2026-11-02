@@ -101,6 +101,30 @@ function bookingParts(c, firstHalf) {
   }
   return [yh, ya, rh, ra].every((v) => Number.isFinite(v) && v >= 0) ? { yh, ya, rh, ra } : null;
 }
+// Bookings of the whole match (half = null), of the first half (1) or of the second half (2 = whole match minus the break counters).
+function bookingPartsOf(c, half) {
+  if (!half) return bookingParts(c, false);
+  if (String(half) === '1') return bookingParts(c, true);
+  const f = bookingParts(c, false); const h = bookingParts(c, true);
+  if (!f || !h) return null;
+  const d = { yh: f.yh - h.yh, ya: f.ya - h.ya, rh: f.rh - h.rh, ra: f.ra - h.ra };
+  return Object.values(d).every((v) => v >= 0) ? d : null;
+}
+// "1 & Lart 3.5", "1 / 3.5 Lart", "X Nen 4.5", "2 mbi 3.5": result + over/under word + line, in any order.
+// A token that is none of those makes the option unreadable (null). `fallbackLine` comes from the market name.
+const CARD_RESULT_WORDS = { 1: '1', x: 'X', 2: '2', home: '1', pritesi: '1', draw: 'X', barazim: 'X', away: '2', udhetuesi: '2' };
+function parseResultCards(sel, fallbackLine) {
+  const tokens = String(sel).replace(/(\d),(\d)/g, '$1.$2').split(/[\s&\/|_()+-]+/).filter(Boolean);
+  let result = null; let over = null; let line = null;
+  for (const t of tokens) {
+    if (over === null && /^(lart|mbi|over|poshte|nen|under)$/.test(t)) over = /^(lart|mbi|over)$/.test(t);
+    else if (result === null && Object.prototype.hasOwnProperty.call(CARD_RESULT_WORDS, t)) result = CARD_RESULT_WORDS[t];
+    else if (line === null && /^\d+(?:\.\d+)?$/.test(t)) line = parseFloat(t);
+    else return null;
+  }
+  if (line === null && fallbackLine != null) line = parseFloat(String(fallbackLine).replace(',', '.'));
+  return result && over !== null && Number.isFinite(line) ? { result, over, line } : null;
+}
 const bookingValues = (b, which, schemes) => schemes.map((k) => {
   const home = b.yh * k.y + b.rh * k.r; const away = b.ya * k.y + b.ra * k.r;
   return which === 'home' ? home : which === 'away' ? away : home + away;
@@ -218,12 +242,30 @@ const RULES = [
     const word = (v) => (v === 'home' ? '1' : v === 'away' ? '2' : 'X');
     return won(resultOf(h.h1.home, h.h1.away) === word(w[2].toLowerCase()) && resultOf(s.home, s.away) === word(w[3].toLowerCase()) && inRange(s.home + s.away, wr));
   }],
-  // "RP1/RP2 & Gol/JoGol": result of the first half, result of the second half, and both teams to score.
+  // "RP1/RP2 & Gol/JoGol". The provider's options are "GG / GG", "GG / JG", "JG / GG", "JG / JG": Gol/JoGol of the
+  // first half, then of the second half (GG = both teams score in that half, JG = they do not).
+  // The older reading (result of each half + both teams to score, "2/X & Gol") still works for that option shape.
   [/^rp1\/rp2 & gol\/jogol$/, (m, sel, c) => {
     const s = finalScore(c); const h = halves(c); if (!s || !h) return null;
+    const g = sel.match(/^(gg|jg|ng)\s*[-\/|&_]?\s*(gg|jg|ng)$/);
+    if (g) {
+      const btts = (p) => p.home > 0 && p.away > 0;
+      return won(btts(h.h1) === (g[1] === 'gg') && btts(h.h2) === (g[2] === 'gg'));
+    }
     const o = sel.match(/^([1x2])\s*[-\/]\s*([1x2])\s*(?:&|\/|_|-|\s)\s*(gol|jogol)$/);
     if (!o) return null;
     return won(resultOf(h.h1.home, h.h1.away) === o[1].toUpperCase() && resultOf(h.h2.home, h.h2.away) === o[2].toUpperCase() && (s.home > 0 && s.away > 0) === (o[3] === 'gol'));
+  }],
+  // "To qualify" (1 / 2): who goes through a two-legged tie, decided on the goals of BOTH legs after regular time.
+  // ctx.aggregate = { home, away } seen from the sides of THIS match (loadAggregate in matchSettlement.js: the
+  // other leg comes from matches_cache or from the match_results archive). A tied aggregate is decided by extra
+  // time / penalties, which the feed does not give, and a missing other leg gives no aggregate: both stay open.
+  [/^to qualify$/, (m, sel, c, leg) => {
+    const a = c.aggregate;
+    if (!a || !Number.isFinite(a.home) || !Number.isFinite(a.away) || a.home === a.away) return null;
+    const side = /^(1|home)$/.test(sel) ? '1' : /^(2|away)$/.test(sel) ? '2'
+      : sel && sel === norm(leg.match_home) ? '1' : sel && sel === norm(leg.match_away) ? '2' : null;
+    return side ? won(side === (a.home > a.away ? '1' : '2')) : null;
   }],
   // Second-half red cards = full-time counters minus those taken at the whistle.
   [/^2nd half - (?:(home|away) )?sending off$/, (m, sel, c) => {
@@ -245,16 +287,18 @@ const RULES = [
     const unit = Number.isFinite(r[1]) ? r[1] : r[0];
     return bookingValues(b, m[2], schemesFor(unit)).map((v) => won(inRange(v, r)))[0];
   }],
-  // "Rezultat Final me Kartona" / "Rezultat i P1 me kartona": a 1 / X / 2 and an over / under on the
-  // bookings in one option ("1 & Lart 3.5"; the separator may be &, /, - or a space).
-  [/^(?:rezultat final me kartona|rezultat i p1 me kartona)$/, (m, sel, c, leg) => {
-    const first = /p1/.test(norm(leg.market_name));
-    const o = sel.match(/^([1x2])\s*(?:&|\/|-|_|\s)\s*((?:lart|poshte|nen|mbi|over|under)\s*\d+(?:[.,]\d+)?)$/);
-    const sc = first ? half(c, 1) : finalScore(c); const b = bookingParts(c, first);
+  // "Rezultat Final me Kartona" / "Rezultat i P1 me kartona" / "Rezultat i P2 me kartona": a 1 / X / 2 and an
+  // over / under on the cards, together in one option. Final = the whole match (full-time result, cards of the
+  // whole match); P1 / P2 = the first / second half only (result of that half, cards of that half).
+  // "3.5 Lart" = 4 cards or more, "3.5 Nen" = 3 or fewer. The option is read in any order and with any
+  // separator ("1 & Lart 3.5", "1 / 3.5 Lart", "X Nen 4.5"); the line may also sit at the end of the market name.
+  [/^rezultat (?:final|i p([12])) me kartona(?: (\d+(?:[.,]\d+)?))?$/, (m, sel, c) => {
+    const o = parseResultCards(sel, m[2]);
+    const sc = m[1] ? half(c, m[1]) : finalScore(c); const b = bookingPartsOf(c, m[1] || null);
     if (!o || !sc || !b) return null;
-    const ou = parseOU(o[2]); if (!ou) return null;
-    if (resultOf(sc.home, sc.away) !== o[1].toUpperCase()) return 'LOST';
-    return bookingValues(b, 'both', schemesFor(ou.line)).map((v) => (v === ou.line ? 'VOID' : won(ou.over ? v > ou.line : v < ou.line)))[0];
+    if (resultOf(sc.home, sc.away) !== o.result) return 'LOST';
+    const v = bookingValues(b, 'both', schemesFor(o.line))[0];
+    return v === o.line ? 'VOID' : won(o.over ? v > o.line : v < o.line);
   }],
 
   // ---- handicaps ----

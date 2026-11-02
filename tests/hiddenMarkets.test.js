@@ -13,6 +13,13 @@ describe('hidden markets', () => {
     expect(isHiddenMarketName('Away no bet')).toBe(true);
     expect(isHiddenMarketName('Draw no bet')).toBe(false);
   });
+  it('recognises the overtime, winning-method and penalty markets', () => {
+    for (const n of ['Overtime & goal', 'Winning method', 'Will there be a penalty shootout', 'A do te kete penallti gjate ndeshjes?']) {
+      expect(isHiddenMarketName(n)).toBe(true);
+    }
+    expect(isHiddenMarketName('To qualify')).toBe(false);
+    expect(isHiddenMarketName('Gol/JoGol')).toBe(false);
+  });
   it('is removed from the board but other markets stay', () => {
     expect(hidePlayerOdds([ET, OK], 'A', 'B').map((m) => m.id)).toEqual(['x2']);
   });

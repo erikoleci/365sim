@@ -271,18 +271,24 @@ async function loadGoalOrder(client, match, homeScore, awayScore) {
       : goalOrderFromEvents(rows, match.home_team, match.away_team, homeScore, awayScore);
     // corner / card order: only when the logged events add up to the final counters of each side
     const st = await loadMatchStats(client, match.id);
-    const sideOrder = async (types, nHome, nAway) => {
+    // `totals` (type|side -> final counter) lets the running count every event carries answer the question even when
+    // some events were never logged (see detailOrderFromEvents).
+    const sideOrder = async (types, nHome, nAway, totals) => {
       const { rows: ev } = await client.query(
-        `SELECT team, created_at FROM match_events WHERE match_id = $1 AND type = ANY($2) ORDER BY created_at, id`, [match.id, types]);
-      return sideOrderFromEvents(ev, nHome, nAway);
+        `SELECT type, team, detail, created_at FROM match_events WHERE match_id = $1 AND type = ANY($2) ORDER BY created_at, id`, [match.id, types]);
+      return mergeSideOrder(sideOrderFromEvents(ev, nHome, nAway), detailOrderFromEvents(ev, totals));
     };
     const { rows: cornerLog } = await client.query(
-      `SELECT team, created_at FROM match_events WHERE match_id = $1 AND type = 'CORNER' ORDER BY created_at, id`, [match.id]);
+      `SELECT team, detail, created_at FROM match_events WHERE match_id = $1 AND type = 'CORNER' ORDER BY created_at, id`, [match.id]);
     return {
       ...(order || {}),
       cornerLog, // every corner event in order: "Gara e Korneve" and "Godet kornen e N-te"
-      corner: st ? await sideOrder(['CORNER'], numOrNaN(st.cornersHome), numOrNaN(st.cornersAway)) : undefined,
-      card: st ? await sideOrder(['YELLOW_CARD', 'RED_CARD'], numOrNaN(st.cardsHome), numOrNaN(st.cardsAway)) : undefined,
+      corner: st ? await sideOrder(['CORNER'], numOrNaN(st.cornersHome), numOrNaN(st.cornersAway),
+        { 'CORNER|home': numOrNaN(st.cornersHome), 'CORNER|away': numOrNaN(st.cornersAway) }) : undefined,
+      card: st ? await sideOrder(['YELLOW_CARD', 'RED_CARD'], numOrNaN(st.cardsHome), numOrNaN(st.cardsAway), {
+        'YELLOW_CARD|home': numOrNaN(st.yellowHome), 'YELLOW_CARD|away': numOrNaN(st.yellowAway),
+        'RED_CARD|home': numOrNaN(st.redHome), 'RED_CARD|away': numOrNaN(st.redAway),
+      }) : undefined,
     };
   } catch { return undefined; }
 }
@@ -311,6 +317,38 @@ export function sideOrderFromEvents(events, nHome, nAway) {
   return { first: certain(events[0]), last: certain(events[events.length - 1]) };
 }
 
+// The same first / last question answered from the running count each event carries in `detail` ("the 5th home
+// corner" is logged with detail 5). A gap in the log (an event missed while the server was down or the feed
+// dropped) does not matter any more: the FIRST event of a kind is the earliest of the events numbered 1, the LAST
+// is the latest of the events numbered like the final counter of their side -- as long as those events are logged.
+//   totals: { 'CORNER|home': 5, 'CORNER|away': 3 }  (every 'type|team' the question covers, final counters)
+// undefined for a field when a needed event is not in the log, a total is unknown, or the deciding events are tied.
+export function detailOrderFromEvents(events, totals) {
+  if (!Array.isArray(events) || !totals) return undefined;
+  const entries = Object.entries(totals);
+  if (!entries.length || entries.some(([, n]) => !Number.isFinite(n) || n < 0)) return undefined;
+  const active = entries.filter(([, n]) => n > 0);
+  if (!active.length) return { first: 'NONE', last: 'NONE' };
+  const countOf = (e) => Number(String(e.detail ?? '').replace(/\D/g, ''));
+  const find = (key, n) => events.find((e) => `${e.type || 'CORNER'}|${e.team}` === key && countOf(e) === n);
+  const sideOf = (e) => (e.team === 'home' ? 'HOME' : e.team === 'away' ? 'AWAY' : undefined);
+  const decide = (picks, latest) => {
+    if (picks.some((p) => !p)) return undefined;
+    const times = picks.map((p) => Number(p.created_at));
+    if (times.some((x) => !Number.isFinite(x))) return undefined;
+    const best = latest ? Math.max(...times) : Math.min(...times);
+    const sides = new Set(picks.filter((p, i) => times[i] === best).map(sideOf));
+    return sides.size === 1 ? [...sides][0] : undefined; // a tie between the two sides cannot be told apart
+  };
+  return { first: decide(active.map(([k]) => find(k, 1)), false), last: decide(active.map(([k, n]) => find(k, n)), true) };
+}
+// Two answers to the same question: the one that is certain wins; two certain answers that disagree cancel out.
+export function mergeSideOrder(a, b) {
+  if (!a && !b) return undefined;
+  const pick = (x, y) => (x && y && x !== y ? undefined : (x || y));
+  return { first: pick(a && a.first, b && b.first), last: pick(a && a.last, b && b.last) };
+}
+
 // Side of the Nth corner of the match ('HOME' | 'AWAY'), 'NONE' when there were fewer than N corners, or
 // undefined when the log cannot be trusted (it must add up to the final counters; the Nth event must not be
 // tied in time with an event of the other side).
@@ -332,6 +370,13 @@ export function raceWinnerFromEvents(events, n, nHome, nAway) {
   if (nHome >= n && nAway < n) return 'HOME';
   if (nAway >= n && nHome < n) return 'AWAY';
   if (!Array.isArray(events)) return undefined;
+  // Both Nth corners are in the log with their running count: no need for the whole log to be complete.
+  const nth = (team) => {
+    const e = events.find((x) => x.team === team && x.detail != null && Number(String(x.detail).replace(/\D/g, '')) === n);
+    return e ? Number(e.created_at) : NaN;
+  };
+  const dHome = nth('home'); const dAway = nth('away');
+  if (Number.isFinite(dHome) && Number.isFinite(dAway) && dHome !== dAway) return dHome < dAway ? 'HOME' : 'AWAY';
   if (events.filter((e) => e.team === 'home').length !== nHome || events.filter((e) => e.team === 'away').length !== nAway) return undefined;
   let h = 0; let a = 0; let hitHome = null; let hitAway = null;
   for (const e of events) {
@@ -662,7 +707,7 @@ function cornersP1P2Outcome(leg, stats, htStats) {
   return c1 >= r1[0] && c1 <= r1[1] && c2 >= r2[0] && c2 <= r2[1] ? 'WON' : 'LOST';
 }
 
-export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeScore, awayScore, htHome, htAway, stats, htStats, goalOrder, goalMinutes, nextEvents, goalTimeline }) {
+export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeScore, awayScore, htHome, htAway, stats, htStats, goalOrder, goalMinutes, nextEvents, goalTimeline, aggregate }) {
   const marketId = String(leg.market_id ?? '');
   const hasScore = Number.isFinite(homeScore) && Number.isFinite(awayScore);
 
@@ -684,7 +729,7 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
   if (!marketName) return null;
 
   // ---- the provider's less common markets (clean sheet, win either half, half goals, ...) ----
-  const extra = extraMarketOutcome(leg, marketName, { homeScore, awayScore, htHome, htAway, stats, htStats });
+  const extra = extraMarketOutcome(leg, marketName, { homeScore, awayScore, htHome, htAway, stats, htStats, aggregate });
   if (extra !== undefined) return extra;
 
   // ---- combination markets: "Rezultat Final & Totali" -> "1 & Lart 2.5" ----
@@ -1027,6 +1072,59 @@ async function loadExtraTimeGoals(client, match) {
   } catch { return { home: 0, away: 0 }; } // half column not migrated yet
 }
 
+// ---- "To qualify": the sum of the two legs of a tie -----------------------------------------
+// The other leg is the same competition, the same two teams with the roles swapped, already finished.
+// Finished matches leave matches_cache after about a week, so the result of every settled match is also
+// kept in match_results (migration 0019) for TIE_WINDOW_DAYS.
+export const TIE_WINDOW_DAYS = 75;
+const legNeedsAggregate = (leg) => /^to qualify$/.test(norm(leg.market_name));
+
+// The candidate (rows of { start_time, result_home, result_away }) whose kick-off is nearest to this match's, within the window.
+export function pickOtherLeg(startTime, candidates, windowDays = TIE_WINDOW_DAYS) {
+  const t0 = Date.parse(startTime);
+  let best = null; let bestGap = Infinity;
+  for (const c of candidates || []) {
+    if (c.result_home == null || c.result_away == null) continue;
+    const gap = Math.abs(Date.parse(c.start_time) - t0);
+    if (!Number.isFinite(gap) || gap > windowDays * 86400000 || gap >= bestGap) continue;
+    best = c; bestGap = gap;
+  }
+  return best;
+}
+// Goals of both legs from the sides of this match: its own score + what the same side scored in the other leg.
+export function aggregateFrom(homeScore, awayScore, other) {
+  if (!other || ![homeScore, awayScore, Number(other.result_home), Number(other.result_away)].every(Number.isFinite)) return undefined;
+  return { home: homeScore + Number(other.result_away), away: awayScore + Number(other.result_home) };
+}
+async function loadAggregate(client, matchId, homeScore, awayScore) {
+  try {
+    const { rows: [m] } = await client.query('SELECT id, league, home_team, away_team, start_time FROM matches_cache WHERE id = $1', [matchId]);
+    if (!m) return undefined;
+    const params = [m.league, m.away_team, m.home_team, m.id];
+    let { rows: cands } = await client.query(
+      `SELECT id, start_time, result_home, result_away FROM matches_cache
+        WHERE league = $1 AND home_team = $2 AND away_team = $3 AND id <> $4
+          AND status = 'FINISHED' AND result_home IS NOT NULL AND result_away IS NOT NULL`, params);
+    try {
+      const { rows: archived } = await client.query(
+        `SELECT match_id AS id, start_time, result_home, result_away FROM match_results
+          WHERE league = $1 AND home_team = $2 AND away_team = $3 AND match_id <> $4`, params);
+      cands = cands.concat(archived);
+    } catch { /* archive not migrated yet: the cache alone */ }
+    return aggregateFrom(homeScore, awayScore, pickOtherLeg(m.start_time, cands));
+  } catch { return undefined; }
+}
+// Keeps the regular-time result of a settled match for the other leg of its tie.
+async function archiveResult(client, matchId, homeScore, awayScore) {
+  try {
+    await client.query(
+      `INSERT INTO match_results (match_id, league, home_team, away_team, start_time, result_home, result_away, saved_at)
+       SELECT id, league, home_team, away_team, start_time, $2, $3, $4 FROM matches_cache WHERE id = $1
+       ON CONFLICT (match_id) DO UPDATE SET result_home = EXCLUDED.result_home, result_away = EXCLUDED.result_away, saved_at = EXCLUDED.saved_at`,
+      [matchId, homeScore, awayScore, Date.now()]);
+  } catch { /* table not migrated yet: nothing to keep it in */ }
+}
+
 export async function settleMatch(matchId, homeScore, awayScore, { force = false } = {}) {
   const client = await pool.connect();
   try {
@@ -1063,6 +1161,7 @@ export async function settleMatch(matchId, homeScore, awayScore, { force = false
     const goalMinutes = legs.some(legNeedsGoalMinutes) ? await loadGoalMinutes(client, matchId, homeScore, awayScore) : undefined;
     const nextEvents = legs.some(legNeedsNextEvent) ? await loadNextEvents(client, match, homeScore, awayScore) : undefined;
     const goalTimeline = legs.some(legNeedsTimeline) ? await loadGoalTimeline(client, match, homeScore, awayScore) : undefined;
+    const aggregate = legs.some(legNeedsAggregate) ? await loadAggregate(client, matchId, homeScore, awayScore) : undefined;
 
     await client.query('BEGIN');
     try {
@@ -1070,7 +1169,7 @@ export async function settleMatch(matchId, homeScore, awayScore, { force = false
         affectedBetIds.add(leg.bet_id);
         const outcome = determineLegOutcome(leg, {
           winner, totalGoals, bothScored, homeScore, awayScore, stats, goalOrder, goalMinutes, nextEvents, goalTimeline,
-          htStats,
+          htStats, aggregate,
           htHome: htScore ? htScore.htHome : undefined,
           htAway: htScore ? htScore.htAway : undefined,
         });
@@ -1096,6 +1195,7 @@ export async function settleMatch(matchId, homeScore, awayScore, { force = false
       await client.query('ROLLBACK');
       throw err;
     }
+    await archiveResult(client, matchId, homeScore, awayScore); // after the commit: a missing table must never break a settlement
 
     return { autoSettledLegs: autoSettledCount, leftPendingForManualReview: leftPendingCount, affectedBets: affectedBetIds.size };
   } finally {
@@ -1192,7 +1292,11 @@ export async function settleStuckBets() {
     const minutesByMatch = new Map();
     const nextByMatch = new Map();
     const timelineByMatch = new Map();
+    const aggregateByMatch = new Map();
     for (const leg of legs) {
+      if (legNeedsAggregate(leg) && !aggregateByMatch.has(leg.match_id)) {
+        aggregateByMatch.set(leg.match_id, await loadAggregate(client, leg.match_id, Number(leg.result_home), Number(leg.result_away)));
+      }
       if (legNeedsTimeline(leg) && !timelineByMatch.has(leg.match_id)) {
         const { rows: mr } = await client.query('SELECT id, home_team, away_team FROM matches_cache WHERE id = $1', [leg.match_id]);
         timelineByMatch.set(leg.match_id, mr[0] ? await loadGoalTimeline(client, mr[0], Number(leg.result_home), Number(leg.result_away)) : undefined);
@@ -1231,6 +1335,7 @@ export async function settleStuckBets() {
           goalMinutes: minutesByMatch.get(leg.match_id),
           nextEvents: nextByMatch.get(leg.match_id),
           goalTimeline: timelineByMatch.get(leg.match_id),
+          aggregate: aggregateByMatch.get(leg.match_id),
           winner: home > away ? 'HOME' : away > home ? 'AWAY' : 'DRAW',
           totalGoals: home + away,
           bothScored: home > 0 && away > 0,

@@ -31,7 +31,8 @@ Gjendja e secilit treg nga raporti i adminit ("Tregjet"). Katër nivele, sipas k
 | Rezultati Final Gola 3+ / 4+ (opsionet 1/X/2 ose Po/Jo) | **Supozim:** rezultati i zgjedhur dhe të paktën N gola totale (Po/Jo: vetëm kushti i golave). Pa verifikuar me feed. |
 | Cila skuadër shënon golin e parë / të fundit | renditja e golave nga ngjarjet, vetëm kur është e besueshme |
 | Shënon golin e dytë (skuadra); Goli i parë në pjesën e parë ("None 1","1 1","2 1") | renditja e golave nga ngjarjet; "1" e fundit supozohet periudha 1 (**pa verifikuar**); X në golin e dytë nuk shlyhet |
-| Godet kornen e parë / të fundit; Merr kartonin e parë | renditja e ngjarjeve, vetëm kur numri i ngjarjeve përputhet me numëruesin dhe nuk ka barazim kohe |
+| Godet kornen e parë / të fundit; Merr kartonin e parë; Gara e Korneve | renditja e ngjarjeve. Çdo ngjarje mban numrin rrjedhës të ekipit ("korneri i 5-të i shtëpiakut"), prandaj një boshllëk në log (ngjarje e humbur kur serveri ishte i fikur) nuk e pengon më: i fundit = më i vonshmi i ngjarjeve me numrin e fundit të secilit ekip, i pari = më i hershmi i atyre me numër 1, Gara në N = ngjarjet me numër N. Mbetet pezull vetëm kur ngjarja vendimtare vetë mungon ose dy ekipet kanë të njëjtën kohë |
+| To qualify (1 / 2) | shuma e golave të dy ndeshjeve pas kohës rregulluese: ndeshja tjetër (të njëjtat ekipe, anët e ndërruara, të njëjtën garë, brenda 75 ditëve) merret nga matches_cache ose nga arkivi `match_results` (migrimi 0019, 90 ditë), sepse ndeshja e parë del nga cache pas rreth një jave. Shuma e pabarabartë vendos; shuma e barabartë (kohë shtesë / penalti, që feed-i nuk i jep) dhe ndeshja tjetër që mungon ose s'ka mbaruar mbeten pezull për mbyllje me dorë |
 | Home/Away/Draw or any clean sheet | **Yes = rezultati OR ndonjëra skuadër pa pësuar gol; No = e kundërta** (sipas specifikimit; i pa verifikuar me feed) |
 
 ## B. Vijat aziatike (pagesa e plotë) — implementuar + testuar + prova me Postgres
@@ -55,9 +56,9 @@ Për këto nuk kemi shpjegim nga londonpro365, ndaj është zgjedhur leximi më 
 | Fitore/Fitore (1, 2) dhe variantet pjesa 1 / pjesa 2 | Draw No Bet: ekipi fiton, humbet, ose barazimi rimbursohet |
 | Total bookings (+ pjesa 1), Home/Away exact bookings | Njësia nga vija: nën 10 = kartona (verdhë 1, kuq 1); 10 e lart = pikë (verdhë 10, kuq 25) |
 | Booking 1x2 (+ pjesa 1) | Pikët e kartonave (verdhë 10, kuq 25) |
-| Rezultat Final me Kartona, Rezultat i P1 me kartona | Opsioni "1 & Lart 3.5" (ndarës &, /, - ose hapësirë); kartonat si më sipër |
-| Halftime/fulltime & exact goals | Opsioni "pushim/fund & gola" ("2/2 & 3", "2-X/0-1"): të tria duhet të jenë të sakta |
-| RP1/RP2 & Gol/JoGol | Rezultati i pjesës 1, rezultati i pjesës 2 dhe të dyja shënojnë ("2/X & Gol") |
+| Rezultat Final me Kartona, Rezultat i P1 me kartona, Rezultat i P2 me kartona | 1 / X / 2 + vija e kartonave në një opsion ("1 & Lart 3.5", "1 / 3.5 Lart", "X Nen 4.5": çdo renditje dhe ndarës). "3.5 Lart" = 4 kartona ose më shumë, "3.5 Nen" = 3 ose më pak. Final = rezultati dhe kartonat e gjithë ndeshjes; P1 / P2 = rezultati dhe kartonat vetëm të asaj pjese (P2 = fundi minus pushimi). Vija mund të jetë edhe në fund të emrit të tregut |
+| Halftime/fulltime & exact goals | Opsioni "pushim/fund & gola" ("2/2 & 3", "2-X/0-1") ose "3 Home/Home": të tria duhet të jenë të sakta |
+| RP1/RP2 & Gol/JoGol | Opsioni "GG / JG" = Gol/JoGol i pjesës 1, pastaj i pjesës 2 (GG = të dyja ekipet shënojnë në atë pjesë, JG = jo). Leximi i vjetër "2/X & Gol" (rezultati i pjesëve + të dyja shënojnë) mbetet për atë formë opsioni |
 | Rezultati i saktë i pjesës 1, "Të Tjera" | Çdo rezultat me 3+ gola të një ekipi në pjesë |
 | Sending off pjesa 2 | Të kuqtë në fund minus të kuqtë në pushim |
 | Goli i parë në pjesën e parë, "or any clean sheet", Rezultati Final Gola N+, handikapi aziatik | Siç thuhet te seksioni A |
@@ -65,6 +66,8 @@ Për këto nuk kemi shpjegim nga londonpro365, ndaj është zgjedhur leximi më 
 Nëse formati i opsionit nuk përputhet me atë që pritet (p.sh. "Rezultat Final me Kartona"), bileta mbetet pezull deri në mbylljen automatike më poshtë.
 
 ## D. Pa rregull dhe mbyllja automatike
+
+Tregjet e fshehura (nuk dalin në tabelë, nuk pranojnë baste, nuk hyjnë në raportin e mbulimit): "A do të ketë kohë shtesë?", "Overtime & goal", "Winning method", "Will there be a penalty shootout", "A do te kete penallti gjate ndeshjes?", "Home no bet" dhe "Away no bet". Biletat që ishin vënë para fshehjes mbeten për mbyllje me dorë.
 
 | Tregu | Çfarë ndodh |
 |---|---|
