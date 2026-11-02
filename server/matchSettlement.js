@@ -290,12 +290,24 @@ async function loadGoalOrder(client, match, homeScore, awayScore) {
 // when the log does not add up to the final counters (events missed while the server was down) or the
 // first / last event is tied in time with one of the other side. No events at all -> 'NONE'.
 export function sideOrderFromEvents(events, nHome, nAway) {
-  if (!Number.isFinite(nHome) || !Number.isFinite(nAway)) return undefined;
+  if (!Array.isArray(events) || !Number.isFinite(nHome) || !Number.isFinite(nAway)) return undefined;
   if (nHome + nAway === 0) return { first: 'NONE', last: 'NONE' };
-  if (events.filter((e) => e.team === 'home').length !== nHome || events.filter((e) => e.team === 'away').length !== nAway) return undefined;
-  const side = (e) => (e.team === 'home' ? 'HOME' : e.team === 'away' ? 'AWAY' : undefined);
-  const pick = (e) => (events.some((o) => o.team !== e.team && Number(o.created_at) === Number(e.created_at)) ? undefined : side(e));
-  return { first: pick(events[0]), last: pick(events[events.length - 1]) };
+  const logHome = events.filter((e) => e.team === 'home').length;
+  const logAway = events.filter((e) => e.team === 'away').length;
+  const missHome = nHome - logHome;
+  const missAway = nAway - logAway;
+  if (missHome < 0 || missAway < 0) return undefined; // more events than the counters say: the log cannot be trusted
+  const side = (e) => (e && e.team === 'home' ? 'HOME' : e && e.team === 'away' ? 'AWAY' : undefined);
+  const pick = (e) => (e && events.some((o) => o.team !== e.team && Number(o.created_at) === Number(e.created_at)) ? undefined : side(e));
+  if (missHome === 0 && missAway === 0) return { first: pick(events[0]), last: pick(events[events.length - 1]) };
+  // Some events were never logged (feed gap, server restart). If the missing ones all belong to ONE side S they
+  // cannot change who was first or last when that event is S anyway, so it is still certain when the first / last
+  // LOGGED event is S, or when the other side had no event at all. Anything else stays undecided.
+  if (missHome > 0 && missAway > 0) return undefined;
+  const S = missHome > 0 ? 'HOME' : 'AWAY';
+  if ((S === 'HOME' ? nAway : nHome) === 0) return { first: S, last: S };
+  const certain = (e) => (side(e) === S ? pick(e) : undefined);
+  return { first: certain(events[0]), last: certain(events[events.length - 1]) };
 }
 
 // Side of the Nth corner of the match ('HOME' | 'AWAY'), 'NONE' when there were fewer than N corners, or
