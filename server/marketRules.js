@@ -199,7 +199,7 @@ export function describeMarket(marketId, marketName) {
 // markets the system does not recognise disappear from the board. Off by default: look at
 // GET /api/admin/market-coverage first to see how many markets that would remove.
 export function settlementRuleRequired() {
-  return ['1', 'true', 'yes'].includes(String(process.env.BET_REQUIRE_SETTLEMENT_RULE || '').toLowerCase());
+  return ['1', 'true', 'yes'].includes(String(process.env.BET_REQUIRE_SETTLEMENT_RULE ?? '1').toLowerCase());
 }
 
 // Markets with no verifiable live data (corners, cards, timing, players, combos...) are

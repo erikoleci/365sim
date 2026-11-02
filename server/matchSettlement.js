@@ -1532,7 +1532,7 @@ export async function recoverFinishedWithoutResult({ now = Date.now() } = {}) {
 // it drops out of the ticket (a single bet is refunded, an accumulator is paid on
 // its remaining legs) -- the same treatment a bookmaker gives a postponed match.
 // 0 (the default) disables it. Admins settle these by hand (Fituese / Humbëse on the ticket, or the Pezull panel).
-const UNSETTLED_VOID_AFTER_MS = Math.max(0, Number(process.env.UNSETTLED_BET_VOID_AFTER_HOURS ?? 0)) * 3600 * 1000;
+const UNSETTLED_VOID_AFTER_MS = Math.max(0, Number(process.env.UNSETTLED_BET_VOID_AFTER_HOURS ?? 4)) * 3600 * 1000;
 
 export function isLegOverdue({ matchStart, betCreatedAt }, now, olderThanMs) {
   if (!(olderThanMs > 0)) return false;
