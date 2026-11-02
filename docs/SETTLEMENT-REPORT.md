@@ -76,3 +76,5 @@ Tregjet e fshehura (nuk dalin në tabelë, nuk pranojnë baste, nuk hyjnë në r
 
 **Shlyerja me dorë (skeda "Pezull" te admini).** Liston, për ndeshjet e mbaruara, çdo treg dhe selektim që ende ka bileta pezull. Me butonat Fitues / Humbës / Rimburso vendos të gjitha biletat e atij rreshti njëherësh. Thirrja e dytë nuk paguan përsëri.
 
+
+**Rregulli 7 (konfirmuar):** "Halftime/Fulltime" (HT/FT) = rezultati i pjesës 1 + rezultati FINAL i ndeshjes. "Pushim/Fund" (45/90) mbetet sipas gjysmave (pjesa 1, pastaj pjesa 2 më vete). Janë dy tregje të ndryshme.

@@ -117,3 +117,28 @@ describe('halves: goals', () => {
     expect(run('Tek/Çift Pjesa 1', 'Tek', noHt)).toBeNull();
   });
 });
+
+describe('Halftime/Fulltime (HT/FT) = half-time result + FINAL result; Pushim/Fund stays by halves', () => {
+  // 2-1, HT 1-0 -> HT home, FT home
+  it('HT/FT uses the final result', () => {
+    for (const m of ['Halftime/Fulltime', 'HT/FT']) {
+      expect(run(m, '1/1', c21)).toBe('WON');
+      expect(run(m, '1/2', c21)).toBe('LOST');
+      expect(run(m, 'X/1', c21)).toBe('LOST');
+    }
+  });
+  it('1-3 with HT 1-1 -> X/2 wins, 1/2 loses', () => {
+    expect(run('Halftime/Fulltime', 'X/2', c13)).toBe('WON');
+    expect(run('Halftime/Fulltime', '1/2', c13)).toBe('LOST');
+  });
+  it('1-1 final with HT 1-0 and 0-1 in the second half: HT/FT = 1/X, Pushim/Fund = 1/2', () => {
+    const c = base(1, 1, 1, 0);
+    expect(run('Halftime/Fulltime', '1/X', c)).toBe('WON');
+    expect(run('Halftime/Fulltime', '1/2', c)).toBe('LOST');
+    expect(run('Pushim/Fund', '1/2', c)).toBe('WON'); // by halves: H1 1-0 home, H2 0-1 away
+  });
+  it('missing half-time score: loss proven by the final result, a win stays PENDING', () => {
+    expect(run('Halftime/Fulltime', '1/2', noHt)).toBe('LOST');
+    expect(run('Halftime/Fulltime', '1/1', noHt)).toBeNull();
+  });
+});

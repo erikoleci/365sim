@@ -21,7 +21,10 @@ import { parseProviderMarket, providerOutcome, goalTimelineFromRows } from './pr
 // (period phrases, name sets and Over/Under parsing live in marketPeriods.js / marketRules.js,
 // shared with the betting rules so both sides always agree on what a market is.)
 
-const HTFT_NAMES = new Set(['45/90', '45 / 90', '45/90 min', '45/90 minuta', 'pushim/fund', 'pushimi/fundi', 'pushim / fund', 'pushim fund', 'ht/ft', 'ht ft', 'pjesa e pare/finale', 'pjesa e pare/fund',
+// Official rule 7: "Halftime/Fulltime" = the half-time RESULT + the FINAL result of the match ("1/2": home lead at the break, away win at the end).
+// This is a different market from "Pushim/Fund" (45/90) below, which is played by halves.
+const CLASSIC_HTFT_NAMES = new Set(['ht/ft', 'ht ft', 'ht / ft', 'halftime/fulltime', 'halftime / fulltime', 'halftime fulltime', 'half time/full time', 'half time / full time']);
+const HTFT_NAMES = new Set(['45/90', '45 / 90', '45/90 min', '45/90 minuta', 'pushim/fund', 'pushimi/fundi', 'pushim / fund', 'pushim fund', 'pjesa e pare/finale', 'pjesa e pare/fund',
   'rezultati pjesa e pare / rezultati final', 'rezultati pjesa e pare/rezultati final', 'rezultati i pjeses se pare / rezultati final',
   'rezultati pjesa e pare / final', 'rezultati ne pushim / rezultati final']);
 
@@ -45,7 +48,7 @@ function splitCombo(leg) {
   // ("1/2/3+" for "45/90 & Numri i Golave"): put its two halves back together.
   if (marketParts.length >= 2 && selectionParts.length !== marketParts.length) {
     const slashed = selection.split(/\s*\/\s*/);
-    const i = marketParts.findIndex((m) => HTFT_NAMES.has(norm(m)));
+    const i = marketParts.findIndex((m) => HTFT_NAMES.has(norm(m)) || CLASSIC_HTFT_NAMES.has(norm(m)));
     if (i >= 0 && slashed.length === marketParts.length + 1) {
       selectionParts = [...slashed.slice(0, i), slashed[i] + '/' + slashed[i + 1], ...slashed.slice(i + 2)];
     }
@@ -758,6 +761,16 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
   if (/\bne cilen pjese\b|\bpjesa me (me )?shume\b/.test(marketName)) {
     const kind = /korn|corner/.test(marketName) ? 'corners' : /karton|\bcards?\b/.test(marketName) ? 'cards' : /gol/.test(marketName) ? 'goals' : null;
     if (kind) return halfWithMoreOutcome(leg, kind, { homeScore, awayScore, htHome, htAway, stats, htStats });
+  }
+
+  // ---- "Halftime/Fulltime" (HT/FT) -> "1/2": half-time result + FINAL result ----
+  if (CLASSIC_HTFT_NAMES.has(marketName)) {
+    const m = String(leg.selection_name || leg.selection_id).trim().toLowerCase().match(/^([12x])\s*[\/-]\s*([12x])$/);
+    if (!m || !hasScore) return null;
+    const sign = (h, a) => (h > a ? '1' : a > h ? '2' : 'x');
+    if (sign(homeScore, awayScore) !== m[2]) return 'LOST'; // the final result alone already decides a loss
+    if (!Number.isFinite(htHome) || !Number.isFinite(htAway)) return null; // half-time score missing: a win cannot be proven
+    return sign(htHome, htAway) === m[1] ? 'WON' : 'LOST';
   }
 
   // ---- "45/90" ("Pushim/Fund") -> "1/2": played BY HALVES ----
