@@ -584,7 +584,10 @@ function sideOfSelection(leg) {
 
 function parseHandicap(leg) {
   const text = String(leg.selection_name || leg.selection_id || '');
-  const m = text.trim().match(/^(.*?)\s*\(\s*([+-]?\d+(?:[.,]\d+)?)\s*\)\s*$/);
+  let m = text.trim().match(/^(.*?)\s*\(\s*([+-]?\d+(?:[.,]\d+)?)\s*\)\s*$/);
+  // The provider's "Handikap" options come as "1 -0.25" / "2 -0.5" (the line inside the text, and the board
+  // appends "(undefined)" because the option has no separate point): read the line from the text itself.
+  if (!m) m = text.trim().match(/^([12])\s+([+-]?\d+(?:[.,]\d+)?)(?:\s*\(\s*undefined\s*\))?$/i);
   if (!m) return null;
   const point = parseFloat(m[2].replace(',', '.'));
   if (Number.isNaN(point) || Math.abs(point * 4 - Math.round(point * 4)) > 1e-9) return null; // not a multiple of 0.25

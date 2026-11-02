@@ -207,8 +207,16 @@ const RULES = [
     const s = finalScore(c); const h = halves(c); if (!s || !h) return null;
     const o = sel.match(/^([1x2])\s*[-\/]\s*([1x2])\s*(?:&|\/|_|-|\s)\s*(\d+(?:\s*-\s*\d+|\s*\+)?)$/);
     const r = o && rangeOf(o[3].replace(/\s+/g, ''));
-    if (!o || !r) return null;
-    return won(resultOf(h.h1.home, h.h1.away) === o[1].toUpperCase() && resultOf(s.home, s.away) === o[2].toUpperCase() && inRange(s.home + s.away, r));
+    if (o && r) {
+      return won(resultOf(h.h1.home, h.h1.away) === o[1].toUpperCase() && resultOf(s.home, s.away) === o[2].toUpperCase() && inRange(s.home + s.away, r));
+    }
+    // The provider's own form: "<goals> <half-time>/<full-time>" with the results spelled out
+    // ("0 Draw/Draw", "1 Home/Home", "1 Draw/Away", "3+ Home/Away").
+    const w = sel.match(/^(\d+(?:\s*-\s*\d+|\s*\+)?)\s+(home|draw|away)\s*\/\s*(home|draw|away)$/i);
+    const wr = w && rangeOf(w[1].replace(/\s+/g, ''));
+    if (!w || !wr) return null;
+    const word = (v) => (v === 'home' ? '1' : v === 'away' ? '2' : 'X');
+    return won(resultOf(h.h1.home, h.h1.away) === word(w[2].toLowerCase()) && resultOf(s.home, s.away) === word(w[3].toLowerCase()) && inRange(s.home + s.away, wr));
   }],
   // "RP1/RP2 & Gol/JoGol": result of the first half, result of the second half, and both teams to score.
   [/^rp1\/rp2 & gol\/jogol$/, (m, sel, c) => {
