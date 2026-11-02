@@ -54,8 +54,8 @@ Për këto nuk kemi shpjegim nga londonpro365, ndaj është zgjedhur leximi më 
 | Tregu | Leximi i përdorur |
 |---|---|
 | Fitore/Fitore (1, 2) dhe variantet pjesa 1 / pjesa 2 | Draw No Bet: ekipi fiton, humbet, ose barazimi rimbursohet |
-| Total bookings (+ pjesa 1), Home/Away exact bookings | Njësia nga vija: nën 10 = kartona (verdhë 1, kuq 1); 10 e lart = pikë (verdhë 10, kuq 25) |
-| Booking 1x2 (+ pjesa 1) | Pikët e kartonave (verdhë 10, kuq 25) |
+| Total bookings (+ pjesa 1), Home/Away exact bookings | **Konfirmuar nga pronari:** vetëm kartona realë (verdhë 1, kuq 1), kurrë pikë, pavarësisht vijës |
+| Booking 1x2 (+ pjesa 1) | **Konfirmuar:** krahasohen kartonët realë (verdhë 1, kuq 1); i barabartë = X; P1 = vetëm kartonët e pjesës 1 |
 | Rezultat Final me Kartona, Rezultat i P1 me kartona, Rezultat i P2 me kartona | 1 / X / 2 + vija e kartonave në një opsion ("1 & Lart 3.5", "1 / 3.5 Lart", "X Nen 4.5": çdo renditje dhe ndarës). "3.5 Lart" = 4 kartona ose më shumë, "3.5 Nen" = 3 ose më pak. Final = rezultati dhe kartonat e gjithë ndeshjes; P1 / P2 = rezultati dhe kartonat vetëm të asaj pjese (P2 = fundi minus pushimi). Vija mund të jetë edhe në fund të emrit të tregut |
 | Halftime/fulltime & exact goals | Opsioni "pushim/fund & gola" ("2/2 & 3", "2-X/0-1") ose "3 Home/Home": të tria duhet të jenë të sakta |
 | RP1/RP2 & Gol/JoGol | Opsioni "GG / JG" = Gol/JoGol i pjesës 1, pastaj i pjesës 2 (GG = të dyja ekipet shënojnë në atë pjesë, JG = jo). Leximi i vjetër "2/X & Gol" (rezultati i pjesëve + të dyja shënojnë) mbetet për atë formë opsioni |

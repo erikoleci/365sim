@@ -89,8 +89,8 @@ const winsHalf = (sel, a, b) => (a === b ? null : won((sel === '1') === (a > b))
 // points (yellow 10, red 25); the size of the line or option tells which unit the market uses.
 // The first scheme of each unit is the one used (card count: yellow 1 / red 1; points: yellow 10 / red 25).
 const COUNT_SCHEMES = [{ y: 1, r: 1 }];
-const POINT_SCHEMES = [{ y: 10, r: 25 }];
-const schemesFor = (n) => (n >= 10 ? POINT_SCHEMES : COUNT_SCHEMES);
+// Official rule: cards are ALWAYS real card counts (yellow = 1, red = 1). Booking points (10/25) are never used, whatever the line.
+const schemesFor = () => COUNT_SCHEMES;
 function bookingParts(c, firstHalf) {
   const st = c.stats; if (!st) return null;
   let yh = fin(st.yellowHome); let ya = fin(st.yellowAway); let rh = fin(st.redHome); let ra = fin(st.redAway);
@@ -199,13 +199,11 @@ const RULES = [
     const first = m[1] === 'home' ? res === '1' : m[1] === 'away' ? res === '2' : res === 'X';
     return won((first || s.home === 0 || s.away === 0) === y);
   }],
-  // Booking 1X2: the side with more cards. Decided only when NO red card was shown by either team:
-  // then comparing yellow counts gives the same answer whether the provider counts cards or
-  // booking points (10 per yellow). With a red card the two schemes can differ -> PENDING.
+  // Booking 1X2: the side with more real cards (yellow = 1, red = 1); equal = X. P1 = first-half cards only.
   [/^(?:(1st half) - )?booking 1x2$/, (m, sel, c) => {
     if (!/^[1x2]$/.test(sel)) return null;
     const b = bookingParts(c, !!m[1]); if (!b) return null;
-    const [home] = bookingValues(b, 'home', POINT_SCHEMES); const [away] = bookingValues(b, 'away', POINT_SCHEMES);
+    const [home] = bookingValues(b, 'home', COUNT_SCHEMES); const [away] = bookingValues(b, 'away', COUNT_SCHEMES);
     return won(resultOf(home, away) === sel.toUpperCase());
   }],
   // "Rezultati Final Gola 3+" / "4+": the final result AND at least N goals (1 / X / 2 options);

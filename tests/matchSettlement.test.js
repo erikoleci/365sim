@@ -631,12 +631,17 @@ describe('unconfirmed meanings: settled only when every reading agrees (Fitore/F
     t('Fitore - Fitore Pjesa e 2të', '1', 'LOST', g(1, 3, 1, 1));
     t('Fitore/Fitore - Pjesa 1rë', '1', null, g(2, 1, undefined, undefined)); // no half-time score
   });
-  it('bookings: the unit follows the line (cards under 10, points from 10)', () => {
+  it('bookings: always real cards (yellow 1, red 1), never points, whatever the line', () => {
     t('Total bookings', 'Lart 2.5', 'WON', g(1, 1, 0, 0));       // 3 yellows: 3 cards
     t('Total bookings', 'Lart 3.5', 'LOST', g(1, 1, 0, 0));
-    t('Total bookings', 'Lart 25.5', 'WON', g(1, 1, 0, 0));      // 30 points
+    t('Total bookings', 'Lart 25.5', 'LOST', g(1, 1, 0, 0));     // 3 cards (NOT 30 points)
+    t('Total bookings', 'Poshte 25.5', 'WON', g(1, 1, 0, 0));
     t('Total bookings', 'Lart 35.5', 'LOST', g(1, 1, 0, 0));
-    t('Total bookings', 'Lart 3.5', 'WON', g(1, 1, 0, 0, { stats: { yellowHome: 2, yellowAway: 1, redHome: 0, redAway: 1 } })); // red: 4 or 5 cards, over 3.5 either way
+    t('Total bookings', 'Lart 3.5', 'WON', g(1, 1, 0, 0, { stats: { yellowHome: 2, yellowAway: 1, redHome: 0, redAway: 1 } })); // 2Y+1Y+1R = 4 cards
+    t('Booking 1x2', '1', 'LOST', g(1, 1, 0, 0, { stats: { yellowHome: 2, yellowAway: 1, redHome: 0, redAway: 1 } })); // 2 cards vs 2 cards -> X
+    t('Booking 1x2', 'X', 'WON', g(1, 1, 0, 0, { stats: { yellowHome: 2, yellowAway: 1, redHome: 0, redAway: 1 } }));
+    t('Booking 1x2', '1', 'WON', g(1, 1, 0, 0, { stats: { yellowHome: 3, yellowAway: 1, redHome: 0, redAway: 1 } })); // 3 vs 2 cards (a red is 1, not 25)
+    t('Booking 1x2', '2', 'LOST', g(1, 1, 0, 0, { stats: { yellowHome: 1, yellowAway: 0, redHome: 0, redAway: 1 } })); // 1 vs 1 -> X (points would say away)
     t('Total bookings', 'Lart 4.5', 'LOST', g(1, 1, 0, 0, { stats: { yellowHome: 2, yellowAway: 1, redHome: 0, redAway: 1 } })); // 4 cards
     t('1st half - total bookings', 'Lart 0.5', 'WON', g(1, 1, 0, 0));
     t('Home exact bookings', '2', 'WON', g(1, 1, 0, 0));
