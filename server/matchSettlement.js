@@ -1465,6 +1465,12 @@ export function canSettleFromLiveScore(row, now = Date.now()) {
   if (!hasClock) {
     const trustAfter = scoreWithoutClockAfterMs();
     const kickoffAt = Date.parse(row.start_time);
+    // The provider itself marks the match FINISHED and gave a score: a non-zero score cannot be a default
+    // 0-0, so trust it once the match has had time to be played (no clock needed). Fixes tickets that sat
+    // open because the feed sent a final score but never a minute.
+    if (String(row.status || '').toUpperCase() === 'FINISHED' && Number.isFinite(kickoffAt)
+      && Number(row.live_home_score) + Number(row.live_away_score) > 0
+      && now - kickoffAt >= 100 * 60000) return true;
     return trustAfter > 0 && Number.isFinite(kickoffAt) && now - kickoffAt >= trustAfter;
   }
   const minute = minuteOf(row.live_minute);
