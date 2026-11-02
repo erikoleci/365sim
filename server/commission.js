@@ -66,8 +66,8 @@ const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 //   fitim      = what the winning tickets pay out
 //   diferenca  = xhiro - fitim - commission     (a new ticket adds to it, a win takes its payout out of it)
 //   percAgjentit = commission                   (what the agent keeps: 4% / 8% of every stake)
-//   kompania   = diferenca - % agjentit
-// e.g. 2 open tickets of 20 and 10 at 8%: diferenca 30 - 1.60 - 0.80 = 27.60, % agjentit 2.40, kompania 27.60 - 2.40 = 25.20.
+//   kompania   = diferenca   (the commission is already out of diferenca: it must NOT be taken a second time)
+// e.g. 2 open tickets of 20 and 10 at 8%: diferenca 30 - 2.40 = 27.60, % agjentit 2.40, kompania 27.60.
 export function finishMetrics(m) {
   const diferenca = m.xhiro - m.fitim - m.commission;
   return {
@@ -75,7 +75,7 @@ export function finishMetrics(m) {
     activeTickets: m.activeTickets, tickets: m.tickets,
     diferenca: round2(diferenca),
     percAgjentit: round2(m.commission),
-    kompania: round2(diferenca - m.commission),
+    kompania: round2(diferenca),
   };
 }
 
