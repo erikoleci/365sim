@@ -20,6 +20,7 @@ interface OwnerDashboardProps {
   onResetPassword: (userId: string, newPass: string) => void;
   onCancelBet: (betId: string, origin: 'USER' | 'ADMIN') => void;
   onResolveBet?: (betId: string, outcome: 'WON' | 'LOST', currentStatus?: string) => void;
+  onResolveLeg?: (legId: number, outcome: 'WON' | 'LOST') => Promise<void> | void;
   onSetCurrency?: (userId: string, currency: 'ALL' | 'EUR' | 'BOTH') => void;
   // Super admin only: the casino tab plays on the super admin's own balance.
   onSetBalance?: (balance: number, balanceEur?: number) => void;
@@ -43,7 +44,7 @@ const dual = (lek: any, eur: any) => (<>{money(lek)} L<br />€{money(eur ?? 0)}
 // when actual changes (create agent, credit, reset password) are needed.
 const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
   currentUser, onLogout, users, allBets,
-  onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet, onResolveBet, onSetCurrency, onSetBalance,
+  onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet, onResolveBet, onResolveLeg, onSetCurrency, onSetBalance,
 }) => {
   const { t } = useI18n();
   const isSuper = currentUser.role === 'SUPER_ADMIN';
@@ -515,6 +516,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
             onAddCredit={onAddCredit} onResetPassword={onResetPassword}
             onCancelBet={onCancelBet}
             onResolveBet={onResolveBet}
+            onResolveLeg={onResolveLeg}
             onSetCurrency={onSetCurrency}
           />
         )}

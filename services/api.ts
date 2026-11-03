@@ -415,6 +415,10 @@ export async function adminBetWhy(betId: string) {
   return request<{ status: string; legs: OpenLegWhy[] }>(`/admin/bets/${betId}/why`);
 }
 
+export async function adminSetLeg(legId: number, status: 'WON' | 'LOST') {
+  return request<{ ok: true }>(`/admin/bet-selections/${legId}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+}
+
 export async function adminCancelBet(betId: string) {
   return request<{ ok: true }>(`/admin/bets/${betId}/cancel`, { method: 'POST' });
 }

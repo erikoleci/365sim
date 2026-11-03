@@ -7,6 +7,7 @@ import * as api from '../services/api';
 import { useI18n } from '../i18n';
 import TicketDetailModal, { TicketView } from './TicketDetailModal';
 import TicketWhy from './TicketWhy';
+import LegOverride from './LegOverride';
 import MatchupLabel from './MatchupLabel';
 
 interface AdminPanelProps {
@@ -21,10 +22,11 @@ interface AdminPanelProps {
   onCancelBet: (betId: string, origin: 'USER' | 'ADMIN') => void;
   /** Super admin only: close any ticket by hand as won or lost. */
   onResolveBet?: (betId: string, outcome: 'WON' | 'LOST', currentStatus?: string) => void;
+  onResolveLeg?: (legId: number, outcome: 'WON' | 'LOST') => Promise<void> | void;
   onSetCurrency?: (userId: string, currency: 'ALL' | 'EUR' | 'BOTH') => void;
 }
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet, onResolveBet, onSetCurrency, viewerRole }) => {
+const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, onDeleteUser, onAddCredit, onResetPassword, onCancelBet, onResolveBet, onResolveLeg, onSetCurrency, viewerRole }) => {
   const viewerIsSuper = isSuperAdminRole(viewerRole);
   const { t, locale } = useI18n();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'tickets' | 'audit' | 'markets' | 'pending'>('dashboard');
@@ -668,6 +670,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
         actions={onResolveBet && openTicket && ['PENDING', 'WON', 'LOST', 'VOID'].includes(openTicket.status) ? (
           <>
             {openTicket.status === 'PENDING' && <TicketWhy key={openTicket.id} betId={openTicket.id} />}
+            {onResolveLeg && <LegOverride key={'lo' + openTicket.id + openTicket.status} betId={openTicket.id} onResolveLeg={onResolveLeg} />}
             {openTicket.status !== 'WON' && (
               <button onClick={() => { const id = openTicket.id; const st = openTicket.status; setOpenTicket(null); onResolveBet(id, 'WON', st); }} className="flex-1 px-3 py-2 rounded bg-green-900/40 text-green-300 hover:bg-green-800 hover:text-white text-xs font-bold uppercase">{t('Bëje fituese')}</button>
             )}

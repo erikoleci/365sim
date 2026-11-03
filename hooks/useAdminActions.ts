@@ -122,6 +122,16 @@ export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reload
     }
   }, [loadAdminData, t]);
 
+  // Emergency only: set ONE match of a ticket as won or lost (the system normally does it when the match ends).
+  const resolveLeg = useCallback(async (legId: number, outcome: 'WON' | 'LOST') => {
+    try {
+      await api.adminSetLeg(legId, outcome);
+      await loadAdminData();
+    } catch (e: any) {
+      alert(e.message || t('Veprimi deshtoi'));
+    }
+  }, [loadAdminData, t]);
+
   const setAccountCurrency = useCallback(async (userId: string, currency: 'ALL' | 'EUR' | 'BOTH') => {
     try {
       await api.adminSetAccountCurrency(userId, currency);
@@ -174,5 +184,5 @@ export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reload
 
   const reset = useCallback(() => { setAdminUsers([]); setAdminAllBets([]); }, []);
 
-  return { adminUsers, adminAllBets, simulatingMatchId, createUser, deleteUser, addCredit, resetPassword, cancelBet, resolveBet, setAccountCurrency, settleMatch, reset };
+  return { adminUsers, adminAllBets, simulatingMatchId, createUser, deleteUser, addCredit, resetPassword, cancelBet, resolveBet, resolveLeg, setAccountCurrency, settleMatch, reset };
 }

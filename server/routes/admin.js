@@ -954,6 +954,9 @@ router.patch('/bet-selections/:id', async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM bet_selections WHERE id = $1', [req.params.id]);
   const selection = rows[0];
   if (!selection) return res.status(404).json({ error: 'Selection not found' });
+  // A normal admin may only touch the legs of his own people's tickets (same rule as /bets/:id/why).
+  const { rows: ownerRows } = await pool.query('SELECT u.admin_id FROM bets b JOIN users u ON u.id = b.user_id WHERE b.id = $1', [selection.bet_id]);
+  if (!ownsRow(req.user, ownerRows[0])) return res.status(404).json({ error: 'Selection not found' });
 
   // Same BEGIN/COMMIT + FOR UPDATE pattern as settleMatch/bets-cancel above:
   // without an explicit transaction here, recomputeBetStatus's FOR UPDATE
