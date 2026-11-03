@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hidePlayerOdds, isHiddenMarketName, getBetBlockReason } from '../server/marketRules.js';
+import { hidePlayerOdds, isHiddenMarketName, getBetBlockReason, isUnofferedNoBetOption } from '../server/marketRules.js';
 import { buildCoverageReport } from '../server/marketCoverage.js';
 
 const ET = { id: 'x1', name: 'A do te kete kohe shtese?', options: [{ id: 'Yes', name: 'Yes' }, { id: 'No', name: 'No' }] };
@@ -40,6 +40,12 @@ describe('hidden markets', () => {
     // offered again: penalty kicks are logged as PENALTY events and settled in extraMarkets.js
     expect(isHiddenMarketName('A do te kete penallti gjate ndeshjes?')).toBe(false);
     expect(isHiddenMarketName('Will there be a penalty')).toBe(false);
+    // only "Po" / "Yes" is on the coupon, "Jo" / "No" never
+    const m = { id: 'pen', name: 'A do te kete penallti gjate ndeshjes?', options: [{ id: 'Po', name: 'Po', odd: 3 }, { id: 'Jo', name: 'Jo', odd: 1.3 }] };
+    expect(hidePlayerOdds([m], 'A', 'B')[0].options.map((o) => o.id)).toEqual(['Po']);
+    expect(isUnofferedNoBetOption(m.name, { id: 'Jo', name: 'Jo' })).toBe(true);
+    expect(isUnofferedNoBetOption(m.name, { id: 'Po', name: 'Po' })).toBe(false);
+    expect(isUnofferedNoBetOption('Will there be a penalty', { id: 'No', name: 'No' })).toBe(true);
     expect(isHiddenMarketName('To qualify')).toBe(false);
     expect(isHiddenMarketName('Gol/JoGol')).toBe(false);
   });

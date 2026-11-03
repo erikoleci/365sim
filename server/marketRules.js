@@ -233,7 +233,14 @@ export const isHiddenMarketName = (name) => HIDDEN_MARKET.test(norm(name));
 // away side). Only that one option has a confirmed meaning; every other option of these markets (X, or the other side)
 // is not offered and cannot be bet on.
 const NO_BET_ONLY_OPTION = { 'home no bet': '1', 'away no bet': '2' };
+// "A do te kete penallti gjate ndeshjes?" / "Will there be a penalty": only "Po" / "Yes" is offered. A penalty is known to
+// have happened from the logged PENALTY events, but "no penalty" cannot be told from a missed event, so "Jo" / "No" is
+// never put on the coupon.
+const PENALTY_YES_ONLY = /^(will there be an? penalty|a do te kete penallti gjate ndeshjes)\??$/;
+const isYesOption = (o) => Boolean(o) && (/^(po|yes)$/.test(norm(o.name)) || /^(po|yes)$/.test(norm(o.id)));
+const hasOnlyOptionRule = (marketName) => NO_BET_ONLY_OPTION[norm(marketName)] !== undefined || PENALTY_YES_ONLY.test(norm(marketName));
 export const isUnofferedNoBetOption = (marketName, o) => {
+  if (PENALTY_YES_ONLY.test(norm(marketName))) return !isYesOption(o);
   const only = NO_BET_ONLY_OPTION[norm(marketName)];
   return only !== undefined && !(o && (norm(o.name) === only || norm(o.id) === only));
 };
@@ -256,7 +263,7 @@ export function hidePlayerOdds(markets, home, away) {
   const out = [];
   for (const m of markets || []) {
     if (isPlayerMarketName(m.name) || isHiddenMarketName(m.name)) continue;
-    if (NO_BET_ONLY_OPTION[norm(m.name)] !== undefined) {
+    if (hasOnlyOptionRule(m.name)) {
       const options = (m.options || []).filter((o) => !isUnofferedNoBetOption(m.name, o));
       if (options.length) out.push(options.length === (m.options || []).length ? m : { ...m, options });
       continue;
