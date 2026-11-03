@@ -14,6 +14,7 @@
     "db:check": "node server/checkDb.js",
     "diagnose:pending": "node server/diagnosePending.js",
     "audit:markets": "node server/marketCoverageCli.js",
+    "credit:record": "node server/recordCreditCli.js",
     "audit:live": "node server/auditLiveFixtures.js",
     "trace:match": "node server/tracePipeline.js",
     "test:watch": "vitest",
