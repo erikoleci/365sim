@@ -1,6 +1,6 @@
 import pool from './db.js';
 import { sameFixture } from './fixtureDedupe.js';
-import { minuteOf, splitPeriod, marketPeriod, PERIOD_BASE_ALIASES } from './marketPeriods.js';
+import { minuteOf, splitPeriod, marketPeriod, PERIOD_BASE_ALIASES, EXTRA_TIME_STATUSES } from './marketPeriods.js';
 import { extraMarketOutcome } from './extraMarkets.js';
 import { asianHandicapOutcome, asianTotalOutcome } from './asianLines.js';
 import { ticketOutcome } from './ticketOutcome.js';
@@ -1740,6 +1740,117 @@ export async function voidOverdueLegs({ olderThanMs = UNSETTLED_VOID_AFTER_MS, n
       console.log('[settle] voided overdue leg (no result/rule ' + Math.round(olderThanMs / 3600000) + 'h after kickoff): match ' + leg.match_id + ' / "' + (leg.market_name || '?') + '" / "' + (leg.selection_name || '?') + '"');
     }
     return { voidedLegs: overdue.length, recomputedBets: betIds.size };
+  } finally {
+    client.release();
+  }
+}
+
+// ---- in-play loss: close a leg the moment it can no longer win --------------------------------------------
+// A leg on a LIVE match is marked LOST (and its ticket with it) as soon as EVERY way the match can still
+// continue ends in a loss: "Under 2.5" with 3 goals on the board, "BTTS - No" once both teams have scored,
+// "0-1 goals" after the 2nd goal, "Under 9.5 corners" at the 10th corner, "Home win" is NOT closed at 0-1
+// (a comeback is still possible). Only LOST is ever decided early, never WON/VOID.
+//
+// How it is decided: the leg is evaluated by the normal rules (determineLegOutcome) on the current score and
+// counters PLUS every plausible future (up to +5 goals per side, +0..+40 corners/cards). It is lost-for-sure
+// only when all of those answers are LOST. A market the rules cannot decide from score/counters alone (first
+// scorer, minutes, halves, combos ...) answers null somewhere on that grid and is therefore never closed here.
+//
+// Safety net against a feed glitch (a goal that VAR later cancels, a corner counter that jumps): the same leg
+// must come out lost-for-sure on EARLY_LOSS_CONFIRM_MS worth of consecutive sweeps before it is written.
+// Off unless EARLY_LOSS_SETTLE=1.
+const EARLY_LOSS_ENABLED = () => process.env.EARLY_LOSS_SETTLE === '1';
+const EARLY_LOSS_CONFIRM_MS = () => Number(process.env.EARLY_LOSS_CONFIRM_MS) || 90 * 1000;
+const earlyLossSeen = new Map(); // leg id -> { since, key } (in memory: a restart simply restarts the confirmation)
+const GOAL_STEPS = [0, 1, 2, 3, 4, 5];
+const COUNT_STEPS = [0, 1, 2, 3, 5, 8, 13, 21, 40];
+
+export function isLostForSure(leg, score, stats) {
+  const { h, a } = score;
+  const isStats = STATS_MARKET.test(norm(leg.market_name));
+  const futures = [];
+  if (isStats) {
+    if (!stats) return false;
+    for (const dh of COUNT_STEPS) for (const da of COUNT_STEPS) futures.push({ dh: 0, da: 0, sh: dh, sa: da });
+  } else {
+    for (const dh of GOAL_STEPS) for (const da of GOAL_STEPS) futures.push({ dh, da, sh: 0, sa: 0 });
+  }
+  for (const f of futures) {
+    const fh = h + f.dh; const fa = a + f.da;
+    let futureStats;
+    if (isStats) {
+      futureStats = { ...stats };
+      for (const [k, add] of [['cornersHome', f.sh], ['cornersAway', f.sa], ['cardsHome', f.sh], ['cardsAway', f.sa], ['yellowHome', f.sh], ['yellowAway', f.sa], ['redHome', f.sh], ['redAway', f.sa]]) {
+        if (Number.isFinite(Number(stats[k]))) futureStats[k] = Number(stats[k]) + add;
+      }
+    }
+    let outcome;
+    try {
+      outcome = determineLegOutcome(leg, {
+        winner: fh > fa ? 'HOME' : fa > fh ? 'AWAY' : 'DRAW', totalGoals: fh + fa, bothScored: fh > 0 && fa > 0,
+        homeScore: fh, awayScore: fa, stats: futureStats,
+      });
+    } catch { return false; }
+    if (outcome !== 'LOST') return false;
+  }
+  return true;
+}
+
+export async function settleLostLiveLegs({ now = Date.now() } = {}) {
+  if (!EARLY_LOSS_ENABLED()) return { settledLegs: 0, recomputedBets: 0, disabled: true };
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query(
+      `SELECT bs.*, m.live_home_score AS lh, m.live_away_score AS la, m.live_status AS lstatus
+         FROM bet_selections bs
+         JOIN bets b ON b.id = bs.bet_id AND b.status = 'PENDING'
+         JOIN matches_cache m ON m.id = bs.match_id
+        WHERE bs.status = 'PENDING' AND m.status = 'LIVE' AND m.live_home_score IS NOT NULL AND m.live_away_score IS NOT NULL`
+    );
+    const legs = rows.filter((l) => {
+      const n = norm(l.market_name);
+      if (!n || marketPeriod(l.market_name) !== null) return false; // half markets close at their own whistle
+      if (/&| dhe |\+/.test(String(l.market_name))) return false; // combos
+      if (EXTRA_TIME_STATUSES.has(String(l.lstatus || '').toUpperCase())) return false;
+      return true;
+    });
+    const statsByMatch = new Map();
+    const lostNow = [];
+    const stillLost = new Set();
+    for (const leg of legs) {
+      const score = { h: Number(leg.lh), a: Number(leg.la) };
+      if (!Number.isFinite(score.h) || !Number.isFinite(score.a)) continue;
+      let stats;
+      if (STATS_MARKET.test(norm(leg.market_name))) {
+        if (!statsByMatch.has(leg.match_id)) statsByMatch.set(leg.match_id, await loadMatchStats(client, leg.match_id).catch(() => undefined));
+        stats = statsByMatch.get(leg.match_id);
+      }
+      if (!isLostForSure(leg, score, stats)) continue;
+      stillLost.add(leg.id);
+      const key = `${score.h}-${score.a}|${stats ? [stats.cornersHome, stats.cornersAway, stats.cardsHome, stats.cardsAway].join(',') : ''}`;
+      const seen = earlyLossSeen.get(leg.id);
+      // the position must stay the same for the whole confirmation window (a changed score restarts it)
+      if (!seen || seen.key !== key) { earlyLossSeen.set(leg.id, { since: now, key }); continue; }
+      if (now - seen.since >= EARLY_LOSS_CONFIRM_MS()) lostNow.push(leg);
+    }
+    for (const id of Array.from(earlyLossSeen.keys())) if (!stillLost.has(id)) earlyLossSeen.delete(id);
+    if (!lostNow.length) return { settledLegs: 0, recomputedBets: 0 };
+
+    const affected = new Set();
+    await client.query('BEGIN');
+    try {
+      for (const leg of lostNow) {
+        const r = await client.query(`UPDATE bet_selections SET status = 'LOST' WHERE id = $1 AND status = 'PENDING'`, [leg.id]);
+        if (r.rowCount) { affected.add(leg.bet_id); console.log(`[early-loss] leg ${leg.id} (${leg.market_name} / ${leg.selection_name}) closed LOST at ${leg.lh}-${leg.la}`); }
+        earlyLossSeen.delete(leg.id);
+      }
+      for (const betId of affected) await recomputeBetStatus(betId, client);
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    }
+    return { settledLegs: lostNow.length, recomputedBets: affected.size };
   } finally {
     client.release();
   }

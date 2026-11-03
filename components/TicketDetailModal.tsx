@@ -1,6 +1,10 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import MatchupLabel from './MatchupLabel';
 import { useI18n } from '../i18n';
+import { fetchMatchLiveDetail, fetchMatchById, MatchEvent } from '../services/api';
+import { isHalftime } from '../utils/liveStatus';
+import { MatchStatus } from '../types';
+import MatchTimeline, { TimelineState } from './MatchTimeline';
 
 // One ticket in a shape every screen can fill: the user's own bets, the admin's table, the agent's lists.
 export interface TicketView {
@@ -13,10 +17,64 @@ export interface TicketView {
   potentialReturn: number;
   currency?: 'ALL' | 'EUR';
   user?: string;
-  legs: { matchHome: string; matchAway: string; marketName: string; selectionName: string; odds: number; status: string }[];
+  legs: { matchId?: string; matchHome: string; matchAway: string; marketName: string; selectionName: string; odds: number; status: string }[];
 }
 
 const legStyle = (s: string) => (s === 'WON' || s === 'HALF_WON' ? 'text-brand-accent' : s === 'LOST' || s === 'HALF_LOST' ? 'text-red-400' : s === 'VOID' ? 'text-gray-400' : 'text-brand-yellow');
+
+
+// Tap-to-open timeline under each leg of a ticket. While the ticket is still open (PENDING) it
+// refreshes by itself every few seconds; the match status decides the half / full-time markers.
+const LegTimeline: React.FC<{ matchId: string; home: string; away: string; live: boolean }> = ({ matchId, home, away, live }) => {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [events, setEvents] = useState<MatchEvent[] | null>(null);
+  const [state, setState] = useState<TimelineState>({});
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let stop = false;
+    const load = async () => {
+      try {
+        const [d, m] = await Promise.all([fetchMatchLiveDetail(matchId), fetchMatchById(matchId).catch(() => null)]);
+        if (stop) return;
+        setEvents(d.events || []);
+        setState({
+          halftime: m ? isHalftime(m) : false,
+          finished: m ? m.status === MatchStatus.FINISHED : false,
+          liveStatus: m?.liveStatus,
+          minuteNow: Number(d.statistics?.minute ?? String(m?.currentMinute ?? '').match(/^\d+/)?.[0] ?? NaN),
+          homeScore: m?.liveHomeScore ?? d.statistics?.home_score ?? null,
+          awayScore: m?.liveAwayScore ?? d.statistics?.away_score ?? null,
+        });
+        setFailed(false);
+      } catch { if (!stop) setFailed(true); }
+    };
+    load();
+    const timer = live ? window.setInterval(load, 8000) : undefined;
+    return () => { stop = true; if (timer) window.clearInterval(timer); };
+  }, [open, matchId, live]);
+
+  return (
+    <div className="mt-2">
+      <button onClick={() => setOpen((v) => !v)} className="text-[11px] font-bold text-brand-accent flex items-center gap-1">
+        <span>{open ? '▲' : '▼'}</span> {t('Kronologjia e ndeshjes')}
+      </button>
+      {open && (
+        <div className="mt-2 rounded bg-[#282828] p-2">
+          {events == null && !failed ? (
+            <div className="text-center text-brand-textMuted text-xs py-3">{t('Duke ngarkuar ngjarjet...')}</div>
+          ) : events == null ? (
+            <div className="text-center text-red-400 text-xs py-3">{t("S'u ngarkuan ngjarjet")}</div>
+          ) : (
+            <MatchTimeline events={events} home={home} away={away} state={state} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => void; actions?: React.ReactNode }> = ({ ticket, onClose, actions }) => {
   const { t, locale } = useI18n();
@@ -57,6 +115,7 @@ const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => vo
                 <div className="text-xs text-brand-textMuted"><MatchupLabel home={leg.matchHome} away={leg.matchAway} size="xs" /></div>
                 <div className="text-xs text-brand-textMuted truncate">{leg.marketName}</div>
                 <div className="font-bold text-white">{leg.selectionName} <span className="text-brand-yellow font-normal tabular-nums">@{Number(leg.odds).toFixed(2)}</span></div>
+                {leg.matchId && <LegTimeline matchId={leg.matchId} home={leg.matchHome} away={leg.matchAway} live={ticket.status === 'PENDING'} />}
               </div>
               <div className={`text-[11px] font-bold flex-shrink-0 ${legStyle(leg.status)}`}>{label(leg.status)}</div>
             </div>

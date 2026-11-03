@@ -8,7 +8,8 @@ import { isHalftime, liveMinuteFallback, formatScore, pickClockSource, isLiveClo
 import { LONDON365_EVENT_LABELS, LONDON365_STAT_LABELS } from '../utils/london365Labels';
 import { useI18n } from '../i18n';
 import TeamLogo from './TeamLogo';
-import { firstHalfDividerIndex, regularTimeDividerIndex, eventMinuteLabel } from '../utils/eventHalf';
+import { firstHalfDividerIndex, regularTimeDividerIndex } from '../utils/eventHalf';
+import MatchTimeline from './MatchTimeline';
 import { groupMarkets } from '../utils/marketTables';
 import type { MarketOption } from '../types';
 
@@ -419,27 +420,19 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
                 : t("Ende s'ka ngjarje të regjistruara.")}
             </div>
           ) : (
-            <div className="space-y-2">
-              {liveDetail.events.map((ev, i) => (
-                <React.Fragment key={i}>
-                {i === firstHalfDividerAt && (
-                  <div className="text-center text-brand-yellow text-xs font-bold py-2">{t('Fundi i pjesës së parë')}</div>
-                )}
-                {i === regularTimeDividerAt && (
-                  <div className="text-center text-brand-yellow text-xs font-bold py-2">{t('Fundi i kohës rregullt')}</div>
-                )}
-                <div className="flex items-center gap-3 bg-[#333] rounded px-3 py-2">
-                  <span className="text-brand-yellow font-mono text-xs w-10 shrink-0">{eventMinuteLabel(ev)}</span>
-                  <span className="text-white text-xs flex-1">{EVENT_LABELS[ev.type] ? t(EVENT_LABELS[ev.type]) : ev.type}</span>
-                  {ev.team && <span className="text-brand-textMuted text-[10px]">{ev.team}</span>}
-                  {ev.player && <span className="text-brand-textMuted text-[10px]">{ev.player}</span>}
-                </div>
-                </React.Fragment>
-              ))}
-              {firstHalfDividerAt === liveDetail.events.length && (
-                <div className="text-center text-brand-yellow text-xs font-bold py-2">{t('Fundi i pjesës së parë')}</div>
-              )}
-            </div>
+            <MatchTimeline
+              events={liveDetail.events}
+              home={match.homeTeam}
+              away={match.awayTeam}
+              state={{
+                halftime: isHalftime(match),
+                finished: isFinished,
+                liveStatus: match.liveStatus,
+                minuteNow: Number(liveDetail?.statistics?.minute ?? String(match.currentMinute ?? '').match(/^\d+/)?.[0] ?? NaN),
+                homeScore: match.liveHomeScore,
+                awayScore: match.liveAwayScore,
+              }}
+            />
           )}
         </div>
       ) : (

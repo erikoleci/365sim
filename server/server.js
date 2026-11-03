@@ -38,7 +38,7 @@ import { getMatchesResponseCacheSize } from './routes/matches.js';
 import { startKeepAliveSelfPing } from './keepAlive.js';
 import { startFeedStatsLog } from './feedStats.js';
 import { hydrateBetMatchIds } from './oddsHistoryPolicy.js';
-import { settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult, settleNextEventLegs, settleFirstHalfLegs, rebindLegsToLiveTwin, settleOpenLegsOfFinishedMatches } from './matchSettlement.js';
+import { settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult, settleNextEventLegs, settleFirstHalfLegs, settleLostLiveLegs, rebindLegsToLiveTwin, settleOpenLegsOfFinishedMatches } from './matchSettlement.js';
 import { settleFromFallback } from './resultsFallback.js';
 import { startClockWriteFlusher } from './clockWrites.js';
 
@@ -400,6 +400,16 @@ async function start() {
       .then(function (r) { if (r.settledLegs) console.log('[settle] first-half sweep: ' + JSON.stringify(r)); })
       .catch(function (e) { console.error('[settle] first-half sweep failed:', e.message); })
       .finally(function () { firstHalfBusy = false; });
+  }, 15 * 1000);
+  // A leg that can no longer win is closed as LOST during the match (EARLY_LOSS_SETTLE=1), not at the final whistle.
+  let earlyLossBusy = false;
+  setInterval(function () {
+    if (earlyLossBusy) return;
+    earlyLossBusy = true;
+    settleLostLiveLegs()
+      .then(function (r) { if (r.settledLegs) console.log('[settle] early-loss sweep: ' + JSON.stringify(r)); })
+      .catch(function (e) { console.error('[settle] early-loss sweep failed:', e.message); })
+      .finally(function () { earlyLossBusy = false; });
   }, 15 * 1000);
   // "Next goal / corner / card" tickets are decided as soon as the next such event has happened.
   let nextEventBusy = false;
