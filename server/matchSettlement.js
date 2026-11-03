@@ -1437,7 +1437,7 @@ export async function rebindLegsToLiveTwin({ now = Date.now() } = {}) {
     `SELECT bs.id, bs.bet_id, bs.match_id, bs.match_home, bs.match_away, bs.market_name,
             m.start_time, m.status AS match_status, b.created_at AS bet_created_at
        FROM bet_selections bs
-       JOIN bets b ON b.id = bs.bet_id AND b.status = 'PENDING'
+       JOIN bets b ON b.id = bs.bet_id AND b.status IN ('PENDING', 'LOST')
        LEFT JOIN matches_cache m ON m.id = bs.match_id
       WHERE bs.status = 'PENDING' AND (m.id IS NULL OR m.status <> 'FINISHED')`
   );
@@ -1448,13 +1448,30 @@ export async function rebindLegsToLiveTwin({ now = Date.now() } = {}) {
        FROM matches_cache WHERE status = 'FINISHED'`
   );
   let reboundLegs = 0;
+  const reboundTwins = new Set();
   for (const leg of legs) {
     const twin = pickLiveTwin(leg, candidates, now);
     if (!twin) continue;
     const r = await pool.query(`UPDATE bet_selections SET match_id = $1 WHERE id = $2 AND status = 'PENDING'`, [twin, leg.id]);
     if (r.rowCount) {
       reboundLegs++;
+      reboundTwins.add(twin);
       console.log('[settle] leg ' + leg.id + ' (' + leg.match_home + ' v ' + leg.match_away + ', "' + leg.market_name + '") was pinned to a fixture record that never finished: moved ' + leg.match_id + ' -> ' + twin);
+    }
+  }
+  // The finished twin may have been settled already (while no ticket was attached to it), and settleMatch skips a
+  // match it already settled. Settle the newly attached legs now, from the twin's stored final score. force only
+  // touches legs still PENDING, so nothing already settled is redone.
+  for (const twinId of reboundTwins) {
+    const c = candidates.find((x) => x.id === twinId);
+    const h = c && (c.result_home ?? c.live_home_score);
+    const a = c && (c.result_away ?? c.live_away_score);
+    if (h == null || a == null) continue;
+    try {
+      await settleMatch(twinId, Number(h), Number(a), { force: true });
+      console.log('[settle] settled legs moved onto ' + twinId + ' with ' + h + '-' + a);
+    } catch (err) {
+      console.error('[settle] settling moved legs on ' + twinId + ' failed (retried next sweep):', err.message);
     }
   }
   return { reboundLegs };
