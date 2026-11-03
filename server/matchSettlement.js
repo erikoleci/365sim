@@ -689,7 +689,10 @@ function statsOutcome(leg, marketName, stats, { home, away }) {
   const rest = marketName.replace(/p1\s*\+\s*p2/g, '');
   // the team name must appear as whole words ("Shuma total e korneve" must not match a team called "A")
   const hasWord = (team) => new RegExp('(^|[^a-z0-9])' + String(team).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^a-z0-9]|$)').test(rest);
-  if (home && hasWord(home)) total = h;
+  // "Pritesi Total Kartona" / "Udhetuesi Total Korneve": the HOME / AWAY side only, never both teams added together.
+  const sayHome = /\b(pritesi|home)\b/.test(rest); const sayAway = /\b(udhetuesi|away)\b/.test(rest);
+  if (sayHome !== sayAway) total = sayHome ? h : a;
+  else if (home && hasWord(home)) total = h;
   else if (away && hasWord(away)) total = a;
   else if (/\b(skuadra|team)\b|\b1\b|\b2\b/.test(rest) && !/\b(shuma|totali|total)\b/.test(rest)) return null; // team market we cannot attribute
   const text = norm(leg.selection_name || leg.selection_id);

@@ -211,6 +211,9 @@ const RULES = [
   [/^rezultati final gola (\d+)\+$/, (m, sel, c) => {
     const s = finalScore(c); if (!s) return null;
     const enough = s.home + s.away >= Number(m[1]);
+    // The feed's real options are "2|3+" / "1|4+": the result, then the goals line the option itself carries.
+    const rg = sel.match(/^([1x2])\s*[|&\/]\s*(\d+)\s*\+$/);
+    if (rg) return won(resultOf(s.home, s.away) === rg[1].toUpperCase() && s.home + s.away >= Number(rg[2]));
     if (/^[1x2]$/.test(sel)) return won(resultOf(s.home, s.away) === sel.toUpperCase() && enough);
     const y = yesNo(sel); return y === null ? null : won(enough === y);
   }],
