@@ -10,7 +10,7 @@ import { forgetLiveState } from '../london365GameDetails.js';
 import { unsubscribeGameDetails } from '../london365Socket.js';
 import { canSettleFromLiveScore, settleMatch, explainSettleBlock } from '../matchSettlement.js';
 import { LIVE_INTERVAL_MS, ENABLED, DETAIL_DELAY_MS, sleep, SPORTS_RAW } from './config.js';
-import { ensureMarketNamesLoaded, fetchLiveRows, parseOddString, usableLiveOdds, buildEvent } from './markets.js';
+import { ensureMarketNamesLoaded, fetchLiveRows, parseOddString, usableLiveOdds, buildEvent, FULL_LIVE_MIN_MARKETS } from './markets.js';
 import { resolveSports, api } from './api.js';
 import { leagueById, resolveLeagueByName } from './leagueRegistry.js';
 import { isAllowedByCountryFilter } from './leagueRules.js';
@@ -206,11 +206,13 @@ export async function syncLondon365LiveOnce() {
       try {
         let rows = [];
         let liveMeta = null;
+        let fromDetail = false; // the rows are the provider's full in-play catalog (detail endpoint), not the packed list
         if (detailTargets.has(String(g.id))) {
           try {
             if (DETAIL_DELAY_MS) await sleep(DETAIL_DELAY_MS);
             rows = await fetchLiveRows(g.id);
             liveMeta = rows.meta || null;
+            fromDetail = rows.some((o) => o && !Number.isNaN(o.coef));
             markDetailFetched(g.id);
             detailFetched++;
           } catch (err) {
@@ -228,6 +230,7 @@ export async function syncLondon365LiveOnce() {
         if (!odds.length) { noOdds++; if (shouldLogMissingLive('odds-' + g.id)) console.warn('[london365] game ' + g.id + ' (' + g.home_team + ' - ' + g.away_team + ') has NO odds from the provider (detail rows=' + rows.length + ', list odd=' + JSON.stringify(g.odd) + ')'); }
         if (!odds.length && !((liveMeta && (liveMeta.result || liveMeta.minute)) || g.result || g.current_minute)) return;
         const ev = buildEvent(g.id, g.home_team, g.away_team, isoFromWholeDate(g.whole_date, g.game_date, g.game_time) || new Date().toISOString(), odds);
+        if (fromDetail && new Set(odds.map((o) => o.marketId)).size >= FULL_LIVE_MIN_MARKETS) ev.liveFull = true; // see applyFullLiveCatalog
         // liveMeta comes from /ajax/livegame/{id} (per-game detail, confirmed
         // against the live provider) and is far more reliable than g.result/
         // g.current_minute from the /ajax/livegames LIST response, which was

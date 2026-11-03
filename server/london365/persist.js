@@ -11,7 +11,7 @@ import { trackGame, noteMatchStatus, setLiveRow } from '../liveTracker.js';
 import { captureHalfTimeScore, captureRegularTimeScore } from '../halfTime.js';
 import { isHalfTimeLatched } from '../halfTimeLatch.js';
 import { createStatusSampler } from '../liveStatusSampler.js';
-import { countOutcomes, mergeEvents, isSparseEvent } from './markets.js';
+import { countOutcomes, mergeEvents, isSparseEvent, applyFullLiveCatalog } from './markets.js';
 import { eventMinuteFromClock } from './clock.js';
 
 // Write-avoidance (LONDON365_SKIP_UNCHANGED_WRITES, default on): the UPSERT below
@@ -77,7 +77,10 @@ export async function upsertMatch(ev, league, status, liveScores, liveInfo, leag
         // catalog, merge them into the cached event: prices update for the
         // markets they carry, every other market and coefficient survives.
         let effective = ev;
-        if (oldCount && Math.sign(newCount - oldCount) === -1) effective = mergeEvents(oldEv, ev);
+        // A full live catalog replaces the market list (markets the provider dropped must not stay open on old prices).
+        const fullLive = applyFullLiveCatalog(oldEv, ev);
+        if (fullLive) effective = fullLive;
+        else if (oldCount && Math.sign(newCount - oldCount) === -1) effective = mergeEvents(oldEv, ev);
         rawToStore = JSON.stringify(effective);
         const changes = diffOddsChanges(ev.id, oldEv, effective);
         if (changes.length) {

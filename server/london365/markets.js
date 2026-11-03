@@ -219,6 +219,22 @@ export function buildEvent(gameId, homeTeam, awayTeam, commenceTime, rows) {
   });
   return ev;
 }
+// A live match's detail (/ajax/livegame/{id}) is the provider's COMPLETE in-play catalog. A market the provider no
+// longer lists there ("Rezultati Final Gola 3+" once the score makes it "4+", or a market locked after a goal) must
+// not stay bettable on its old price, so a trustworthy full catalog REPLACES the cached market list instead of being
+// merged into it (mergeEvents keeps every market it does not carry). Guard: a response under half the size of the
+// previous full catalog looks degraded (the provider answers with a fraction of its markets under load); that one is
+// merged the old way and the cached markets survive. Returns null when the full catalog does not apply.
+export const FULL_LIVE_MIN_MARKETS = 8;
+const marketCountOf = (ev) => ((ev && ev.bookmakers && ev.bookmakers[0] && ev.bookmakers[0].markets) || []).length;
+export function applyFullLiveCatalog(oldEv, newEv) {
+  if (!newEv || !newEv.liveFull) return null;
+  const now = marketCountOf(newEv);
+  if (now < FULL_LIVE_MIN_MARKETS) return null;
+  const prev = Number(oldEv && oldEv.liveCatalog) || 0;
+  if (prev && now < prev * 0.5) return null;
+  return { ...newEv, liveCatalog: now };
+}
 // Count every outcome across a canonical event, used to detect an
 // incomplete provider response before it can overwrite richer cached odds.
 export function countOutcomes(ev) {
