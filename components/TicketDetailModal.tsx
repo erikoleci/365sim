@@ -49,7 +49,7 @@ const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => vo
           </div>
         </div>
 
-        <div className="p-4 overflow-y-auto space-y-2">
+        <div className="p-4 overflow-y-auto space-y-2 flex-1 min-h-[9rem]">
           {ticket.legs.map((leg, i) => (
             <div key={i} className="bg-brand-bg rounded p-2.5 text-sm flex gap-2.5">
               <div className="w-5 flex-shrink-0 text-brand-yellow font-bold text-xs pt-0.5">{i + 1}</div>
@@ -68,7 +68,7 @@ const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => vo
           <div className="flex justify-between"><span className="text-brand-textMuted">Stake</span><span className="text-white font-bold">{Number(ticket.stake).toFixed(2)} {sym}</span></div>
           <div className="flex justify-between"><span className="text-brand-textMuted">{returnLabel}</span><span className="text-white font-bold">{Number(ticket.potentialReturn).toFixed(2)} {sym}</span></div>
         </div>
-        {actions ? <div className="p-4 pt-0 flex flex-wrap gap-2">{actions}</div> : null}
+        {actions ? <div className="p-4 pt-2 flex flex-wrap gap-2 max-h-[40vh] overflow-y-auto flex-shrink-0">{actions}</div> : null}
       </div>
     </div>
   );
