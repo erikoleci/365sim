@@ -9,7 +9,7 @@ import { readLiveCorners, readLiveCards } from '../matchSettlement.js';
 import { settleMatch, recomputeBetStatus, creditWithLedger, settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult, explainSettleBlock, wouldSettleNow } from '../matchSettlement.js';
 import { missedLiveCycles } from '../london365/liveState.js';
 import { logAudit } from '../auditLog.js';
-import { buildCoverageReport, formatCoverageText } from '../marketCoverage.js';
+import { computeMarketCoverage } from '../marketCoverageScan.js';
 import { settlementRuleRequired, getBetBlockReason } from '../marketRules.js';
 import { getFeedKeySamples } from '../feedKeySampler.js';
 import { getRecentErrors } from '../recentErrors.js';
@@ -1057,75 +1057,14 @@ router.post('/legs/settle', async (req, res) => {
 // (LONDON365_ALL_MATCHES) takes minutes and ended in "Request failed (504)" behind the tunnel. Now: keyset paging
 // (no OFFSET), a time budget (soonest matches first, so the sample stays representative), the answer cached for
 // 5 minutes, and one scan at a time. ?fresh=1 forces a new scan.
-const COVERAGE_BUDGET_MS = 40000;
 const COVERAGE_CACHE_MS = 5 * 60000;
 let coverageCache = null;
 let coverageInflight = null;
 
-async function computeMarketCoverage() {
-  const started = Date.now();
-  let truncated = false;
-  const { rows: legRows } = await pool.query(
-    `SELECT market_id, market_name, COUNT(*)::int AS legs, COUNT(*) FILTER (WHERE status = 'PENDING')::int AS pending,
-            (array_agg(DISTINCT selection_name))[1:4] AS samples
-       FROM bet_selections GROUP BY market_id, market_name`
-  );
-  // LIVE first, then UPCOMING (soonest first); each status is paged by (start_time, id), never by OFFSET.
-  const scanRows = async (status) => {
-    const out = [];
-    let lastStart = ''; let lastId = '';
-    for (;;) {
-      if (Date.now() - started > COVERAGE_BUDGET_MS) { truncated = true; break; }
-      const { rows } = await pool.query(
-        'SELECT * FROM matches_cache WHERE status = $1 AND (start_time, id) > ($2, $3) ORDER BY start_time, id LIMIT 100', [status, lastStart, lastId]
-      );
-      out.push(...rows);
-      if (rows.length < 100) break;
-      lastStart = rows[rows.length - 1].start_time; lastId = rows[rows.length - 1].id;
-      await new Promise((r) => setImmediate(r)); // let other requests through between batches
-    }
-    return out;
-  };
-  const liveRows = await scanRows('LIVE');
-  const upcomingRows = await scanRows('UPCOMING');
-  const boardRows = [...liveRows, ...upcomingRows];
-  const board = new Map();
-  const scanned = { live: 0, prematch: 0 };
-  for (const row of boardRows) {
-    let match;
-    try { match = mapEventToMatch(row); } catch { continue; }
-    const isLive = row.status === 'LIVE';
-    if (isLive) scanned.live += 1; else scanned.prematch += 1;
-    for (const mk of match.markets || []) {
-      const cur = board.get(mk.name) || { name: mk.name, id: mk.id, matches: 0, live: 0, liveOpen: 0, prematch: 0, prematchOpen: 0, samples: [] };
-      cur.matches += 1;
-      const open = (mk.options || []).some((o) => !o.suspended && o.odds > 0);
-      if (isLive) {
-        cur.live += 1;
-        if (open) cur.liveOpen += 1;
-      } else {
-        cur.prematch += 1;
-        if (open) cur.prematchOpen += 1;
-      }
-      for (const o of mk.options || []) { if (cur.samples.length < 4 && o && o.name != null && !cur.samples.includes(String(o.name))) cur.samples.push(String(o.name)); }
-      board.set(mk.name, cur);
-    }
-  }
-  const report = buildCoverageReport([
-    ...legRows.map((r) => ({ name: r.market_name, id: r.market_id, legs: r.legs, pending: r.pending, samples: r.samples || [] })),
-    ...board.values(),
-  ]);
-  return {
-    boardMatchesScanned: boardRows.length, liveMatchesScanned: scanned.live, prematchMatchesScanned: scanned.prematch,
-    truncated, scanMs: Date.now() - started, requireSettlementRule: settlementRuleRequired(), ...report,
-    text: (truncated ? `(SKANIM I PJESSHËM: u lexuan ${boardRows.length} ndeshje, ato më të afërtat; tregjet e ndeshjeve më të largëta mund të mungojnë)\n` : '') + formatCoverageText(report),
-  };
-}
-
 router.get('/market-coverage', async (req, res) => {
   if (req.query.fresh !== '1' && coverageCache && Date.now() - coverageCache.at < COVERAGE_CACHE_MS) return res.json(coverageCache.body);
   if (!coverageInflight) {
-    coverageInflight = computeMarketCoverage()
+    coverageInflight = computeMarketCoverage(pool)
       .then((body) => { coverageCache = { at: Date.now(), body }; return body; })
       .finally(() => { coverageInflight = null; });
   }

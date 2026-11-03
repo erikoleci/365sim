@@ -13,6 +13,7 @@
     "super-admin": "node server/createSuperAdminCli.js",
     "db:check": "node server/checkDb.js",
     "diagnose:pending": "node server/diagnosePending.js",
+    "audit:markets": "node server/marketCoverageCli.js",
     "audit:live": "node server/auditLiveFixtures.js",
     "trace:match": "node server/tracePipeline.js",
     "test:watch": "vitest",
