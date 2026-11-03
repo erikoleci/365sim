@@ -1886,3 +1886,46 @@ export async function settleLostLiveLegs({ now = Date.now() } = {}) {
     client.release();
   }
 }
+
+// ---- live fair value (the "gate" that keeps stale / off-market live prices from being booked) -------------
+// Probability that a leg WINS given the current score and clock, from a Poisson model of the goals still to come
+// (average 2.7 goals per 90', 55/45 home/away). Rough by design: it is not used to price anything, only to spot
+// a price that is clearly better than the situation allows (e.g. "Inter 3+" at 1.77 with Inter 0-2 up at half time).
+// Returns null when the leg cannot be judged from goals alone (corners/cards, half markets, unknown rule).
+const LIVE_GOAL_RATE_PER_MIN = { home: 0.0165, away: 0.0135 };
+const POISSON_MAX = 8;
+function poissonPmf(lambda, max) {
+  const out = [Math.exp(-lambda)];
+  for (let k = 1; k <= max; k++) out.push(out[k - 1] * lambda / k);
+  return out;
+}
+export function liveFairProbability(leg, score, minute) {
+  if (!leg || !score || !Number.isFinite(score.h) || !Number.isFinite(score.a) || !Number.isFinite(minute)) return null;
+  const name = norm(leg.market_name);
+  if (!name || STATS_MARKET.test(name) || marketPeriod(leg.market_name) !== null) return null;
+  const remaining = Math.max(1, 93 - Math.max(0, minute));
+  const ph = poissonPmf(LIVE_GOAL_RATE_PER_MIN.home * remaining, POISSON_MAX);
+  const pa = poissonPmf(LIVE_GOAL_RATE_PER_MIN.away * remaining, POISSON_MAX);
+  let won = 0; let voided = 0; let judged = 0;
+  for (let dh = 0; dh <= POISSON_MAX; dh++) {
+    for (let da = 0; da <= POISSON_MAX; da++) {
+      const w = ph[dh] * pa[da];
+      const fh = score.h + dh; const fa = score.a + da;
+      let outcome;
+      try {
+        outcome = determineLegOutcome(leg, {
+          winner: fh > fa ? 'HOME' : fa > fh ? 'AWAY' : 'DRAW', totalGoals: fh + fa, bothScored: fh > 0 && fa > 0,
+          homeScore: fh, awayScore: fa,
+        });
+      } catch { return null; }
+      if (outcome !== 'WON' && outcome !== 'LOST' && outcome !== 'VOID') return null;
+      judged += w;
+      if (outcome === 'WON') won += w; else if (outcome === 'VOID') voided += w;
+    }
+  }
+  if (judged < 0.98) return null;
+  return { pWin: won / judged, pVoid: voided / judged };
+}
+
+// Expected return per unit staked at `odds`: > 1 means the price is better than the model says is fair.
+export const liveEdge = (odds, fair) => (fair ? odds * fair.pWin + fair.pVoid : null);

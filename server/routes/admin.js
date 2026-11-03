@@ -50,7 +50,7 @@ router.use(requireAuth, requireAdmin);
 for (const path of [
   '/london365', '/bet-selections', '/matches', '/pending-legs', '/legs', '/market-coverage', '/unmapped-vc',
   '/corner-diagnose', '/recent-errors', '/vc-codes', '/provider-labels', '/feed-keys', '/settle-diagnose',
-  '/bets/settle-stuck', '/risk',
+  '/bets/settle-stuck', '/risk', '/live-audit',
 ]) router.use(path, requireSuperAdmin);
 
 // Every agent and user belongs to one admin (users.admin_id). A normal admin only sees and manages his own;
@@ -1145,6 +1145,32 @@ router.get('/feed-keys', (req, res) => {
 // team name or match id with ?q=), what we know about its end and the exact reason it is not settled:
 // status, stored score and clock, when it kicked off, how many bets wait on it, and the verdict of
 // the same rule the live loop uses. Example: /api/admin/settle-diagnose?q=Augsburg
+// Live tickets booked in the last ?hours= (default 24) with the match state at booking (minute, score) and the
+// model's win probability / edge per leg, worst first. Use it to see which live prices were off-market and to tune
+// LIVE_LEG_MAX_EDGE / LIVE_TICKET_MAX_EDGE. Example: /api/admin/live-audit?hours=6&min_edge=1.1
+router.get('/live-audit', async (req, res) => {
+  const hours = Math.min(168, Math.max(1, Number(req.query.hours) || 24));
+  const minEdge = Number(req.query.min_edge) || 0;
+  const { rows } = await pool.query(
+    `SELECT b.id AS bet_id, b.created_at, b.stake, b.total_odds, b.status AS bet_status, bs.match_home, bs.match_away,
+            bs.market_name, bs.selection_name, bs.odds, bs.status AS leg_status, bs.placed_state
+       FROM bets b JOIN bet_selections bs ON bs.bet_id = b.id
+      WHERE b.is_live = true AND b.created_at > $1 AND bs.placed_state IS NOT NULL
+      ORDER BY b.created_at DESC LIMIT 2000`,
+    [Date.now() - hours * 3600 * 1000]
+  );
+  const byBet = new Map();
+  for (const r of rows) {
+    if (!byBet.has(r.bet_id)) byBet.set(r.bet_id, { betId: r.bet_id, createdAt: Number(r.created_at), stake: r.stake, totalOdds: r.total_odds, status: r.bet_status, ticketEdge: 1, legs: [] });
+    const t = byBet.get(r.bet_id);
+    const e = Number(r.placed_state && r.placed_state.edge);
+    if (Number.isFinite(e)) t.ticketEdge *= e;
+    t.legs.push({ match: r.match_home + ' - ' + r.match_away, market: r.market_name, selection: r.selection_name, odds: r.odds, status: r.leg_status, placed: r.placed_state });
+  }
+  const tickets = [...byBet.values()].filter((t) => t.ticketEdge >= minEdge).sort((a, b) => b.ticketEdge - a.ticketEdge);
+  res.json({ hours, count: tickets.length, tickets });
+});
+
 router.get('/settle-diagnose', async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   const { rows } = await pool.query(

@@ -5,7 +5,8 @@ import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { resolveCurrentSelection, mapEventToMatch, isStaleLive } from '../oddsUtils.js';
 import { getBetBlockReason, describeBlockReason, nextEventKind, eventOrderOrdinal, isLiveCornerMarket, isLiveCardMarket } from '../marketRules.js';
-import { readNextEventCounters, readLiveCorners, readLiveCards } from '../matchSettlement.js';
+import { readNextEventCounters, readLiveCorners, readLiveCards, liveFairProbability, liveEdge } from '../matchSettlement.js';
+import { minuteOf } from '../marketPeriods.js';
 import { findCorrelatedSelections } from '../ticketCorrelation.js';
 import { findConflictingSelection, validateStakeAmount, isLiveEventLocked } from '../betValidation.js';
 import { getLiveRisk, riskPolicy } from '../liveRisk.js';
@@ -78,6 +79,12 @@ const LIVE_MAX_TICKETS_PER_MATCH = Math.max(0, Number(process.env.LIVE_MAX_TICKE
 // Markets other than 1X2 on a LIVE match come from the budgeted full-market refresh
 // (liveDetailPlan.js). If that refresh is older than this, the prices may be stale
 // and bets on them are refused until it catches up. 0 = off.
+// Live price gate (see liveFairProbability): a leg is refused when its price is clearly better than the match
+// situation allows, when it is practically decided, and a ticket when the legs' edges multiply into a free lunch.
+const LIVE_LEG_MAX_EDGE = Number(process.env.LIVE_LEG_MAX_EDGE ?? 1.25);
+const LIVE_LEG_MAX_PROB = Number(process.env.LIVE_LEG_MAX_PROB ?? 0.93);
+const LIVE_TICKET_MAX_EDGE = Number(process.env.LIVE_TICKET_MAX_EDGE ?? 1.5);
+const LIVE_PRICE_GATE = () => process.env.LIVE_PRICE_GATE !== '0';
 const LIVE_ODDS_MAX_AGE_MS = Math.max(0, Number(process.env.LIVE_BET_ODDS_MAX_AGE_MS ?? 120000));
 
 
@@ -203,6 +210,7 @@ router.post('/', wrap(async (req, res) => {
   const verifySelections = async (tolerance = ODDS_WORSENING_TOLERANCE, { bookAtSent = false } = {}) => {
   let totalOdds = 1;
   let inPlay = false;
+  const liveEdges = [];
   const verifiedSelections = [];
   const correlationInput = [];
   // Collected across ALL selections instead of returning on the first one
@@ -364,6 +372,28 @@ router.post('/', wrap(async (req, res) => {
         code: 'SELECTION_SUSPENDED',
       });
     }
+    let placedState = null;
+    if (matchRow.status === 'LIVE' || matchRow.live_status != null) {
+      const minute = minuteOf(matchRow.live_minute);
+      const score = { h: Number(matchRow.live_home_score), a: Number(matchRow.live_away_score) };
+      placedState = { minute: minute ?? null, h: Number.isFinite(score.h) ? score.h : null, a: Number.isFinite(score.a) ? score.a : null, status: matchRow.live_status ?? null };
+      const fair = LIVE_PRICE_GATE() ? liveFairProbability({ market_id: sel.marketId, market_name: current.marketName, selection_id: sel.selectionId, selection_name: current.selectionName || sel.selectionName }, score, minute) : null;
+      if (fair) {
+        const edge = liveEdge(currentOdds, fair);
+        placedState.pWin = Number(fair.pWin.toFixed(4));
+        placedState.edge = Number(edge.toFixed(3));
+        if (fair.pWin >= LIVE_LEG_MAX_PROB || edge > LIVE_LEG_MAX_EDGE) {
+          console.log('[bets] live price gate: match=' + matchRow.id + ' market=' + sel.marketId + ' sel=' + sel.selectionId + ' odds=' + currentOdds + ' pWin=' + placedState.pWin + ' edge=' + placedState.edge + ' ' + score.h + '-' + score.a + " " + minute + "'" + ' user=' + req.user.id);
+          return fail(409, {
+            error: `Betting on \"${current.marketName}\" for ${matchRow.home_team} vs ${matchRow.away_team} is closed — the match situation has made this price unavailable.`,
+            code: 'MARKET_CLOSED',
+            reason: 'LIVE_PRICE_OFF_MARKET',
+            closed: [{ matchId: sel.matchId, marketId: sel.marketId, selectionId: sel.selectionId }],
+          });
+        }
+        liveEdges.push(edge);
+      }
+    }
     if (boostRequested) {
       if (!isBoostEligible(matchRow, sel)) {
         return fail(400, { error: 'This selection is not eligible for the odds boost.' });
@@ -385,8 +415,21 @@ router.post('/', wrap(async (req, res) => {
     const bookedOdds = bookAtSent && typeof sel.odds === 'number' && Number.isFinite(sel.odds) && sel.odds > currentOdds
       ? sel.odds : currentOdds;
     totalOdds *= bookedOdds;
-    verifiedSelections.push({ ...sel, odds: bookedOdds });
+    verifiedSelections.push({ ...sel, odds: bookedOdds, placedState });
     correlationInput.push({ matchId: sel.matchId, marketId: sel.marketId, marketName: current.marketName, optionName: current.selectionName || sel.selectionName, home: matchRow.home_team, away: matchRow.away_team, startTime: matchRow.start_time });
+  }
+
+  // The edges of the live legs multiply on an accumulator: five legs each a little too generous are a big
+  // overall edge even though every single leg passed. Refuse the ticket as a whole.
+  if (LIVE_PRICE_GATE() && liveEdges.length > 1) {
+    const ticketEdge = liveEdges.reduce((a, b) => a * b, 1);
+    if (ticketEdge > LIVE_TICKET_MAX_EDGE) {
+      console.log('[bets] live price gate: ticket edge ' + ticketEdge.toFixed(2) + ' over ' + LIVE_TICKET_MAX_EDGE + ' user=' + req.user.id);
+      return fail(409, {
+        error: 'This live accumulator is not available: too many of its selections are already close to decided. Remove some live selections and try again.',
+        code: 'LIVE_TICKET_OFF_MARKET',
+      });
+    }
   }
 
   // Same-match selections with the same logic (4+ with 1+/2+/3+, 1 & 2+ with 0-3, 1 with 1X ...)
@@ -576,9 +619,9 @@ router.post('/', wrap(async (req, res) => {
       const counters = kind ? await readNextEventCounters(client, sel.matchId, kind) : null;
       await client.query(
         `INSERT INTO bet_selections
-          (bet_id, match_id, match_home, match_away, market_id, market_name, selection_id, selection_name, odds, status, placed_at, placed_counts)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'PENDING',$10,$11)`,
-        [betId, sel.matchId, sel.matchHome, sel.matchAway, sel.marketId, sel.marketName, sel.selectionId, sel.selectionName, sel.odds, Date.now(), counters ? JSON.stringify(counters) : null]
+          (bet_id, match_id, match_home, match_away, market_id, market_name, selection_id, selection_name, odds, status, placed_at, placed_counts, placed_state)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'PENDING',$10,$11,$12)`,
+        [betId, sel.matchId, sel.matchHome, sel.matchAway, sel.marketId, sel.marketName, sel.selectionId, sel.selectionName, sel.odds, Date.now(), counters ? JSON.stringify(counters) : null, sel.placedState ? JSON.stringify(sel.placedState) : null]
       );
     }
     await client.query('COMMIT');
