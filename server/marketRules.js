@@ -228,7 +228,7 @@ export const isPlayerMarketName = (name) => PLAYER_MARKET.test(norm(name));
 // in the feed. "Will there be a penalty shootout": no shootout events. ("A do te kete penallti gjate ndeshjes?" is offered again: penalty kicks are logged as PENALTY events and the market is settled in extraMarkets.js.)
 // The last three: live-only markets whose options come without a line ("Lart" / "Poshte" only, seen on 40+ live matches), so
 // no ticket on them could ever be decided. Hidden like the extra-time / penalty markets.
-const HIDDEN_MARKET = /^(fitohet loja (mbas penallt|ne shtese)|menyra e fitores|a do te kete kohe shtese|will there be (an )?extra time\b|overtime\b|winning method\b|will there be an? penalty shootout|sa gola do shenohen nga ekipi (vendas|udhetues)$|lart\/poshte gola aziatike ne pjesen e 1re$|shenon (pritesi|udhetuesi) ne p1\/p2$|(pritesi|udhetuesi) shenon ne te dy pjeset$)/;
+const HIDDEN_MARKET = /^(fitohet loja (mbas penallt|ne shtese)|menyra e fitores|a do te kete kohe shtese|will there be (an )?extra time\b|overtime\b|winning method\b|will there be an? penalty shootout|sa gola do shenohen nga ekipi (vendas|udhetues)$|lart\/poshte gola aziatike ne pjesen e 1re$)/;
 export const isHiddenMarketName = (name) => HIDDEN_MARKET.test(norm(name));
 // "Home no bet" (option 1: home win = won, draw = refund, away win = lost) and "Away no bet" (option 2: the same for the
 // away side). Only that one option has a confirmed meaning; every other option of these markets (X, or the other side)
@@ -329,6 +329,8 @@ const NOT_VERIFIABLE = 'NOT_VERIFIABLE_LIVE';
 const NO_PLAYER_DATA = 'NO_PLAYER_DATA';
 const NO_RULE = 'NO_SETTLEMENT_RULE';
 const DECIDED = 'OUTCOME_DECIDED';
+const ONLY_AT_NIL = 'ONLY_AT_0_0';
+const BOTH_HALVES_SCORING = /^(shenon (pritesi|udhetuesi) ne p1\/p2|(pritesi|udhetuesi) shenon ne te dy pjeset)$/;
 
 // A goal-count option of "Numri i Golave" (also per half): exactly N ("2"), a range ("1-2") or N or more
 // ("3+"). -> { lo, hi } (hi may be Infinity) or null. Only meaningful inside a goal-count market, where a
@@ -365,6 +367,13 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
 
   const kickoff = Date.parse(row.start_time);
   if (!Number.isFinite(kickoff) || kickoff > now) return null; // not in play yet
+
+  // "Scores in both halves" (Shenon Pritesi/Udhetuesi ne P1/P2): in play it is offered ONLY while the match is 0-0. With a
+  // goal on the board the price is not worth what the score already says (a goal in P1 leaves one half to go), so it is closed.
+  if (market && BOTH_HALVES_SCORING.test(norm(market.name))) {
+    const h = Number(row.live_home_score); const a = Number(row.live_away_score);
+    if (!Number.isFinite(h) || !Number.isFinite(a) || h !== 0 || a !== 0) return ONLY_AT_NIL;
+  }
 
   // the provider's ordinal "next" markets (first / second goal, first corner, first card)
   const ord = market && eventOrderOrdinal(market.name);
@@ -683,6 +692,7 @@ export function describeBlockReason(code) {
     case 'MATCH_FINISHED': return 'the match has finished';
     case 'FIRST_HALF_OVER': return 'the first half is over';
     case 'PENALTY_PAUSE': return 'a penalty is being taken, betting is paused until play resumes';
+    case 'ONLY_AT_0_0': return 'this market is offered in play only while the score is 0-0';
     case 'OUTCOME_DECIDED': return 'the outcome is already decided by the current score';
     case 'NO_PLAYER_DATA': return 'player odds are not offered (the feed does not provide player names)';
     case 'NO_SETTLEMENT_RULE': return 'this market cannot be settled automatically, so it is not offered';
