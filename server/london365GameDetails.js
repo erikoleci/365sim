@@ -112,6 +112,12 @@ const ACTION_HOLD_MS = Number(process.env.LIVE_ACTION_HOLD_MS) > 0 ? Number(proc
 // VC codes we could not decode, logged once each so they can be labelled in
 // liveAction.js (never guessed). Bounded so a noisy feed cannot grow it.
 const unmappedVcSeen = new Set();
+// matchId -> { active, at }: whether the previous message of this match already showed the penalty
+// code (VC x1236), and when the last PENALTY event was logged. A penalty is logged once per
+// occurrence (the code may repeat on several ticks), never per tick.
+const penaltyState = new Map();
+const PENALTY_STATE_CAP = 2000;
+const PENALTY_REPEAT_GUARD_MS = 90000;
 const UNMAPPED_VC_CAP = 200;
 
 // Test-only: clears in-memory state between test cases so each test is
@@ -131,6 +137,7 @@ export function __resetLiveStateForTests() {
   lastSeen.clear();
   lastBroadcast.clear();
   derivedClock.clear();
+  penaltyState.clear();
   unknownEidWarned.clear();
   lastTouched.clear();
   teamIndex = { at: 0, map: new Map() };
@@ -721,6 +728,33 @@ async function applyGameDetailsNow(raw) {
     };
     if (c1 > prevCards.c1) await addCorners('home', prevCards.c1, c1);
     if (c2 > prevCards.c2) await addCorners('away', prevCards.c2, c2);
+  }
+
+  // Penalty kicks as discrete events (VC x1236, "Goditje dënimi"). Logged on the message where the
+  // code first appears (and again only after it went away and PENALTY_REPEAT_GUARD_MS passed), with
+  // the team's running penalty count as detail. Needs a known baseline for the same reason as corners.
+  {
+    const isPenalty = Boolean(decodedAction) && decodedAction.kind === 'penalty' && Boolean(decodedAction.side);
+    const st = penaltyState.get(matchId) || { active: false, at: 0 };
+    if (baselineKnown && isPenalty && !st.active && now - st.at > PENALTY_REPEAT_GUARD_MS) {
+      const team = decodedAction.side;
+      try {
+        const { rows } = await pool.query(
+          `SELECT COUNT(*)::int AS n FROM match_events WHERE match_id = $1 AND type = 'PENALTY' AND team = $2`,
+          [matchId, team]
+        );
+        const n = (rows && rows[0] ? Number(rows[0].n) : 0) + 1;
+        if (await insertEventOnce(matchId, minuteNum, 'PENALTY', team, String(n), now)) {
+          console.log(`[live-event] PENALTY EID=${eid} team=${team} minute=${minuteDisplay || '?'}`);
+        }
+        st.at = now;
+      } catch (err) {
+        console.error('[london365-gamedetails] penalty event failed:', err.message);
+      }
+    }
+    st.active = isPenalty;
+    if (penaltyState.size >= PENALTY_STATE_CAP) penaltyState.clear();
+    penaltyState.set(matchId, st);
   }
 
   // Keep the aggregate totals the stats panel actually reads

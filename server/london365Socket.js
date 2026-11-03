@@ -44,6 +44,8 @@ let lastGameDetailsAt = Date.now();
 const subscribedGameIds = new Set();
 
 let socket = null;
+// When the odds socket last delivered any event (watchdog below).
+let lastOddsAt = Date.now();
 
 export async function startLondon365Socket() {
   if (!isLondon365Enabled() || !SOCKET_ENABLED || socket) return;
@@ -74,6 +76,7 @@ export async function startLondon365Socket() {
   }
 
   socket.on('connect', function () {
+    lastOddsAt = Date.now();
     setLondon365SocketConnected(true);
     console.log('[london365-socket] connected to ' + SOCKET_URL);
     socket.emit('connectToRoom', { room: 'inplay' });
@@ -91,6 +94,7 @@ export async function startLondon365Socket() {
 
   // Real-time coefficient movement for a live game: { game_id, coefs: [...] }
   socket.on('new-coefs', function (d) {
+    lastOddsAt = Date.now();
     if (!d || !d.game_id) return;
     applySocketCoefs(d.game_id, d.coefs || []).catch(function (err) {
       console.error('[london365-socket] new-coefs failed:', err.message);
@@ -99,6 +103,7 @@ export async function startLondon365Socket() {
 
   // A new prematch game appeared: full game payload with packed odd string.
   socket.on('new-game', function (d) {
+    lastOddsAt = Date.now();
     if (!d || !d.id) return;
     applySocketGame(d, 'UPCOMING').catch(function (err) {
       console.error('[london365-socket] new-game failed:', err.message);
@@ -107,6 +112,7 @@ export async function startLondon365Socket() {
 
   // A game just kicked off / became live.
   socket.on('new-live-game', function (d) {
+    lastOddsAt = Date.now();
     if (!d || !d.id) return;
     // Start streaming this game's live detail (score/cards/etc) the moment it
     // goes live -- immediately, NOT after the DB write below, so the first
@@ -122,6 +128,7 @@ export async function startLondon365Socket() {
 
   // A game left the live feed (finished or postponed): stop showing it as LIVE.
   socket.on('delete-live-game', function (d) {
+    lastOddsAt = Date.now();
     if (!d || !d.id) return;
     markLondon365GameEnded(d.id).catch(function (err) {
       console.error('[london365-socket] delete-live-game failed:', err.message);
@@ -130,11 +137,25 @@ export async function startLondon365Socket() {
 
   // A single coefficient was withdrawn from a live game.
   socket.on('delete-live-coef', function (d) {
+    lastOddsAt = Date.now();
     if (!d || !d.game_id || !d.coef_id) return;
     removeSocketCoef(d.game_id, d.coef_id).catch(function (err) {
       console.error('[london365-socket] delete-live-coef failed:', err.message);
     });
   });
+
+  // Watchdog: a half-dead connection stays "connected" but delivers nothing, and the odds feed
+  // then freezes until the next redeploy (REST polling only covers part of it). With live matches
+  // known and no event for ODDS_SILENCE_MS, drop the socket and connect again; 'connect' re-joins the rooms.
+  const ODDS_SILENCE_MS = Math.max(60000, Number(process.env.LONDON365_SOCKET_SILENCE_MS || 180000));
+  setInterval(function () {
+    if (!socket || !hasKnownLiveMatches()) return;
+    if (Date.now() - lastOddsAt < ODDS_SILENCE_MS) return;
+    console.warn('[london365-socket] silent for ' + Math.round((Date.now() - lastOddsAt) / 1000) + 's with live matches -- reconnecting');
+    lastOddsAt = Date.now(); // one attempt per silence window
+    try { socket.disconnect(); } catch { /* already down */ }
+    try { socket.connect(); } catch { /* socket.io retries on its own */ }
+  }, 30000);
 
   console.log('[london365-socket] starting live socket feed for ' + SOCKET_URL);
 }
