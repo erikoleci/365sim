@@ -39,6 +39,7 @@ import { startKeepAliveSelfPing } from './keepAlive.js';
 import { startFeedStatsLog } from './feedStats.js';
 import { hydrateBetMatchIds } from './oddsHistoryPolicy.js';
 import { settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult, settleNextEventLegs, rebindLegsToLiveTwin, settleOpenLegsOfFinishedMatches } from './matchSettlement.js';
+import { settleFromFallback } from './resultsFallback.js';
 import { startClockWriteFlusher } from './clockWrites.js';
 
 let dbReady = false;
@@ -379,6 +380,7 @@ async function start() {
     rebindLegsToLiveTwin()
       .then(function (r) { if (r.reboundLegs) console.log('[settle] rebind sweep: ' + JSON.stringify(r)); })
       .then(function () { return settleOpenLegsOfFinishedMatches(); })
+      .then(function () { return settleFromFallback(); })
       .then(function () { return recoverFinishedWithoutResult(); })
       .then(function (r) { if (r.recoveredMatches || r.recoverFailed) console.log('[settle] recovery sweep: ' + JSON.stringify(r)); })
       .then(function () { return settleStuckBets(); })
