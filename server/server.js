@@ -418,6 +418,17 @@ async function start() {
     nextEventBusy = true;
     settleNextEventLegs().catch(function (e) { console.error('[settle] next-event sweep failed:', e.message); }).finally(function () { nextEventBusy = false; });
   }, 10 * 1000);
+  // A finished match must settle its tickets right away: every 5s, close the pending legs of every match that is
+  // FINISHED with a stored result (cheap query; the 2-minute sweep above stays as the safety net). Idempotent.
+  let finishedBusy = false;
+  setInterval(function () {
+    if (finishedBusy) return;
+    finishedBusy = true;
+    settleOpenLegsOfFinishedMatches()
+      .then(function (r) { if (r.settledMatches) console.log('[settle] finished-match sweep: ' + JSON.stringify(r)); })
+      .catch(function (err) { console.error('[settle] finished-match sweep failed:', err.message); })
+      .finally(function () { finishedBusy = false; });
+  }, 5 * 1000);
   // A match the feed has just closed whose result was not trustworthy YET (clock still short of the
   // end) becomes settleable within seconds, so re-check those every 30s instead of waiting for the
   // 2-minute sweep: a finished game should not leave its tickets open for minutes. Idempotent.
@@ -425,7 +436,7 @@ async function start() {
     recoverFinishedWithoutResult()
       .then(function (r) { if (r.recoveredMatches || r.recoverFailed) console.log('[settle] fast recovery: ' + JSON.stringify(r)); })
       .catch(function (err) { console.error('[settle] fast recovery failed:', err.message); });
-  }, 30 * 1000);
+  }, 10 * 1000);
 
   // Diagnostic visibility requested after the OOM crash investigation:
   // logs process memory alongside every known unbounded-risk in-memory

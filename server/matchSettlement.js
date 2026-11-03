@@ -1783,7 +1783,7 @@ export async function voidOverdueLegs({ olderThanMs = UNSETTLED_VOID_AFTER_MS, n
 const EARLY_LOSS_ENABLED = () => process.env.EARLY_LOSS_SETTLE !== '0';
 const EARLY_LOSS_CONFIRM_MS = () => Number(process.env.EARLY_LOSS_CONFIRM_MS) || 90 * 1000;
 // A certain WIN pays money, so it must stay certain longer (a goal that VAR cancels shows up within minutes).
-const EARLY_WIN_CONFIRM_MS = () => Number(process.env.EARLY_WIN_CONFIRM_MS) || 5 * 60 * 1000;
+const EARLY_WIN_CONFIRM_MS = () => Number(process.env.EARLY_WIN_CONFIRM_MS) || 60 * 1000;
 const earlyLossSeen = new Map(); // leg id -> { since, key } (in memory: a restart simply restarts the confirmation)
 const GOAL_STEPS = [0, 1, 2, 3, 4, 5];
 const COUNT_STEPS = [0, 1, 2, 3, 5, 8, 13, 21, 40];

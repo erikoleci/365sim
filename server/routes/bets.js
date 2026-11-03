@@ -261,6 +261,24 @@ router.post('/', wrap(async (req, res) => {
         });
       }
     }
+    // Anti-stale-price guard (LIVE_BET_REPRICE_AFTER_GOAL=1): on a live match, a goal-dependent market whose price
+    // has NOT moved since the last goal is a stale price (the feed did not reprice it), so it cannot be bet on.
+    if (process.env.LIVE_BET_REPRICE_AFTER_GOAL === '1' && (matchRow.status === 'LIVE' || matchRow.live_status != null)
+      && !String(sel.marketId).endsWith('-h2h')) {
+      const { rows: g } = await dbq("SELECT MAX(created_at) AS last_at FROM match_events WHERE match_id = $1 AND type = 'GOAL'", [matchRow.id]);
+      const lastGoal = g[0]?.last_at != null ? Number(g[0].last_at) : null;
+      if (lastGoal && Date.now() - lastGoal > LIVE_EVENT_LOCK_MS) {
+        const { rows: moved } = await dbq(
+          'SELECT 1 FROM odds_history WHERE match_id = $1 AND market_id = $2 AND selection_id = $3 AND created_at > $4 LIMIT 1',
+          [matchRow.id, sel.marketId, sel.selectionId, lastGoal]);
+        if (!moved.length) {
+          return fail(409, {
+            error: `The price of this market for ${matchRow.home_team} vs ${matchRow.away_team} has not been updated since the last goal.`,
+            code: 'LIVE_ODDS_STALE',
+          });
+        }
+      }
+    }
     const current = resolveCurrentSelection(matchRow, sel.marketId, sel.selectionId);
     if (current === null) {
       return fail(400, { error: `Selection ${sel.selectionId} in market ${sel.marketId} not found in current odds — it may have closed or moved` });
