@@ -61,6 +61,7 @@ import { isHalfTimeLatched, enterHalfTime, maybeReleaseHalfTime, __resetHalfTime
 import { queueClockWrite } from './clockWrites.js';
 import { sampleFeedKeys } from './feedKeySampler.js';
 import { announceGoalIfChanged, clearGoalAnnounced } from './goalAnnouncer.js';
+import { setPenaltyLock, clearPenaltyLock, __resetPenaltyLockForTests } from './penaltyLock.js';
 export { parseGameDetails };
 
 function parseScore(sc) {
@@ -138,6 +139,7 @@ export function __resetLiveStateForTests() {
   lastBroadcast.clear();
   derivedClock.clear();
   penaltyState.clear();
+  __resetPenaltyLockForTests();
   unknownEidWarned.clear();
   lastTouched.clear();
   teamIndex = { at: 0, map: new Map() };
@@ -544,6 +546,9 @@ async function applyGameDetailsNow(raw) {
     if (found) { foundNow = makeAction(found[0], found[1]); recent = { ...foundNow, until: nowMs + 7000 }; }
   }
   const decodedAction = decodeLiveAction(attrs.VC);
+  // Betting pause while a penalty is taken: set on the penalty code, cleared by the next decoded action, a goal or the whistle.
+  if (decodedAction && decodedAction.kind === 'penalty') setPenaltyLock(matchId, nowMs);
+  else if (decodedAction || (score && (score.home !== row.live_home_score || score.away !== row.live_away_score))) clearPenaltyLock(matchId);
   recordVcSample(attrs.VC, decodedAction && decodedAction.label, { match: `${attrs.H} - ${attrs.A}`, score: attrs.SC, t: attrs.T });
   observeVcFrame(eid, attrs, Boolean(decodedAction), { match: `${attrs.H} - ${attrs.A}` });
   const vcText = String(attrs.VC ?? '').trim();

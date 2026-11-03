@@ -19,6 +19,7 @@
 //
 // Names are matched on the provider's own wording (Albanian), normalised.
 
+import { isPenaltyLocked } from './penaltyLock.js';
 import { matchExtraMarket, UNSETTLEABLE_NAME } from './extraMarkets.js';
 import { parseProviderMarket, teamGoalsOption } from './providerMarkets.js';
 import { normMarketText as norm, splitPeriod, PERIOD_BASE_ALIASES, isPastFirstHalf, getMarketClosedReason } from './marketPeriods.js';
@@ -350,6 +351,8 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
   if (!row) return null;
   const closed = getMarketClosedReason(row, market && market.name, now);
   if (closed) return closed; // MATCH_FINISHED | FIRST_HALF_OVER
+  // A penalty is being taken / reviewed: every market of the match is paused until play resumes.
+  if (row.id && isPenaltyLocked(row.id, now)) return 'PENALTY_PAUSE';
 
   if (settlementRuleRequired() && !describeMarket(market && market.id, market && market.name).autoSettles) return NO_RULE;
   if (market && isUnofferedEventOrderOption(market.name, selection)) return NO_RULE;
@@ -679,6 +682,7 @@ export function describeBlockReason(code) {
   switch (code) {
     case 'MATCH_FINISHED': return 'the match has finished';
     case 'FIRST_HALF_OVER': return 'the first half is over';
+    case 'PENALTY_PAUSE': return 'a penalty is being taken, betting is paused until play resumes';
     case 'OUTCOME_DECIDED': return 'the outcome is already decided by the current score';
     case 'NO_PLAYER_DATA': return 'player odds are not offered (the feed does not provide player names)';
     case 'NO_SETTLEMENT_RULE': return 'this market cannot be settled automatically, so it is not offered';
