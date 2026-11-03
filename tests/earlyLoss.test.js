@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isLostForSure } from '../server/matchSettlement.js';
+import { isLostForSure, sureOutcome } from '../server/matchSettlement.js';
 
 const leg = (market_id, market_name, selection_id, selection_name = selection_id) => ({ market_id, market_name, selection_id, selection_name, match_home: 'Shakhtar', match_away: 'Sporting' });
 
@@ -30,5 +30,12 @@ describe('isLostForSure (in-play loss)', () => {
   it('Over corners is never lost early', () => {
     const l = leg('x', 'Total Korne', 'Over 9.5', 'Lart 9.5');
     expect(isLostForSure(l, { h: 0, a: 0 }, { cornersHome: 1, cornersAway: 0, cardsHome: 0, cardsAway: 0 })).toBe(false);
+  });
+  it('certain wins are recognised: Over 2.5 at 3 goals, BTTS Yes once both scored', () => {
+    expect(sureOutcome(leg('m-totals', 'Total Goals', 'Over-2.5'), { h: 2, a: 1 })).toBe('WON');
+    expect(sureOutcome(leg('m-totals', 'Total Goals', 'Over-2.5'), { h: 1, a: 1 })).toBe(null);
+    expect(sureOutcome(leg('m-btts', 'Both teams to score', 'Yes'), { h: 1, a: 1 })).toBe('WON');
+    expect(sureOutcome(leg('m-totals', 'Total Goals', 'Under-2.5'), { h: 2, a: 1 })).toBe('LOST');
+    expect(sureOutcome(leg('m-h2h', 'Match Winner', 'HOME'), { h: 3, a: 0 })).toBe(null);
   });
 });
