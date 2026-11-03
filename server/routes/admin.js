@@ -1053,23 +1053,36 @@ router.post('/legs/settle', async (req, res) => {
 // board, with the rule it falls under, whether it can be bet on in play, and a summary of how
 // many have NO automatic settlement rule (those tickets end by manual settlement or by the
 // 24h refund). Send this to whoever extends the rules.
-router.get('/market-coverage', async (req, res) => {
+// The scan reads every LIVE and UPCOMING row (each carries a 9-30 KB raw_json), which with the whole catalogue
+// (LONDON365_ALL_MATCHES) takes minutes and ended in "Request failed (504)" behind the tunnel. Now: keyset paging
+// (no OFFSET), a time budget (soonest matches first, so the sample stays representative), the answer cached for
+// 5 minutes, and one scan at a time. ?fresh=1 forces a new scan.
+const COVERAGE_BUDGET_MS = 40000;
+const COVERAGE_CACHE_MS = 5 * 60000;
+let coverageCache = null;
+let coverageInflight = null;
+
+async function computeMarketCoverage() {
+  const started = Date.now();
+  let truncated = false;
   const { rows: legRows } = await pool.query(
     `SELECT market_id, market_name, COUNT(*)::int AS legs, COUNT(*) FILTER (WHERE status = 'PENDING')::int AS pending,
             (array_agg(DISTINCT selection_name))[1:4] AS samples
        FROM bet_selections GROUP BY market_id, market_name`
   );
-  // LIVE and PREMATCH are read by separate queries: one shared "ORDER BY start_time LIMIT 300" let the
-  // upcoming rows crowd the live ones out (the report said LIVE = 0 while the table held live matches).
-  // Everything is scanned in batches (no cap), and LIVE/PREMATCH are counted apart per market.
+  // LIVE first, then UPCOMING (soonest first); each status is paged by (start_time, id), never by OFFSET.
   const scanRows = async (status) => {
     const out = [];
-    for (let offset = 0; ; offset += 250) {
+    let lastStart = ''; let lastId = '';
+    for (;;) {
+      if (Date.now() - started > COVERAGE_BUDGET_MS) { truncated = true; break; }
       const { rows } = await pool.query(
-        'SELECT * FROM matches_cache WHERE status = $1 ORDER BY start_time, id LIMIT 250 OFFSET $2', [status, offset]
+        'SELECT * FROM matches_cache WHERE status = $1 AND (start_time, id) > ($2, $3) ORDER BY start_time, id LIMIT 100', [status, lastStart, lastId]
       );
       out.push(...rows);
-      if (rows.length < 250) break;
+      if (rows.length < 100) break;
+      lastStart = rows[rows.length - 1].start_time; lastId = rows[rows.length - 1].id;
+      await new Promise((r) => setImmediate(r)); // let other requests through between batches
     }
     return out;
   };
@@ -1102,7 +1115,21 @@ router.get('/market-coverage', async (req, res) => {
     ...legRows.map((r) => ({ name: r.market_name, id: r.market_id, legs: r.legs, pending: r.pending, samples: r.samples || [] })),
     ...board.values(),
   ]);
-  res.json({ boardMatchesScanned: boardRows.length, liveMatchesScanned: scanned.live, prematchMatchesScanned: scanned.prematch, requireSettlementRule: settlementRuleRequired(), ...report, text: formatCoverageText(report) });
+  return {
+    boardMatchesScanned: boardRows.length, liveMatchesScanned: scanned.live, prematchMatchesScanned: scanned.prematch,
+    truncated, scanMs: Date.now() - started, requireSettlementRule: settlementRuleRequired(), ...report,
+    text: (truncated ? `(SKANIM I PJESSHËM: u lexuan ${boardRows.length} ndeshje, ato më të afërtat; tregjet e ndeshjeve më të largëta mund të mungojnë)\n` : '') + formatCoverageText(report),
+  };
+}
+
+router.get('/market-coverage', async (req, res) => {
+  if (req.query.fresh !== '1' && coverageCache && Date.now() - coverageCache.at < COVERAGE_CACHE_MS) return res.json(coverageCache.body);
+  if (!coverageInflight) {
+    coverageInflight = computeMarketCoverage()
+      .then((body) => { coverageCache = { at: Date.now(), body }; return body; })
+      .finally(() => { coverageInflight = null; });
+  }
+  res.json(await coverageInflight);
 });
 
 // Every raw provider field seen so far (REST list, REST live detail, live socket) with a few
