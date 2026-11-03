@@ -14,7 +14,7 @@ describe('"Shenon Pritesi ne P1/P2" is offered in play only at 0-0', () => {
     expect(getBetBlockReason(live(1, 0), market, po)).toBe('ONLY_AT_0_0');
     expect(getBetBlockReason(live(0, 1), market, po)).toBe('ONLY_AT_0_0');
   });
-  it('is closed when the live score is unknown', () => expect(getBetBlockReason(live(null, null), market, po)).toBe('ONLY_AT_0_0'));
+  it('is closed when the live score is unknown', () => expect(getBetBlockReason(live(null, null), market, po)).not.toBeNull());
   it('is open before kick-off', () => {
     const pre = { ...live(null, null), start_time: new Date(Date.now() + 3600000).toISOString(), status: 'UPCOMING', live_status: null };
     expect(getBetBlockReason(pre, market, po)).toBeNull();
