@@ -1477,6 +1477,29 @@ export async function rebindLegsToLiveTwin({ now = Date.now() } = {}) {
   return { reboundLegs };
 }
 
+// Catch-all: ANY leg still PENDING whose match is FINISHED with a stored final score gets settled, whatever the
+// ticket's status is. A ticket lost on its first leg used to leave its other legs open for ever ("Hapur") because
+// the sweeps only looked at open tickets; and a finished match settled earlier is skipped by settleMatch, so legs
+// attached to it later were never decided. force only touches legs still PENDING, so nothing settled is redone.
+export async function settleOpenLegsOfFinishedMatches() {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT m.id, m.result_home, m.result_away
+       FROM matches_cache m
+       JOIN bet_selections bs ON bs.match_id = m.id AND bs.status = 'PENDING'
+      WHERE m.status = 'FINISHED' AND m.result_home IS NOT NULL AND m.result_away IS NOT NULL`
+  );
+  let settledMatches = 0;
+  for (const m of rows) {
+    try {
+      const r = await settleMatch(m.id, Number(m.result_home), Number(m.result_away), { force: true });
+      if (r && r.autoSettledLegs) { settledMatches++; console.log('[settle] open legs of ' + m.id + ' settled with ' + m.result_home + '-' + m.result_away); }
+    } catch (err) {
+      console.error('[settle] open-leg settle of ' + m.id + ' failed (retried next sweep):', err.message);
+    }
+  }
+  return { settledMatches };
+}
+
 // ---- recovery of matches closed without a stored result -----------------------
 // The live socket can close a match (status FINISHED) without anything writing its
 // result, and every other pass only settles matches that HAVE result_home/away --
