@@ -58,6 +58,13 @@ export const BOTH_HALVES_NAMES = new Set([
 ]);
 // "Goli i parë në pjesën e parë" (options "None 1" / "1 1" / "2 1"): kept apart from GOAL_ORDER_NAMES because its
 // options are not plain sides. Settled from the half-time score and who scored first.
+// "Shenon golin e trete|peste (skuadra)" (the Nth goal of the match) and "Shenon Golin e 1|2 Pjesa1" (the Nth goal of the first half):
+// options 1 / X / 2 = the team that scores that goal / no such goal. Settled from the logged goal order (goalOrder.sides).
+export function nthGoalSpec(nameNorm) {
+  const m = String(nameNorm || '').match(/^shenon golin e (?:(trete|peste)(?: \(?skuadra\)?)?|(1|2) pjesa ?1)$/);
+  if (!m) return null;
+  return m[1] ? { n: m[1] === 'trete' ? 3 : 5, half1: false } : { n: Number(m[2]), half1: true };
+}
 export const FIRST_GOAL_H1_NAMES = new Set(['goli i pare ne pjesen e pare', 'gola i pare ne pjesen e pare', 'goli i pare ne pjese te pare', 'first goal 1st half']);
 // Markets decided by the ORDER of match events (the feed gives corner / card / goal events with their
 // side, recorded as the counters move): first / last corner, first card, second goal. Side options
@@ -106,7 +113,7 @@ export function classifyMarket(marketId, marketName, { home, away } = {}) {
   if (/korn|corner/.test(full)) return { kind: 'corners', period };
   if (/karton|\bcards?\b|booking/.test(full)) return { kind: 'cards', period };
   if (/&/.test(full)) return { kind: 'combo', period }; // "45/90 & Numri i Golave", "Pushim/Fund & Totali": never a plain htft
-  if (/\bht\b|\bft\b|pushim\s*\/\s*fund|\b45\s*\/\s*90\b/.test(full)) return { kind: 'htft', period };
+  if (/\bht\b|\bft\b|pushim\s*\/\s*fund|\b45\s*\/\s*90\b|^pjesa (e )?pare ?\/ ?pjesa (e )?dyte$/.test(full)) return { kind: 'htft', period };
   if (/\bdhe\b|\+/.test(full)) return { kind: 'combo', period };
 
   if (H2H_NAMES.has(base)) return { kind: 'result', period };
@@ -187,7 +194,7 @@ export function describeMarket(marketId, marketName) {
       (AUTO_SETTLES.has(c.kind) && !((c.kind === 'corners' || c.kind === 'cards') && STATS_UNDECIDABLE.test(stripP1P2(norm(marketName)))))
       || matchExtraMarket(norm(marketName)) || FIRST_GOAL_H1_NAMES.has(norm(marketName)) || EVENT_ORDER_RE.test(norm(marketName))
       || Boolean(nextEventKind(marketName))
-      || Boolean(parseProviderMarket(norm(marketName)))
+      || Boolean(parseProviderMarket(norm(marketName))) || Boolean(nthGoalSpec(norm(marketName)))
     ),
     inPlay: OPEN_IN_PLAY.has(c.kind) || nextEventKind(marketName) || parseProviderMarket(norm(marketName)) ? 'open' : 'blocked',
   };
@@ -218,7 +225,7 @@ export const isPlayerMarketName = (name) => PLAYER_MARKET.test(norm(name));
 // Markets the board never offers and the coverage report never lists (no way to settle them from our data).
 // "A do te kete kohe shtese?" / "Will there be extra time" / "Overtime & goal" / "Winning method": no extra-time data
 // in the feed. "Will there be a penalty shootout" / "A do te kete penallti gjate ndeshjes?": no penalty events.
-const HIDDEN_MARKET = /^(a do te kete kohe shtese|will there be (an )?extra time\b|overtime\b|winning method\b|will there be an? penalt|a do te kete penal)/;
+const HIDDEN_MARKET = /^(fitohet loja (mbas penallt|ne shtese)|menyra e fitores|a do te kete kohe shtese|will there be (an )?extra time\b|overtime\b|winning method\b|will there be an? penalt|a do te kete penal)/;
 export const isHiddenMarketName = (name) => HIDDEN_MARKET.test(norm(name));
 // "Home no bet" (option 1: home win = won, draw = refund, away win = lost) and "Away no bet" (option 2: the same for the
 // away side). Only that one option has a confirmed meaning; every other option of these markets (X, or the other side)

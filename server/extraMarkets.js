@@ -258,12 +258,17 @@ const RULES = [
   // ctx.aggregate = { home, away } seen from the sides of THIS match (loadAggregate in matchSettlement.js: the
   // other leg comes from matches_cache or from the match_results archive). A tied aggregate is decided by extra
   // time / penalties, which the feed does not give, and a missing other leg gives no aggregate: both stay open.
-  [/^to qualify$/, (m, sel, c, leg) => {
+  [/^(?:to qualify|skuadra qe kualifikohet)$/, (m, sel, c, leg) => {
     const a = c.aggregate;
     if (!a || !Number.isFinite(a.home) || !Number.isFinite(a.away) || a.home === a.away) return null;
     const side = /^(1|home)$/.test(sel) ? '1' : /^(2|away)$/.test(sel) ? '2'
       : sel && sel === norm(leg.match_home) ? '1' : sel && sel === norm(leg.match_away) ? '2' : null;
     return side ? won(side === (a.home > a.away ? '1' : '2')) : null;
+  }],
+  // "Gol JoGol Pjesa 1 Live" (Po / Jo): both teams score in the first half (half-time score).
+  [/^gol jogol pjesa 1 live$/, (m, sel, c) => {
+    const y = yesNo(sel); const p = half(c, 1);
+    return y === null || !p ? null : won((p.home > 0 && p.away > 0) === y);
   }],
   // Second-half red cards = full-time counters minus those taken at the whistle.
   [/^2nd half - (?:(home|away) )?sending off$/, (m, sel, c) => {

@@ -6,7 +6,7 @@ import { asianHandicapOutcome, asianTotalOutcome } from './asianLines.js';
 import { ticketOutcome } from './ticketOutcome.js';
 import {
   goalCountOption, TOTAL_GOALS_PREFIXES, H2H_NAMES, BTTS_NAMES, DOUBLE_CHANCE_NAMES, CORRECT_SCORE_NAMES, HANDICAP_NAMES, parseOverUnder,
-  STATS_UNDECIDABLE, EVENT_ORDER_RE, FIRST_TEAM_TO_SCORE_NAMES, LAST_TEAM_TO_SCORE_NAMES, FIRST_GOAL_NAMES, LAST_GOAL_NAMES, BOTH_HALVES_NAMES, GOAL_ORDER_NAMES, FIRST_GOAL_H1_NAMES,
+  STATS_UNDECIDABLE, EVENT_ORDER_RE, FIRST_TEAM_TO_SCORE_NAMES, LAST_TEAM_TO_SCORE_NAMES, FIRST_GOAL_NAMES, LAST_GOAL_NAMES, BOTH_HALVES_NAMES, GOAL_ORDER_NAMES, FIRST_GOAL_H1_NAMES, nthGoalSpec,
   nextEventKind, CORNER_ORDINALS, isCornerRace, parseCornerRaceOption,
 } from './marketRules.js';
 import { parseProviderMarket, providerOutcome, goalTimelineFromRows } from './providerMarkets.js';
@@ -24,7 +24,7 @@ import { parseProviderMarket, providerOutcome, goalTimelineFromRows } from './pr
 // Official rule 7: "Halftime/Fulltime" = the half-time RESULT + the FINAL result of the match ("1/2": home lead at the break, away win at the end).
 // This is a different market from "Pushim/Fund" (45/90) below, which is played by halves.
 const CLASSIC_HTFT_NAMES = new Set(['ht/ft', 'ht ft', 'ht / ft', 'halftime/fulltime', 'halftime / fulltime', 'halftime fulltime', 'half time/full time', 'half time / full time']);
-const HTFT_NAMES = new Set(['45/90', '45 / 90', '45/90 min', '45/90 minuta', 'pushim/fund', 'pushimi/fundi', 'pushim / fund', 'pushim fund', 'pjesa e pare/finale', 'pjesa e pare/fund',
+const HTFT_NAMES = new Set(['pjesa pare / pjesa dyte', 'pjesa pare/pjesa dyte', 'pjesa e pare / pjesa e dyte', 'pjesa e pare/pjesa e dyte', '45/90', '45 / 90', '45/90 min', '45/90 minuta', 'pushim/fund', 'pushimi/fundi', 'pushim / fund', 'pushim fund', 'pjesa e pare/finale', 'pjesa e pare/fund',
   'rezultati pjesa e pare / rezultati final', 'rezultati pjesa e pare/rezultati final', 'rezultati i pjeses se pare / rezultati final',
   'rezultati pjesa e pare / final', 'rezultati ne pushim / rezultati final']);
 
@@ -105,7 +105,7 @@ function halfWithMoreOutcome(leg, kind, ctx) {
 
 const STATS_MARKET = /korn|corner|karton|\bcards?\b|booking/;
 const legNeedsStats = (leg) => STATS_MARKET.test(norm(leg.market_name));
-const legNeedsFirstScorer = (leg) => GOAL_ORDER_NAMES.has(norm(leg.market_name)) || FIRST_GOAL_H1_NAMES.has(norm(leg.market_name)) || EVENT_ORDER_RE.test(norm(leg.market_name)) || isCornerRace(leg.market_name)
+const legNeedsFirstScorer = (leg) => Boolean(nthGoalSpec(norm(leg.market_name))) || GOAL_ORDER_NAMES.has(norm(leg.market_name)) || FIRST_GOAL_H1_NAMES.has(norm(leg.market_name)) || EVENT_ORDER_RE.test(norm(leg.market_name)) || isCornerRace(leg.market_name)
   || (splitCombo(leg) || []).some((p) => GOAL_ORDER_NAMES.has(norm(p.market_name)));
 
 // Final corner / card counters of a match, or undefined if there are none (or the
@@ -270,7 +270,7 @@ async function loadGoalOrder(client, match, homeScore, awayScore) {
     const { rows } = await client.query(
       `SELECT team, created_at FROM match_events WHERE match_id = $1 AND type = 'GOAL' ORDER BY created_at, id`, [match.id]);
     const order = homeScore + awayScore === 0
-      ? { first: 'NONE', second: 'NONE', last: 'NONE' }
+      ? { first: 'NONE', second: 'NONE', last: 'NONE', sides: [] }
       : goalOrderFromEvents(rows, match.home_team, match.away_team, homeScore, awayScore);
     // corner / card order: only when the logged events add up to the final counters of each side
     const st = await loadMatchStats(client, match.id);
@@ -561,13 +561,14 @@ export async function settleNextEventLegs() {
 }
 
 export function goalOrderFromEvents(events, homeTeam, awayTeam, homeScore, awayScore) {
-  if (homeScore + awayScore === 0) return { first: 'NONE', second: 'NONE', last: 'NONE' };
+  if (homeScore + awayScore === 0) return { first: 'NONE', second: 'NONE', last: 'NONE', sides: [] };
   const nHome = events.filter((e) => e.team === homeTeam).length;
   const nAway = events.filter((e) => e.team === awayTeam).length;
   if (nHome !== homeScore || nAway !== awayScore || !events.length) return undefined;
   const side = (e) => (e.team === homeTeam ? 'HOME' : e.team === awayTeam ? 'AWAY' : undefined);
   const pick = (e) => (events.some((o) => o.team !== e.team && Number(o.created_at) === Number(e.created_at)) ? undefined : side(e));
-  return { first: pick(events[0]), second: events.length >= 2 ? pick(events[1]) : 'NONE', last: pick(events[events.length - 1]) };
+  // sides = the scoring side of every goal in order (undefined where two sides scored at the very same instant)
+  return { first: pick(events[0]), second: events.length >= 2 ? pick(events[1]) : 'NONE', last: pick(events[events.length - 1]), sides: events.map(pick) };
 }
 export const firstScorerFromEvents = (...args) => { const g = goalOrderFromEvents(...args); return g ? g.first : undefined; };
 
@@ -798,6 +799,22 @@ export function determineLegOutcome(leg, { winner, totalGoals, bothScored, homeS
     return sign(htHome, htAway) === m[1] && sign(secondHome, secondAway) === m[2] ? 'WON' : 'LOST';
   }
 
+  // "Shenon golin e trete|peste (skuadra)" / "Shenon Golin e 1|2 Pjesa1": the team that scores the Nth goal (of the match /
+  // of the first half); X = there is no such goal. Needs the goal order to add up to the final score, else it stays PENDING.
+  const nthGoal = nthGoalSpec(marketName);
+  if (nthGoal) {
+    const sel = norm(leg.selection_name || leg.selection_id);
+    const picked = sel === '1' ? 'HOME' : sel === '2' ? 'AWAY' : sel === 'x' ? 'NONE' : null;
+    if (!picked || !hasScore) return null;
+    let exists;
+    if (nthGoal.half1) {
+      if (!Number.isFinite(htHome) || !Number.isFinite(htAway)) return null;
+      exists = htHome + htAway >= nthGoal.n;
+    } else exists = homeScore + awayScore >= nthGoal.n;
+    const actual = exists ? (goalOrder && goalOrder.sides && goalOrder.sides[nthGoal.n - 1]) : 'NONE';
+    if (actual !== 'HOME' && actual !== 'AWAY' && actual !== 'NONE') return null; // order not reliable: stays PENDING
+    return picked === actual ? 'WON' : 'LOST';
+  }
   // First goal of the first half: no goal before the break -> "None 1"; otherwise the first goal of the
   // match IS the first goal of the half, so its scorer decides ("1 1" home, "2 1" away).
   if (FIRST_GOAL_H1_NAMES.has(marketName)) {
@@ -1094,7 +1111,7 @@ async function loadExtraTimeGoals(client, match) {
 // Finished matches leave matches_cache after about a week, so the result of every settled match is also
 // kept in match_results (migration 0019) for TIE_WINDOW_DAYS.
 export const TIE_WINDOW_DAYS = 75;
-const legNeedsAggregate = (leg) => /^to qualify$/.test(norm(leg.market_name));
+const legNeedsAggregate = (leg) => /^(to qualify|skuadra qe kualifikohet)$/.test(norm(leg.market_name));
 
 // The candidate (rows of { start_time, result_home, result_away }) whose kick-off is nearest to this match's, within the window.
 export function pickOtherLeg(startTime, candidates, windowDays = TIE_WINDOW_DAYS) {
