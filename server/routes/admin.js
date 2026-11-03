@@ -50,7 +50,7 @@ router.use(requireAuth, requireAdmin);
 for (const path of [
   '/london365', '/bet-selections', '/matches', '/pending-legs', '/legs', '/market-coverage', '/unmapped-vc',
   '/corner-diagnose', '/recent-errors', '/vc-codes', '/provider-labels', '/feed-keys', '/settle-diagnose',
-  '/bets/settle-stuck', '/risk', '/live-audit',
+  '/bets/settle-stuck', '/risk', '/live-audit', '/market-audit',
 ]) router.use(path, requireSuperAdmin);
 
 // Every agent and user belongs to one admin (users.admin_id). A normal admin only sees and manages his own;
@@ -1169,6 +1169,40 @@ router.get('/live-audit', async (req, res) => {
   }
   const tickets = [...byBet.values()].filter((t) => t.ticketEdge >= minEdge).sort((a, b) => b.ticketEdge - a.ticketEdge);
   res.json({ hours, count: tickets.length, tickets });
+});
+
+// Who bet on a market and what the match looked like at that moment: every ticket leg whose market name contains ?q=
+// (default "shenon pritesi ne p1/p2") in the last ?hours= (default 48), with the user, the stake, the odds and the goals
+// that had ALREADY been scored when the ticket was booked (and any goal in the 60 s after it). A live ticket on a market
+// the goals had already decided, or one that landed just before a goal, is a player beating the feed.
+// Example: /api/admin/market-audit?q=shenon%20pritesi&hours=72
+router.get('/market-audit', async (req, res) => {
+  const q = String(req.query.q || 'shenon pritesi ne p1/p2').trim().toLowerCase();
+  const hours = Math.min(720, Math.max(1, Number(req.query.hours) || 48));
+  const { rows } = await pool.query(
+    `SELECT b.id AS bet_id, b.created_at, b.stake, b.total_odds, b.status AS bet_status, b.is_live, b.user_id, u.username,
+            bs.match_id, bs.match_home, bs.match_away, bs.market_name, bs.selection_name, bs.odds, bs.status AS leg_status, bs.placed_state
+       FROM bet_selections bs JOIN bets b ON b.id = bs.bet_id LEFT JOIN users u ON u.id = b.user_id
+      WHERE lower(bs.market_name) LIKE $1 AND b.created_at > $2
+      ORDER BY b.created_at DESC LIMIT 500`,
+    ['%' + q + '%', Date.now() - hours * 3600 * 1000]
+  );
+  const out = [];
+  for (const r of rows) {
+    const { rows: ev } = await pool.query(
+      "SELECT minute, type, team, created_at FROM match_events WHERE match_id = $1 AND type = 'GOAL' ORDER BY created_at", [r.match_id]);
+    const at = Number(r.created_at);
+    const before = ev.filter((e) => Number(e.created_at) <= at).map((e) => ({ minute: e.minute, team: e.team }));
+    const soon = ev.filter((e) => Number(e.created_at) > at && Number(e.created_at) - at <= 60000).map((e) => ({ minute: e.minute, team: e.team, afterSec: Math.round((Number(e.created_at) - at) / 1000) }));
+    out.push({
+      betId: r.bet_id, user: r.username || r.user_id, bookedAt: at, live: r.is_live, stake: r.stake, odds: r.odds, betStatus: r.bet_status, legStatus: r.leg_status,
+      match: r.match_home + ' - ' + r.match_away, market: r.market_name, selection: r.selection_name, bookedWith: r.placed_state || null,
+      goalsBeforeBooking: before, goalWithin60sAfter: soon, suspicious: Boolean(r.is_live && (before.length > 0 || soon.length > 0)),
+    });
+  }
+  const perUser = {};
+  for (const t of out) { const u = perUser[t.user] || (perUser[t.user] = { tickets: 0, liveWithGoals: 0, stake: 0 }); u.tickets++; u.stake += Number(t.stake) || 0; if (t.suspicious) u.liveWithGoals++; }
+  res.json({ q, hours, count: out.length, perUser, tickets: out });
 });
 
 router.get('/settle-diagnose', async (req, res) => {
