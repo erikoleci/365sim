@@ -328,6 +328,18 @@ const RULES = [
   }],
   [/^rezultati sakte live$/, (m, sel, c) => { const s = finalScore(c); const sc = scoreOf(sel); return s && sc ? won(s.home === sc[0] && s.away === sc[1]) : null; }],
 
+  // ---- penalty during the match ----
+  // Decided only when a penalty kick was logged (PENALTY events): "Po" then wins and "Jo" loses. With no
+  // logged penalty the feed could simply have missed it, so "no penalty" is never assumed: it stays PENDING
+  // (decided by hand in the admin "Pezull" tab).
+  [/^(?:will there be an? penalty|a do te kete penallti gjate ndeshjes)\??$/, (m, sel, c) => {
+    const y = yesNo(sel); const st = c.stats;
+    if (y === null || !st) return null;
+    const n = fin(st.penaltiesHome) + fin(st.penaltiesAway);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return won(y);
+  }],
+
   // ---- red cards / corners ----
   // Red cards: whole match from the match counters, "1st half" from the counters taken at the whistle
   // (matches_cache.ht_red_*, filled once per match at half-time).
@@ -374,5 +386,5 @@ export function extraMarketOutcome(leg, marketName, ctx) {
 // have), so the coverage report must not claim a rule for them.
 export const UNSETTLEABLE_NAME = new RegExp([
   // the feed gives no penalty events: decided by hand in the admin "Pezull" tab (or refunded)
-  'penallti',
+  'penallti(?! gjate ndeshjes)',
 ].join('|'));

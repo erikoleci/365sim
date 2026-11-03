@@ -142,8 +142,26 @@ async function loadEventCounters(client, matchId) {
   return { final: pack(false), ht: hasHalf ? pack(true) : undefined };
 }
 
-// Stored counters win; a counter the stats row does not have (or a match without any stats row) is filled from the events.
+// Penalty kicks logged as PENALTY events (VC x1236, see london365GameDetails.js), per side. undefined when the lookup fails.
+async function loadPenaltyCounts(client, matchId) {
+  try {
+    const { rows } = await client.query(
+      `SELECT team, COUNT(*)::int AS n FROM match_events WHERE match_id = $1 AND type = 'PENALTY' GROUP BY team`, [matchId]);
+    const n = (t) => Number((rows.find((r) => r.team === t) || {}).n) || 0;
+    return { penaltiesHome: n('home'), penaltiesAway: n('away') };
+  } catch { return undefined; }
+}
+
 export async function loadMatchStats(client, matchId) {
+  const base = await loadMatchStatsBase(client, matchId);
+  const pen = await loadPenaltyCounts(client, matchId);
+  if (!pen) return base;
+  if (base) return { ...base, ...pen };
+  return pen.penaltiesHome + pen.penaltiesAway > 0 ? pen : base; // never invent a stats object just to carry zeros
+}
+
+// Stored counters win; a counter the stats row does not have (or a match without any stats row) is filled from the events.
+async function loadMatchStatsBase(client, matchId) {
   const stored = await loadStoredMatchStats(client, matchId);
   const need = ['cornersHome', 'cornersAway', 'cardsHome', 'cardsAway'];
   if (stored && need.every((k) => stored[k] != null)) return stored;

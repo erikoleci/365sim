@@ -34,9 +34,12 @@ describe('hidden markets', () => {
     expect(isHiddenMarketName('Draw no bet')).toBe(false);
   });
   it('recognises the overtime, winning-method and penalty markets', () => {
-    for (const n of ['Overtime & goal', 'Winning method', 'Will there be a penalty shootout', 'A do te kete penallti gjate ndeshjes?']) {
+    for (const n of ['Overtime & goal', 'Winning method', 'Will there be a penalty shootout']) {
       expect(isHiddenMarketName(n)).toBe(true);
     }
+    // offered again: penalty kicks are logged as PENALTY events and settled in extraMarkets.js
+    expect(isHiddenMarketName('A do te kete penallti gjate ndeshjes?')).toBe(false);
+    expect(isHiddenMarketName('Will there be a penalty')).toBe(false);
     expect(isHiddenMarketName('To qualify')).toBe(false);
     expect(isHiddenMarketName('Gol/JoGol')).toBe(false);
   });

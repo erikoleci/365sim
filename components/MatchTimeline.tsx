@@ -60,12 +60,13 @@ const MatchTimeline: React.FC<{ events: MatchEvent[]; home: string; away: string
       if (i === ht) pushHalfMarkers();
       if (i === rt) asc.push({ kind: 'marker', key: 'rt', text: t('Fundi i kohës rregullt'), strong: true });
       let label: string | null = null;
-      if (['CORNER', 'YELLOW_CARD', 'RED_CARD', 'GOAL'].includes(ev.type)) {
+      if (['CORNER', 'YELLOW_CARD', 'RED_CARD', 'GOAL', 'PENALTY'].includes(ev.type)) {
         counts[ev.type] = (counts[ev.type] || 0) + 1;
         const n = counts[ev.type];
         label = ev.type === 'CORNER' ? `🚩 ${t('Korneri')} ${n}`
           : ev.type === 'YELLOW_CARD' ? `🟨 ${t('Karton i verdhë')} ${n}`
           : ev.type === 'RED_CARD' ? `🟥 ${t('Karton i kuq')} ${n}`
+          : ev.type === 'PENALTY' ? `🥅 ${t('Penallti')} ${n}`
           : `⚽ ${t('Goli')} ${n}${ev.player ? ` · ${ev.player}` : ''}`;
       } else if (ev.type === 'SUBSTITUTION') label = `🔄 ${t('Ndërrim')}${ev.player ? ` · ${ev.player}` : ''}`;
       else if (ev.type === 'VAR') label = '📺 VAR';
