@@ -1117,17 +1117,21 @@ async function loadAggregate(client, matchId, homeScore, awayScore) {
   try {
     const { rows: [m] } = await client.query('SELECT id, league, home_team, away_team, start_time FROM matches_cache WHERE id = $1', [matchId]);
     if (!m) return undefined;
-    const params = [m.league, m.away_team, m.home_team, m.id];
+    // The other leg has the sides swapped. Same league, finished, a stored score; the club names are compared
+    // loosely because the feed spells one club several ways ("Stade Brest 29" / "Brest"), and an exact match
+    // would silently lose the first leg's goals.
+    const params = [m.league, m.id];
     let { rows: cands } = await client.query(
-      `SELECT id, start_time, result_home, result_away FROM matches_cache
-        WHERE league = $1 AND home_team = $2 AND away_team = $3 AND id <> $4
-          AND status = 'FINISHED' AND result_home IS NOT NULL AND result_away IS NOT NULL`, params);
+      `SELECT id, home_team, away_team, start_time, result_home, result_away FROM matches_cache
+        WHERE league = $1 AND id <> $2 AND status = 'FINISHED' AND result_home IS NOT NULL AND result_away IS NOT NULL`, params);
     try {
       const { rows: archived } = await client.query(
-        `SELECT match_id AS id, start_time, result_home, result_away FROM match_results
-          WHERE league = $1 AND home_team = $2 AND away_team = $3 AND match_id <> $4`, params);
+        `SELECT match_id AS id, home_team, away_team, start_time, result_home, result_away FROM match_results
+          WHERE league = $1 AND match_id <> $2`, params);
       cands = cands.concat(archived);
     } catch { /* archive not migrated yet: the cache alone */ }
+    const swapped = { homeTeam: m.away_team, awayTeam: m.home_team };
+    cands = cands.filter((c) => (looseSameClub(swapped.homeTeam, c.home_team) && looseSameClub(swapped.awayTeam, c.away_team)));
     return aggregateFrom(homeScore, awayScore, pickOtherLeg(m.start_time, cands));
   } catch { return undefined; }
 }
@@ -1392,7 +1396,7 @@ const TWIN_WAIT_AFTER_KICKOFF_MS = 130 * 60 * 1000;
 // Looser club-name test used ONLY when two records kick off at (almost) the same minute: the feed spells
 // one club several ways ("Stade Brest 29" / "Brest", "CA Osasuna" / "Osasuna", "RC Deportivo de A Coruna" /
 // "Deportivo La Coruna"). Drops generic words and digits, then one name must contain the other's key words.
-const GENERIC_CLUB_WORDS = new Set(['fc', 'cf', 'ca', 'rc', 'sc', 'ac', 'as', 'cd', 'sd', 'ud', 'afc', 'sk', 'fk', 'stade', 'de', 'la', 'le', 'el', 'a', 'da', 'do', 'of', 'club', 'calcio', 'united', 'city']);
+const GENERIC_CLUB_WORDS = new Set(['fc', 'cf', 'ca', 'rc', 'sc', 'ac', 'as', 'cd', 'sd', 'ud', 'afc', 'sk', 'fk', 'stade', 'de', 'la', 'le', 'el', 'a', 'da', 'do', 'of', 'club', 'calcio']);
 function clubKeyWords(name) {
   return String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
     .replace(/[^a-z\s]/g, ' ').split(/\s+/).filter((t) => t.length > 1 && !GENERIC_CLUB_WORDS.has(t));
