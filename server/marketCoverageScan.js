@@ -5,7 +5,7 @@ import { buildCoverageReport, formatCoverageText } from './marketCoverage.js';
 import { settlementRuleRequired } from './marketRules.js';
 import { mapEventToMatch } from './oddsUtils.js';
 
-export async function computeMarketCoverage(pool, { budgetMs = 40000 } = {}) {
+export async function computeMarketCoverage(pool, { budgetMs = 40000, onProgress = null } = {}) {
   const started = Date.now();
   let truncated = false;
   const { rows: legRows } = await pool.query(
@@ -23,6 +23,7 @@ export async function computeMarketCoverage(pool, { budgetMs = 40000 } = {}) {
         'SELECT * FROM matches_cache WHERE status = $1 AND (start_time, id) > ($2, $3) ORDER BY start_time, id LIMIT 100', [status, lastStart, lastId]
       );
       out.push(...rows);
+      if (onProgress) onProgress({ phase: 'read', status, rows: out.length });
       if (rows.length < 100) break;
       lastStart = rows[rows.length - 1].start_time; lastId = rows[rows.length - 1].id;
       await new Promise((r) => setImmediate(r)); // let other requests through between batches
@@ -34,7 +35,9 @@ export async function computeMarketCoverage(pool, { budgetMs = 40000 } = {}) {
   const boardRows = [...liveRows, ...upcomingRows];
   const board = new Map();
   const scanned = { live: 0, prematch: 0 };
+  let mapped = 0;
   for (const row of boardRows) {
+    if (onProgress && ++mapped % 500 === 0) onProgress({ phase: 'map', rows: mapped, total: boardRows.length });
     let match;
     try { match = mapEventToMatch(row); } catch { continue; }
     const isLive = row.status === 'LIVE';

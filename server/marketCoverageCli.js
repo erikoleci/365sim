@@ -7,7 +7,10 @@ import { pool } from './db.js';
 import { computeMarketCoverage } from './marketCoverageScan.js';
 
 try {
-  const r = await computeMarketCoverage(pool, { budgetMs: 10 * 60 * 1000 });
+  const r = await computeMarketCoverage(pool, {
+    budgetMs: 10 * 60 * 1000,
+    onProgress: (p) => console.log(p.phase === 'read' ? `  duke lexuar ${p.status}: ${p.rows} ndeshje...` : `  duke analizuar tregjet: ${p.rows} / ${p.total}`),
+  });
   const head = `Ndeshje të skanuara: ${r.boardMatchesScanned} (live ${r.liveMatchesScanned}, prematch ${r.prematchMatchesScanned}) në ${Math.round(r.scanMs / 1000)}s | rregulli i detyrueshëm për bast: ${r.requireSettlementRule ? 'PO' : 'JO'}`;
   const out = head + '\n' + r.text + '\n';
   console.log(out);
