@@ -1758,8 +1758,8 @@ export async function voidOverdueLegs({ olderThanMs = UNSETTLED_VOID_AFTER_MS, n
 //
 // Safety net against a feed glitch (a goal that VAR later cancels, a corner counter that jumps): the same leg
 // must come out lost-for-sure on EARLY_LOSS_CONFIRM_MS worth of consecutive sweeps before it is written.
-// Off unless EARLY_LOSS_SETTLE=1.
-const EARLY_LOSS_ENABLED = () => process.env.EARLY_LOSS_SETTLE === '1';
+// On by default; set EARLY_LOSS_SETTLE=0 in .env to switch it off.
+const EARLY_LOSS_ENABLED = () => process.env.EARLY_LOSS_SETTLE !== '0';
 const EARLY_LOSS_CONFIRM_MS = () => Number(process.env.EARLY_LOSS_CONFIRM_MS) || 90 * 1000;
 const earlyLossSeen = new Map(); // leg id -> { since, key } (in memory: a restart simply restarts the confirmation)
 const GOAL_STEPS = [0, 1, 2, 3, 4, 5];
