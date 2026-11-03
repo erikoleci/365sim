@@ -274,7 +274,6 @@ const App: React.FC = () => {
             onClearAll={slip.clearSelections}
             onPlaceBet={slip.placeBet}
             hasLiveSelection={slip.selections.some((sel) => feed.matches.some((m: any) => String(m.id) === String(sel.matchId) && m.isLive))}
-            onCancelBet={admin.cancelBet}
           />
         )}
       </div>

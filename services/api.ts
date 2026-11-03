@@ -281,9 +281,6 @@ export async function fetchMyBets(): Promise<Bet[]> {
   return data.bets.map(mapServerBet);
 }
 
-export async function cancelMyBet(betId: string): Promise<{ balance: number; balanceEur: number }> {
-  return request<{ ok: true; balance: number; balanceEur: number }>(`/bets/${betId}/cancel`, { method: 'POST' });
-}
 
 function mapServerBet(b: any): Bet {
   return {
