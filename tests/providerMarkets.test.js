@@ -98,8 +98,10 @@ describe('in play', () => {
   it('scoring in P2 / both halves', () => {
     expect(g('Shenon Pritesi ne P2', 'Po')).toBeNull();
     expect(g('Shenon Pritesi ne P2', 'Po', row({ live_home_score: 2 }))).toBe('OUTCOME_DECIDED');
-    expect(g('Shenon Udhetuesi ne P1/P2', 'Po')).toBe('OUTCOME_DECIDED'); // no goal in P1: cannot score in both
-    expect(g('Shenon Pritesi ne P1/P2', 'Po')).toBeNull();
+    // both halves: offered in play only at 0-0 (any goal on the board closes it)
+    expect(g('Shenon Udhetuesi ne P1/P2', 'Po')).toBe('ONLY_AT_0_0');
+    expect(g('Shenon Pritesi ne P1/P2', 'Po')).toBe('ONLY_AT_0_0');
+    expect(g('Shenon Pritesi ne P1/P2', 'Po', row({ live_home_score: 0, live_away_score: 0, ht_home: 0, ht_away: 0 }))).toBeNull();
     expect(g('Shenon Pritesi ne P2', 'Po', row({ ht_home: null, ht_away: null }))).toBe('NOT_VERIFIABLE_LIVE');
   });
   it('goal before minute N and RF-N close 90 s before the cut-off, and once the goal is in', () => {

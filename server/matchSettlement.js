@@ -1929,3 +1929,5 @@ export function liveFairProbability(leg, score, minute) {
 
 // Expected return per unit staked at `odds`: > 1 means the price is better than the model says is fair.
 export const liveEdge = (odds, fair) => (fair ? odds * fair.pWin + fair.pVoid : null);
+
+export const isStatsMarketName = (name) => STATS_MARKET.test(norm(name));

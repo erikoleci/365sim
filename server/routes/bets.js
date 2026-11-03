@@ -7,6 +7,8 @@ import { resolveCurrentSelection, mapEventToMatch, isStaleLive } from '../oddsUt
 import { getBetBlockReason, describeBlockReason, nextEventKind, eventOrderOrdinal, isLiveCornerMarket, isLiveCardMarket } from '../marketRules.js';
 import { readNextEventCounters, readLiveCorners, readLiveCards, liveFairProbability, liveEdge } from '../matchSettlement.js';
 import { minuteOf } from '../marketPeriods.js';
+import { certainOutcomeReason } from '../liveCertainty.js';
+import { loadMatchStats, isStatsMarketName } from '../matchSettlement.js';
 import { findCorrelatedSelections } from '../ticketCorrelation.js';
 import { findConflictingSelection, validateStakeAmount, isLiveEventLocked } from '../betValidation.js';
 import { getLiveRisk, riskPolicy } from '../liveRisk.js';
@@ -329,6 +331,15 @@ router.post('/', wrap(async (req, res) => {
       { id: sel.selectionId, name: current.selectionName || sel.selectionName }
     );
     if (matchRow.status === 'LIVE' || matchRow.live_status != null) inPlay = true;
+    // Generic net: a selection the match situation has already decided (goals, corners, cards, any market type) is closed.
+    let certainReason = null;
+    if (!closedReason && inPlay) {
+      const certMarket = { id: sel.marketId, name: current.marketName };
+      const certSel = { id: sel.selectionId, name: current.selectionName || sel.selectionName };
+      let certStats;
+      if (isStatsMarketName(current.marketName)) certStats = await loadMatchStats(pool, matchRow.id).catch(() => undefined);
+      certainReason = certainOutcomeReason(matchRow, certMarket, certSel, certStats);
+    }
     // first corner / first card in play: only while none has happened yet (live counters)
     let ordinalReason = null;
     const ordinal = eventOrderOrdinal(current.marketName);
@@ -339,8 +350,8 @@ router.post('/', wrap(async (req, res) => {
       ordinalReason = !counters ? 'NOT_VERIFIABLE_LIVE'
         : ((ordinal.kind === 'corner' ? total >= ordinal.n : total !== ordinal.n - 1) ? 'OUTCOME_DECIDED' : null);
     }
-    if (closedReason || ordinalReason) {
-      const why = closedReason || ordinalReason;
+    if (closedReason || ordinalReason || certainReason) {
+      const why = closedReason || ordinalReason || certainReason;
       console.log('[bets] rejected bet: match=' + matchRow.id + ' market=' + sel.marketId + ' selection=' + sel.selectionId + ' reason=' + why + ' user=' + req.user.id);
       return fail(409, {
         error: `Betting on "${current.marketName}" is closed — ${describeBlockReason(why)}.`,

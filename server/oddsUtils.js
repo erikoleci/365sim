@@ -10,6 +10,7 @@
 // translated to Albanian. Never parse business logic out of `name`.
 
 import { getBetBlockReason, settlementRuleRequired, hidePlayerOdds } from './marketRules.js';
+import { certainOutcomeReason } from './liveCertainty.js';
 
 export const MARKET_LABELS = {
   h2h: { name: '1X2 - Fituesi', category: 'main' },
@@ -283,7 +284,8 @@ export function mapEventToMatch(row) {
   // the server-side check at placement is what actually protects.
   const openMarkets = (status === 'LIVE' || settlementRuleRequired())
     ? markets.map((m) => {
-        const reasons = m.options.map((o) => getBetBlockReason(row, { id: m.id, name: m.name }, { id: o.id, name: o.name }));
+        const reasons = m.options.map((o) => getBetBlockReason(row, { id: m.id, name: m.name }, { id: o.id, name: o.name })
+          || (status === 'LIVE' ? certainOutcomeReason(row, { id: m.id, name: m.name }, { id: o.id, name: o.name }) : null));
         if (!reasons.some(Boolean)) return m;
         const allBlocked = reasons.every(Boolean);
         return {
