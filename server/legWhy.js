@@ -16,3 +16,16 @@ export function describeOpenLeg({ leg, match, now = Date.now(), blockReason = ''
   if (match.result_home == null || match.result_away == null) return { ...base, code: 'NO_RESULT', text: blockReason || 'Ndeshja është e mbaruar por pa rezultat final të ruajtur.' };
   return { ...base, code: 'NO_RULE_OR_DATA', text: `Ndeshja ka rezultat ${match.result_home}-${match.result_away}, por zgjedhja "${name}" nuk ka rregull automatik ose i mungon një e dhënë (pushimi, kornerë, kartona, ngjarje). Mbylle me dorë: Fituese ose Humbëse, ose më dërgo emrin e tregut që ta shtoj.` };
 }
+
+// A finished match with a result whose leg is still open: say exactly which of the two cases it is.
+//   DECIDABLE_NOW -> the rules decide it with the result we have; the 2-minute sweep closes it by itself.
+//   NO_RULE       -> the market cannot be closed from the result alone (no rule, or it needs half-time / corners / cards /
+//                    events that are missing): it will NOT close by itself, the admin closes it or the code is extended.
+// `decide(leg, match)` is wouldSettleNow from matchSettlement.js (passed in so this file stays free of the database).
+export function refineOpenLeg(d, { leg, match, decide }) {
+  if (!d || d.code !== 'NO_RULE_OR_DATA' || !match) return d;
+  const h = match.result_home; const a = match.result_away;
+  const r = decide(leg, match);
+  if (r) return { ...d, code: 'DECIDABLE_NOW', text: `Rregulli e vendos ${r} me rezultatin ${h}-${a}. Mbyllet vetë në kontrollin e radhës (çdo 2 minuta), nuk duhet bërë gjë.` };
+  return { ...d, code: 'NO_RULE', text: `Ndeshja ka rezultat final ${h}-${a}, por "${d.selection}" nuk mbyllet dot vetëm me rezultatin: ose tregu nuk ka rregull automatik, ose i mungon një e dhënë (pushimi, kornerë, kartona, ngjarje). NUK do mbyllet vetë: super admini e mbyll me dorë (Fituese / Humbëse), ose ndryshohet kodi: më dërgo emrin e tregut.` };
+}

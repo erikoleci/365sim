@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { readLiveCorners, readLiveCards } from '../matchSettlement.js';
-import { settleMatch, recomputeBetStatus, creditWithLedger, settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult, explainSettleBlock } from '../matchSettlement.js';
+import { settleMatch, recomputeBetStatus, creditWithLedger, settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult, explainSettleBlock, wouldSettleNow } from '../matchSettlement.js';
 import { missedLiveCycles } from '../london365/liveState.js';
 import { logAudit } from '../auditLog.js';
 import { buildCoverageReport, formatCoverageText } from '../marketCoverage.js';
@@ -26,7 +26,7 @@ import { monthRange } from './agent.js';
 import { userMetrics, buildCommissionReport, reportRange } from '../commission.js';
 import { buildCreditLedger, feeRateFromEnv } from '../creditLedger.js';
 import { planManualResolve } from '../manualResolve.js';
-import { describeOpenLeg } from '../legWhy.js';
+import { describeOpenLeg, refineOpenLeg } from '../legWhy.js';
 import { deleteUserIfUnused, deleteBlockedMessage, forceDeleteUser } from '../userDeletion.js';
 
 const router = express.Router();
@@ -904,7 +904,7 @@ router.get('/bets/:id/why', async (req, res) => {
     status: bet.status,
     legs: legs.map((l) => {
       const match = byId.get(l.match_id);
-      return describeOpenLeg({ leg: l, match, now, blockReason: match && match.status === 'FINISHED' && match.result_home == null ? explainSettleBlock(match, now) : '' });
+      return refineOpenLeg(describeOpenLeg({ leg: l, match, now, blockReason: match && match.status === 'FINISHED' && match.result_home == null ? explainSettleBlock(match, now) : '' }), { leg: l, match, decide: wouldSettleNow });
     }),
   });
 });

@@ -1382,6 +1382,21 @@ export async function settleStuckBets() {
   }
 }
 
+// What the rules would decide for one open leg of a FINISHED match with a stored result, using only what the match row
+// holds (final score, stored half-time score). Used by the "Pse është hapur?" explanation: 'WON' | 'LOST' | 'VOID' | ... when the
+// sweep can close it on its own, null when the market has no rule or needs data that is not in the row.
+export function wouldSettleNow(leg, match) {
+  const h = Number(match && match.result_home); const a = Number(match && match.result_away);
+  if (!Number.isFinite(h) || !Number.isFinite(a)) return null;
+  const hasHt = match.ht_home != null && match.ht_away != null;
+  try {
+    return determineLegOutcome(leg, {
+      winner: h > a ? 'HOME' : a > h ? 'AWAY' : 'DRAW', totalGoals: h + a, bothScored: h > 0 && a > 0, homeScore: h, awayScore: a,
+      htHome: hasHt ? Number(match.ht_home) : undefined, htAway: hasHt ? Number(match.ht_away) : undefined,
+    }) || null;
+  } catch { return null; }
+}
+
 // ---- first-half markets close at the half-time whistle ---------------------------------------------------
 // A ticket on a first-half market ("Rezultati Pjesa e Parë", "Gola P1", "Gol/Jo Gol P1" ...) is decided the moment
 // the first half is over: it must not wait for the end of the match (a match that is later abandoned or

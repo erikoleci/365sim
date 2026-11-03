@@ -4,8 +4,8 @@
 import 'dotenv/config';
 import { writeFileSync } from 'node:fs';
 import { pool } from './db.js';
-import { explainSettleBlock, determineLegOutcome } from './matchSettlement.js';
-import { describeOpenLeg } from './legWhy.js';
+import { explainSettleBlock, wouldSettleNow } from './matchSettlement.js';
+import { describeOpenLeg, refineOpenLeg } from './legWhy.js';
 
 const out = [];
 const say = (s = '') => { out.push(s); console.log(s); };
@@ -40,19 +40,10 @@ async function main() {
     say(`#${String(b.id).slice(0, 8)}  ${b.username}  ${b.type || ''}  stake ${b.stake} ${b.currency || 'ALL'}  -> ${b.potential_return}  (vendosur ${fmt(b.created_at)})`);
     for (const l of legsByBet.get(b.id) || []) {
       const m = byId.get(l.match_id);
-      const d = describeOpenLeg({ leg: l, match: m, now, blockReason: m && m.status === 'FINISHED' && m.result_home == null ? explainSettleBlock(m, now) : '' });
-      let code = d.code;
-      let text = d.text;
-      // Result known: would the rules decide it with the plain scores? If yes the sweep should close it (it runs every 2 min).
-      if (code === 'NO_RULE_OR_DATA' && m) {
-        const h = Number(m.result_home); const a = Number(m.result_away);
-        let r = null;
-        try {
-          r = determineLegOutcome(l, { winner: h > a ? 'HOME' : a > h ? 'AWAY' : 'DRAW', totalGoals: h + a, bothScored: h > 0 && a > 0, homeScore: h, awayScore: a });
-        } catch { r = null; }
-        if (r) { code = 'DECIDABLE_NOW'; text = `Rregulli e vendos ${r} me rezultatin ${h}-${a}. Duhet të mbyllet në kontrollin e radhës (çdo 2 min); nëse mbetet, ka një gabim te kontrolli, më dërgo këtë rresht.`; }
-        else noRule[`${l.market_name} | ${l.selection_name}`] = (noRule[`${l.market_name} | ${l.selection_name}`] || 0) + 1;
-      }
+      const d = refineOpenLeg(describeOpenLeg({ leg: l, match: m, now, blockReason: m && m.status === 'FINISHED' && m.result_home == null ? explainSettleBlock(m, now) : '' }), { leg: l, match: m, decide: wouldSettleNow });
+      const code = d.code;
+      const text = d.text;
+      if (code === 'NO_RULE') noRule[`${l.market_name} | ${l.selection_name}`] = (noRule[`${l.market_name} | ${l.selection_name}`] || 0) + 1;
       byCode[code] = (byCode[code] || 0) + 1;
       say(`   - ${d.match} | ${l.market_name} | ${l.selection_name}`);
       say(`       [${code}] ${m ? `status=${m.status} fillimi=${m.start_time} rezultati=${m.result_home ?? '-'}-${m.result_away ?? '-'} i ruajtur live=${m.live_home_score ?? '-'}-${m.live_away_score ?? '-'} minuta=${m.live_minute ?? '-'}` : 'ndeshja mungon'}`);
