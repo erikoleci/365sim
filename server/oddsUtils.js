@@ -30,7 +30,7 @@ export const MARKET_LABELS = {
 // When the provider supplies its own market label/category (LondonPro365
 // does, with ~100 distinct markets), that wins so every market shows with
 // its real name and its real grouping tab.
-function getMarketMeta(key, label, category) {
+export function getMarketMeta(key, label, category) {
   if (label) return { name: label, category: category || (MARKET_LABELS[key] && MARKET_LABELS[key].category) || 'other' };
   if (MARKET_LABELS[key]) return MARKET_LABELS[key];
   const name = key

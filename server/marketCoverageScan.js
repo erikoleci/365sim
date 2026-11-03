@@ -3,9 +3,41 @@
 // system settles it by itself. Keyset paging and a time budget keep it from timing out behind the tunnel.
 import { buildCoverageReport, formatCoverageText } from './marketCoverage.js';
 import { settlementRuleRequired } from './marketRules.js';
-import { mapEventToMatch } from './oddsUtils.js';
+import { mapEventToMatch, getMarketMeta } from './oddsUtils.js';
 
-export async function computeMarketCoverage(pool, { budgetMs = 40000, onProgress = null } = {}) {
+// FAST path: one SQL query that reads the markets straight out of the stored JSON inside Postgres (no 9-30 KB row ever
+// travels to Node), grouped by market key + live/prematch. Returns the same "board" entries as the row-by-row scan.
+// It can fail (a legacy row whose raw_json is not valid JSON), then the caller falls back to the slow scan.
+async function scanBoardFast(pool) {
+  const { rows } = await pool.query(
+    `SELECT m->>'key' AS key, m->>'label' AS label, m->>'category' AS category,
+            (mc.status = 'LIVE') AS is_live,
+            COUNT(DISTINCT mc.id)::int AS matches,
+            COUNT(DISTINCT mc.id) FILTER (WHERE jsonb_typeof(o->'price') = 'number' AND (o->>'price')::numeric > 1.01)::int AS open_matches,
+            (array_agg(DISTINCT o->>'name') FILTER (WHERE o->>'name' IS NOT NULL))[1:4] AS samples
+       FROM matches_cache mc,
+            LATERAL jsonb_array_elements(mc.raw_json::jsonb -> 'bookmakers') b,
+            LATERAL jsonb_array_elements(b -> 'markets') m,
+            LATERAL jsonb_array_elements(m -> 'outcomes') o
+      WHERE mc.status IN ('LIVE', 'UPCOMING')
+      GROUP BY 1, 2, 3, 4`
+  );
+  const { rows: cnt } = await pool.query(`SELECT status, COUNT(*)::int AS n FROM matches_cache WHERE status IN ('LIVE', 'UPCOMING') GROUP BY status`);
+  const board = new Map();
+  for (const r of rows) {
+    if (!r.key) continue;
+    const meta = getMarketMeta(r.key, r.label, r.category);
+    const cur = board.get(meta.name) || { name: meta.name, id: `x-${r.key}`, matches: 0, live: 0, liveOpen: 0, prematch: 0, prematchOpen: 0, samples: [] };
+    cur.matches += r.matches;
+    if (r.is_live) { cur.live += r.matches; cur.liveOpen += r.open_matches; } else { cur.prematch += r.matches; cur.prematchOpen += r.open_matches; }
+    for (const smp of r.samples || []) if (cur.samples.length < 4 && !cur.samples.includes(String(smp))) cur.samples.push(String(smp));
+    board.set(meta.name, cur);
+  }
+  const n = (st) => (cnt.find((c) => c.status === st) || { n: 0 }).n;
+  return { board, live: n('LIVE'), prematch: n('UPCOMING') };
+}
+
+export async function computeMarketCoverage(pool, { budgetMs = 40000, onProgress = null, slowOnly = false } = {}) {
   const started = Date.now();
   let truncated = false;
   const { rows: legRows } = await pool.query(
@@ -13,6 +45,23 @@ export async function computeMarketCoverage(pool, { budgetMs = 40000, onProgress
             (array_agg(DISTINCT selection_name))[1:4] AS samples
        FROM bet_selections GROUP BY market_id, market_name`
   );
+  if (!slowOnly) {
+    try {
+      if (onProgress) onProgress({ phase: 'fast' });
+      const f = await scanBoardFast(pool);
+      const report = buildCoverageReport([
+        ...legRows.map((r) => ({ name: r.market_name, id: r.market_id, legs: r.legs, pending: r.pending, samples: r.samples || [] })),
+        ...f.board.values(),
+      ]);
+      return {
+        boardMatchesScanned: f.live + f.prematch, liveMatchesScanned: f.live, prematchMatchesScanned: f.prematch,
+        truncated: false, scanMs: Date.now() - started, requireSettlementRule: settlementRuleRequired(), ...report,
+        text: formatCoverageText(report),
+      };
+    } catch (err) {
+      console.warn('[market-coverage] fast scan failed, falling back to the row-by-row scan:', err.message);
+    }
+  }
   // LIVE first, then UPCOMING (soonest first); each status is paged by (start_time, id), never by OFFSET.
   const scanRows = async (status) => {
     const out = [];

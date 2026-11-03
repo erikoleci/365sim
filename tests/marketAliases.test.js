@@ -76,3 +76,11 @@ describe('coverage: which of the 13 now have a rule', () => {
     expect(nthGoalSpec('shenon golin e dyte (skuadra)')).toBeNull();
   });
 });
+
+describe('markets whose options carry no line are hidden (nothing to settle)', () => {
+  it('hides the live goals-of-one-team and first-half Asian total markets, keeps the ones with lines', async () => {
+    const { isHiddenMarketName } = await import('../server/marketRules.js');
+    for (const n of ['Sa Gola do shenohen nga ekipi vendas', 'Sa Gola do shenohen nga ekipi udhetues', 'Lart/Poshtë Gola Aziatikë në Pjesën e 1rë']) expect(isHiddenMarketName(n)).toBe(true);
+    for (const n of ['Lart/Poshte Gola Aziatik ne Pjesen 1', 'Lart/Poshtë Gola Aziatikë', 'Numri i Golave Pritesi', 'Sa Gola Shënohen në Pjesën e 1re']) expect(isHiddenMarketName(n)).toBe(false);
+  });
+});

@@ -225,7 +225,9 @@ export const isPlayerMarketName = (name) => PLAYER_MARKET.test(norm(name));
 // Markets the board never offers and the coverage report never lists (no way to settle them from our data).
 // "A do te kete kohe shtese?" / "Will there be extra time" / "Overtime & goal" / "Winning method": no extra-time data
 // in the feed. "Will there be a penalty shootout" / "A do te kete penallti gjate ndeshjes?": no penalty events.
-const HIDDEN_MARKET = /^(fitohet loja (mbas penallt|ne shtese)|menyra e fitores|a do te kete kohe shtese|will there be (an )?extra time\b|overtime\b|winning method\b|will there be an? penalt|a do te kete penal)/;
+// The last three: live-only markets whose options come without a line ("Lart" / "Poshte" only, seen on 40+ live matches), so
+// no ticket on them could ever be decided. Hidden like the extra-time / penalty markets.
+const HIDDEN_MARKET = /^(fitohet loja (mbas penallt|ne shtese)|menyra e fitores|a do te kete kohe shtese|will there be (an )?extra time\b|overtime\b|winning method\b|will there be an? penalt|a do te kete penal|sa gola do shenohen nga ekipi (vendas|udhetues)$|lart\/poshte gola aziatike ne pjesen e 1re$)/;
 export const isHiddenMarketName = (name) => HIDDEN_MARKET.test(norm(name));
 // "Home no bet" (option 1: home win = won, draw = refund, away win = lost) and "Away no bet" (option 2: the same for the
 // away side). Only that one option has a confirmed meaning; every other option of these markets (X, or the other side)
