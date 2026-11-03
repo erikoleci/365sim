@@ -11,7 +11,6 @@ interface BetSlipProps {
   onRemoveSelection: (uniqueId: string) => void;
   onClearAll: () => void;
   onPlaceBet: (stake: number, type: 'SINGLE' | 'ACCUMULATOR', currency: 'ALL' | 'EUR') => void | Promise<unknown>;
-  onCancelBet: (betId: string, origin: 'USER' | 'ADMIN') => void;
   userBalance: number;
   userBalanceEur?: number;
   myBets: Bet[];
@@ -28,7 +27,7 @@ const LIMITS = {
   EUR: { min: 1, maxStake: 10000, maxReturn: 10000, symbol: '€' },
 } as const;
 
-const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClearAll, onPlaceBet, onCancelBet, userBalance, userBalanceEur = 0, myBets, hasLiveSelection = false, accountCurrency = 'BOTH' }) => {
+const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClearAll, onPlaceBet, userBalance, userBalanceEur = 0, myBets, hasLiveSelection = false, accountCurrency = 'BOTH' }) => {
   const { t, locale } = useI18n();
   // A ticket is placed in ONE wallet: lek or euro.
   const [currency, setCurrency] = useState<'ALL' | 'EUR'>(accountCurrency === 'EUR' ? 'EUR' : 'ALL');
@@ -333,7 +332,6 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                     </div>
                 )}
                 {myBets.map(bet => {
-                    const canCancel = bet.status === BetStatus.PENDING && bet.cancellable === true && (Date.now() - bet.timestamp < 10 * 60 * 1000);
                     const partialLoss = bet.status === BetStatus.WON && Number(bet.potentialReturn) < Number(bet.stake); // half-lost leg: part of the stake came back
                     const statusLabel = bet.status === BetStatus.PENDING ? t('Hapur') : partialLoss ? t('Humbje e pjesshme') : bet.status === BetStatus.WON ? t('Fituar') : bet.status === BetStatus.VOID ? t('Rimbursuar') : bet.status === BetStatus.CANCELLED ? t('ANULUAR') : t('Humbur');
                     const statusColor = bet.status === BetStatus.WON ? 'border-brand-accent' : bet.status === BetStatus.LOST ? 'border-red-500' : bet.status === BetStatus.VOID || bet.status === BetStatus.CANCELLED ? 'border-gray-500' : 'border-brand-yellow';
@@ -370,14 +368,6 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                                     <span className="font-bold text-white mr-2 tabular-nums">Stake: {bet.stake} {bet.currency === 'EUR' ? '€' : 'L'}</span>
                                     <span className="font-bold text-brand-yellow tabular-nums">Ret: {bet.potentialReturn.toFixed(2)} {bet.currency === 'EUR' ? '€' : 'L'}</span>
                                 </div>
-                                {canCancel && (
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); onCancelBet(bet.id, 'USER'); }}
-                                        className="bg-red-900/40 hover:bg-red-800 text-red-200 border border-red-800 px-2 py-0.5 rounded-md text-[10px] transition-colors"
-                                    >
-                                        {t('Anulo Biletën')}
-                                    </button>
-                                )}
                             </div>
                         </div>
                     );

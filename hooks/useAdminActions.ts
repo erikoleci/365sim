@@ -153,15 +153,7 @@ export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reload
       }
       return;
     }
-    // A regular user cancelling their own still-pending ticket.
-    try {
-      const { balance } = await api.cancelMyBet(betId);
-      applyBalance(balance);
-      await reloadMyBets();
-    } catch (e: any) {
-      alert(e.message || t('Anulimi dështoi.'));
-    }
-  }, [loadAdminData, reloadMyBets, applyBalance, t]);
+  }, [loadAdminData, t]);
 
   const settleMatch = useCallback(async (match: Match, homeScore: number, awayScore: number) => {
     if (simulatingMatchId) return;

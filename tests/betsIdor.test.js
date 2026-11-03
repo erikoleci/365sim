@@ -145,35 +145,14 @@ describe('bets routes - ownership (IDOR) enforcement', () => {
     expect(body.bets).toEqual([]);
   });
 
-  it('user A cannot cancel user B\'s bet by guessing/passing its id', async () => {
-    const res = await fetch(`${baseUrl}/api/bets/bet-b1/cancel`, {
-      method: 'POST',
-      headers: { authorization: 'Bearer ' + sign('user-a') },
-    });
-    const body = await res.json();
-    expect(res.status).toBe(403);
-    expect(body.error).toMatch(/not your bet/i);
-    // and the bet must be untouched
-    expect(mocks.bets.get('bet-b1').status).toBe('PENDING');
-  });
-
-  it('the rightful owner CAN cancel their own pending bet', async () => {
-    const res = await fetch(`${baseUrl}/api/bets/bet-b1/cancel`, {
-      method: 'POST',
-      headers: { authorization: 'Bearer ' + sign('user-b') },
-    });
-    expect(res.status).toBe(200);
-  });
-
-  it('the owner can NOT cancel a ticket placed on a live match', async () => {
-    mocks.matches.set('m1', { id: 'm1', start_time: new Date(Date.now() - 20 * 60e3).toISOString(), status: 'LIVE', live_status: 'live' });
-    const res = await fetch(`${baseUrl}/api/bets/bet-b1/cancel`, {
-      method: 'POST',
-      headers: { authorization: 'Bearer ' + sign('user-b') },
-    });
-    const body = await res.json();
-    expect(res.status).toBe(400);
-    expect(body.error).toMatch(/live bets cannot be cancelled/i);
+  it('there is no cancel route for players: nobody can cancel a ticket, not even the owner', async () => {
+    for (const who of ['user-a', 'user-b']) {
+      const res = await fetch(`${baseUrl}/api/bets/bet-b1/cancel`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer ' + sign(who) },
+      });
+      expect(res.status).toBe(404);
+    }
     expect(mocks.bets.get('bet-b1').status).toBe('PENDING');
   });
 

@@ -1,6 +1,6 @@
 import pool from './db.js';
 import { sameFixture } from './fixtureDedupe.js';
-import { minuteOf, splitPeriod, PERIOD_BASE_ALIASES } from './marketPeriods.js';
+import { minuteOf, splitPeriod, marketPeriod, PERIOD_BASE_ALIASES } from './marketPeriods.js';
 import { extraMarketOutcome } from './extraMarkets.js';
 import { asianHandicapOutcome, asianTotalOutcome } from './asianLines.js';
 import { ticketOutcome } from './ticketOutcome.js';
@@ -1377,6 +1377,68 @@ export async function settleStuckBets() {
       throw err;
     }
     return { settledLegs, recomputedBets: affectedBetIds.size, closedUnsettled };
+  } finally {
+    client.release();
+  }
+}
+
+// ---- first-half markets close at the half-time whistle ---------------------------------------------------
+// A ticket on a first-half market ("Rezultati Pjesa e Parë", "Gola P1", "Gol/Jo Gol P1" ...) is decided the moment
+// the first half is over: it must not wait for the end of the match (a match that is later abandoned or
+// never finishes would otherwise leave it open). The half-time score is stored by captureHalfTimeScore (halfTime.js).
+// Only markets that depend on the first half ALONE are settled here; anything that also needs the final result
+// (45/90, "& Totali" combos ...) stays for the normal sweep.
+export function isPureFirstHalfMarket(marketName) {
+  const n = norm(marketName);
+  if (!n || marketPeriod(marketName) !== 'H1') return false;
+  if (n.includes('&') || HTFT_NAMES.has(n)) return false;
+  return !/\b(final|finale|fund|ft|2h|p2|pjesa e dyte|pjesen e dyte)\b/.test(n);
+}
+
+export async function settleFirstHalfLegs() {
+  const client = await pool.connect();
+  try {
+    const legsSql = (extra) => `SELECT bs.*, m.ht_home, m.ht_away${extra}
+         FROM bet_selections bs
+         JOIN bets b ON b.id = bs.bet_id AND b.status = 'PENDING'
+         JOIN matches_cache m ON m.id = bs.match_id
+        WHERE bs.status = 'PENDING' AND m.ht_home IS NOT NULL AND m.ht_away IS NOT NULL`;
+    let rows;
+    try {
+      ({ rows } = await client.query(legsSql(', m.ht_corners_home, m.ht_corners_away, m.ht_cards_home, m.ht_cards_away, m.ht_red_home, m.ht_red_away')));
+    } catch {
+      ({ rows } = await client.query(legsSql('')));
+    }
+    const legs = rows.filter((l) => isPureFirstHalfMarket(l.market_name));
+    if (!legs.length) return { settledLegs: 0, recomputedBets: 0 };
+
+    const htStatsByMatch = new Map();
+    for (const leg of legs) {
+      if (legNeedsStats(leg) && !htStatsByMatch.has(leg.match_id)) htStatsByMatch.set(leg.match_id, await loadHtStats(client, leg.match_id, leg));
+    }
+    const affected = new Set();
+    let settledLegs = 0;
+    await client.query('BEGIN');
+    try {
+      for (const leg of legs) {
+        const h = Number(leg.ht_home); const a = Number(leg.ht_away);
+        const htStats = htStatsByMatch.get(leg.match_id);
+        const outcome = determineLegOutcome(leg, {
+          winner: h > a ? 'HOME' : a > h ? 'AWAY' : 'DRAW', totalGoals: h + a, bothScored: h > 0 && a > 0,
+          homeScore: h, awayScore: a, htHome: h, htAway: a, stats: htStats, htStats,
+        });
+        if (!outcome) continue;
+        await client.query(`UPDATE bet_selections SET status = $1 WHERE id = $2 AND status = 'PENDING'`, [outcome, leg.id]);
+        affected.add(leg.bet_id);
+        settledLegs++;
+      }
+      for (const betId of affected) await recomputeBetStatus(betId, client);
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    }
+    return { settledLegs, recomputedBets: affected.size };
   } finally {
     client.release();
   }

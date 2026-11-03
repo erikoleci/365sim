@@ -38,7 +38,7 @@ import { getMatchesResponseCacheSize } from './routes/matches.js';
 import { startKeepAliveSelfPing } from './keepAlive.js';
 import { startFeedStatsLog } from './feedStats.js';
 import { hydrateBetMatchIds } from './oddsHistoryPolicy.js';
-import { settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult, settleNextEventLegs, rebindLegsToLiveTwin, settleOpenLegsOfFinishedMatches } from './matchSettlement.js';
+import { settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult, settleNextEventLegs, settleFirstHalfLegs, rebindLegsToLiveTwin, settleOpenLegsOfFinishedMatches } from './matchSettlement.js';
 import { settleFromFallback } from './resultsFallback.js';
 import { startClockWriteFlusher } from './clockWrites.js';
 
@@ -391,6 +391,16 @@ async function start() {
   };
   setTimeout(runStuckBetSweep, 20 * 1000);
   setInterval(runStuckBetSweep, 2 * 60 * 1000);
+  // First-half tickets are decided at the half-time whistle, not at the end of the match.
+  let firstHalfBusy = false;
+  setInterval(function () {
+    if (firstHalfBusy) return;
+    firstHalfBusy = true;
+    settleFirstHalfLegs()
+      .then(function (r) { if (r.settledLegs) console.log('[settle] first-half sweep: ' + JSON.stringify(r)); })
+      .catch(function (e) { console.error('[settle] first-half sweep failed:', e.message); })
+      .finally(function () { firstHalfBusy = false; });
+  }, 15 * 1000);
   // "Next goal / corner / card" tickets are decided as soon as the next such event has happened.
   let nextEventBusy = false;
   setInterval(function () {

@@ -7,7 +7,7 @@ import { resolveCurrentSelection, mapEventToMatch, isStaleLive } from '../oddsUt
 import { getBetBlockReason, describeBlockReason, nextEventKind, eventOrderOrdinal, isLiveCornerMarket, isLiveCardMarket } from '../marketRules.js';
 import { readNextEventCounters, readLiveCorners, readLiveCards } from '../matchSettlement.js';
 import { findCorrelatedSelections } from '../ticketCorrelation.js';
-import { findConflictingSelection, validateStakeAmount, getCancelBlockReason, isLiveEventLocked } from '../betValidation.js';
+import { findConflictingSelection, validateStakeAmount, isLiveEventLocked } from '../betValidation.js';
 import { getLiveRisk, riskPolicy } from '../liveRisk.js';
 import { getLiveDetailAgeMs, isLiveDetailStale } from '../liveDetailPlan.js';
 import { wrap } from '../asyncHandler.js';
@@ -80,7 +80,6 @@ const LIVE_MAX_TICKETS_PER_MATCH = Math.max(0, Number(process.env.LIVE_MAX_TICKE
 // and bets on them are refused until it catches up. 0 = off.
 const LIVE_ODDS_MAX_AGE_MS = Math.max(0, Number(process.env.LIVE_BET_ODDS_MAX_AGE_MS ?? 120000));
 
-const CANCEL_WINDOW_MS = 10 * 60 * 1000; // must match the window shown in BetSlip.tsx
 
 const router = express.Router();
 
@@ -147,26 +146,7 @@ router.get('/', wrap(async (req, res) => {
       selectionsByBet.get(sel.bet_id).push(sel);
     }
   }
-  // Server-side verdict on whether each open ticket can still be cancelled
-  // (never placed live, match not started) so the UI hides the button for
-  // exactly the tickets the cancel route would reject.
-  const pendingMatchIds = [...new Set(
-    bets.filter((b) => b.status === 'PENDING').flatMap((b) => (selectionsByBet.get(b.id) || []).map((x) => x.match_id))
-  )];
-  const matchById = new Map();
-  if (pendingMatchIds.length) {
-    const { rows: ms } = await pool.query(
-      'SELECT id, start_time, status, live_status FROM matches_cache WHERE id = ANY($1::text[])', [pendingMatchIds]
-    );
-    for (const m of ms) matchById.set(m.id, m);
-  }
-  const withSelections = bets.map((b) => {
-    const selections = selectionsByBet.get(b.id) || [];
-    const matches = selections.map((x) => matchById.get(x.match_id)).filter(Boolean);
-    const cancellable = matches.length === selections.length &&
-      getCancelBlockReason(b, matches, { windowMs: CANCEL_WINDOW_MS }) === null;
-    return { ...b, selections, cancellable };
-  });
+  const withSelections = bets.map((b) => ({ ...b, selections: selectionsByBet.get(b.id) || [], cancellable: false }));
   res.json({ bets: withSelections });
 }));
 
@@ -628,57 +608,7 @@ router.post('/', wrap(async (req, res) => {
   });
 }));
 
-// A user can cancel their OWN bet while it's still PENDING and within the
-// cancellation window — enforced server-side (not just hidden in the UI
-// after 10 minutes), since the client's clock/timer can't be trusted.
-router.post('/:id/cancel', wrap(async (req, res) => {
-  const { rows: betRows } = await pool.query('SELECT * FROM bets WHERE id = $1', [req.params.id]);
-  const bet = betRows[0];
-  if (!bet) return res.status(404).json({ error: 'Bet not found' });
-  if (bet.user_id !== req.user.id) return res.status(403).json({ error: 'Not your bet' });
-  const { rows: legRows } = await pool.query('SELECT match_id FROM bet_selections WHERE bet_id = $1', [bet.id]);
-  const { rows: matchRows } = await pool.query(
-    'SELECT id, start_time, status, live_status FROM matches_cache WHERE id = ANY($1::text[])',
-    [[...new Set(legRows.map((l) => l.match_id))]]
-  );
-  const blocked = getCancelBlockReason(bet, matchRows, { windowMs: CANCEL_WINDOW_MS });
-  if (blocked) return res.status(400).json({ error: blocked });
-
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    // Lock the bet row and re-check it INSIDE the transaction. Without this two
-    // simultaneous cancel requests both passed the checks above and both
-    // refunded the stake (the second DELETE just matched nothing).
-    const { rows: lockedBet } = await client.query('SELECT status FROM bets WHERE id = $1 FOR UPDATE', [bet.id]);
-    if (!lockedBet[0] || lockedBet[0].status !== 'PENDING') {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Only pending bets can be cancelled' });
-    }
-    const betWallet = walletColumn(bet.currency);
-    const { rows: lockedUser } = await client.query(`SELECT ${betWallet} FROM users WHERE id = $1 FOR UPDATE`, [bet.user_id]);
-    const balanceBefore = Number(lockedUser[0][betWallet]);
-    const balanceAfter = Number((balanceBefore + Number(bet.stake)).toFixed(2));
-    await client.query(`UPDATE users SET ${betWallet} = ${betWallet} + $1 WHERE id = $2`, [bet.stake, bet.user_id]);
-    await client.query(
-      `INSERT INTO transactions
-        (actor_id, source_id, target_id, amount, type, reference,
-         source_balance_before, source_balance_after, target_balance_before, target_balance_after, created_at, currency)
-       VALUES ($1,$1,$1,$2,'BET_CANCEL_REFUND',$3,$4,$5,$4,$5,$6,$7)`,
-      [bet.user_id, bet.stake, bet.id, balanceBefore, balanceAfter, Date.now(), normalizeCurrency(bet.currency)]
-    );
-    await client.query('DELETE FROM bet_selections WHERE bet_id = $1', [bet.id]);
-    await client.query('DELETE FROM bets WHERE id = $1', [bet.id]);
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-
-  const { rows: userRows } = await pool.query('SELECT balance, balance_eur FROM users WHERE id = $1', [req.user.id]);
-  res.json({ ok: true, balance: userRows[0].balance, balanceEur: userRows[0].balance_eur });
-}));
+// Players and agents cannot cancel a ticket once it is placed: there is no cancel route here.
+// (Only the admin / owner panel can cancel, through /admin/bets/:id/cancel.)
 
 export default router;
