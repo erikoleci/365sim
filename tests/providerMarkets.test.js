@@ -101,7 +101,9 @@ describe('in play', () => {
     // both halves: offered in play only at 0-0 (any goal on the board closes it)
     expect(g('Shenon Udhetuesi ne P1/P2', 'Po')).toBe('ONLY_AT_0_0');
     expect(g('Shenon Pritesi ne P1/P2', 'Po')).toBe('ONLY_AT_0_0');
-    expect(g('Shenon Pritesi ne P1/P2', 'Po', row({ live_home_score: 0, live_away_score: 0, ht_home: 0, ht_away: 0 }))).toBeNull();
+    // 0-0 in the first half: still offered. 0-0 at half-time and in the second half: the side did NOT score in P1, so "Po" can no longer win.
+    expect(g('Shenon Pritesi ne P1/P2', 'Po', row({ live_status: '1H', live_minute: '20:00', start_time: new Date(Date.now() - 20 * 60000).toISOString(), live_home_score: 0, live_away_score: 0, ht_home: null, ht_away: null }))).toBeNull();
+    expect(g('Shenon Pritesi ne P1/P2', 'Po', row({ live_home_score: 0, live_away_score: 0, ht_home: 0, ht_away: 0 }))).toBe('OUTCOME_DECIDED');
     expect(g('Shenon Pritesi ne P2', 'Po', row({ ht_home: null, ht_away: null }))).toBe('NOT_VERIFIABLE_LIVE');
   });
   it('goal before minute N and RF-N close 90 s before the cut-off, and once the goal is in', () => {

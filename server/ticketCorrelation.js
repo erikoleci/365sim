@@ -16,8 +16,10 @@
 
 import { classifyMarket } from './marketRules.js';
 import { normMarketText as norm } from './marketPeriods.js';
+import { sameFixture, sameTeam } from './fixtureDedupe.js';
 
 const SAME_MATCH_WINDOW_MS = 24 * 3600 * 1000;
+const SAME_KICKOFF_WINDOW_MS = 3 * 3600 * 1000;
 
 // -> Set of 'score' | 'corners' | 'cards'
 export function selectionFamilies({ marketId, marketName, home, away }) {
@@ -35,18 +37,30 @@ export function selectionFamilies({ marketId, marketName, home, away }) {
 }
 
 function groupIds(selections) {
-  const groups = []; // { key, t }
+  const groups = []; // { home, away, t }
   const byId = new Map();
   return selections.map((sel) => {
     if (byId.has(sel.matchId)) return byId.get(sel.matchId);
     let gid = -1;
     if (sel.home && sel.away) {
-      const key = norm(sel.home) + '|' + norm(sel.away);
       const t = Date.parse(sel.startTime);
-      gid = groups.findIndex((g) => g.key === key && (Number.isNaN(t) || Number.isNaN(g.t) || Math.abs(g.t - t) < SAME_MATCH_WINDOW_MS));
-      if (gid < 0) { groups.push({ key, t }); gid = groups.length - 1; }
+      // The same real match can come under two provider records with different spellings
+      // ("Feyenoord v Inter Milan" / "Feyenoord Rotterdam v Inter Milano", "Barcelona" / "FC Barcelona"):
+      // compared like the fixture de-duplication does, not by exact text, or the one-result rule is bypassed.
+      // Names that differ by more than a spelling ("PSG" / "Paris Saint-Germain", "Man Utd" / "Manchester United") are
+      // still one match when ONE side is the same team and the kick-offs are within a few hours: a team never plays two
+      // matches in that window.
+      gid = groups.findIndex((g) => {
+        if (!g.home) return false;
+        const timesKnown = !Number.isNaN(t) && !Number.isNaN(g.t);
+        if (timesKnown && Math.abs(g.t - t) >= SAME_MATCH_WINDOW_MS) return false;
+        if (sameFixture({ homeTeam: g.home, awayTeam: g.away }, { homeTeam: sel.home, awayTeam: sel.away })) return true;
+        if (!timesKnown || Math.abs(g.t - t) > SAME_KICKOFF_WINDOW_MS) return false;
+        return sameTeam(g.home, sel.home) || sameTeam(g.away, sel.away) || sameTeam(g.home, sel.away) || sameTeam(g.away, sel.home);
+      });
+      if (gid < 0) { groups.push({ home: sel.home, away: sel.away, t }); gid = groups.length - 1; }
     } else {
-      groups.push({ key: 'id:' + sel.matchId, t: NaN }); gid = groups.length - 1;
+      groups.push({ home: null, away: null, t: NaN }); gid = groups.length - 1;
     }
     byId.set(sel.matchId, gid);
     return gid;
