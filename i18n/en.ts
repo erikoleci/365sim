@@ -112,6 +112,7 @@ export const enCore: Record<string, string> = {
   'Korne': 'Corners',
   'Korneri': 'Corner',
   'Fillon': 'Starts',
+  'Vendosur live': 'Booked live',
   'Fillimi i ndeshjes': 'Kick-off',
   'Fundi i ndeshjes': 'Full time',
   'Rezultati në fund të pjesës së parë': 'Score after first half',

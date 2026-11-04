@@ -113,7 +113,7 @@ const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => vo
             <div key={i} className="bg-brand-bg rounded p-2.5 text-sm flex gap-2.5">
               <div className="w-5 flex-shrink-0 text-brand-yellow font-bold text-xs pt-0.5">{i + 1}</div>
               <div className="min-w-0 flex-1">
-                <div className="text-xs text-brand-textMuted flex flex-wrap items-center gap-x-2 gap-y-0.5"><MatchupLabel home={leg.matchHome} away={leg.matchAway} size="xs" /><LegWhen placedState={leg.placedState} matchStartTime={leg.matchStartTime} className="text-[11px]" /></div>
+                <div className="text-xs text-brand-textMuted flex flex-wrap items-center gap-x-2 gap-y-0.5"><MatchupLabel home={leg.matchHome} away={leg.matchAway} size="xs" /><LegWhen placedState={leg.placedState} matchStartTime={leg.matchStartTime} matchId={leg.matchId} watch={ticket.status === 'PENDING' && leg.status === 'PENDING'} className="text-[11px]" /></div>
                 <div className="text-xs text-brand-textMuted truncate">{leg.marketName}</div>
                 <div className="font-bold text-white">{leg.selectionName} <span className="text-brand-yellow font-normal tabular-nums">@{Number(leg.odds).toFixed(2)}</span></div>
                 {leg.matchId && <LegTimeline matchId={leg.matchId} home={leg.matchHome} away={leg.matchAway} live={ticket.status === 'PENDING'} />}
