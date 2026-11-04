@@ -14,6 +14,7 @@
 // too. lastAnnounced remembers the score we last announced per match, so the
 // same score change is pushed exactly once no matter which path sees it first.
 import { pushGoal, pushGoalDisallowed } from './ws.js';
+import { setGoalPause } from './goalPause.js';
 
 const lastAnnounced = new Map(); // matchId -> "home-away" last announced
 const MAX_TRACKED = 5000;
@@ -31,6 +32,7 @@ export function announceGoalIfChanged(ev, score, minute, prev) {
   if (lastAnnounced.get(ev.id) === key) return false; // already told the clients
   if (lastAnnounced.size >= MAX_TRACKED) lastAnnounced.clear();
   lastAnnounced.set(ev.id, key);
+  setGoalPause(ev.id); // betting on this match is paused for a few seconds (see goalPause.js)
 
   const m = minute || undefined;
   // minuteUpdatedAt: "right now" IS the true server-side reference moment

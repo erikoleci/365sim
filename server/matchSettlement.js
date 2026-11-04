@@ -1447,6 +1447,7 @@ export function wouldSettleNow(leg, match) {
 // (45/90, "& Totali" combos ...) stays for the normal sweep.
 export function isPureFirstHalfMarket(marketName) {
   const n = norm(marketName);
+  if (nthGoalSpec(n)?.half1) return true; // "Shenon Golin e 1|2 Pjesa1": decided at the whistle
   if (!n || marketPeriod(marketName) !== 'H1') return false;
   if (n.includes('&') || HTFT_NAMES.has(n)) return false;
   return !/\b(final|finale|fund|ft|2h|p2|pjesa e dyte|pjesen e dyte)\b/.test(n);
@@ -1473,6 +1474,14 @@ export async function settleFirstHalfLegs() {
     for (const leg of legs) {
       if (legNeedsStats(leg) && !htStatsByMatch.has(leg.match_id)) htStatsByMatch.set(leg.match_id, await loadHtStats(client, leg.match_id, leg));
     }
+    // "Who scores the Nth goal of the first half": decided from the goal order, which is rebuilt against the HALF-TIME
+    // score (every goal of the first half is in the log by then). Without it those tickets waited for full time.
+    const goalOrderByMatch = new Map();
+    for (const leg of legs) {
+      if (!legNeedsFirstScorer(leg) || goalOrderByMatch.has(leg.match_id)) continue;
+      const { rows: mrows } = await client.query('SELECT id, home_team, away_team FROM matches_cache WHERE id = $1', [leg.match_id]);
+      goalOrderByMatch.set(leg.match_id, mrows[0] ? await loadGoalOrder(client, mrows[0], Number(leg.ht_home), Number(leg.ht_away)) : undefined);
+    }
     const affected = new Set();
     let settledLegs = 0;
     await client.query('BEGIN');
@@ -1483,6 +1492,7 @@ export async function settleFirstHalfLegs() {
         const outcome = determineLegOutcome(leg, {
           winner: h > a ? 'HOME' : a > h ? 'AWAY' : 'DRAW', totalGoals: h + a, bothScored: h > 0 && a > 0,
           homeScore: h, awayScore: a, htHome: h, htAway: a, stats: htStats, htStats,
+          goalOrder: goalOrderByMatch.get(leg.match_id),
         });
         if (!outcome) continue;
         await client.query(`UPDATE bet_selections SET status = $1 WHERE id = $2 AND status = 'PENDING'`, [outcome, leg.id]);

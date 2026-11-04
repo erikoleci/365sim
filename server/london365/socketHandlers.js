@@ -1,4 +1,5 @@
 // Applying provider socket messages (odds, game state, match end) to the match cache.
+import { noteOddsUpdate } from '../goalPause.js';
 import { bump } from '../feedStats.js';
 import { isTrackedGame, noteMatchStatus, forgetLiveRow } from '../liveTracker.js';
 import pool from '../db.js';
@@ -50,6 +51,7 @@ export async function applySocketCoefs(gameId, coefs) {
       entry.o.price = price;
     }
     if (!changes.length) return 0;
+    noteOddsUpdate(id); // fresh prices after a goal: the goal pause may end (goalPause.js)
     bump('coefs.changed');
     const now = Date.now();
     if (shouldRecordOddsHistory(id)) {

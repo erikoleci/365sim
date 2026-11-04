@@ -20,6 +20,7 @@
 // Names are matched on the provider's own wording (Albanian), normalised.
 
 import { isPenaltyLocked } from './penaltyLock.js';
+import { isGoalPaused } from './goalPause.js';
 import { matchExtraMarket, UNSETTLEABLE_NAME } from './extraMarkets.js';
 import { parseProviderMarket, teamGoalsOption } from './providerMarkets.js';
 import { normMarketText as norm, splitPeriod, PERIOD_BASE_ALIASES, isPastFirstHalf, getMarketClosedReason } from './marketPeriods.js';
@@ -293,7 +294,7 @@ const TIMING_MARKET = /\bminut\w*|\bmin\b|\d+\s*['\u2019]|\b(i|e) rradhes|\b(gol
 export function nextEventKind(marketName) {
   const n = norm(marketName);
   if (!/\br?radh\w*|\bnext\b/.test(n)) return null;
-  if (/\b(lojtar\w*|player|minut\w*|min|pjes\w*|half|p[12]|pas|after)\b|\d+\s*['\u2019]/.test(n)) return null;
+  if (/\b(lojtar\w*|player|minut\w*|min|pjes\w*|half|p[12]|1h|2h|h1|h2|1st|2nd|pas|after)\b|\d+\s*['\u2019]/.test(n)) return null;
   if (/\b(korn\w*|corner\w*)\b/.test(n)) return 'corner';
   if (/\b(karton\w*|card\w*|booking)\b/.test(n)) return 'card';
   if (/\b(gol|golin|goli|gola|goal)\b/.test(n)) return 'goal';
@@ -326,6 +327,8 @@ export function isSideOrNoneSelection(row, selection) {
 
 // The "last corner" market stays open in play until this minute (afterwards the end is too close).
 const LAST_EVENT_CUTOFF_MINUTE = 88;
+// First-half goal markets (Nth goal of the first half) close this many minutes into the match: the break is too close.
+const FIRST_HALF_GOAL_CUTOFF_MINUTE = 44;
 
 const NOT_VERIFIABLE = 'NOT_VERIFIABLE_LIVE';
 const NO_PLAYER_DATA = 'NO_PLAYER_DATA';
@@ -357,6 +360,8 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
   if (closed) return closed; // MATCH_FINISHED | FIRST_HALF_OVER
   // A penalty is being taken / reviewed: every market of the match is paused until play resumes.
   if (row.id && isPenaltyLocked(row.id, now)) return 'PENALTY_PAUSE';
+  // The score just changed: every market of the match waits a few seconds for the new prices (goalPause.js).
+  if (row.id && isGoalPaused(row.id, now)) return 'GOAL_PAUSE';
 
   if (settlementRuleRequired() && !describeMarket(market && market.id, market && market.name).autoSettles) return NO_RULE;
   if (market && isUnofferedEventOrderOption(market.name, selection)) return NO_RULE;
@@ -375,6 +380,22 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
   if (market && BOTH_HALVES_SCORING.test(norm(market.name))) {
     const h = Number(row.live_home_score); const a = Number(row.live_away_score);
     if (!Number.isFinite(h) || !Number.isFinite(a) || h !== 0 || a !== 0) return ONLY_AT_NIL;
+  }
+
+  // "Shenon Golin e 1|2 Pjesa1" / "Goli i parë në pjesën e parë" (1 / X / 2): the Nth goal of the FIRST HALF.
+  // Offered in play only while it can still happen: the first half is running, the goals scored so far are exactly N-1
+  // (once the Nth goal is in, the outcome is known), and not in the last minutes before the break. X = no such goal.
+  const nthH1 = market && (nthGoalSpec(norm(market.name)) || (FIRST_GOAL_H1_NAMES.has(norm(market.name)) ? { n: 1, half1: true } : null));
+  if (nthH1 && nthH1.half1) {
+    if (isPastFirstHalf(row, now)) return 'FIRST_HALF_OVER';
+    if (!isSideOrNoneSelection(row, selection)) return NOT_VERIFIABLE;
+    if (row.live_home_score == null || row.live_away_score == null) return NOT_VERIFIABLE;
+    const goalsNow = Number(row.live_home_score) + Number(row.live_away_score);
+    if (!Number.isFinite(goalsNow)) return NOT_VERIFIABLE;
+    if (goalsNow !== nthH1.n - 1) return DECIDED;
+    const minuteNow = parseInt(String(row.live_minute || ''), 10);
+    if (Number.isFinite(minuteNow) && minuteNow >= FIRST_HALF_GOAL_CUTOFF_MINUTE) return 'HALF_CLOSING';
+    return null;
   }
 
   // the provider's ordinal "next" markets (first / second goal, first corner, first card)
@@ -694,6 +715,8 @@ export function describeBlockReason(code) {
     case 'MATCH_FINISHED': return 'the match has finished';
     case 'FIRST_HALF_OVER': return 'the first half is over';
     case 'PENALTY_PAUSE': return 'a penalty is being taken, betting is paused until play resumes';
+    case 'GOAL_PAUSE': return 'a goal was just scored, betting reopens in a few seconds with the new odds';
+    case 'HALF_CLOSING': return 'the first half is about to end, this market is closed';
     case 'ONLY_AT_0_0': return 'this market is offered in play only while the score is 0-0';
     case 'OUTCOME_DECIDED': return 'the outcome is already decided by the current score';
     case 'NO_PLAYER_DATA': return 'player odds are not offered (the feed does not provide player names)';
