@@ -49,6 +49,10 @@ function sceneFor(action: Action): Scene {
       return { ball: none ? null : { x: home ? 78 : 22, y: 93 }, zone: null, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 78 : 22, align: home ? 'right' : 'left' }, pulse: false };
     case 'shot_on_target':
       return { ball: none ? null : { x: home ? 93 : 7, y: 50 }, zone: none ? null : { side: home ? 'right' : 'left', depth: 22, tone: 'danger' }, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 72 : 28, align: home ? 'right' : 'left' }, pulse: true };
+    case 'free_kick': // foul: the ball is set in the attacking half of the team that won the free kick
+      return { ball: none ? null : { x: home ? 68 : 32, y: 55 }, zone: none ? null : { side: home ? 'right' : 'left', depth: 36, tone: 'attack' }, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 66 : 34, align: home ? 'right' : 'left' }, pulse: true };
+    case 'goal': // ball in the net, the zone at that goal lights up
+      return { ball: none ? null : { x: home ? 98 : 2, y: 50 }, zone: none ? null : { side: home ? 'right' : 'left', depth: 20, tone: 'danger' }, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 72 : 28, align: home ? 'right' : 'left' }, pulse: true };
     case 'substitution':
     case 'injury':
     case 'half_time': // no ball, no team: just the centred label
