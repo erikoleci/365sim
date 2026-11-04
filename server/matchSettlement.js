@@ -1,5 +1,6 @@
 import pool from './db.js';
 import { sameFixture } from './fixtureDedupe.js';
+import { pickLiveTwin as pickLiveTwinRow } from './liveTwin.js';
 import { minuteOf, splitPeriod, marketPeriod, PERIOD_BASE_ALIASES, EXTRA_TIME_STATUSES } from './marketPeriods.js';
 import { extraMarketOutcome } from './extraMarkets.js';
 import { asianHandicapOutcome, asianTotalOutcome } from './asianLines.js';
@@ -1511,7 +1512,7 @@ const TWIN_WAIT_AFTER_KICKOFF_MS = 130 * 60 * 1000;
 // Looser club-name test used ONLY when two records kick off at (almost) the same minute: the feed spells
 // one club several ways ("Stade Brest 29" / "Brest", "CA Osasuna" / "Osasuna", "RC Deportivo de A Coruna" /
 // "Deportivo La Coruna"). Drops generic words and digits, then one name must contain the other's key words.
-const GENERIC_CLUB_WORDS = new Set(['fc', 'cf', 'ca', 'rc', 'sc', 'ac', 'as', 'cd', 'sd', 'ud', 'afc', 'sk', 'fk', 'stade', 'de', 'la', 'le', 'el', 'a', 'da', 'do', 'of', 'club', 'calcio']);
+const GENERIC_CLUB_WORDS = new Set(['fc', 'cf', 'ca', 'rc', 'sc', 'ac', 'as', 'cd', 'sd', 'ud', 'afc', 'sk', 'fk', 'stade', 'de', 'la', 'le', 'el', 'a', 'da', 'do', 'of', 'club', 'calcio', 'ad', 'deportivo', 'deportes']);
 function clubKeyWords(name) {
   return String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
     .replace(/[^a-z\s]/g, ' ').split(/\s+/).filter((t) => t.length > 1 && !GENERIC_CLUB_WORDS.has(t));
@@ -1719,7 +1720,7 @@ export async function recoverFinishedWithoutResult({ now = Date.now() } = {}) {
 // it drops out of the ticket (a single bet is refunded, an accumulator is paid on
 // its remaining legs) -- the same treatment a bookmaker gives a postponed match.
 // 0 (the default) disables it. Admins settle these by hand (Fituese / Humbëse on the ticket, or the Pezull panel).
-const UNSETTLED_VOID_AFTER_MS = Math.max(0, Number(process.env.UNSETTLED_BET_VOID_AFTER_HOURS ?? 4)) * 3600 * 1000;
+const UNSETTLED_VOID_AFTER_MS = Math.max(0, Number(process.env.UNSETTLED_BET_VOID_AFTER_HOURS ?? 0)) * 3600 * 1000;
 
 export function isLegOverdue({ matchStart, betCreatedAt }, now, olderThanMs) {
   if (!(olderThanMs > 0)) return false;
@@ -1741,7 +1742,28 @@ export async function voidOverdueLegs({ olderThanMs = UNSETTLED_VOID_AFTER_MS, n
          LEFT JOIN matches_cache m ON m.id = bs.match_id
         WHERE bs.status = 'PENDING'`
     );
-    const overdue = rows.filter((r) => isLegOverdue({ matchStart: r.match_start, betCreatedAt: r.bet_created_at }, now, olderThanMs));
+    let overdue = rows.filter((r) => isLegOverdue({ matchStart: r.match_start, betCreatedAt: r.bet_created_at }, now, olderThanMs));
+    if (overdue.length === 0) return { voidedLegs: 0, recomputedBets: 0 };
+    // A leg on the pre-match record of a match that WAS played (its twin carries the score) is not a postponed match:
+    // refunding it is wrong. Keep it open so the twin sweep settles it from the real result; only a fixture with
+    // no twin result anywhere is refunded.
+    try {
+      const { rows: played } = await client.query(
+        `SELECT id, home_team, away_team, start_time, live_home_score, live_away_score, live_minute, live_minute_updated_at, result_home
+           FROM matches_cache WHERE (live_home_score IS NOT NULL OR result_home IS NOT NULL OR live_minute IS NOT NULL)`
+      );
+      const mine = await client.query(`SELECT id, home_team, away_team, start_time FROM matches_cache WHERE id = ANY($1::text[])`, [overdue.map((o) => o.match_id)]);
+      const byId = new Map(mine.rows.map((r) => [r.id, r]));
+      overdue = overdue.filter((leg) => {
+        const row = byId.get(leg.match_id);
+        const twin = row ? pickLiveTwinRow(row, played) : null;
+        if (twin) console.log('[settle] leg ' + leg.id + ' not refunded: its fixture was played under ' + twin.id + ' (kept open for the twin sweep)');
+        return !twin;
+      });
+    } catch (err) {
+      // never block the sweep on this check: without it the old behaviour applies
+      console.warn('[settle] twin check before refund skipped:', err.message);
+    }
     if (overdue.length === 0) return { voidedLegs: 0, recomputedBets: 0 };
 
     const betIds = new Set();

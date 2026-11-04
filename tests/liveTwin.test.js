@@ -19,3 +19,17 @@ describe('pickLiveTwin', () => {
     expect(pickLiveTwin(pre, [other, nextWeek])).toBeNull();
   });
 });
+
+import { pickLiveTwin as pickFinishedTwin } from '../server/matchSettlement.js';
+describe('finished twin of a leg that points at the pre-match record', () => {
+  it('matches when only one club is spelled the same at the same kick-off', () => {
+    const leg = { match_id: 'l365-1', match_home: 'AD Pasto', match_away: 'Jaguares de Cordoba', start_time: '2026-11-03T23:20:00Z', bet_created_at: Date.parse('2026-11-03T22:19:00Z') };
+    const twin = { id: 'l365-2', home_team: 'Deportivo Pasto FC', away_team: 'Jaguares de Cordoba', start_time: '2026-11-03T23:20:00Z', status: 'FINISHED', result_home: 2, result_away: 3 };
+    expect(pickFinishedTwin(leg, [twin], Date.parse('2026-11-04T05:00:00Z'))).toBe('l365-2');
+  });
+  it('does not match a different fixture at the same time', () => {
+    const leg = { match_id: 'l365-1', match_home: 'AD Pasto', match_away: 'Jaguares de Cordoba', start_time: '2026-11-03T23:20:00Z', bet_created_at: 0 };
+    const other = { id: 'l365-9', home_team: 'Millonarios', away_team: 'Santa Fe', start_time: '2026-11-03T23:20:00Z', status: 'FINISHED', result_home: 1, result_away: 0 };
+    expect(pickFinishedTwin(leg, [other], Date.parse('2026-11-04T05:00:00Z'))).toBeNull();
+  });
+});

@@ -13,7 +13,7 @@ const sameKickoffFixture = (row, c, t) => {
   return sameTeam(row.home_team, c.home_team) || sameTeam(row.away_team, c.away_team)
     || sameTeam(row.home_team, c.away_team) || sameTeam(row.away_team, c.home_team);
 };
-const hasLiveData = (row) => row && (row.live_home_score != null || row.live_minute != null);
+const hasLiveData = (row) => row && (row.live_home_score != null || row.live_minute != null || row.result_home != null);
 
 // Pure: choose the live twin of `row` among `candidates` (raw matches_cache rows), or null.
 export function pickLiveTwin(row, candidates) {
