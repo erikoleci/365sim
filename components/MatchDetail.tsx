@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Match, MatchStatus } from '../types';
 import * as api from '../services/api';
 import type { LiveStatistics, MatchEvent } from '../services/api';
-import LivePitch from './LivePitch';
+import StadiumPitch from './StadiumPitch';
 import { useTickingClock, formatLiveClock } from './MatchCard';
 import { isHalftime, liveMinuteFallback, formatScore, pickClockSource, isLiveClockStale } from '../utils/liveStatus';
 import { LONDON365_EVENT_LABELS, LONDON365_STAT_LABELS } from '../utils/london365Labels';
@@ -312,7 +312,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
              )}
              {isLive && (
                <div className="mb-4">
-                 <LivePitch match={match} stats={liveDetail?.statistics ?? null} flash={cardFlash} />
+                 <StadiumPitch match={match} stats={liveDetail?.statistics ?? null} flash={cardFlash} />
                </div>
              )}
              <div className="flex justify-center items-center gap-8">
