@@ -28,8 +28,11 @@ const LIMITS = {
   EUR: { min: 1, maxStake: 10000, maxReturn: 10000, symbol: '€' },
 } as const;
 
+const openBetsOf = (bets: Bet[]) => bets.filter((b) => b.status === BetStatus.PENDING).length;
+
 const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClearAll, onPlaceBet, userBalance, userBalanceEur = 0, myBets, hasLiveSelection = false, accountCurrency = 'BOTH' }) => {
   const { t, locale } = useI18n();
+  const openBetsCount = openBetsOf(myBets);
   // A ticket is placed in ONE wallet: lek or euro.
   const [currency, setCurrency] = useState<'ALL' | 'EUR'>(accountCurrency === 'EUR' ? 'EUR' : 'ALL');
   // The slip opens in the account's own currency (lek-only -> lek, euro-only -> euro); a two-currency account keeps its choice.
@@ -161,6 +164,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
             onClick={() => setActiveTab('mybets')}
         >
             {t('Biletat e Mia')}
+            {openBetsCount > 0 && <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-brand-accent text-brand-bg rounded-full text-[11px] font-extrabold" title={t('Të hapura')}>{openBetsCount}</span>}
         </button>
       </div>
 

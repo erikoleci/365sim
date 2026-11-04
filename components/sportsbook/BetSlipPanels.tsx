@@ -1,6 +1,6 @@
 import React from 'react';
 import BetSlip from '../BetSlip';
-import { Bet, BetSelectionItem } from '../../types';
+import { Bet, BetSelectionItem, BetStatus } from '../../types';
 
 interface Props {
   selections: BetSelectionItem[];
@@ -65,6 +65,12 @@ const BetSlipPanels: React.FC<Props> = ({
           {selections.length > 0 && (
             <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
               {selections.length}
+            </span>
+          )}
+          {/* open tickets: visible before the slip is opened */}
+          {myBets.filter((b) => b.status === BetStatus.PENDING).length > 0 && (
+            <span className="absolute -bottom-1 -right-1 bg-brand-accent text-black text-[10px] font-bold min-w-[20px] h-5 px-1 rounded-full flex items-center justify-center border border-white">
+              {myBets.filter((b) => b.status === BetStatus.PENDING).length}
             </span>
           )}
         </button>
