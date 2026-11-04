@@ -6,7 +6,7 @@ import { queryWithRetry } from '../db.js';
 import { mapEventToMatch } from '../oddsUtils.js';
 import { ensureLondon365Import, getLondon365LeagueNames, getLondon365LeagueMeta } from '../london365.js';
 import { wrap } from '../asyncHandler.js';
-import { dedupeMatches } from '../fixtureDedupe.js';
+import { dedupeMatches, sameTeam } from '../fixtureDedupe.js';
 import { buildLiveStatistics } from '../liveDetail.js';
 import { summarizeLiveHealth } from '../liveHealth.js';
 import { fetchMatchRowsPrioritized, PAGE_SIZE } from '../matchRows.js';
@@ -352,7 +352,18 @@ router.get('/:id/live-detail', wrap(async (req, res) => {
         cardsHome: statsRows[0]?.cards_home, cardsAway: statsRows[0]?.cards_away,
       })
     : eventRows;
-  res.json({ statistics, events: shownEvents, last_updated: lastUpdated });
+  // Goals are stored with the team NAME of the in-play record, while a ticket shows the pre-match record's spelling
+  // ("Man City" vs "Manchester City"): the page could not tell which side scored, so the goal had no side and the
+  // half-time marker counted 0-0. Hand every event a plain 'home' / 'away' instead (names that still match nothing stay as they are).
+  const sideEvents = cache
+    ? shownEvents.map((e) => {
+        if (!e || !e.team || e.team === 'home' || e.team === 'away') return e;
+        if (e.team === cache.home_team || sameTeam(e.team, cache.home_team)) return { ...e, team: 'home' };
+        if (e.team === cache.away_team || sameTeam(e.team, cache.away_team)) return { ...e, team: 'away' };
+        return e;
+      })
+    : shownEvents;
+  res.json({ statistics, events: sideEvents, last_updated: lastUpdated });
 }));
 
 router.get('/:id', wrap(async (req, res) => {

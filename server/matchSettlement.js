@@ -1,3 +1,4 @@
+import { sameTeam } from './fixtureDedupe.js';
 import pool from './db.js';
 import { sameFixture } from './fixtureDedupe.js';
 import { pickLiveTwin as pickLiveTwinRow } from './liveTwin.js';
@@ -259,7 +260,9 @@ function minuteOutcome(leg, marketName, goalMinutes) {
 export function halfTimeFromGoalEvents(events, homeTeam, awayTeam, homeScore, awayScore) {
   if (!Number.isInteger(homeScore) || !Number.isInteger(awayScore)) return undefined;
   if (homeScore + awayScore === 0) return { htHome: 0, htAway: 0 };
-  const side = (e) => (e.team === homeTeam || e.team === 'home' ? 'home' : e.team === awayTeam || e.team === 'away' ? 'away' : null);
+  // the in-play record spells team names differently from the ticket's record: compare loosely as well
+  const side = (e) => (e.team === homeTeam || e.team === 'home' ? 'home' : e.team === awayTeam || e.team === 'away' ? 'away'
+    : e.team && homeTeam && sameTeam(e.team, homeTeam) ? 'home' : e.team && awayTeam && sameTeam(e.team, awayTeam) ? 'away' : null);
   const goals = events.filter((e) => side(e));
   if (goals.filter((e) => side(e) === 'home').length !== homeScore || goals.filter((e) => side(e) === 'away').length !== awayScore) return undefined;
   const ordered = [...goals].sort((a, b) => Number(a.created_at) - Number(b.created_at) || Number(a.id) - Number(b.id));
