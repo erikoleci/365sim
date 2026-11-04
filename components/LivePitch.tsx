@@ -240,7 +240,7 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
 
   return (
     <div
-      className="relative w-full mx-auto max-w-[640px] aspect-[110/73] rounded-xl overflow-hidden select-none ring-1 ring-black/50 shadow-[0_14px_34px_-14px_rgba(0,0,0,0.85)]"
+      className="relative w-full mx-auto max-w-[400px] aspect-[110/73] rounded-xl overflow-hidden select-none ring-1 ring-black/50 shadow-[0_14px_34px_-14px_rgba(0,0,0,0.85)]"
       style={{ background: TURF }}
       role="img"
       aria-label={halftime ? t('Pushim') : action ? `${teamName ? teamName + ': ' : ''}${t(action.label)}` : t('Ndeshja live')}

@@ -41,3 +41,33 @@ export function getFeedKeySamples() {
 export function __resetFeedKeysForTests() {
   seen.clear();
 }
+
+// ---- event frames -----------------------------------------------------------------------------------------
+// The field-name table above says WHICH fields exist; to learn how a penalty, a goal or a scorer's name actually
+// arrives we need the whole frame at the moment something changes. For every match (EID) we keep its previous
+// frame and, when any field other than the running clock changed, store the full frame with the list of changed
+// fields. Bounded ring buffer in memory, read at GET /api/admin/feed-frames, cleared on restart. Read-only.
+const CLOCK_KEYS = /^(t|ts|tt|cl|clock|time|ms|u|ut)$/i;
+const MAX_FRAMES = 120;
+const lastFrame = new Map(); // eid -> attrs
+const frames = [];
+
+export function recordEventFrame(eid, attrs) {
+  if (!attrs || typeof attrs !== 'object') return;
+  const flat = {};
+  for (const k of Object.keys(attrs)) {
+    const v = attrs[k];
+    flat[k] = v !== null && typeof v === 'object' ? JSON.stringify(v).slice(0, 200) : String(v).slice(0, 200);
+  }
+  const prev = lastFrame.get(eid);
+  if (lastFrame.size > 300) lastFrame.clear();
+  lastFrame.set(eid, flat);
+  if (!prev) return; // first frame of a match is history, not an event
+  const changed = Object.keys(flat).filter((k) => !CLOCK_KEYS.test(k) && prev[k] !== flat[k]);
+  if (!changed.length) return;
+  frames.push({ at: Date.now(), eid: String(eid), changed, from: Object.fromEntries(changed.map((k) => [k, prev[k] ?? null])), frame: flat });
+  if (frames.length > MAX_FRAMES) frames.shift();
+}
+
+export function getEventFrames() { return frames.slice().reverse(); }
+export function __resetEventFramesForTests() { frames.length = 0; lastFrame.clear(); }

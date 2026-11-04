@@ -11,7 +11,7 @@ import { missedLiveCycles } from '../london365/liveState.js';
 import { logAudit } from '../auditLog.js';
 import { computeMarketCoverage } from '../marketCoverageScan.js';
 import { settlementRuleRequired, getBetBlockReason } from '../marketRules.js';
-import { getFeedKeySamples } from '../feedKeySampler.js';
+import { getFeedKeySamples, getEventFrames } from '../feedKeySampler.js';
 import { getRecentErrors } from '../recentErrors.js';
 import { getUnmappedVcReport } from '../vcDeltaSampler.js';
 import { mapEventToMatch } from '../oddsUtils.js';
@@ -49,7 +49,7 @@ router.use(requireAuth, requireAdmin);
 // (requireSuperAdmin is a function declaration, so it is available here.)
 for (const path of [
   '/london365', '/bet-selections', '/matches', '/pending-legs', '/legs', '/market-coverage', '/unmapped-vc',
-  '/corner-diagnose', '/recent-errors', '/vc-codes', '/provider-labels', '/feed-keys', '/settle-diagnose',
+  '/corner-diagnose', '/recent-errors', '/vc-codes', '/provider-labels', '/feed-keys', '/feed-frames', '/settle-diagnose',
   '/bets/settle-stuck', '/risk', '/live-audit', '/market-audit',
 ]) router.use(path, requireSuperAdmin);
 
@@ -1138,6 +1138,13 @@ router.get('/provider-labels', async (req, res) => {
 
 router.get('/feed-keys', (req, res) => {
   res.json({ fields: getFeedKeySamples() });
+});
+
+// The full raw frame each time something other than the clock changed (goal, card, corner, penalty, a name ...), newest
+// first, with the fields that changed and their previous values. Open it during a live match to see how a penalty or a
+// scorer's name really arrives.
+router.get('/feed-frames', (req, res) => {
+  res.json({ frames: getEventFrames() });
 });
 
 

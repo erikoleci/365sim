@@ -18,7 +18,7 @@ const CROWD_AWAY = 'radial-gradient(circle, rgba(215,220,230,0.9) 0 1.1px, trans
 const AD_BOARD = 'linear-gradient(to bottom, #12233a, #0a1524)';
 
 const Stadium: React.FC<{ children: React.ReactNode; tilt?: number; compact?: boolean }> = ({ children, tilt = 24, compact }) => (
-  <div className="relative w-full mx-auto max-w-[640px] rounded-xl overflow-hidden ring-1 ring-black/50 shadow-[0_16px_36px_-14px_rgba(0,0,0,0.85)] bg-[#07110b]" style={{ perspective: '820px' }}>
+  <div className="relative w-full mx-auto max-w-[400px] rounded-xl overflow-hidden ring-1 ring-black/50 shadow-[0_16px_36px_-14px_rgba(0,0,0,0.85)] bg-[#07110b]" style={{ perspective: '820px' }}>
     {/* stands */}
     <div className="absolute inset-x-0 top-0 h-[46%] flex">
       <div className="w-1/2" style={{ background: CROWD_HOME }} />

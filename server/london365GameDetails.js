@@ -59,7 +59,7 @@ import { captureHalfTimeScore } from './halfTime.js';
 import { observeVcFrame } from './vcDeltaSampler.js';
 import { isHalfTimeLatched, enterHalfTime, maybeReleaseHalfTime, __resetHalfTimeLatchForTests } from './halfTimeLatch.js';
 import { queueClockWrite } from './clockWrites.js';
-import { sampleFeedKeys } from './feedKeySampler.js';
+import { sampleFeedKeys, recordEventFrame } from './feedKeySampler.js';
 import { announceGoalIfChanged, clearGoalAnnounced } from './goalAnnouncer.js';
 import { setPenaltyLock, clearPenaltyLock, __resetPenaltyLockForTests } from './penaltyLock.js';
 export { parseGameDetails };
@@ -342,6 +342,7 @@ async function applyGameDetailsNow(raw) {
   sampleFeedKeys('socket.gamedetails', attrs);
   if (!attrs) return;
   let eid = attrs.EID;
+  recordEventFrame(eid, attrs); // raw frames of tracked-or-not matches; only those with a real change are kept
   if (BLOCKED_EIDS.has(eid)) return;
   if (TEAM_RESOLVED_EIDS.has(eid)) {
     const gameId = await resolveGameIdByTeams(attrs.H, attrs.A);
