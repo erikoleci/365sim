@@ -135,6 +135,8 @@ export interface BetSelectionItem {
   status: BetStatus;
   // Match state when the leg was booked live (clock minute and score); absent for pre-match legs.
   placedState?: { minute: number | null; h: number | null; a: number | null; status?: string | null };
+  // Kick-off time of the match (ISO string from matches_cache); shown on legs booked before the match started.
+  matchStartTime?: string;
   // True when this selection came from the Special Offers boost strip —
   // the server independently re-verifies eligibility before honoring it.
   boosted?: boolean;

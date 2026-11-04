@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { BetSelectionItem, Bet, BetStatus } from '../types';
 import { useI18n } from '../i18n';
 import MatchupLabel from './MatchupLabel';
+import LegWhen from './LegWhen';
 import TicketDetailModal, { TicketView } from './TicketDetailModal';
 import { findSlipConflicts, legKey, stakeAfterPlacement } from '../utils/betSlipRules';
 
@@ -348,9 +349,11 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
                             <div className="space-y-1.5 mb-2">
                                 {bet.selections.map((leg, idx) => (
                                     <div key={idx} className="flex justify-between items-start gap-2">
-                                        <div className="min-w-0">
+                                        {bet.selections.length > 1 && <div className="w-4 flex-shrink-0 text-brand-yellow font-bold tabular-nums">{idx + 1}</div>}
+                                        <div className="min-w-0 flex-1">
                                             <div className="font-bold text-white truncate">{leg.selectionName} <span className="font-normal text-brand-textMuted">@{leg.odds.toFixed(2)}</span></div>
                                             <div className="text-[10px] text-brand-textMuted truncate">{leg.marketName} - <MatchupLabel home={leg.matchHome} away={leg.matchAway} size="xs" /></div>
+                                            <LegWhen placedState={leg.placedState} matchStartTime={leg.matchStartTime} className="text-[10px]" />
                                         </div>
                                         <div className="text-[10px] flex-shrink-0">
                                             {bet.status !== BetStatus.PENDING && (

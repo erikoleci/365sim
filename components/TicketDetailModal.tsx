@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import MatchupLabel from './MatchupLabel';
+import LegWhen from './LegWhen';
 import { useI18n } from '../i18n';
 import { fetchMatchLiveDetail, fetchMatchById, MatchEvent } from '../services/api';
 import { isHalftime } from '../utils/liveStatus';
@@ -17,7 +18,7 @@ export interface TicketView {
   potentialReturn: number;
   currency?: 'ALL' | 'EUR';
   user?: string;
-  legs: { matchId?: string; matchHome: string; matchAway: string; marketName: string; selectionName: string; odds: number; status: string; placedState?: { minute: number | null; h: number | null; a: number | null } }[];
+  legs: { matchStartTime?: string; matchId?: string; matchHome: string; matchAway: string; marketName: string; selectionName: string; odds: number; status: string; placedState?: { minute: number | null; h: number | null; a: number | null } }[];
 }
 
 const legStyle = (s: string) => (s === 'WON' || s === 'HALF_WON' ? 'text-brand-accent' : s === 'LOST' || s === 'HALF_LOST' ? 'text-red-400' : s === 'VOID' ? 'text-gray-400' : 'text-brand-yellow');
@@ -112,12 +113,9 @@ const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => vo
             <div key={i} className="bg-brand-bg rounded p-2.5 text-sm flex gap-2.5">
               <div className="w-5 flex-shrink-0 text-brand-yellow font-bold text-xs pt-0.5">{i + 1}</div>
               <div className="min-w-0 flex-1">
-                <div className="text-xs text-brand-textMuted"><MatchupLabel home={leg.matchHome} away={leg.matchAway} size="xs" /></div>
+                <div className="text-xs text-brand-textMuted flex flex-wrap items-center gap-x-2 gap-y-0.5"><MatchupLabel home={leg.matchHome} away={leg.matchAway} size="xs" /><LegWhen placedState={leg.placedState} matchStartTime={leg.matchStartTime} className="text-[11px]" /></div>
                 <div className="text-xs text-brand-textMuted truncate">{leg.marketName}</div>
                 <div className="font-bold text-white">{leg.selectionName} <span className="text-brand-yellow font-normal tabular-nums">@{Number(leg.odds).toFixed(2)}</span></div>
-                {leg.placedState && leg.placedState.h != null && leg.placedState.a != null && (
-                  <div className="text-[11px] text-brand-textMuted tabular-nums">LIVE · {leg.placedState.minute != null ? `${leg.placedState.minute}' · ` : ''}{leg.placedState.h}-{leg.placedState.a}</div>
-                )}
                 {leg.matchId && <LegTimeline matchId={leg.matchId} home={leg.matchHome} away={leg.matchAway} live={ticket.status === 'PENDING'} />}
               </div>
               <div className={`text-[11px] font-bold flex-shrink-0 ${legStyle(leg.status)}`}>{label(leg.status)}</div>

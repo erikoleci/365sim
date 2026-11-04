@@ -149,7 +149,7 @@ router.get('/', wrap(async (req, res) => {
   const betIds = bets.map((b) => b.id);
   const selectionsByBet = new Map();
   if (betIds.length) {
-    const { rows: selections } = await pool.query('SELECT * FROM bet_selections WHERE bet_id = ANY($1::text[])', [betIds]);
+    const { rows: selections } = await pool.query('SELECT bs.*, m.start_time AS match_start_time FROM bet_selections bs LEFT JOIN matches_cache m ON m.id = bs.match_id WHERE bs.bet_id = ANY($1::text[])', [betIds]);
     for (const sel of selections) {
       if (!selectionsByBet.has(sel.bet_id)) selectionsByBet.set(sel.bet_id, []);
       selectionsByBet.get(sel.bet_id).push(sel);

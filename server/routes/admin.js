@@ -609,7 +609,7 @@ router.get('/bets', async (req, res) => {
 
   const [selectionsResult, usersResult] = await Promise.all([
     betIds.length
-      ? pool.query('SELECT * FROM bet_selections WHERE bet_id = ANY($1::text[])', [betIds])
+      ? pool.query('SELECT bs.*, m.start_time AS match_start_time FROM bet_selections bs LEFT JOIN matches_cache m ON m.id = bs.match_id WHERE bs.bet_id = ANY($1::text[])', [betIds])
       : { rows: [] },
     userIds.length
       ? pool.query('SELECT id, username, name, avatar FROM users WHERE id = ANY($1::text[])', [userIds])

@@ -111,6 +111,7 @@ export const enCore: Record<string, string> = {
   'Kartona': 'Cards',
   'Korne': 'Corners',
   'Korneri': 'Corner',
+  'Fillon': 'Starts',
   'Fillimi i ndeshjes': 'Kick-off',
   'Fundi i ndeshjes': 'Full time',
   'Rezultati në fund të pjesës së parë': 'Score after first half',

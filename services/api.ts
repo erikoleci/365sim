@@ -305,6 +305,7 @@ function mapServerBet(b: any): Bet {
       odds: s.odds,
       status: s.status,
       placedState: s.placed_state ?? undefined,
+      matchStartTime: s.match_start_time ?? undefined,
     })),
     matchDetails: b.selections?.[0] ? { homeTeam: b.selections[0].match_home, awayTeam: b.selections[0].match_away } : undefined,
   };
