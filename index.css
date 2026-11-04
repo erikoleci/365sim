@@ -67,3 +67,13 @@ body {
 @media (prefers-reduced-motion: reduce) {
   [style*="pitch-"] { animation: none !important; }
 }
+
+/* Goal / card strip on the match page: slides down, stays, fades out within 3 s. */
+@keyframes event-banner-in {
+  0% { transform: translateY(-140%); opacity: 0; }
+  12% { transform: translateY(0); opacity: 1; }
+  85% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-40%); opacity: 0; }
+}
+.event-banner { animation: event-banner-in 3s ease-out forwards; }
+@media (prefers-reduced-motion: reduce) { .event-banner { animation: none; } }

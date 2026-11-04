@@ -11,6 +11,8 @@ import { useI18n } from '../i18n';
 import TeamLogo from './TeamLogo';
 import { firstHalfDividerIndex, regularTimeDividerIndex } from '../utils/eventHalf';
 import MatchTimeline from './MatchTimeline';
+import MomentumChart, { AttackSample } from './MomentumChart';
+import EventBanner, { BannerInfo } from './EventBanner';
 import { groupMarkets } from '../utils/marketTables';
 import type { MarketOption } from '../types';
 
@@ -20,6 +22,8 @@ interface MatchDetailProps {
   onClose: () => void;
   onBetClick: (match: Match, marketId: string, selectionId: string) => void;
   selectedIds: string[];
+  // Opened from a ticket: live/finished matches show only statistics and events (no betting tabs).
+  readOnly?: boolean;
 }
 
 // GOAL/YELLOW_CARD/RED_CARD are OUR internal match_events.type enum (set by
@@ -77,7 +81,7 @@ const OptionName: React.FC<{ match: Match; name: string; tn: (text: string) => s
   );
 };
 
-const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, onBetClick, selectedIds }) => {
+const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, onBetClick, selectedIds, readOnly }) => {
   const { t, tn } = useI18n();
   const isFinished = match.status === MatchStatus.FINISHED;
   const isLive = match.status === MatchStatus.LIVE;
@@ -87,9 +91,11 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
   // opens, instead of only inside the pitch box further down, and so it
   // never looks frozen on whatever minute it happened to load at (e.g. "93'"
   // sitting still) between the 15s poll/socket refreshes.
-  const [activeTab, setActiveTab] = useState<string>('All');
+  const [activeTab, setActiveTab] = useState<string>(readOnly && (match.status === MatchStatus.LIVE || match.status === MatchStatus.FINISHED) ? 'EVENTS' : 'All');
   const [liveDetail, setLiveDetail] = useState<{ statistics: LiveStatistics | null; events: MatchEvent[] } | null>(null);
   const [liveDetailLoading, setLiveDetailLoading] = useState(false);
+  const [banner, setBanner] = useState<BannerInfo | null>(null);
+  const [attackSamples, setAttackSamples] = useState<AttackSample[]>([]);
   const [cardFlash, setCardFlash] = useState<{ kind: 'YELLOW_CARD' | 'RED_CARD'; team: 'home' | 'away' } | null>(null);
   // The provider rarely sends statistics (possession, shots, corners, xG...). When none arrived
   // the "Statistika" tab would only ever say "not available", so the tab is not shown at all.
@@ -98,6 +104,17 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
     if (activeTab === 'STATS' && !liveDetailLoading && !hasAnyStat) setActiveTab(hasLiveData ? 'EVENTS' : 'All');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, liveDetailLoading, hasAnyStat]);
+  // Momentum: remember the attack counters at every refresh while the page is open (see MomentumChart).
+  useEffect(() => {
+    const st = liveDetail?.statistics as any;
+    if (!st || st.attacks_home == null || st.attacks_away == null) return;
+    const cur: AttackSample = { at: Date.now(), ha: Number(st.attacks_home), hd: Number(st.dangerous_attacks_home ?? 0), aa: Number(st.attacks_away), ad: Number(st.dangerous_attacks_away ?? 0) };
+    setAttackSamples((prev) => {
+      const last = prev[prev.length - 1];
+      if (last && last.ha === cur.ha && last.hd === cur.hd && last.aa === cur.aa && last.ad === cur.ad && cur.at - last.at < 60000) return prev;
+      return [...prev, cur].slice(-60);
+    });
+  }, [liveDetail]);
   const clockSrc = pickClockSource(match, liveDetail?.statistics);
   const headerClock = useTickingClock(
     clockSrc.raw,
@@ -170,6 +187,12 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
 
     let socket: WebSocket | null = null;
     let flashTimer: ReturnType<typeof setTimeout> | null = null;
+    let bannerTimer: ReturnType<typeof setTimeout> | null = null;
+    const showBanner = (b: Omit<BannerInfo, 'id'>) => {
+      setBanner({ ...b, id: Date.now() });
+      if (bannerTimer) clearTimeout(bannerTimer);
+      bannerTimer = setTimeout(() => setBanner(null), 3000);
+    };
     if (match.status === MatchStatus.LIVE) {
       socket = new WebSocket(api.getWsUrl());
       socket.onopen = () => socket!.send(JSON.stringify({ type: 'subscribe', topic: `match:${match.liveSourceId ?? match.id}` }));
@@ -181,6 +204,11 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
             if (flashTimer) clearTimeout(flashTimer);
             flashTimer = setTimeout(() => setCardFlash(null), 7000);
           }
+          const mm = msg.minute != null && msg.minute !== '' ? String(msg.minute).replace(/'?$/, "'") : undefined;
+          const sc = msg.homeScore != null && msg.awayScore != null ? `${msg.homeScore} - ${msg.awayScore}` : undefined;
+          if (msg.type === 'GOAL') showBanner({ kind: 'GOAL', team: String(msg.scoringTeam || ''), score: sc, minute: mm });
+          else if (msg.type === 'GOAL_DISALLOWED') showBanner({ kind: 'GOAL_DISALLOWED', team: String(msg.team || ''), score: sc, minute: mm });
+          else if (msg.type === 'CARD' && (msg.cardType === 'YELLOW_CARD' || msg.cardType === 'RED_CARD')) showBanner({ kind: msg.cardType, team: msg.team === 'home' ? match.homeTeam : msg.team === 'away' ? match.awayTeam : String(msg.team || ''), minute: mm });
           if (msg.type === 'GOAL' || msg.type === 'GOAL_DISALLOWED' || msg.type === 'CARD' || msg.type === 'MATCH_ENDED') load();
         } catch { /* ignore malformed message */ }
       };
@@ -193,6 +221,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('pageshow', onVisible);
       if (flashTimer) clearTimeout(flashTimer);
+      if (bannerTimer) clearTimeout(bannerTimer);
       socket?.close();
     };
   }, [match.id, hasLiveData, match.status]);
@@ -288,6 +317,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
           button on narrow screens) plus a floating pill that stays visible while scrolling markets.
           Both go back through the browser history, same as the phone's own back button; the bet
           slip selections stay as they were. */}
+      <EventBanner banner={banner} />
       <div className="md:hidden flex items-center gap-2 bg-[#1f1f1f] border-b border-brand-divider px-3 py-2">
         <button onClick={onClose} className="flex items-center gap-1 bg-brand-yellow text-black font-bold text-sm px-4 min-h-[44px] rounded">
           <span aria-hidden="true">←</span> {t('Kthehu')}
@@ -373,7 +403,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
                 </button>
               </>
             )}
-            {categories.map(cat => (
+            {!(readOnly && hasLiveData) && categories.map(cat => (
                 <button
                     key={cat}
                     onClick={() => setActiveTab(cat)}
@@ -405,6 +435,9 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
                 {t('Statistika nga burimi i të dhënave — jo verifikim zyrtar')}
               </div>
               <StatRings stats={liveDetail.statistics} />
+              {liveDetail.statistics.attacks_home != null && liveDetail.statistics.attacks_away != null && (
+                <div className="mt-3"><MomentumChart samples={attackSamples} home={match.homeTeam} away={match.awayTeam} /></div>
+              )}
               {(liveDetail.statistics.xg_home != null || liveDetail.statistics.xg_away != null) && (
                 <div className="mt-4"><StatBar label="xG" home={liveDetail.statistics.xg_home} away={liveDetail.statistics.xg_away} /></div>
               )}

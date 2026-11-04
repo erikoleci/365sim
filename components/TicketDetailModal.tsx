@@ -6,6 +6,43 @@ import { fetchMatchLiveDetail, fetchMatchById, MatchEvent } from '../services/ap
 import { isHalftime } from '../utils/liveStatus';
 import { MatchStatus } from '../types';
 import MatchTimeline, { TimelineState } from './MatchTimeline';
+import MatchDetail from './MatchDetail';
+import type { Match } from '../types';
+
+// The match page opened ON TOP of the ticket (the ticket stays open underneath; back returns to it).
+// Read-only: statistics and events, no betting. Refreshes the match itself every 10 s while it is live.
+const MatchOverlay: React.FC<{ matchId: string; onClose: () => void }> = ({ matchId, onClose }) => {
+  const { t } = useI18n();
+  const [match, setMatch] = useState<Match | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let stop = false;
+    const load = async () => {
+      try { const m = await fetchMatchById(matchId); if (!stop) { setMatch(m); setFailed(false); } }
+      catch { if (!stop) setFailed(true); }
+    };
+    load();
+    const timer = window.setInterval(load, 10000);
+    return () => { stop = true; window.clearInterval(timer); };
+  }, [matchId]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-[65] bg-brand-bg overflow-y-auto" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+      {match ? (
+        <MatchDetail key={match.id} match={match} leagueLabel="" onClose={onClose} onBetClick={() => {}} selectedIds={[]} readOnly />
+      ) : (
+        <div className="p-6 text-center text-sm text-brand-textMuted">
+          <button onClick={onClose} className="mb-4 bg-brand-yellow text-black font-bold px-4 min-h-[44px] rounded">← {t('Kthehu')}</button>
+          <div>{failed ? t("S'u ngarkua ndeshja") : t('Duke ngarkuar...')}</div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // One ticket in a shape every screen can fill: the user's own bets, the admin's table, the agent's lists.
 export interface TicketView {
@@ -80,12 +117,14 @@ const LegTimeline: React.FC<{ matchId: string; home: string; away: string; live:
 
 const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => void; actions?: React.ReactNode }> = ({ ticket, onClose, actions }) => {
   const { t, locale } = useI18n();
+  const [matchOpen, setMatchOpen] = useState<string | null>(null);
+  useEffect(() => { setMatchOpen(null); }, [ticket]);
   useEffect(() => {
     if (!ticket) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !matchOpen) onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [ticket, onClose]);
+  }, [ticket, onClose, matchOpen]);
   if (!ticket) return null;
 
   const label = (s: string) => (s === 'PENDING' ? t('Hapur') : s === 'WON' ? t('Fituar') : s === 'HALF_WON' ? t('Gjysmë fitore') : s === 'HALF_LOST' ? t('Gjysmë humbje') : s === 'VOID' ? t('Rimbursuar') : s === 'CANCELLED' ? t('ANULUAR') : t('Humbur'));
@@ -114,7 +153,9 @@ const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => vo
             <div key={i} className="bg-brand-bg rounded p-2.5 text-sm flex gap-2.5">
               <div className="w-5 flex-shrink-0 text-brand-yellow font-bold text-xs pt-0.5">{i + 1}</div>
               <div className="min-w-0 flex-1">
-                <div className="text-xs text-brand-textMuted flex flex-wrap items-center gap-x-2 gap-y-0.5"><MatchupLabel home={leg.matchHome} away={leg.matchAway} size="xs" /><LegWhen placedState={leg.placedState} matchStartTime={leg.matchStartTime} matchId={leg.matchId} watch={ticket.status === 'PENDING' && leg.status === 'PENDING'} className="text-[11px]" /></div>
+                <div className="text-xs text-brand-textMuted flex flex-wrap items-center gap-x-2 gap-y-0.5">{leg.matchId ? (
+                    <button type="button" onClick={() => setMatchOpen(leg.matchId!)} className="text-left underline decoration-dotted underline-offset-2 hover:text-white" title={t('Hap faqen e ndeshjes')}><MatchupLabel home={leg.matchHome} away={leg.matchAway} size="xs" /></button>
+                  ) : <MatchupLabel home={leg.matchHome} away={leg.matchAway} size="xs" />}<LegWhen placedState={leg.placedState} matchStartTime={leg.matchStartTime} matchId={leg.matchId} watch={ticket.status === 'PENDING' && leg.status === 'PENDING'} className="text-[11px]" /></div>
                 <div className="text-xs text-brand-textMuted truncate">{leg.marketName}</div>
                 <div className="font-bold text-white">{leg.selectionName} <span className="text-brand-yellow font-normal tabular-nums">@{Number(leg.odds).toFixed(2)}</span></div>
                 {leg.matchId && <LegTimeline matchId={leg.matchId} home={leg.matchHome} away={leg.matchAway} live={ticket.status === 'PENDING'} />}
@@ -131,6 +172,7 @@ const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => vo
         </div>
         {actions ? <div className="p-4 pt-2 flex flex-wrap gap-2 max-h-[40vh] overflow-y-auto flex-shrink-0">{actions}</div> : null}
       </div>
+      {matchOpen && <MatchOverlay matchId={matchOpen} onClose={() => setMatchOpen(null)} />}
     </div>
   );
 };
