@@ -131,18 +131,22 @@ router.get('/inbox', requireStaff, wrap(async (req, res) => {
   const scope = scopeOf(req.user);
   const status = req.query.status === 'CLOSED' ? 'CLOSED' : 'OPEN';
   const { rows } = await pool.query(
-    `SELECT t.*, u.username, u.name AS user_name, a.username AS admin_username, a.name AS admin_name,
+    `SELECT t.*, u.username, u.name AS user_name, u.role AS user_role, a.username AS admin_username, a.name AS admin_name,
+            ag.username AS agent_username, ag.name AS agent_name,
             (SELECT body FROM support_messages WHERE thread_id = t.id ORDER BY id DESC LIMIT 1) AS last_body
        FROM support_threads t
        JOIN users u ON u.id = t.user_id
        LEFT JOIN users a ON a.id = u.admin_id
+       LEFT JOIN users ag ON ag.id = u.agent_id
       WHERE ${SCOPE_SQL} AND t.status = $2
       ORDER BY t.last_message_at DESC LIMIT 200`, [scope, status]);
   const superView = isSuperAdmin(req.user.role);
   res.json({
     threads: rows.map((t) => ({
       ...threadSummary(t), lastBody: t.last_body,
-      user: { username: t.username, name: t.user_name },
+      user: { username: t.username, name: t.user_name, role: t.user_role },
+      // The agent (if any) who looks after the player: staff need to know who is writing.
+      agent: t.agent_username ? { username: t.agent_username, name: t.agent_name } : null,
       // Only the super admin is told which admin the player belongs to.
       admin: superView ? { username: t.admin_username || null, name: t.admin_name || null } : undefined,
       unread: t.last_from === 'USER' && Number(t.last_message_at) > Number(t.staff_seen_at),
@@ -159,8 +163,9 @@ router.get('/inbox-unread', requireStaff, wrap(async (req, res) => {
 
 async function loadStaffThread(req) {
   const { rows } = await pool.query(
-    `SELECT t.*, u.username, u.name AS user_name, a.username AS admin_username, a.name AS admin_name
-       FROM support_threads t JOIN users u ON u.id = t.user_id LEFT JOIN users a ON a.id = u.admin_id
+    `SELECT t.*, u.username, u.name AS user_name, u.role AS user_role, a.username AS admin_username, a.name AS admin_name,
+            ag.username AS agent_username, ag.name AS agent_name
+       FROM support_threads t JOIN users u ON u.id = t.user_id LEFT JOIN users a ON a.id = u.admin_id LEFT JOIN users ag ON ag.id = u.agent_id
       WHERE t.id = $2 AND ${SCOPE_SQL}`, [scopeOf(req.user), req.params.id]);
   return rows[0] || null;
 }
@@ -186,7 +191,7 @@ router.get('/inbox/:id', requireStaff, wrap(async (req, res) => {
   }
   const superView = isSuperAdmin(req.user.role);
   res.json({
-    thread: { ...threadSummary(t), user: { username: t.username, name: t.user_name }, admin: superView ? { username: t.admin_username || null, name: t.admin_name || null } : undefined },
+    thread: { ...threadSummary(t), user: { username: t.username, name: t.user_name, role: t.user_role }, agent: t.agent_username ? { username: t.agent_username, name: t.agent_name } : null, admin: superView ? { username: t.admin_username || null, name: t.admin_name || null } : undefined },
     messages: msgs.map((m) => ({ id: m.id, from: m.from_role === 'USER' ? 'player' : 'staff', body: m.body, at: Number(m.created_at) })),
     ticket,
   });

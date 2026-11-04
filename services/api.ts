@@ -832,7 +832,9 @@ export async function casinoDragonTigerDeal(stake: number, bet: 'DRAGON' | 'TIGE
 export interface SupportThread {
   id: string; status: 'OPEN' | 'CLOSED'; ticketNo: number | null; matchLabel: string | null;
   createdAt: number; lastMessageAt: number; lastFrom: 'USER' | 'STAFF'; lastBody?: string; unread?: boolean;
-  user?: { username: string; name: string };
+  user?: { username: string; name: string; role?: string };
+  /** The agent who looks after the player, if any. */
+  agent?: { username: string; name: string } | null;
   /** Only the super admin gets this: the admin the player belongs to. */
   admin?: { username: string | null; name: string | null };
 }

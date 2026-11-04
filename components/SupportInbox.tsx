@@ -38,7 +38,8 @@ const Thread: React.FC<{ id: string; isSuper: boolean; onBack: () => void }> = (
       </div>
       {t && (
         <div className="bg-brand-bg rounded-lg p-3 mb-3 text-sm">
-          <div className="text-white font-bold">{t.user?.username}{t.user?.name && t.user.name !== t.user.username ? ` · ${t.user.name}` : ''}</div>
+          <div className="text-white font-bold">{t.user?.role === 'AGENT' ? 'Agjenti' : 'Lojtari'}: {t.user?.username}{t.user?.name && t.user.name !== t.user.username ? ` · ${t.user.name}` : ''}</div>
+          {t.agent && <div className="text-xs text-brand-textMuted">Agjenti i tij: <span className="text-white">{t.agent.username}{t.agent.name && t.agent.name !== t.agent.username ? ` · ${t.agent.name}` : ''}</span></div>}
           {isSuper && <div className="text-xs text-brand-yellow">Admini i lojtarit: {t.admin?.username || 'pa admin'}</div>}
           {t.ticketNo != null && <div className="text-xs text-brand-textMuted mt-1">Bileta <b className="text-brand-yellow">#{t.ticketNo}</b>{t.matchLabel ? ` · ${t.matchLabel}` : ''}</div>}
         </div>
@@ -107,6 +108,7 @@ const SupportInbox: React.FC<{ isSuper: boolean; onChanged?: () => void }> = ({ 
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-bold text-white truncate">
                     {t.unread && <span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5" />}{t.user?.username}
+                    {t.agent && <span className="text-brand-textMuted font-normal"> · agjenti {t.agent.username}</span>}
                     {isSuper && <span className="text-brand-yellow font-normal"> → {t.admin?.username || 'pa admin'}</span>}
                   </span>
                   <span className="text-brand-textMuted flex-shrink-0">{when(t.lastMessageAt)}</span>
