@@ -14,6 +14,7 @@ import { readLiveCorners, readLiveCards } from '../matchSettlement.js';
 import { getChangesSince } from '../matchChanges.js';
 import { getLatestLiveTick } from '../london365GameDetails.js';
 import { overlayLiveTick } from '../liveOverlay.js';
+import { liveSourceIdFor } from '../liveTwin.js';
 
 const router = express.Router();
 
@@ -329,6 +330,10 @@ router.get('/:id/odds-history', wrap(async (req, res) => {
 const STATS_STALE_MS = 60000;
 
 router.get('/:id/live-detail', wrap(async (req, res) => {
+  // A ticket points at the pre-match record; the events live under its in-play twin (same fixture, other provider id).
+  const own = await queryWithRetry('SELECT * FROM matches_cache WHERE id = $1', [req.params.id]);
+  const sourceId = own.rows[0] ? await liveSourceIdFor(queryWithRetry, own.rows[0]) : req.params.id;
+  req.params.id = sourceId || req.params.id;
   const [{ rows: statsRows }, { rows: eventRows }, { rows: cacheRows }] = await Promise.all([
     queryWithRetry('SELECT * FROM live_statistics WHERE match_id = $1', [req.params.id]),
     queryWithRetry(
@@ -361,7 +366,17 @@ router.get('/:id', wrap(async (req, res) => {
     const cc = await readLiveCards({ query: queryWithRetry }, rows[0].id);
     if (cc) rows[0].live_cards = cc;
   }
-  res.json({ match: mapEventToMatch(rows[0]) });
+  let match = mapEventToMatch(rows[0]);
+  // Pre-match record of a match that is being played under another provider id: show the twin's score and minute.
+  const sourceId = await liveSourceIdFor(queryWithRetry, rows[0]);
+  if (sourceId && sourceId !== rows[0].id) {
+    const { rows: twinRows } = await queryWithRetry('SELECT * FROM matches_cache WHERE id = $1', [sourceId]);
+    if (twinRows[0]) {
+      const merged = dedupeMatches([match, mapEventToMatch(twinRows[0])]);
+      if (merged.length === 1) match = { ...merged[0], id: match.id, liveSourceId: sourceId };
+    }
+  }
+  res.json({ match });
 }));
 
 export default router;

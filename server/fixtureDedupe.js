@@ -111,7 +111,7 @@ function differsByOneUnrelatedWord(a, b) {
   return !(s.length >= 3 && l.startsWith(s));
 }
 
-function sameTeam(x, y) {
+export function sameTeam(x, y) {
   if (teamQualifier(x) !== teamQualifier(y)) return false;
   const nx = stripQualifier(normTeam(x));
   const ny = stripQualifier(normTeam(y));
