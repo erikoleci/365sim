@@ -556,6 +556,10 @@ export interface AgentTicket {
   id: string; ticketNo?: number | null; type: string; stake: number; totalOdds: number; potentialReturn: number;
   status: string; createdAt: number; currency?: 'ALL' | 'EUR'; selections: AgentTicketSelection[];
 }
+export async function agentFetchAllTickets() {
+  const data = await request<{ tickets: (AgentTicket & { userName: string })[] }>('/agent/tickets');
+  return data.tickets;
+}
 export async function agentFetchUserTickets(userId: string) {
   const data = await request<{ tickets: AgentTicket[] }>(`/agent/users/${userId}/tickets`);
   return data.tickets;

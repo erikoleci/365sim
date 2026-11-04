@@ -24,7 +24,7 @@ interface AgentUsersPanelProps {
 // Agent already plays through unchanged.
 const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanceChanged }) => {
   const { t } = useI18n();
-  const [tab, setTab] = useState<'users' | 'monthly' | 'commission'>('users');
+  const [tab, setTab] = useState<'users' | 'tickets' | 'monthly' | 'commission'>('users');
   const [me, setMe] = useState<User | null>(null);
   const [users, setUsers] = useState<api.AgentUserPerformance[]>([]);
   const [loading, setLoading] = useState(false);
@@ -33,6 +33,17 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
   const [expanded, setExpanded] = useState<string | null>(null);
   const [openTicket, setOpenTicket] = useState<TicketView | null>(null);
   const [tickets, setTickets] = useState<Record<string, api.AgentTicket[]>>({});
+
+  const [allTickets, setAllTickets] = useState<(api.AgentTicket & { userName: string })[] | null>(null);
+  const [tkFilter, setTkFilter] = useState<string>('ALL');
+  useEffect(() => {
+    if (tab !== 'tickets') return;
+    let on = true;
+    const run = async () => { try { const l = await api.agentFetchAllTickets(); if (on) setAllTickets(l); } catch { if (on) setAllTickets((p) => p ?? []); } };
+    run();
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') run(); }, 10000);
+    return () => { on = false; window.clearInterval(timer); };
+  }, [tab]);
 
   const [showCreate, setShowCreate] = useState(false);
   const [newUser, setNewUser] = useState<{ name: string; username: string; password: string; initialBalance: number; initialBalanceEur: number; currency: 'ALL' | 'EUR' | 'BOTH' }>({ name: '', username: '', password: '', initialBalance: 0, initialBalanceEur: 0, currency: 'ALL' });
@@ -199,13 +210,13 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
     <div className="p-3 md:p-4 max-w-[1200px] mx-auto">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="flex gap-1">
-          {(['users', 'monthly', 'commission'] as const).map((tabKey) => (
+          {(['users', 'tickets', 'monthly', 'commission'] as const).map((tabKey) => (
             <button
               key={tabKey}
               onClick={() => setTab(tabKey)}
               className={'px-4 py-2 text-xs font-bold rounded uppercase tracking-wide ' + (tab === tabKey ? 'bg-brand-yellow text-black' : 'bg-brand-panel text-brand-textMuted hover:text-white border border-[#444]')}
             >
-              {tabKey === 'users' ? t('Userat e Mi') : tabKey === 'commission' ? t('Komisioni') : t('Raporti Mujor')}
+              {tabKey === 'users' ? t('Userat e Mi') : tabKey === 'tickets' ? t('Biletat') : tabKey === 'commission' ? t('Komisioni') : t('Raporti Mujor')}
             </button>
           ))}
         </div>
@@ -350,6 +361,37 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {tab === 'tickets' && (
+        <div className="space-y-2">
+          <div className="flex gap-1.5 flex-wrap">
+            {['ALL', 'PENDING', 'WON', 'LOST'].map((f) => (
+              <button key={f} onClick={() => setTkFilter(f)} className={'px-3 py-1 text-xs font-bold rounded border ' + (tkFilter === f ? 'bg-brand-yellow text-black border-brand-yellow' : 'bg-brand-panel text-brand-textMuted border-[#444]')}>{f === 'ALL' ? t('Të gjitha') : f}</button>
+            ))}
+          </div>
+          {allTickets == null && <div className="text-xs text-brand-textMuted py-4">{t('Duke ngarkuar kuponat...')}</div>}
+          {allTickets && allTickets.length === 0 && <div className="text-xs text-brand-textMuted py-4">{t("Userat e tu s'kanë vendosur ende kupon.")}</div>}
+          <div className="space-y-2">
+            {(allTickets || []).filter((tk) => tkFilter === 'ALL' || tk.status === tkFilter).map((tk) => (
+              <div key={tk.id} className="border border-[#444] rounded p-2 bg-brand-panel cursor-pointer hover:border-brand-yellow/60"
+                onClick={() => setOpenTicket({ id: tk.id, ticketNo: tk.ticketNo, createdAt: tk.createdAt, status: tk.status, type: tk.type, stake: tk.stake, totalOdds: tk.totalOdds, potentialReturn: tk.potentialReturn, currency: tk.currency, user: tk.userName, legs: tk.selections })}>
+                <div className="flex justify-between text-xs mb-1 gap-2">
+                  <span className="text-brand-textMuted">{tk.ticketNo != null ? <b className="text-brand-yellow mr-1">#{tk.ticketNo}</b> : null}<b className="text-white mr-1">{tk.userName}</b>{dateFmt(tk.createdAt)} · {money(tk.stake) + (tk.currency === 'EUR' ? ' €' : ' L')} · @{tk.totalOdds}</span>
+                  <span className={'font-bold ' + (statusColor[tk.status] || '')}>{tk.status}</span>
+                </div>
+                <div className="space-y-0.5">
+                  {tk.selections.map((s, i) => (
+                    <div key={i} className="flex justify-between text-[11px] text-brand-textMuted gap-2">
+                      <span><MatchupLabel home={s.matchHome} away={s.matchAway} separator="vs" /> - {s.marketName}: <span className="text-white">{s.selectionName}</span> @{s.odds}</span>
+                      <span className={statusColor[s.status] || ''}>{s.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

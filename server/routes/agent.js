@@ -221,6 +221,35 @@ router.post('/users/:id/debit', async (req, res) => {
 // on agent_id — a user_id in the URL/body that belongs to another agent's
 // user simply returns no rows, it can never leak another agent's data.
 
+// All tickets of ALL my users, newest first (one list for the "Biletat" tab). Same agent_id scoping as above.
+router.get('/tickets', async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 300, 500);
+  const { rows: bets } = await pool.query(
+    `SELECT b.*, u.name AS user_name, u.username AS user_username FROM bets b JOIN users u ON u.id = b.user_id
+      WHERE u.agent_id = $1 ORDER BY b.created_at DESC LIMIT $2`,
+    [req.user.id, limit]
+  );
+  if (bets.length === 0) return res.json({ tickets: [] });
+  const { rows: selections } = await pool.query('SELECT * FROM bet_selections WHERE bet_id = ANY($1) ORDER BY id ASC', [bets.map((b) => b.id)]);
+  const byBet = new Map();
+  for (const sel of selections) {
+    if (!byBet.has(sel.bet_id)) byBet.set(sel.bet_id, []);
+    byBet.get(sel.bet_id).push({
+      matchId: sel.match_id, matchHome: sel.match_home, matchAway: sel.match_away,
+      marketId: sel.market_id, marketName: sel.market_name,
+      selectionId: sel.selection_id, selectionName: sel.selection_name, odds: sel.odds, status: sel.status,
+    });
+  }
+  res.json({
+    tickets: bets.map((b) => ({
+      id: b.id, ticketNo: b.ticket_no == null ? null : Number(b.ticket_no), type: b.type, stake: b.stake, totalOdds: b.total_odds,
+      potentialReturn: b.potential_return, status: b.status, createdAt: b.created_at,
+      currency: b.currency === 'EUR' ? 'EUR' : 'ALL', userName: b.user_name || b.user_username,
+      selections: byBet.get(b.id) || [],
+    })),
+  });
+});
+
 router.get('/users/:id/tickets', async (req, res) => {
   const { rows: owned } = await pool.query('SELECT id FROM users WHERE id = $1 AND agent_id = $2', [req.params.id, req.user.id]);
   if (!owned[0]) return res.status(404).json({ error: 'User not found' });
