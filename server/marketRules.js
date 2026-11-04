@@ -195,7 +195,7 @@ export function describeMarket(marketId, marketName) {
     // markets (server/extraMarkets.js); names known to need data / a meaning we lack never count.
     autoSettles: !UNSETTLEABLE_NAME.test(norm(marketName)) && (
       (AUTO_SETTLES.has(c.kind) && !((c.kind === 'corners' || c.kind === 'cards') && STATS_UNDECIDABLE.test(stripP1P2(norm(marketName)))))
-      || matchExtraMarket(norm(marketName)) || FIRST_GOAL_H1_NAMES.has(norm(marketName)) || EVENT_ORDER_RE.test(norm(marketName))
+      || matchExtraMarket(norm(marketName)) || FIRST_GOAL_H1_NAMES.has(norm(marketName)) || FIRST_GOAL_NAMES.has(norm(marketName)) || LAST_GOAL_NAMES.has(norm(marketName)) || EVENT_ORDER_RE.test(norm(marketName))
       || Boolean(nextEventKind(marketName))
       || Boolean(parseProviderMarket(norm(marketName))) || Boolean(nthGoalSpec(norm(marketName)))
     ),
@@ -395,6 +395,19 @@ export function getBetBlockReason(row, market, selection, now = Date.now(), { al
     if (goalsNow !== nthH1.n - 1) return DECIDED;
     const minuteNow = parseInt(String(row.live_minute || ''), 10);
     if (Number.isFinite(minuteNow) && minuteNow >= FIRST_HALF_GOAL_CUTOFF_MINUTE) return 'HALF_CLOSING';
+    return null;
+  }
+
+  // "Goli i Parë" / "Skuadra që shënon e para" (1 / X / 2, X = no goal): the FIRST goal of the match. In play it is offered
+  // only while the match is still 0-0 (once a goal is in the outcome is known) and not in the last minutes (80'+);
+  // player options never (no scorer names). Settled from the logged goal order.
+  const nm = market && norm(market.name);
+  if (nm && (FIRST_GOAL_NAMES.has(nm) || FIRST_TEAM_TO_SCORE_NAMES.has(nm))) {
+    if (!isSideOrNoneSelection(row, selection)) return NOT_VERIFIABLE;
+    if (row.live_home_score == null || row.live_away_score == null) return NOT_VERIFIABLE;
+    if (Number(row.live_home_score) + Number(row.live_away_score) !== 0) return DECIDED;
+    const minuteNow = parseInt(String(row.live_minute || ''), 10);
+    if (Number.isFinite(minuteNow) && minuteNow >= 80) return 'HALF_CLOSING';
     return null;
   }
 

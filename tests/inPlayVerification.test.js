@@ -65,13 +65,13 @@ describe('getBetBlockReason in play', () => {
     expect(['NO_PLAYER_DATA', 'NO_SETTLEMENT_RULE']).toContain(block(live(), 'Shënuesi i golit', 'Mbappe'));
     expect(['NO_PLAYER_DATA', 'NO_SETTLEMENT_RULE']).toContain(block(live(), 'Lojtari Shënon', 'Haaland'));
     expect(['NO_PLAYER_DATA', 'NO_SETTLEMENT_RULE']).toContain(block(live(), 'Goli i Parë', 'Mbappe')); // player option of a goal-order market
-    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(block(live(), 'Goli i Parë', 'Lens')); // side option: only closed live
+    expect(block(live(), 'Goli i Parë', 'Lens')).not.toBe('NO_PLAYER_DATA'); // side option: open (0-0) or decided, never a player market
     const pre = live({ status: 'UPCOMING', live_status: null, start_time: new Date(NOW + 3600000).toISOString(), live_home_score: null, live_away_score: null });
     expect(['NO_PLAYER_DATA', 'NO_SETTLEMENT_RULE']).toContain(block(pre, 'Shënuesi i golit', 'Mbappe'));
     expect(['NO_PLAYER_DATA', 'NO_SETTLEMENT_RULE']).toContain(block(pre, 'Goli i Parë', 'Mbappe'));
-    // "Goli i Parë" is the first-scorer (player) market of the feed: it has no automatic settlement rule, so it stays closed
-    expect(block(pre, 'Goli i Parë', 'Lens')).toBe('NO_SETTLEMENT_RULE');
-    expect(block(pre, 'Goli i Parë', 'Asnjë')).toBe('NO_SETTLEMENT_RULE');
+    // "Goli i Parë": side / no-goal options are open (settled from the goal order), player options stay closed
+    expect(block(pre, 'Goli i Parë', 'Lens')).toBeNull();
+    expect(block(pre, 'Goli i Parë', 'Asnjë')).toBeNull();
   });
   it('hidePlayerOdds drops player markets and player options but keeps the sides', async () => {
     const { hidePlayerOdds } = await import('../server/marketRules.js');

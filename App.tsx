@@ -2,10 +2,10 @@ import { isAdminRole, isSuperAdminRole } from './utils/roles';
 import React, { useCallback, useEffect, useMemo, useRef, useState, startTransition } from 'react';
 import Navbar from './components/Navbar';
 import MatchDetail from './components/MatchDetail';
-import OwnerDashboard from './components/OwnerDashboard';
-import AgentUsersPanel from './components/AgentUsersPanel';
+const OwnerDashboard = React.lazy(() => import('./components/OwnerDashboard'));
+const AgentUsersPanel = React.lazy(() => import('./components/AgentUsersPanel'));
 import Login from './components/Login';
-import CasinoHub from './components/CasinoHub';
+const CasinoHub = React.lazy(() => import('./components/CasinoHub'));
 import BetSlipPanels from './components/sportsbook/BetSlipPanels';
 import SlipBlockedToast from './components/SlipBlockedToast';
 import BetAcceptedToast from './components/BetAcceptedToast';
@@ -60,6 +60,20 @@ const App: React.FC = () => {
   useLiveSocket({ enabled: sportsEnabled, setMatches: feed.setMatches, setDetailMatchFull, reloadMatches: feed.loadMatches, reloadLive: feed.loadLive, matches: feed.matches, onMatchEnded: loadMyBets });
 
   const { favoriteTeams, favoriteLeagues, toggleFavorite } = useFavorites(currentUser);
+  // The staff panels are separate chunks (a player never downloads them). As soon as somebody signs in, fetch the one
+  // they will open in the background, so it opens instantly instead of after a download.
+  useEffect(() => {
+    if (!currentUser) return;
+    const role = String(currentUser.role);
+    const run = () => {
+      if (role === 'AGENT') void import('./components/AgentUsersPanel');
+      else if (isAdminRole(currentUser.role)) void import('./components/OwnerDashboard');
+      else void import('./components/CasinoHub');
+    };
+    const w = window as any;
+    const id = w.requestIdleCallback ? w.requestIdleCallback(run, { timeout: 1500 }) : window.setTimeout(run, 300);
+    return () => { if (w.cancelIdleCallback && w.requestIdleCallback) w.cancelIdleCallback(id); else window.clearTimeout(id); };
+  }, [currentUser?.id, currentUser?.role]);
 
   const slip = useBetSlip({
     currentUser,
@@ -132,6 +146,7 @@ const App: React.FC = () => {
   // the owner has no way to place a bet or play. Reports first; management is one tab away.
   if (isAdminRole(currentUser.role)) {
     return (
+      <React.Suspense fallback={<div className="min-h-screen bg-brand-bg" />}>
       <OwnerDashboard
         currentUser={currentUser}
         onLogout={handleLogout}
@@ -147,6 +162,7 @@ const App: React.FC = () => {
         onSetCurrency={admin.setAccountCurrency}
         onSetBalance={applyBalance}
       />
+      </React.Suspense>
     );
   }
 
@@ -200,9 +216,9 @@ const App: React.FC = () => {
 
         <main ref={mainRef} className="flex-1 min-w-0 mb-20 md:mb-0">
           {showAdmin && currentUser.role === UserRole.AGENT ? (
-            <AgentUsersPanel currentUser={currentUser} onBalanceChanged={applyBalance} />
+            <React.Suspense fallback={<div className="p-6 text-brand-textMuted text-sm">…</div>}><AgentUsersPanel currentUser={currentUser} onBalanceChanged={applyBalance} /></React.Suspense>
           ) : casinoAllowed && currentView === 'casino' ? (
-            <CasinoHub userBalance={currentUser.balance} userBalanceEur={currentUser.balanceEur ?? 0} accountCurrency={currentUser.accountCurrency ?? 'BOTH'} onSetBalance={applyBalance} />
+            <React.Suspense fallback={<div className="p-6 text-brand-textMuted text-sm">…</div>}><CasinoHub userBalance={currentUser.balance} userBalanceEur={currentUser.balanceEur ?? 0} accountCurrency={currentUser.accountCurrency ?? 'BOTH'} onSetBalance={applyBalance} /></React.Suspense>
           ) : detailMatch ? (
             <MatchDetail
               // A full remount when the viewed match changes: otherwise the ticking clocks of

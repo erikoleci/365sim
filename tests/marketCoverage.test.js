@@ -12,7 +12,7 @@ describe('describeMarket', () => {
     expect(describeMarket('x', 'Numri i Golave Zakynthos').kind).toBe('team_totals');
   });
   it('flags markets with no rule (player, timing, anything unknown)', () => {
-    for (const name of ['Lojtari Shënon', 'Goli i Parë', 'Minuta e Golit', 'Diçka e Panjohur']) {
+    for (const name of ['Lojtari Shënon', 'Minuta e Golit', 'Diçka e Panjohur']) {
       const d = describeMarket('x', name);
       expect(d.autoSettles, name).toBe(false);
       expect(d.inPlay).toBe('blocked');
@@ -37,10 +37,10 @@ describe('buildCoverageReport', () => {
     { name: 'Rezultat Final', legs: 50, pending: 2 },
     { name: 'Rezultat Final', matches: 90 },                    // same name from the board: merged
     { name: 'Lojtari Shënon', legs: 7, pending: 7 },
-    { name: 'Goli i Parë', matches: 40 },
+    { name: 'Minuta e Golit', matches: 40 },
   ]);
   it('lists markets without a rule first, most used first', () => {
-    expect(report.markets.map((m) => m.name)).toEqual(['Lojtari Shënon', 'Goli i Parë', 'Rezultat Final']);
+    expect(report.markets.map((m) => m.name)).toEqual(['Lojtari Shënon', 'Minuta e Golit', 'Rezultat Final']);
   });
   it('merges one market seen in several places and totals it', () => {
     const r = report.markets.find((m) => m.name === 'Rezultat Final');
