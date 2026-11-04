@@ -827,3 +827,37 @@ export async function casinoDragonTigerDeal(stake: number, bet: 'DRAGON' | 'TIGE
   return request<{ dragon: { suit: string; value: string }; tiger: { suit: string; value: string }; result: 'DRAGON' | 'TIGER' | 'TIE'; payout: number; balance: number }>(
     '/casino/dragon-tiger/deal', { method: 'POST', body: JSON.stringify({ stake, bet }) });
 }
+
+// ---- Support (player writes, his admin and the super admin answer; staff replies carry no name) ----
+export interface SupportThread {
+  id: string; status: 'OPEN' | 'CLOSED'; ticketNo: number | null; matchLabel: string | null;
+  createdAt: number; lastMessageAt: number; lastFrom: 'USER' | 'STAFF'; lastBody?: string; unread?: boolean;
+  user?: { username: string; name: string };
+  /** Only the super admin gets this: the admin the player belongs to. */
+  admin?: { username: string | null; name: string | null };
+}
+export interface SupportMessage { id: number; from: 'me' | 'support' | 'player' | 'staff'; body: string; at: number }
+export interface SupportTicket {
+  id: string; ticketNo: number | null; status: string; stake: number; totalOdds: number; potentialReturn: number; currency?: string; createdAt: number;
+  legs: { match: string; market: string; selection: string; odds: number; status: string }[];
+}
+export async function supportThreads() { return request<{ threads: SupportThread[] }>('/support/threads'); }
+export async function supportUnread() { return request<{ unread: number }>('/support/unread'); }
+export async function supportThread(id: string) { return request<{ thread: SupportThread; messages: SupportMessage[] }>(`/support/threads/${encodeURIComponent(id)}`); }
+export async function supportCreate(body: { message: string; betId?: string; matchLabel?: string }) {
+  return request<{ id: string }>('/support/threads', { method: 'POST', body: JSON.stringify(body) });
+}
+export async function supportReply(id: string, message: string) {
+  return request<{ ok: boolean }>(`/support/threads/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify({ message }) });
+}
+export async function supportInbox(status: 'OPEN' | 'CLOSED') { return request<{ threads: SupportThread[] }>(`/support/inbox?status=${status}`); }
+export async function supportInboxUnread() { return request<{ unread: number }>('/support/inbox-unread'); }
+export async function supportInboxThread(id: string) {
+  return request<{ thread: SupportThread; messages: SupportMessage[]; ticket: SupportTicket | null }>(`/support/inbox/${encodeURIComponent(id)}`);
+}
+export async function supportInboxReply(id: string, message: string) {
+  return request<{ ok: boolean }>(`/support/inbox/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify({ message }) });
+}
+export async function supportInboxStatus(id: string, status: 'OPEN' | 'CLOSED') {
+  return request<{ ok: boolean }>(`/support/inbox/${encodeURIComponent(id)}/status`, { method: 'POST', body: JSON.stringify({ status }) });
+}

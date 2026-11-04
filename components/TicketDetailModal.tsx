@@ -115,7 +115,7 @@ const LegTimeline: React.FC<{ matchId: string; home: string; away: string; live:
   );
 };
 
-const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => void; actions?: React.ReactNode }> = ({ ticket, onClose, actions }) => {
+const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => void; actions?: React.ReactNode; onReport?: (betId: string) => void }> = ({ ticket, onClose, actions, onReport }) => {
   const { t, locale } = useI18n();
   const [matchOpen, setMatchOpen] = useState<string | null>(null);
   useEffect(() => { setMatchOpen(null); }, [ticket]);
@@ -170,6 +170,13 @@ const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => vo
           <div className="flex justify-between"><span className="text-brand-textMuted">Stake</span><span className="text-white font-bold">{Number(ticket.stake).toFixed(2)} {sym}</span></div>
           <div className="flex justify-between"><span className="text-brand-textMuted">{returnLabel}</span><span className="text-white font-bold">{Number(ticket.potentialReturn).toFixed(2)} {sym}</span></div>
         </div>
+        {onReport && (
+          <div className="px-4 pb-3 flex-shrink-0">
+            <button onClick={() => onReport(ticket.id)} className="w-full py-2 rounded bg-brand-bg border border-brand-divider text-xs font-bold text-brand-textMuted hover:text-white hover:border-brand-yellow/60">
+              Raporto një problem me këtë biletë
+            </button>
+          </div>
+        )}
         {actions ? <div className="p-4 pt-2 flex flex-wrap gap-2 max-h-[40vh] overflow-y-auto flex-shrink-0">{actions}</div> : null}
       </div>
       {matchOpen && <MatchOverlay matchId={matchOpen} onClose={() => setMatchOpen(null)} />}

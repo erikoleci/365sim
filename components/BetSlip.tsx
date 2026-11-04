@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { BetSelectionItem, Bet, BetStatus } from '../types';
 import { useI18n } from '../i18n';
 import MatchupLabel from './MatchupLabel';
 import LegWhen from './LegWhen';
 import TicketDetailModal, { TicketView } from './TicketDetailModal';
+import SupportPanel from './SupportPanel';
+import { supportUnread } from '../services/api';
 import { findSlipConflicts, legKey, stakeAfterPlacement } from '../utils/betSlipRules';
 
 interface BetSlipProps {
@@ -40,7 +42,16 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
   const { min: MIN_STAKE, maxStake: MAX_STAKE, maxReturn: MAX_POTENTIAL_RETURN, symbol: sym } = LIMITS[currency];
   const walletBalance = currency === 'EUR' ? userBalanceEur : userBalance;
   const [stake, setStake] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'slip' | 'mybets'>('slip');
+  const [activeTab, setActiveTab] = useState<'slip' | 'mybets' | 'support'>('slip');
+  const [supportBetId, setSupportBetId] = useState<string | null>(null);
+  const [supportUnreadN, setSupportUnreadN] = useState(0);
+  // Unread answers from Support (the badge on the tab), checked every 30 s.
+  const refreshSupportUnread = useCallback(() => { supportUnread().then((r) => setSupportUnreadN(r.unread)).catch(() => {}); }, []);
+  useEffect(() => {
+    refreshSupportUnread();
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') refreshSupportUnread(); }, 30000);
+    return () => window.clearInterval(timer);
+  }, [refreshSupportUnread]);
   const [showConfirm, setShowConfirm] = useState(false);
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
   const [openTicket, setOpenTicket] = useState<TicketView | null>(null);
@@ -166,11 +177,20 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
             {t('Biletat e Mia')}
             {openBetsCount > 0 && <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-brand-accent text-brand-bg rounded-full text-[11px] font-extrabold" title={t('Të hapura')}>{openBetsCount}</span>}
         </button>
+        <button
+            className={`flex-1 py-3 font-bold text-center transition-colors ${activeTab === 'support' ? 'bg-brand-header text-white' : 'text-brand-textMuted hover:bg-brand-bg'}`}
+            onClick={() => { setActiveTab('support'); setSupportBetId(null); }}
+        >
+            Support
+            {supportUnreadN > 0 && <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-red-500 text-white rounded-full text-[11px] font-extrabold">{supportUnreadN}</span>}
+        </button>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-2">
-        {activeTab === 'slip' ? (
+        {activeTab === 'support' ? (
+          <SupportPanel myBets={myBets} initialBetId={supportBetId} onSeen={refreshSupportUnread} />
+        ) : activeTab === 'slip' ? (
           <>
             {selections.length === 0 ? (
                 <div className="flex flex-col items-center text-center mt-14 px-4">
@@ -382,7 +402,7 @@ const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClea
             </div>
         )}
       </div>
-      <TicketDetailModal ticket={openTicket} onClose={() => setOpenTicket(null)} />
+      <TicketDetailModal ticket={openTicket} onClose={() => setOpenTicket(null)} onReport={(betId) => { setOpenTicket(null); setSupportBetId(betId); setActiveTab('support'); }} />
     </div>
   );
 };

@@ -4,6 +4,7 @@ import * as api from '../services/api';
 import AdminPanel from './AdminPanel';
 import VcCodesPanel from './VcCodesPanel';
 import FeedFramesPanel from './FeedFramesPanel';
+import SupportInbox from './SupportInbox';
 import HierarchyPanel from './HierarchyPanel';
 import CommissionReport from './CommissionReport';
 import CasinoAdmin from './CasinoAdmin';
@@ -49,7 +50,15 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
 }) => {
   const { t } = useI18n();
   const isSuper = currentUser.role === 'SUPER_ADMIN';
-  const [tab, setTab] = useState<'reports' | 'admins' | 'credit' | 'hierarchy' | 'monthly' | 'manage' | 'vc' | 'feed' | 'commission' | 'casino'>('reports');
+  const [tab, setTab] = useState<'reports' | 'admins' | 'credit' | 'hierarchy' | 'monthly' | 'manage' | 'vc' | 'feed' | 'commission' | 'casino' | 'support'>('reports');
+  // Unread messages from players (the red number on the Support tab), checked every 20 s.
+  const [supportUnread, setSupportUnread] = useState(0);
+  const refreshSupportUnread = useCallback(() => { api.supportInboxUnread().then((r) => setSupportUnread(r.unread)).catch(() => {}); }, []);
+  useEffect(() => {
+    refreshSupportUnread();
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') refreshSupportUnread(); }, 20000);
+    return () => window.clearInterval(timer);
+  }, [refreshSupportUnread]);
   // Super admin only: what every admin did, and the tickets of the admin he opened.
   const [adminsReport, setAdminsReport] = useState<api.AdminsReport | null>(() => (currentUser.role === 'SUPER_ADMIN' ? readOwnerCache<api.AdminsReport>(currentUser.id, 'adminsReport') : null));
   const [openAdminId, setOpenAdminId] = useState<string | null>(null);
@@ -187,13 +196,14 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
       </header>
 
       <nav className="flex gap-1 px-2 sm:px-4 pt-3 border-b border-[#333] overflow-x-auto whitespace-nowrap">
-        {(isSuper ? ['reports', 'admins', 'credit', 'hierarchy', 'commission', 'monthly', 'manage', 'vc', 'feed', 'casino'] as const : ['reports', 'commission', 'monthly', 'manage'] as const).map((tabKey) => (
+        {(isSuper ? ['reports', 'admins', 'credit', 'hierarchy', 'commission', 'monthly', 'manage', 'support', 'vc', 'feed', 'casino'] as const : ['reports', 'commission', 'monthly', 'manage', 'support'] as const).map((tabKey) => (
           <button
             key={tabKey}
             onClick={() => setTab(tabKey)}
             className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold rounded-t uppercase tracking-wide shrink-0 ${tab === tabKey ? 'bg-brand-panel text-brand-yellow border border-b-0 border-[#444]' : 'text-brand-textMuted hover:text-white'}`}
           >
-            {tabKey === 'reports' ? t('Raporte') : tabKey === 'admins' ? t('Adminët') : tabKey === 'credit' ? t('Kredia') : tabKey === 'hierarchy' ? t('Struktura') : tabKey === 'commission' ? t('Komisioni') : tabKey === 'monthly' ? t('Raporti Mujor') : tabKey === 'vc' ? t('Kodet live') : tabKey === 'feed' ? 'Feed' : tabKey === 'casino' ? 'Casino' : t('Menaxho')}
+            {tabKey === 'reports' ? t('Raporte') : tabKey === 'admins' ? t('Adminët') : tabKey === 'credit' ? t('Kredia') : tabKey === 'hierarchy' ? t('Struktura') : tabKey === 'commission' ? t('Komisioni') : tabKey === 'monthly' ? t('Raporti Mujor') : tabKey === 'vc' ? t('Kodet live') : tabKey === 'feed' ? 'Feed' : tabKey === 'support' ? 'Support' : tabKey === 'casino' ? 'Casino' : t('Menaxho')}
+            {tabKey === 'support' && supportUnread > 0 && <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-red-500 text-white rounded-full text-[11px] font-extrabold">{supportUnread}</span>}
           </button>
         ))}
       </nav>
@@ -437,6 +447,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
         {tab === 'commission' && <CommissionReport scope="owner" />}
         {tab === 'vc' && isSuper && <VcCodesPanel />}
         {tab === 'feed' && isSuper && <FeedFramesPanel />}
+        {tab === 'support' && <SupportInbox isSuper={isSuper} onChanged={refreshSupportUnread} />}
         {tab === 'casino' && isSuper && onSetBalance && <CasinoAdmin userBalance={currentUser.balance} userBalanceEur={currentUser.balanceEur ?? 0} onSetBalance={onSetBalance} />}
         {tab === 'hierarchy' && isSuper && <HierarchyPanel />}
 

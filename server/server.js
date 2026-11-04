@@ -25,6 +25,7 @@ import agentRouter from './routes/agent.js';
 import casinoRouter from './routes/casino.js';
 import scrapeRouter from './routes/scrape.js';
 import favoritesRouter from './routes/favorites.js';
+import supportRouter from './routes/support.js';
 import { initDb, cleanupOldData } from './db.js';
 import { runMigrations } from './migrate.js';
 import { pool } from './db.js';
@@ -160,6 +161,7 @@ app.use('/api/agent', agentRouter);
 app.use('/api/casino', casinoRouter);
 app.use('/api/scrape', scrapeRouter);
 app.use('/api/favorites', favoritesRouter);
+app.use('/api/support', supportRouter);
 
 // Catch-all error handler: any unhandled error thrown/rejected inside a route
 // (e.g. Postgres unreachable, quota exceeded) returns a clean 503 instead of
