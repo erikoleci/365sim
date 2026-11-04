@@ -1953,3 +1953,42 @@ export function liveFairProbability(leg, score, minute) {
 export const liveEdge = (odds, fair) => (fair ? odds * fair.pWin + fair.pVoid : null);
 
 export const isStatsMarketName = (name) => STATS_MARKET.test(norm(name));
+
+
+// Merge the two provider records of one fixture for tickets: as soon as the in-play record of a match exists, every
+// still-open leg that sits on the pre-match record moves onto it. From then on the leg reads the real score, minute,
+// events and counters, is settled from them, and is covered by the early-settlement sweep -- no per-feature twin
+// lookups needed. Safe to repeat (a moved leg is no longer on a record without live data).
+export async function rebindLegsToLiveRecord({ now = Date.now() } = {}) {
+  const { rows: legs } = await pool.query(
+    `SELECT bs.id, bs.match_id, bs.match_home, bs.match_away, bs.market_name,
+            m.home_team, m.away_team, m.start_time
+       FROM bet_selections bs
+       JOIN bets b ON b.id = bs.bet_id AND b.status = 'PENDING'
+       JOIN matches_cache m ON m.id = bs.match_id
+      WHERE bs.status = 'PENDING' AND m.live_home_score IS NULL AND m.live_minute IS NULL AND m.result_home IS NULL
+        AND m.start_time::timestamptz <= to_timestamp($1 / 1000.0)`,
+    [now]
+  );
+  if (legs.length === 0) return { movedLegs: 0 };
+  const starts = legs.map((l) => Date.parse(l.start_time)).filter(Number.isFinite);
+  if (!starts.length) return { movedLegs: 0 };
+  const { rows: live } = await pool.query(
+    `SELECT * FROM matches_cache WHERE (live_home_score IS NOT NULL OR live_minute IS NOT NULL OR result_home IS NOT NULL)
+        AND start_time::timestamptz BETWEEN $1::timestamptz AND $2::timestamptz`,
+    [new Date(Math.min(...starts) - 3 * 3600 * 1000).toISOString(), new Date(Math.max(...starts) + 3 * 3600 * 1000).toISOString()]
+  );
+  let movedLegs = 0;
+  const byMatch = new Map();
+  for (const leg of legs) {
+    if (!byMatch.has(leg.match_id)) byMatch.set(leg.match_id, pickLiveTwinRow({ id: leg.match_id, home_team: leg.home_team, away_team: leg.away_team, start_time: leg.start_time }, live));
+    const twin = byMatch.get(leg.match_id);
+    if (!twin) continue;
+    const r = await pool.query(`UPDATE bet_selections SET match_id = $1 WHERE id = $2 AND status = 'PENDING' AND match_id = $3`, [twin.id, leg.id, leg.match_id]);
+    if (r.rowCount) {
+      movedLegs++;
+      console.log('[settle] leg ' + leg.id + ' (' + leg.match_home + ' v ' + leg.match_away + ', "' + leg.market_name + '") moved from ' + leg.match_id + ' to the in-play record ' + twin.id);
+    }
+  }
+  return { movedLegs };
+}

@@ -29,29 +29,55 @@ export function pickLiveTwin(row, candidates) {
   return same[0];
 }
 
-const cache = new Map(); // id -> { at, twinId }
+const cache = new Map(); // id -> { at, twin }
 const TTL_MS = 20 * 1000;
 
-// Id that really receives the live data for `row` (its own id, or the twin's). Cached briefly: the lookup scans
-// the live rows of the same time window and ticket screens poll every few seconds.
-export async function liveSourceIdFor(query, row) {
-  if (!row) return null;
-  if (hasLiveData(row)) return row.id;
+// The in-play twin ROW of `row` (or null). Cached briefly: the lookup scans the rows of the same time window and
+// ticket screens / placement call it every few seconds.
+export async function liveTwinRowFor(query, row, { ttlMs = TTL_MS } = {}) {
+  if (!row || hasLiveData(row)) return null;
   const hit = cache.get(row.id);
-  if (hit && Date.now() - hit.at < TTL_MS) return hit.twinId || row.id;
+  if (hit && Date.now() - hit.at < ttlMs) return hit.twin;
   let twin = null;
   try {
     const t = Date.parse(row.start_time);
     if (!Number.isNaN(t)) {
       const { rows } = await query(
-        `SELECT * FROM matches_cache WHERE id <> $1 AND (live_home_score IS NOT NULL OR live_minute IS NOT NULL)
+        `SELECT * FROM matches_cache WHERE id <> $1 AND (live_home_score IS NOT NULL OR live_minute IS NOT NULL OR result_home IS NOT NULL)
             AND start_time::timestamptz BETWEEN $2::timestamptz AND $3::timestamptz`,
         [row.id, new Date(t - WINDOW_MS).toISOString(), new Date(t + WINDOW_MS).toISOString()]
       );
       twin = pickLiveTwin(row, rows);
     }
   } catch { twin = null; }
-  cache.set(row.id, { at: Date.now(), twinId: twin ? twin.id : null });
+  cache.set(row.id, { at: Date.now(), twin });
+  return twin;
+}
+
+// Id that really receives the live data for `row` (its own id, or the twin's).
+export async function liveSourceIdFor(query, row) {
+  if (!row) return null;
+  const twin = await liveTwinRowFor(query, row);
   return twin ? twin.id : row.id;
+}
+
+// `row` with the twin's live fields laid over it (score, minute, clock status, FINISHED) and `live_source_id` set,
+// so every rule that reads the match row (price gate, certainty net, locks) sees the real match situation. Odds and
+// markets stay the pre-match record's own. Same row back when there is no twin.
+export async function withLiveTwin(query, row) {
+  const twin = await liveTwinRowFor(query, row, { ttlMs: 5000 });
+  if (!twin) return row;
+  return {
+    ...row,
+    status: twin.status === 'FINISHED' || twin.status === 'LIVE' ? twin.status : row.status,
+    live_status: twin.live_status ?? row.live_status,
+    live_minute: twin.live_minute ?? row.live_minute,
+    live_minute_updated_at: twin.live_minute_updated_at ?? row.live_minute_updated_at,
+    live_home_score: twin.live_home_score ?? row.live_home_score,
+    live_away_score: twin.live_away_score ?? row.live_away_score,
+    result_home: twin.result_home ?? row.result_home,
+    result_away: twin.result_away ?? row.result_away,
+    live_source_id: twin.id,
+  };
 }
 export const __resetLiveTwinCache = () => cache.clear();

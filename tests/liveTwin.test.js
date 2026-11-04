@@ -33,3 +33,27 @@ describe('finished twin of a leg that points at the pre-match record', () => {
     expect(pickFinishedTwin(leg, [other], Date.parse('2026-11-04T05:00:00Z'))).toBeNull();
   });
 });
+
+import { withLiveTwin, __resetLiveTwinCache } from '../server/liveTwin.js';
+describe('withLiveTwin (placement sees the in-play record)', () => {
+  const pre = { id: 'l365-1', home_team: 'Feyenoord', away_team: 'Inter', start_time: '2026-11-03T20:00:00Z', status: 'LIVE', live_status: null, live_minute: null, live_home_score: null, live_away_score: null, markets_json: 'M' };
+  const live = { id: 'l365-2', home_team: 'Feyenoord', away_team: 'Inter Milan', start_time: '2026-11-03T20:00:00Z', status: 'LIVE', live_status: '2H', live_minute: 58, live_home_score: 0, live_away_score: 3, live_minute_updated_at: 5 };
+  it('lays the live score and minute over the pre-match row and keeps its own markets', async () => {
+    __resetLiveTwinCache();
+    const merged = await withLiveTwin(async () => ({ rows: [live] }), pre);
+    expect(merged.live_home_score).toBe(0);
+    expect(merged.live_away_score).toBe(3);
+    expect(merged.live_minute).toBe(58);
+    expect(merged.live_source_id).toBe('l365-2');
+    expect(merged.markets_json).toBe('M');
+  });
+  it('returns the same row when there is no twin', async () => {
+    __resetLiveTwinCache();
+    const merged = await withLiveTwin(async () => ({ rows: [] }), pre);
+    expect(merged).toBe(pre);
+  });
+  it('returns the same row when the record has its own live data', async () => {
+    const own = { ...pre, live_minute: 12, live_home_score: 0, live_away_score: 0 };
+    expect(await withLiveTwin(async () => ({ rows: [live] }), own)).toBe(own);
+  });
+});

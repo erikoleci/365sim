@@ -8,6 +8,7 @@ import { getBetBlockReason, describeBlockReason, nextEventKind, eventOrderOrdina
 import { readNextEventCounters, readLiveCorners, readLiveCards, liveFairProbability, liveEdge } from '../matchSettlement.js';
 import { minuteOf } from '../marketPeriods.js';
 import { certainOutcomeReason } from '../liveCertainty.js';
+import { withLiveTwin } from '../liveTwin.js';
 import { loadMatchStats, isStatsMarketName } from '../matchSettlement.js';
 import { findCorrelatedSelections } from '../ticketCorrelation.js';
 import { findConflictingSelection, validateStakeAmount, isLiveEventLocked } from '../betValidation.js';
@@ -235,10 +236,13 @@ router.post('/', wrap(async (req, res) => {
 
   for (const sel of selections) {
     const { rows: matchRows } = await dbq('SELECT * FROM matches_cache WHERE id = $1', [sel.matchId]);
-    const matchRow = matchRows[0];
+    // The ticket is on the pre-match record; the score, minute and events live on its in-play twin. Lay the twin's
+    // live fields over the row so every gate below sees the real match situation (and lookups by id read the twin).
+    const matchRow = matchRows[0] ? await withLiveTwin(dbq, matchRows[0]) : matchRows[0];
     if (!matchRow) {
       return fail(400, { error: `Match ${sel.matchId} not found or no longer available` });
     }
+    if (matchRow.live_source_id) { sel.liveId = matchRow.live_source_id; matchRow.id = matchRow.live_source_id; }
     if (matchRow.status === 'FINISHED' || isStaleLive(matchRow.start_time, matchRow.status)) {
       return fail(400, {
         error: `Match ${matchRow.home_team} vs ${matchRow.away_team} has already finished — betting is closed.`,
@@ -627,7 +631,7 @@ router.post('/', wrap(async (req, res) => {
     for (const sel of verifiedSelections) {
       // "Next goal / corner / card": remember the counter of that kind at this very moment
       const kind = nextEventKind(sel.marketName);
-      const counters = kind ? await readNextEventCounters(client, sel.matchId, kind) : null;
+      const counters = kind ? await readNextEventCounters(client, sel.liveId || sel.matchId, kind) : null;
       await client.query(
         `INSERT INTO bet_selections
           (bet_id, match_id, match_home, match_away, market_id, market_name, selection_id, selection_name, odds, status, placed_at, placed_counts, placed_state)

@@ -38,7 +38,7 @@ import { getMatchesResponseCacheSize } from './routes/matches.js';
 import { startKeepAliveSelfPing } from './keepAlive.js';
 import { startFeedStatsLog } from './feedStats.js';
 import { hydrateBetMatchIds } from './oddsHistoryPolicy.js';
-import { settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult, settleNextEventLegs, settleFirstHalfLegs, settleLostLiveLegs, rebindLegsToLiveTwin, settleOpenLegsOfFinishedMatches } from './matchSettlement.js';
+import { settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult, settleNextEventLegs, settleFirstHalfLegs, settleLostLiveLegs, rebindLegsToLiveRecord, rebindLegsToLiveTwin, settleOpenLegsOfFinishedMatches } from './matchSettlement.js';
 import { settleFromFallback } from './resultsFallback.js';
 import { startClockWriteFlusher } from './clockWrites.js';
 
@@ -400,6 +400,16 @@ async function start() {
       .then(function (r) { if (r.settledLegs) console.log('[settle] first-half sweep: ' + JSON.stringify(r)); })
       .catch(function (e) { console.error('[settle] first-half sweep failed:', e.message); })
       .finally(function () { firstHalfBusy = false; });
+  }, 15 * 1000);
+  // One fixture, two provider records: tickets follow the record that really receives the score and events.
+  let rebindLiveBusy = false;
+  setInterval(function () {
+    if (rebindLiveBusy) return;
+    rebindLiveBusy = true;
+    rebindLegsToLiveRecord()
+      .then(function (r) { if (r.movedLegs) console.log('[settle] legs moved to the in-play record: ' + r.movedLegs); })
+      .catch(function (e) { console.error('[settle] move-to-live-record sweep failed:', e.message); })
+      .finally(function () { rebindLiveBusy = false; });
   }, 15 * 1000);
   // A leg that can no longer win is closed as LOST during the match (EARLY_LOSS_SETTLE=1), not at the final whistle.
   let earlyLossBusy = false;
