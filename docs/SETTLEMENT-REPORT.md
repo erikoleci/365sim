@@ -71,8 +71,8 @@ Tregjet e fshehura (nuk dalin në tabelë, nuk pranojnë baste, nuk hyjnë në r
 
 | Tregu | Çfarë ndodh |
 |---|---|
-| Penallti gjatë ndeshjes | Feed-i nuk jep ngjarje penalltie. Shlyhet me dorë nga admini (skeda **Pezull**), përndryshe mbetet e hapur derisa admini ta mbyllë me dorë (Fituese / Humbëse); rimbursimi automatik është fikur (`UNSETTLED_BET_VOID_AFTER_HOURS=0`). |
-| Çdo bilet që nuk shlyhet për arsye të tjera (të dhëna që mungojnë, format i panjohur, ngjarje pa renditje) | Mbetet e hapur për t'u mbyllur me dorë nga admini (rimbursimi automatik është fikur; mund të ndizet me `UNSETTLED_BET_VOID_AFTER_HOURS` > 0). Askush nuk humbet para, dhe asnjë bilet nuk mbetet i hapur. |
+| Penallti gjatë ndeshjes | Feed-i nuk jep ngjarje penalltie. Shlyhet me dorë nga admini (skeda **Pezull**), përndryshe mbetet e hapur derisa admini ta mbyllë me dorë (Fituese / Humbëse); nuk ka rimbursim automatik. |
+| Çdo bilet që nuk shlyhet për arsye të tjera (të dhëna që mungojnë, format i panjohur, ngjarje pa renditje) | Mbetet e hapur për t'u mbyllur me dorë nga admini (nuk ka rimbursim automatik). Askush nuk humbet para, dhe asnjë bilet nuk mbetet i hapur. |
 
 **Shlyerja me dorë (skeda "Pezull" te admini).** Liston, për ndeshjet e mbaruara, çdo treg dhe selektim që ende ka bileta pezull. Me butonat Fitues / Humbës / Rimburso vendos të gjitha biletat e atij rreshti njëherësh. Thirrja e dytë nuk paguan përsëri.
 

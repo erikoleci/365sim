@@ -38,7 +38,7 @@ import { getMatchesResponseCacheSize } from './routes/matches.js';
 import { startKeepAliveSelfPing } from './keepAlive.js';
 import { startFeedStatsLog } from './feedStats.js';
 import { hydrateBetMatchIds } from './oddsHistoryPolicy.js';
-import { settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult, settleNextEventLegs, settleFirstHalfLegs, settleLostLiveLegs, rebindLegsToLiveRecord, rebindLegsToLiveTwin, settleOpenLegsOfFinishedMatches } from './matchSettlement.js';
+import { settleStuckBets, recoverFinishedWithoutResult, settleNextEventLegs, settleFirstHalfLegs, settleLostLiveLegs, rebindLegsToLiveRecord, rebindLegsToLiveTwin, settleOpenLegsOfFinishedMatches } from './matchSettlement.js';
 import { settleFromFallback } from './resultsFallback.js';
 import { startClockWriteFlusher } from './clockWrites.js';
 
@@ -375,8 +375,7 @@ async function start() {
   // already FINISHED (score known) gets settled, so a ticket can never sit
   // "HAPUR" after the game ended. First run 20s after boot, then every 2 min.
   const runStuckBetSweep = function () {
-    // 1) settle everything a rule can decide, 2) then close what can never be
-    // decided (see voidOverdueLegs) -- so no ticket stays open for good.
+    // Settle everything a rule can decide; what no rule can decide stays open for the admin (no automatic refund).
     rebindLegsToLiveTwin()
       .then(function (r) { if (r.reboundLegs) console.log('[settle] rebind sweep: ' + JSON.stringify(r)); })
       .then(function () { return settleOpenLegsOfFinishedMatches(); })
@@ -385,8 +384,6 @@ async function start() {
       .then(function (r) { if (r.recoveredMatches || r.recoverFailed) console.log('[settle] recovery sweep: ' + JSON.stringify(r)); })
       .then(function () { return settleStuckBets(); })
       .then(function (r) { if (r.settledLegs || r.recomputedBets || r.closedUnsettled) console.log('[settle] stuck-bet sweep: ' + JSON.stringify(r)); })
-      .then(function () { return voidOverdueLegs(); })
-      .then(function (r) { if (r.voidedLegs) console.log('[settle] overdue sweep: ' + JSON.stringify(r)); })
       .catch(function (err) { console.error('[settle] stuck-bet sweep failed:', err.message); });
   };
   setTimeout(runStuckBetSweep, 20 * 1000);

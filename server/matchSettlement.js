@@ -1709,84 +1709,8 @@ export async function recoverFinishedWithoutResult({ now = Date.now() } = {}) {
   return { recoverCandidates: rows.length, recoveredMatches: settledMatches, recoverNotYetReliable: notYetReliable, recoverFailed: failed };
 }
 
-// ---- closure guarantee ------------------------------------------------------
-// A ticket is either still open because its match has not finished yet, or it is
-// closed. It must never sit "HAPUR" for good. Two kinds of leg can still get stuck
-// after everything above: a market no rule can decide (the provider's own naming,
-// manual settlement never done) and a match that never produces a result
-// (postponed, abandoned, dropped by the feed). Once the match is more than
-// UNSETTLED_BET_VOID_AFTER_HOURS past kickoff (OFF by default: a ticket that cannot be decided stays open for the
-// admin / super admin to close by hand as won or lost, it is never refunded on its own), such a leg is VOIDed:
-// it drops out of the ticket (a single bet is refunded, an accumulator is paid on
-// its remaining legs) -- the same treatment a bookmaker gives a postponed match.
-// 0 (the default) disables it. Admins settle these by hand (Fituese / Humbëse on the ticket, or the Pezull panel).
-const UNSETTLED_VOID_AFTER_MS = Math.max(0, Number(process.env.UNSETTLED_BET_VOID_AFTER_HOURS ?? 0)) * 3600 * 1000;
-
-export function isLegOverdue({ matchStart, betCreatedAt }, now, olderThanMs) {
-  if (!(olderThanMs > 0)) return false;
-  const start = Date.parse(matchStart);
-  // No match row any more (cleaned up): fall back to when the ticket was placed.
-  const ref = Number.isFinite(start) ? start : Number(betCreatedAt);
-  return Number.isFinite(ref) && now - ref > olderThanMs;
-}
-
-export async function voidOverdueLegs({ olderThanMs = UNSETTLED_VOID_AFTER_MS, now = Date.now() } = {}) {
-  if (!(olderThanMs > 0)) return { voidedLegs: 0, recomputedBets: 0, disabled: true };
-  const client = await pool.connect();
-  try {
-    const { rows } = await client.query(
-      `SELECT bs.id, bs.bet_id, bs.match_id, bs.market_name, bs.selection_name,
-              m.start_time AS match_start, b.created_at AS bet_created_at
-         FROM bet_selections bs
-         JOIN bets b ON b.id = bs.bet_id AND b.status = 'PENDING'
-         LEFT JOIN matches_cache m ON m.id = bs.match_id
-        WHERE bs.status = 'PENDING'`
-    );
-    let overdue = rows.filter((r) => isLegOverdue({ matchStart: r.match_start, betCreatedAt: r.bet_created_at }, now, olderThanMs));
-    if (overdue.length === 0) return { voidedLegs: 0, recomputedBets: 0 };
-    // A leg on the pre-match record of a match that WAS played (its twin carries the score) is not a postponed match:
-    // refunding it is wrong. Keep it open so the twin sweep settles it from the real result; only a fixture with
-    // no twin result anywhere is refunded.
-    try {
-      const { rows: played } = await client.query(
-        `SELECT id, home_team, away_team, start_time, live_home_score, live_away_score, live_minute, live_minute_updated_at, result_home
-           FROM matches_cache WHERE (live_home_score IS NOT NULL OR result_home IS NOT NULL OR live_minute IS NOT NULL)`
-      );
-      const mine = await client.query(`SELECT id, home_team, away_team, start_time FROM matches_cache WHERE id = ANY($1::text[])`, [overdue.map((o) => o.match_id)]);
-      const byId = new Map(mine.rows.map((r) => [r.id, r]));
-      overdue = overdue.filter((leg) => {
-        const row = byId.get(leg.match_id);
-        const twin = row ? pickLiveTwinRow(row, played) : null;
-        if (twin) console.log('[settle] leg ' + leg.id + ' not refunded: its fixture was played under ' + twin.id + ' (kept open for the twin sweep)');
-        return !twin;
-      });
-    } catch (err) {
-      // never block the sweep on this check: without it the old behaviour applies
-      console.warn('[settle] twin check before refund skipped:', err.message);
-    }
-    if (overdue.length === 0) return { voidedLegs: 0, recomputedBets: 0 };
-
-    const betIds = new Set();
-    await client.query('BEGIN');
-    try {
-      for (const leg of overdue) {
-        await client.query(`UPDATE bet_selections SET status = 'VOID' WHERE id = $1 AND status = 'PENDING'`, [leg.id]);
-        betIds.add(leg.bet_id);
-      }
-      for (const betId of betIds) await recomputeBetStatus(betId, client);
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    }
-    for (const leg of overdue) {
-      console.log('[settle] voided overdue leg (no result/rule ' + Math.round(olderThanMs / 3600000) + 'h after kickoff): match ' + leg.match_id + ' / "' + (leg.market_name || '?') + '" / "' + (leg.selection_name || '?') + '"');
-    }
-    return { voidedLegs: overdue.length, recomputedBets: betIds.size };
-  } finally {
-    client.release();
-  }
-}
+// No automatic refund: a leg that no rule can decide (unknown market, match without a result) stays OPEN until the
+// admin closes it by hand (Fituese / Humbëse on the ticket, or the Pezull panel). Nothing is ever refunded on a timer.
 
 // ---- in-play loss: close a leg the moment it can no longer win --------------------------------------------
 // A leg on a LIVE match is marked LOST (and its ticket with it) as soon as EVERY way the match can still

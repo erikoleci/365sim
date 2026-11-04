@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { readLiveCorners, readLiveCards } from '../matchSettlement.js';
-import { settleMatch, recomputeBetStatus, creditWithLedger, settleStuckBets, voidOverdueLegs, recoverFinishedWithoutResult, explainSettleBlock, wouldSettleNow } from '../matchSettlement.js';
+import { settleMatch, recomputeBetStatus, creditWithLedger, settleStuckBets, recoverFinishedWithoutResult, explainSettleBlock, wouldSettleNow } from '../matchSettlement.js';
 import { missedLiveCycles } from '../london365/liveState.js';
 import { logAudit } from '../auditLog.js';
 import { computeMarketCoverage } from '../marketCoverageScan.js';
@@ -1239,8 +1239,7 @@ router.get('/settle-diagnose', async (req, res) => {
 router.post('/bets/settle-stuck', async (req, res) => {
   const recovered = await recoverFinishedWithoutResult();
   const settled = await settleStuckBets();
-  const closed = await voidOverdueLegs();
-  const result = { ...recovered, ...settled, overdueVoided: closed.voidedLegs, overdueBetsRecomputed: closed.recomputedBets };
+  const result = { ...recovered, ...settled };
   await logAudit(req.user, 'BETS_SETTLE_STUCK', null, result);
   res.json({ ok: true, ...result });
 });
