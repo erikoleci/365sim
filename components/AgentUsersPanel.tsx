@@ -69,6 +69,44 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
 
   useEffect(() => { if (tab === 'users') load(); }, [tab, load]);
 
+  // Live refresh (no spinner, no flicker): the user list every 15 s and the tickets of the expanded user every 8 s,
+  // only while this tab is visible and the previous request has finished.
+  useEffect(() => {
+    if (tab !== 'users') return;
+    let busy = false;
+    const silent = async () => {
+      if (busy || document.visibilityState !== 'visible') return;
+      busy = true;
+      try {
+        const [meRes, perf] = await Promise.all([api.agentFetchMe(), api.agentFetchPerformance()]);
+        setMe(meRes.agent); setUsers(perf);
+        if (onBalanceChangedRef.current) onBalanceChangedRef.current(meRes.agent.balance, meRes.agent.balanceEur ?? 0);
+      } catch { /* the next tick tries again */ } finally { busy = false; }
+    };
+    const timer = window.setInterval(silent, 15000);
+    return () => window.clearInterval(timer);
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab !== 'users' || !expanded) return;
+    let busy = false;
+    const userId = expanded;
+    const timer = window.setInterval(async () => {
+      if (busy || document.visibilityState !== 'visible') return;
+      busy = true;
+      try {
+        const list = await api.agentFetchUserTickets(userId);
+        setTickets((prev) => ({ ...prev, [userId]: list }));
+        setOpenTicket((cur) => {
+          if (!cur) return cur;
+          const tk = list.find((x) => x.id === cur.id);
+          return tk ? { ...cur, status: tk.status, potentialReturn: tk.potentialReturn, legs: tk.selections as any } : cur;
+        });
+      } catch { /* the next tick tries again */ } finally { busy = false; }
+    }, 8000);
+    return () => window.clearInterval(timer);
+  }, [tab, expanded]);
+
   useEffect(() => {
     if (tab !== 'monthly') return;
     api.agentFetchMonthlyReport(monthInput || undefined).then(setMonthly).catch((e) => setError(e.message));

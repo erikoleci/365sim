@@ -48,6 +48,23 @@ export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reload
     return () => clearTimeout(timer);
   }, [panelOpen, isAdmin, loadAdminData]);
 
+  // Live refresh: tickets change all the time (new bets, settlements, early closes), so while the admin screen is
+  // open the lists reload on their own every few seconds. Skipped while the browser tab is hidden and while the
+  // previous reload is still running, so a slow connection never piles requests up.
+  useEffect(() => {
+    if (!isAdmin) return;
+    let busy = false;
+    const tick = async () => {
+      if (busy || document.visibilityState !== 'visible') return;
+      busy = true;
+      try { await loadAdminData(); } finally { busy = false; }
+    };
+    const timer = window.setInterval(tick, 10000);
+    const onVisible = () => { if (document.visibilityState === 'visible') tick(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
+  }, [isAdmin, loadAdminData]);
+
   // The admin picks the role at creation: USER and AGENT are separate tables/permissions server-side.
   const createUser = async (newUser: NewUser) => {
     try {

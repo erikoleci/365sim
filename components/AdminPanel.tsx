@@ -39,6 +39,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
   // Super admin's switch: may normal admins delete tickets? (everybody reads it, only the super admin changes it)
   const [ticketDeletionAllowed, setTicketDeletionAllowed] = useState(true);
   const [settingBusy, setSettingBusy] = useState(false);
+  useEffect(() => {
+    setOpenTicket((cur) => {
+      if (!cur) return cur;
+      const b: any = allBets.find((x: any) => x.id === cur.id);
+      return b ? { ...cur, status: b.status, potentialReturn: b.potentialReturn, legs: b.selections } : cur;
+    });
+  }, [allBets]);
   useEffect(() => { api.adminFetchSettings().then((r) => setTicketDeletionAllowed(r.ticketDeletionAllowed)).catch(() => {}); }, []);
   const toggleTicketDeletion = async () => {
     setSettingBusy(true);
