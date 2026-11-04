@@ -213,6 +213,14 @@ export interface LiveStatistics {
   cards_away: number | null;
   xg_home: number | null;
   xg_away: number | null;
+  yellow_home?: number | null;
+  yellow_away?: number | null;
+  red_home?: number | null;
+  red_away?: number | null;
+  attacks_home?: number | null;
+  attacks_away?: number | null;
+  dangerous_attacks_home?: number | null;
+  dangerous_attacks_away?: number | null;
 }
 
 export interface MatchEvent {

@@ -3,6 +3,7 @@ import { Match, MatchStatus } from '../types';
 import * as api from '../services/api';
 import type { LiveStatistics, MatchEvent } from '../services/api';
 import StadiumPitch from './StadiumPitch';
+import StatRings from './StatRings';
 import { useTickingClock, formatLiveClock } from './MatchCard';
 import { isHalftime, liveMinuteFallback, formatScore, pickClockSource, isLiveClockStale } from '../utils/liveStatus';
 import { LONDON365_EVENT_LABELS, LONDON365_STAT_LABELS } from '../utils/london365Labels';
@@ -59,7 +60,7 @@ const StatBar: React.FC<{ label: string; home: number | null; away: number | nul
   );
 };
 
-const STAT_FIELDS = ['possession_home', 'shots_home', 'shots_on_target_home', 'corners_home', 'cards_home', 'xg_home', 'possession_away', 'shots_away', 'shots_on_target_away', 'corners_away', 'cards_away', 'xg_away'];
+const STAT_FIELDS = ['possession_home', 'shots_home', 'shots_on_target_home', 'corners_home', 'cards_home', 'xg_home', 'attacks_home', 'dangerous_attacks_home', 'attacks_away', 'dangerous_attacks_away', 'possession_away', 'shots_away', 'shots_on_target_away', 'corners_away', 'cards_away', 'xg_away'];
 
 // A market option that IS one of the two teams ("Arsenal", or "Arsenal (-1)" in a handicap) gets that
 // team's crest in front; every other option (1, X, Over 2.5, ...) is drawn exactly as before.
@@ -400,12 +401,10 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
               <div className="text-[10px] text-brand-textMuted uppercase text-center mb-4">
                 {t('Statistika nga burimi i të dhënave — jo verifikim zyrtar')}
               </div>
-              <StatBar label={t(LONDON365_STAT_LABELS.Statistika_ZoterimTopi.replace(' %', ''))} home={liveDetail.statistics.possession_home} away={liveDetail.statistics.possession_away} suffix="%" />
-              <StatBar label={t(LONDON365_STAT_LABELS.Statistika_Goditje_ne_porte)} home={liveDetail.statistics.shots_on_target_home} away={liveDetail.statistics.shots_on_target_away} />
-              <StatBar label={t(LONDON365_STAT_LABELS.Statistika_Goditje_jasht_porte)} home={liveDetail.statistics.shots_home != null && liveDetail.statistics.shots_on_target_home != null ? liveDetail.statistics.shots_home - liveDetail.statistics.shots_on_target_home : null} away={liveDetail.statistics.shots_away != null && liveDetail.statistics.shots_on_target_away != null ? liveDetail.statistics.shots_away - liveDetail.statistics.shots_on_target_away : null} />
-              <StatBar label={t('Korne')} home={liveDetail.statistics.corners_home} away={liveDetail.statistics.corners_away} />
-              <StatBar label={t('Kartonë')} home={liveDetail.statistics.cards_home} away={liveDetail.statistics.cards_away} />
-              <StatBar label="xG" home={liveDetail.statistics.xg_home} away={liveDetail.statistics.xg_away} />
+              <StatRings stats={liveDetail.statistics} />
+              {(liveDetail.statistics.xg_home != null || liveDetail.statistics.xg_away != null) && (
+                <div className="mt-4"><StatBar label="xG" home={liveDetail.statistics.xg_home} away={liveDetail.statistics.xg_away} /></div>
+              )}
             </div>
           )}
         </div>

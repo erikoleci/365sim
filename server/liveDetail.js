@@ -17,6 +17,8 @@
 const TABLE_ONLY = [
   'possession_home', 'possession_away', 'shots_home', 'shots_away', 'shots_on_target_home', 'shots_on_target_away',
   'corners_home', 'corners_away', 'cards_home', 'cards_away', 'xg_home', 'xg_away',
+  'yellow_home', 'yellow_away', 'red_home', 'red_away',
+  'attacks_home', 'attacks_away', 'dangerous_attacks_home', 'dangerous_attacks_away',
 ];
 
 export function buildLiveStatistics(statsRow, cache, now = Date.now(), staleMs = 60000) {

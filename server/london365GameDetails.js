@@ -804,6 +804,21 @@ async function applyGameDetailsNow(raw) {
       [matchId, c1, c2, now]
     );
   }
+  // Attacks / dangerous attacks (provider counters H3/A3 and H4/A4) for the ring stats. Only on change, and on the
+  // first message of a match; a database without the columns just skips it (the rest of the row is unaffected).
+  const hasAttackFields = ['H3', 'A3', 'H4', 'A4'].some((k) => attrs[k] !== undefined && attrs[k] !== '');
+  const prevCtr = cardBaseline && cardBaseline.ctr;
+  if (hasAttackFields && (!prevCtr || ctr.h3 !== prevCtr.h3 || ctr.a3 !== prevCtr.a3 || ctr.h4 !== prevCtr.h4 || ctr.a4 !== prevCtr.a4)) {
+    try {
+      await pool.query(
+        `INSERT INTO live_statistics (match_id, attacks_home, attacks_away, dangerous_attacks_home, dangerous_attacks_away, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (match_id) DO UPDATE SET attacks_home = excluded.attacks_home, attacks_away = excluded.attacks_away,
+           dangerous_attacks_home = excluded.dangerous_attacks_home, dangerous_attacks_away = excluded.dangerous_attacks_away, updated_at = excluded.updated_at`,
+        [matchId, ctr.h3, ctr.a3, ctr.h4, ctr.a4, now]
+      );
+    } catch { /* columns not migrated yet */ }
+  }
   // Possession -- only written when the feed actually sent a value for
   // this tick (hasPossession), and only on change, same as the others.
   if (hasPossession && (posHome !== prevCards.posHome || posAway !== prevCards.posAway)) {
