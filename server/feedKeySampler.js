@@ -71,3 +71,28 @@ export function recordEventFrame(eid, attrs) {
 
 export function getEventFrames() { return frames.slice().reverse(); }
 export function __resetEventFramesForTests() { frames.length = 0; lastFrame.clear(); }
+
+// ---- socket event names ----------------------------------------------------------------------------------
+// The "gamedetails" frames carry team names but no player name. If names travel at all they come in ANOTHER socket.io
+// event. This keeps, per socket and event name, how many packets arrived and the first few samples (truncated), so the
+// super admin can see every event the provider sends and search them for a name. Read-only, bounded, memory only.
+const socketEvents = new Map(); // "socket:event" -> { socket, event, count, samples[] }
+const MAX_EVENT_NAMES = 60;
+export function recordSocketPacket(socketName, data) {
+  const m = /^\d+(?:-\d+)?(?:\/[^,]*,)?(\d*)(\[.*)$/s.exec(String(data || ''));
+  if (!m) return;
+  let event = null;
+  try { const arr = JSON.parse(m[2]); event = typeof arr[0] === 'string' ? arr[0] : null; } catch { const n = /^\["([^"]+)"/.exec(m[2]); event = n ? n[1] : null; }
+  if (!event) return;
+  const id = socketName + ':' + event;
+  let e = socketEvents.get(id);
+  if (!e) {
+    if (socketEvents.size >= MAX_EVENT_NAMES) return;
+    e = { socket: socketName, event, count: 0, samples: [] };
+    socketEvents.set(id, e);
+    console.log('[feed-events] new socket event "' + event + '" on ' + socketName);
+  }
+  e.count++;
+  if (e.samples.length < 3 && e.event !== 'gamedetails') e.samples.push(String(data).slice(0, 600));
+}
+export function getSocketEvents() { return Array.from(socketEvents.values()).sort((a, b) => b.count - a.count); }

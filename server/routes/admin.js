@@ -11,7 +11,7 @@ import { missedLiveCycles } from '../london365/liveState.js';
 import { logAudit } from '../auditLog.js';
 import { computeMarketCoverage } from '../marketCoverageScan.js';
 import { settlementRuleRequired, getBetBlockReason } from '../marketRules.js';
-import { getFeedKeySamples, getEventFrames } from '../feedKeySampler.js';
+import { getFeedKeySamples, getEventFrames, getSocketEvents } from '../feedKeySampler.js';
 import { getRecentErrors } from '../recentErrors.js';
 import { getUnmappedVcReport } from '../vcDeltaSampler.js';
 import { mapEventToMatch } from '../oddsUtils.js';
@@ -1144,7 +1144,7 @@ router.get('/feed-keys', (req, res) => {
 // first, with the fields that changed and their previous values. Open it during a live match to see how a penalty or a
 // scorer's name really arrives.
 router.get('/feed-frames', (req, res) => {
-  res.json({ frames: getEventFrames() });
+  res.json({ frames: getEventFrames(), socketEvents: getSocketEvents() });
 });
 
 

@@ -12,6 +12,7 @@
 //   LONDON365_SOCKET           default https://ecco.socketi355.com:1440
 //   LONDON365_SOCKET_ENABLED   1 (default) or 0
 
+import { recordSocketPacket } from './feedKeySampler.js';
 import pool from './db.js';
 import {
   isLondon365Enabled,
@@ -35,6 +36,20 @@ const SOCKET_ENABLED = (process.env.LONDON365_SOCKET_ENABLED || '1') === '1';
 const GAMEDETAILS_SOCKET_URL = process.env.LONDON365_GAMEDETAILS_SOCKET || 'https://ecco-p2p.socketi355.com:1338';
 const GAMEDETAILS_SOCKET_ENABLED = (process.env.LONDON365_GAMEDETAILS_SOCKET_ENABLED || '1') === '1';
 let gameDetailsSocket = null;
+
+// Diagnostics only: tally every socket.io event name on this socket (engine instance is new after each reconnect).
+function watchSocketEvents(sock, name) {
+  const attach = function () {
+    try {
+      const eng = sock.io && sock.io.engine;
+      if (!eng || eng.__eventWatch) return;
+      eng.__eventWatch = true;
+      eng.on('packet', function (p) { if (p && p.type === 'message') recordSocketPacket(name, p.data); });
+    } catch { /* diagnostics only */ }
+  };
+  sock.on('connect', attach);
+  attach();
+}
 // When the provider's gamedetails socket last delivered anything (the match clock rides on it).
 let lastGameDetailsAt = Date.now();
 // Game ids (bare provider id, no "l365-" prefix) we've asked the
@@ -75,6 +90,7 @@ export async function startLondon365Socket() {
     return;
   }
 
+  watchSocketEvents(socket, 'odds');
   socket.on('connect', function () {
     lastOddsAt = Date.now();
     setLondon365SocketConnected(true);
@@ -328,6 +344,8 @@ export async function startLondon365GameDetailsSocket() {
     }
   }
 
+  // Always on, cheap: remember which socket.io events the provider sends (see feedKeySampler.recordSocketPacket).
+  watchSocketEvents(gameDetailsSocket, 'gamedetails');
   console.log('[london365-gamedetails] starting live-detail socket feed for ' + GAMEDETAILS_SOCKET_URL);
 
   // Safety net: a match can also transition to LIVE purely via the REST

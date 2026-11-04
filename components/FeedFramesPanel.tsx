@@ -6,12 +6,13 @@ import * as api from '../services/api';
 // value, so a penalty shows up as the field that moved at that minute. Refreshes by itself every 5 s.
 const FeedFramesPanel: React.FC = () => {
   const [frames, setFrames] = useState<api.FeedFrame[]>([]);
+  const [events, setEvents] = useState<{ socket: string; event: string; count: number; samples: string[] }[]>([]);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('');
   const [open, setOpen] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    try { setFrames((await api.adminFetchFeedFrames()).frames); setError(''); }
+    try { const r = await api.adminFetchFeedFrames(); setFrames(r.frames); setEvents(r.socketEvents || []); setError(''); }
     catch (e: any) { setError(e?.message || 'Gabim'); }
   }, []);
   useEffect(() => {
@@ -31,6 +32,16 @@ const FeedFramesPanel: React.FC = () => {
         <span className="text-[11px] text-brand-textMuted">{rows.length} / {frames.length} frame-e (rifreskohet vetë, fshihet kur rinis serveri)</span>
       </div>
       <div className="text-[11px] text-brand-textMuted mb-3">Kur ndodh një penallti, gol ose karton, gjej minutën këtu dhe shiko cila fushë ndryshoi. Kopjo frame-in dhe ma dërgo.</div>
+      <div className="rounded bg-black/25 p-2 text-xs mb-3">
+        <div className="font-bold text-white mb-1">Llojet e mesazheve që dërgon ofruesi (emrat e lojtarëve mund të vijnë në një lloj tjetër nga "gamedetails")</div>
+        {events.length === 0 && <div className="text-brand-textMuted">Asnjë ende.</div>}
+        {events.map((e) => (
+          <details key={e.socket + e.event} className="mb-0.5">
+            <summary className="cursor-pointer font-mono">{e.socket} · {e.event} <span className="text-brand-yellow">×{e.count}</span></summary>
+            {e.samples.map((x, i) => <pre key={i} className="mt-1 p-2 rounded bg-black/40 text-[11px] text-white/80 whitespace-pre-wrap break-all">{x}</pre>)}
+          </details>
+        ))}
+      </div>
       {error && <div className="text-red-400 text-xs mb-2">{error}</div>}
       {rows.length === 0 && !error && <div className="text-center text-brand-textMuted text-xs py-8">Asnjë ndryshim ende. Frame-et shfaqen kur një ndeshje live ka një ngjarje.</div>}
       <div className="space-y-1.5">
