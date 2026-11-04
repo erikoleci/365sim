@@ -117,6 +117,8 @@ export const enCore: Record<string, string> = {
   'Zotërim topi': 'Possession',
   'Sulme të rrezikshme': 'Dangerous attacks',
   'Mbyll': 'Close',
+  'Korner': 'Corner',
+  'Korner për': 'Corner for',
   'Vendosur live': 'Booked live',
   'Fillimi i ndeshjes': 'Kick-off',
   'Fundi i ndeshjes': 'Full time',
