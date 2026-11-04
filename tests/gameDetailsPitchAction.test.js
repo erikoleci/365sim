@@ -114,6 +114,20 @@ describe('applyGameDetails - the pitch action reaches (and stays on) the client'
     expect(lastAction()).toMatchObject({ side: 'away', kind: 'possession' });
   });
 
+  it('an injury stays up for the minimum time even when attack / possession frames follow at once; a later stoppage replaces it', async () => {
+    await applyGameDetails(tag({ ...base, T: '1200', VC: '11025' })); // home injury
+    expect(lastAction()).toMatchObject({ side: 'home', kind: 'injury' });
+    vi.advanceTimersByTime(1000);
+    await applyGameDetails(tag({ ...base, T: '1201', VC: '21001' })); // away attack right after
+    expect(lastAction()).toMatchObject({ side: 'home', kind: 'injury' });
+    vi.advanceTimersByTime(2000);
+    await applyGameDetails(tag({ ...base, T: '1203', VC: '11004' })); // a corner is a stoppage too: replaces it
+    expect(lastAction()).toMatchObject({ side: 'home', kind: 'corner' });
+    vi.advanceTimersByTime(9000); // past the minimum time
+    await applyGameDetails(tag({ ...base, T: '1212', VC: '21001' }));
+    expect(lastAction()).toMatchObject({ side: 'away', kind: 'attack' });
+  });
+
   it('the final whistle (VC 1017) shows "Ndeshja mbaroi" with no side and the old action does not come back', async () => {
     await applyGameDetails(tag({ ...base, T: '5300', VC: '11004' }));
     vi.advanceTimersByTime(1000);
@@ -129,7 +143,7 @@ describe('applyGameDetails - the pitch action reaches (and stays on) the client'
     vi.advanceTimersByTime(1000);
     await applyGameDetails(tag({ ...base, T: '601', C1: '1', C2: '0' })); // home corner read from the counter
     expect(lastAction()).toMatchObject({ side: 'home', kind: 'corner' });
-    vi.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(9000); // the corner has been up for its minimum time
     await applyGameDetails(tag({ ...base, T: '602', C1: '1', C2: '0', VC: '21024' })); // then an away throw-in
     expect(lastAction()).toMatchObject({ side: 'away', kind: 'throw_in' });
     vi.advanceTimersByTime(1000);
@@ -137,9 +151,9 @@ describe('applyGameDetails - the pitch action reaches (and stays on) the client'
     expect(lastAction()).toMatchObject({ side: 'away', kind: 'throw_in' });
   });
 
-  it('a newer action replaces the held one', async () => {
+  it('a newer action replaces the held one (after a stoppage has had its minimum time)', async () => {
     await applyGameDetails(tag({ ...base, T: '600', VC: '11004' }));
-    vi.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(9000);
     await applyGameDetails(tag({ ...base, T: '601', VC: '21001' }));
     expect(lastAction()).toMatchObject({ side: 'away', kind: 'attack' });
   });

@@ -110,6 +110,9 @@ const LIVE_TICK_RESYNC_MS = 5000;
 // made it flash ("it shows once and goes away until the next websocket"). So it is held until a
 // newer action replaces it; this is only the safety cap for a feed that goes quiet (default 2 min).
 const ACTION_HOLD_MS = Number(process.env.LIVE_ACTION_HOLD_MS) > 0 ? Number(process.env.LIVE_ACTION_HOLD_MS) : 120000;
+// Stoppage actions are kept on the pitch at least this long (default 8 s) before an attack / possession code may replace them.
+const ACTION_STICKY_MS = Number(process.env.LIVE_ACTION_STICKY_MS) > 0 ? Number(process.env.LIVE_ACTION_STICKY_MS) : 8000;
+const STICKY_KINDS = new Set(['corner', 'free_kick', 'injury', 'substitution', 'goal', 'penalty']);
 // VC codes we could not decode, logged once each so they can be labelled in
 // liveAction.js (never guessed). Bounded so a noisy feed cannot grow it.
 const unmappedVcSeen = new Set();
@@ -560,16 +563,29 @@ async function applyGameDetailsNow(raw) {
   // message does not wipe the pitch. A newer action always replaces it (decoded VC first, then a moved counter);
   // the final whistle (VC 1017) clears it, the match is over.
   let held = cardBaseline && cardBaseline.held && cardBaseline.held.until > nowMs ? cardBaseline.held : null;
+  // Stoppages (corner, free kick / foul, injury, substitution, goal) stay on the pitch for a minimum time even when the
+  // very next frames already carry an attack or possession code -- the provider's own pitch keeps them up, ours used to
+  // flash them for a frame. Only another stoppage replaces one inside that window.
+  const incoming = decodedAction && decodedAction.kind !== 'half_time' && decodedAction.kind !== 'full_time' ? decodedAction
+    : (foundNow ? { side: foundNow.side, kind: foundNow.kind, label: foundNow.label } : null);
+  const stickyActive = Boolean(held && held.stickyUntil > nowMs && STICKY_KINDS.has(held.action.kind));
+  const suppressed = stickyActive && Boolean(incoming) && !STICKY_KINDS.has(incoming.kind);
   if (decodedAction && decodedAction.kind === 'full_time') {
     held = null;
-  } else if (decodedAction && decodedAction.kind !== 'half_time') {
-    held = { action: decodedAction, until: nowMs + ACTION_HOLD_MS };
-  } else if (foundNow) {
-    held = { action: { side: foundNow.side, kind: foundNow.kind, label: foundNow.label }, until: nowMs + ACTION_HOLD_MS };
+  } else if (incoming && !suppressed) {
+    const same = held && held.action.kind === incoming.kind && held.action.side === incoming.side;
+    held = {
+      action: incoming,
+      until: nowMs + ACTION_HOLD_MS,
+      // the same code repeating on every tick does not extend the window
+      stickyUntil: same ? held.stickyUntil : (STICKY_KINDS.has(incoming.kind) ? nowMs + ACTION_STICKY_MS : 0),
+    };
   }
-  const liveAction = decodedAction
-    || (foundNow ? { side: foundNow.side, kind: foundNow.kind, label: foundNow.label } : null)
-    || (held ? held.action : null);
+  const liveAction = suppressed
+    ? held.action
+    : (decodedAction
+      || (foundNow ? { side: foundNow.side, kind: foundNow.kind, label: foundNow.label } : null)
+      || (held ? held.action : null));
   const actionKey = (a) => (a ? a.side + ':' + a.kind : null);
   // Half time. VC=1015 is the provider's own "pushim" (hand-labelled capture);
   // it is held for HT_HOLD_MS so one quiet tick cannot flip the clients back to a
