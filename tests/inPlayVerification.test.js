@@ -69,8 +69,9 @@ describe('getBetBlockReason in play', () => {
     const pre = live({ status: 'UPCOMING', live_status: null, start_time: new Date(NOW + 3600000).toISOString(), live_home_score: null, live_away_score: null });
     expect(['NO_PLAYER_DATA', 'NO_SETTLEMENT_RULE']).toContain(block(pre, 'Shënuesi i golit', 'Mbappe'));
     expect(['NO_PLAYER_DATA', 'NO_SETTLEMENT_RULE']).toContain(block(pre, 'Goli i Parë', 'Mbappe'));
-    expect(block(pre, 'Goli i Parë', 'Lens')).toBeNull();
-    expect(block(pre, 'Goli i Parë', 'Asnjë')).toBeNull();
+    // "Goli i Parë" is the first-scorer (player) market of the feed: it has no automatic settlement rule, so it stays closed
+    expect(block(pre, 'Goli i Parë', 'Lens')).toBe('NO_SETTLEMENT_RULE');
+    expect(block(pre, 'Goli i Parë', 'Asnjë')).toBe('NO_SETTLEMENT_RULE');
   });
   it('hidePlayerOdds drops player markets and player options but keeps the sides', async () => {
     const { hidePlayerOdds } = await import('../server/marketRules.js');
