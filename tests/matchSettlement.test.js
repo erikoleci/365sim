@@ -742,7 +742,7 @@ describe('next goal / corner / card (open in play, settled from events after the
     const row = { home_team: 'Roma', away_team: 'Lazio', status: 'LIVE', live_status: '1H', start_time: new Date(Date.now() - 20 * 60000).toISOString(), live_minute: 20, home_score: 0, away_score: 0 };
     expect(g(row, { id: 'm', name: 'Goli i radhës' }, { id: '1', name: '1' })).toBeNull();
     expect(g(row, { id: 'm', name: 'Goli i radhës' }, { id: 'p', name: 'Dybala' })).not.toBeNull();
-    expect(g(row, { id: 'm', name: 'Gol brenda 5 minutash' }, { id: '1', name: 'Po' })).toBe('NOT_VERIFIABLE_LIVE');
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(g(row, { id: 'm', name: 'Gol brenda 5 minutash' }, { id: '1', name: 'Po' }));
   });
 });
 

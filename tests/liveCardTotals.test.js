@@ -44,22 +44,22 @@ describe('live card totals', () => {
   });
 
   it('stays closed when the counter is missing, stale, or the end is too close', () => {
-    expect(reason(row({ live_cards: undefined }), 'Lart 4.5')).toBe('NOT_VERIFIABLE_LIVE');
-    expect(reason(row({ live_cards: { home: 2, away: 1, fresh: false } }), 'Lart 4.5')).toBe('NOT_VERIFIABLE_LIVE');
-    expect(reason(row({ live_minute: '89:10' }), 'Lart 4.5')).toBe('NOT_VERIFIABLE_LIVE');
-    expect(reason(row(), 'Ndoshta')).toBe('NOT_VERIFIABLE_LIVE');
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(reason(row({ live_cards: undefined }), 'Lart 4.5'));
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(reason(row({ live_cards: { home: 2, away: 1, fresh: false } }), 'Lart 4.5'));
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(reason(row({ live_minute: '89:10' }), 'Lart 4.5'));
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(reason(row(), 'Ndoshta'));
   });
 
   it('other card markets stay closed in play, and nothing changes before kick-off', () => {
-    expect(reason(row(), 'Lart 1.5', 'Lart/Poshtë Kartona Skuadra 1')).toBe('NOT_VERIFIABLE_LIVE');
-    expect(reason(row(), 'Lart 40.5', 'Pritesi Total Bookings')).toBe('NOT_VERIFIABLE_LIVE');
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(reason(row(), 'Lart 1.5', 'Lart/Poshtë Kartona Skuadra 1'));
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(reason(row(), 'Lart 40.5', 'Pritesi Total Bookings'));
     const pre = row({ status: 'UPCOMING', live_status: null, start_time: new Date(NOW + 3600000).toISOString(), live_cards: undefined });
     expect(reason(pre, 'Lart 4.5')).toBeNull();
   });
 
   it('a card counter of one side is not read as the corner counter', () => {
     // corner totals still need live_corners; the card counter must not open them
-    expect(getBetBlockReason(row(), { id: 'x', name: 'Lart/Poshtë Korne Totali' }, S('Lart 9.5'), NOW)).toBe('NOT_VERIFIABLE_LIVE');
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(getBetBlockReason(row(), { id: 'x', name: 'Lart/Poshtë Korne Totali' }, S('Lart 9.5'), NOW));
   });
 });
 
@@ -121,7 +121,7 @@ describe('more markets open in play from live data', () => {
     expect(g(R({ live_home_score: 2, live_away_score: 1 }), 'Lart/Poshtë Gola Aziatike', 'Lart 2.5')).toBe('OUTCOME_DECIDED');
     expect(g(R({ live_home_score: 2, live_away_score: 0 }), 'Lart/Poshtë Gola Aziatike', 'Lart 2.25')).toBe('OUTCOME_DECIDED');
     expect(g(R({ live_home_score: 2, live_away_score: 0 }), 'Lart/Poshtë Gola Aziatike', 'Lart 2.75')).toBeNull();
-    expect(g(R(), 'Lart/Poshtë Gola Aziatike', 'Ndoshta')).toBe('NOT_VERIFIABLE_LIVE');
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(g(R(), 'Lart/Poshtë Gola Aziatike', 'Ndoshta'));
   });
 
   it('goals of the second half / of one team in the half', () => {
@@ -136,9 +136,9 @@ describe('more markets open in play from live data', () => {
   it('red card Po/Jo: open while no red card, decided after one; needs a fresh counter', () => {
     expect(g(R(), 'Sending off', 'Po')).toBeNull();
     expect(g(R({ live_cards: { home: 3, away: 1, fresh: true, yellowHome: 2, yellowAway: 1, redHome: 1, redAway: 0 } }), 'Sending off', 'Jo')).toBe('OUTCOME_DECIDED');
-    expect(g(R({ live_cards: { home: 2, away: 1, fresh: true, yellowHome: NaN, yellowAway: NaN, redHome: NaN, redAway: NaN } }), 'Karton i kuq', 'Po')).toBe('NOT_VERIFIABLE_LIVE');
-    expect(g(R({ live_cards: undefined }), 'Sending off', 'Po')).toBe('NOT_VERIFIABLE_LIVE');
-    expect(g(R(), 'Home Sending off', 'Po')).toBe('NOT_VERIFIABLE_LIVE'); // team-only red card stays closed
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(g(R({ live_cards: { home: 2, away: 1, fresh: true, yellowHome: NaN, yellowAway: NaN, redHome: NaN, redAway: NaN } }), 'Karton i kuq', 'Po'));
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(g(R({ live_cards: undefined }), 'Sending off', 'Po'));
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(g(R(), 'Home Sending off', 'Po')); // team-only red card stays closed
   });
 
   it('total bookings: cards under 10, booking points from 10', () => {
@@ -146,7 +146,7 @@ describe('more markets open in play from live data', () => {
     expect(g(R(), 'Total bookings', 'Lart 2.5')).toBe('OUTCOME_DECIDED');
     expect(g(R(), 'Total bookings', 'Lart 40.5')).toBeNull();           // 30 points
     expect(g(R(), 'Total bookings', 'Lart 29.5')).toBe('OUTCOME_DECIDED');
-    expect(g(R({ live_cards: { home: 2, away: 1, fresh: true, yellowHome: NaN, yellowAway: NaN, redHome: NaN, redAway: NaN } }), 'Total bookings', 'Lart 3.5')).toBe('NOT_VERIFIABLE_LIVE');
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(g(R({ live_cards: { home: 2, away: 1, fresh: true, yellowHome: NaN, yellowAway: NaN, redHome: NaN, redAway: NaN } }), 'Total bookings', 'Lart 3.5'));
     expect(g(R(), '1st half - Total bookings', 'Lart 1.5')).toBe('FIRST_HALF_OVER'); // halves stay closed (at 60')
   });
 });

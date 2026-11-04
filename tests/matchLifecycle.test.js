@@ -31,7 +31,7 @@ const mocks = vi.hoisted(function () {
       state.held = [];
       return { rows: [] };
     }
-    if (s.startsWith("SELECT m.id, m.start_time, m.live_home_score")) {
+    if (s.startsWith("SELECT m.id, m.status, m.start_time, m.live_home_score")) {
       const pending = new Set(legs.filter((l) => l.status === 'PENDING').map((l) => l.match_id));
       return {
         rows: [...matches.values()].filter((m) =>

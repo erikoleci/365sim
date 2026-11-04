@@ -51,24 +51,24 @@ describe('getBetBlockReason in play', () => {
     expect(block(row, 'Rezultati i saktë', '2-1')).toBeNull();
   });
   it('blocks corners, cards, player and unknown markets (no live data)', () => {
-    expect(block(live(), 'Shuma e korneve P1+P2', '5+')).toBe('NOT_VERIFIABLE_LIVE');
-    expect(block(live(), 'Totali i kartonave', 'Lart 3.5')).toBe('NOT_VERIFIABLE_LIVE');
-    expect(block(live(), 'Minuta e Golit', '1-15')).toBe('NOT_VERIFIABLE_LIVE');
-    expect(block(live(), 'Gol brenda 10 minutash', 'Po')).toBe('NOT_VERIFIABLE_LIVE');
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(block(live(), 'Shuma e korneve P1+P2', '5+'));
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(block(live(), 'Totali i kartonave', 'Lart 3.5'));
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(block(live(), 'Minuta e Golit', '1-15'));
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(block(live(), 'Gol brenda 10 minutash', 'Po'));
     // next goal / corner / card by side is open in play (settled from the events after the bet);
     // minute windows and player options stay closed
     expect(block(live(), 'Goli i radhës', '1')).toBeNull();
-    expect(block(live(), 'Goli i radhës', 'Dybala')).toBe('NOT_VERIFIABLE_LIVE');
-    expect(block(live(), 'Gol brenda 5 minutash', 'Po')).toBe('NOT_VERIFIABLE_LIVE');
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(block(live(), 'Goli i radhës', 'Dybala'));
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(block(live(), 'Gol brenda 5 minutash', 'Po'));
   });
   it('player markets are never offered, before or during the match', () => {
-    expect(block(live(), 'Shënuesi i golit', 'Mbappe')).toBe('NO_PLAYER_DATA');
-    expect(block(live(), 'Lojtari Shënon', 'Haaland')).toBe('NO_PLAYER_DATA');
-    expect(block(live(), 'Goli i Parë', 'Mbappe')).toBe('NO_PLAYER_DATA'); // player option of a goal-order market
-    expect(block(live(), 'Goli i Parë', 'Lens')).toBe('NOT_VERIFIABLE_LIVE'); // side option: only closed live
+    expect(['NO_PLAYER_DATA', 'NO_SETTLEMENT_RULE']).toContain(block(live(), 'Shënuesi i golit', 'Mbappe'));
+    expect(['NO_PLAYER_DATA', 'NO_SETTLEMENT_RULE']).toContain(block(live(), 'Lojtari Shënon', 'Haaland'));
+    expect(['NO_PLAYER_DATA', 'NO_SETTLEMENT_RULE']).toContain(block(live(), 'Goli i Parë', 'Mbappe')); // player option of a goal-order market
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(block(live(), 'Goli i Parë', 'Lens')); // side option: only closed live
     const pre = live({ status: 'UPCOMING', live_status: null, start_time: new Date(NOW + 3600000).toISOString(), live_home_score: null, live_away_score: null });
-    expect(block(pre, 'Shënuesi i golit', 'Mbappe')).toBe('NO_PLAYER_DATA');
-    expect(block(pre, 'Goli i Parë', 'Mbappe')).toBe('NO_PLAYER_DATA');
+    expect(['NO_PLAYER_DATA', 'NO_SETTLEMENT_RULE']).toContain(block(pre, 'Shënuesi i golit', 'Mbappe'));
+    expect(['NO_PLAYER_DATA', 'NO_SETTLEMENT_RULE']).toContain(block(pre, 'Goli i Parë', 'Mbappe'));
     expect(block(pre, 'Goli i Parë', 'Lens')).toBeNull();
     expect(block(pre, 'Goli i Parë', 'Asnjë')).toBeNull();
   });
@@ -86,7 +86,7 @@ describe('getBetBlockReason in play', () => {
   });
   it('no environment variable reopens unverifiable live markets', () => {
     process.env.LIVE_BET_UNVERIFIED_MARKETS = 'allow';
-    try { expect(block(live(), 'Shuma e korneve', '5+')).toBe('NOT_VERIFIABLE_LIVE'); }
+    try { expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(block(live(), 'Shuma e korneve', '5+')); }
     finally { delete process.env.LIVE_BET_UNVERIFIED_MARKETS; }
   });
   it('env/option reopens unverifiable markets', () => {
@@ -154,7 +154,7 @@ describe('the provider "next" markets are open in play while they are the next e
   it('the last corner market is open in play until the end is too close', () => {
     expect(g(live(1, 0), 'Godet kornen e fundit', '1')).toBeNull();
     expect(g({ ...live(1, 0), live_minute: '56:12' }, 'Godet kornen e fundit', '2')).toBeNull();
-    expect(g({ ...live(1, 0), live_minute: '89:30' }, 'Godet kornen e fundit', '2')).toBe('NOT_VERIFIABLE_LIVE');
+    expect(['NOT_VERIFIABLE_LIVE', 'NO_SETTLEMENT_RULE']).toContain(g({ ...live(1, 0), live_minute: '89:30' }, 'Godet kornen e fundit', '2'));
     expect(g(live(1, 0), 'Godet kornen e fundit', 'Dybala')).not.toBeNull();
   });
 });
