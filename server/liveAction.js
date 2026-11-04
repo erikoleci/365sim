@@ -28,7 +28,7 @@
 //                                       Odd 2 v Viking 2, no team digit)
 //   1017           ndeshja mbaroi      (full time; seen with T=5400, TT=0, SC=3-3,
 //                                       Central Stallions v Deren FC, no team digit)
-//   11236          goditje denimi      (penalty kick; seen with T=4827, same match)
+//   11236          goditje denimi      (= gjuajtje e lirë / faull, same thing: owner-confirmed 2026-11-04; NOT a penalty)
 // NOTE: the side of 21002 and 21007 is taken from the same first-digit rule;
 // no counter moved with those two to double-check it.
 
@@ -47,7 +47,9 @@ const ACTIONS = {
   '1024': { kind: 'throw_in', label: 'Rivënie anësore' },
   '1025': { kind: 'injury', label: 'Dëmtim' }, // player injured (owner-confirmed; seen VC="1025", FC Van v Gandzasar Kapan, T=3717)
   '1234': { kind: 'offside', label: 'Pozicion jashtë loje' },
-  '1236': { kind: 'penalty', label: 'Goditje dënimi' }, // owner-labelled: VC="11236", Central Stallions v Deren FC, T=4827
+  // "Goditje dënimi" is the same as a free kick / foul (owner-confirmed 2026-11-04), so it is NOT a penalty: no betting pause,
+  // no PENALTY event. The real penalty code is still unknown (find it in the admin VC codes panel).
+  '1236': { kind: 'free_kick', label: 'Gjuajtje e lirë' }, // VC="11236", Central Stallions v Deren FC, T=4827
 };
 
 const LABELS = Object.fromEntries(Object.values(ACTIONS).map((a) => [a.kind, a.label]));

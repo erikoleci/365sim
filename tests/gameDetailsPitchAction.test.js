@@ -103,12 +103,12 @@ describe('applyGameDetails - the pitch action reaches (and stays on) the client'
     expect(lastAction()).toBeNull();
   });
 
-  it('a penalty (VC 11236) stays on screen until the next action', async () => {
+  it('a free kick / "goditje dënimi" (VC 11236) stays on screen until the next action', async () => {
     await applyGameDetails(tag({ ...base, T: '4827', VC: '11236' }));
-    expect(lastAction()).toEqual({ side: 'home', kind: 'penalty', label: 'Goditje dënimi' });
+    expect(lastAction()).toEqual({ side: 'home', kind: 'free_kick', label: 'Gjuajtje e lirë' });
     vi.advanceTimersByTime(30000);
     await applyGameDetails(tag({ ...base, T: '4857' }));
-    expect(lastAction()).toMatchObject({ side: 'home', kind: 'penalty' });
+    expect(lastAction()).toMatchObject({ side: 'home', kind: 'free_kick' });
     vi.advanceTimersByTime(1000);
     await applyGameDetails(tag({ ...base, T: '4858', VC: '21002' }));
     expect(lastAction()).toMatchObject({ side: 'away', kind: 'possession' });

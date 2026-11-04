@@ -10,7 +10,7 @@ describe('gamedetails frames labelled by the owner (Central Stallions v Deren FC
     ['1017', 5400, { side: null, kind: 'full_time', label: 'Ndeshja mbaroi' }],          // ndeshja mbaroi
     ['11024', 4608, { side: 'home', kind: 'throw_in', label: 'Rivënie anësore' }],        // rivene ansore
     ['21007', 4679, { side: 'away', kind: 'back_line_restart', label: 'Rivënie fundore' }], // rivene fundore
-    ['11236', 4827, { side: 'home', kind: 'penalty', label: 'Goditje dënimi' }],          // goditje denimi
+    ['11236', 4827, { side: 'home', kind: 'free_kick', label: 'Gjuajtje e lirë' }],          // goditje denimi = free kick, not a penalty
     ['21002', 5098, { side: 'away', kind: 'possession', label: 'Zotëron topin' }],        // zoteron topin
     ['11013', 5336, { side: 'home', kind: 'substitution', label: 'Ndërrim' }],            // nderrim
     ['21011', 4679, { side: 'away', kind: 'shot_on_target', label: 'Goditje në portë' }], // goditje ne porte
