@@ -54,9 +54,11 @@ describe('buildCoverageReport', () => {
 describe('BET_REQUIRE_SETTLEMENT_RULE', () => {
   afterEach(() => { delete process.env.BET_REQUIRE_SETTLEMENT_RULE; });
   const upcoming = { start_time: new Date(Date.now() + 3600e3).toISOString(), status: 'UPCOMING', home_team: 'A', away_team: 'B' };
-  it('is off by default: unknown markets can still be bet on before the match', () => {
+  it('is ON by default: a market with no rule is refused, BET_REQUIRE_SETTLEMENT_RULE=0 switches it off', () => {
+    expect(settlementRuleRequired()).toBe(true);
+    expect(getBetBlockReason(upcoming, { id: 'x', name: 'Diçka e Panjohur' }, { id: 'a', name: 'Po' })).toBe('NO_SETTLEMENT_RULE');
+    process.env.BET_REQUIRE_SETTLEMENT_RULE = '0';
     expect(settlementRuleRequired()).toBe(false);
-    expect(getBetBlockReason(upcoming, { id: 'x', name: 'Diçka e Panjohur' }, { id: 'a', name: 'Po' })).toBeNull();
   });
   it('when on: a market with no rule is refused even before kick-off, a known one is not', () => {
     process.env.BET_REQUIRE_SETTLEMENT_RULE = '1';

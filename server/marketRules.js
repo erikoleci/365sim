@@ -61,10 +61,11 @@ export const BOTH_HALVES_NAMES = new Set([
 // options are not plain sides. Settled from the half-time score and who scored first.
 // "Shenon golin e trete|peste (skuadra)" (the Nth goal of the match) and "Shenon Golin e 1|2 Pjesa1" (the Nth goal of the first half):
 // options 1 / X / 2 = the team that scores that goal / no such goal. Settled from the logged goal order (goalOrder.sides).
+const NTH_GOAL_WORDS = { trete: 3, katert: 4, peste: 5, gjashte: 6, shtate: 7, tete: 8, nente: 9, dhjete: 10 };
 export function nthGoalSpec(nameNorm) {
-  const m = String(nameNorm || '').match(/^shenon golin e (?:(trete|peste)(?: \(?skuadra\)?)?|(1|2) pjesa ?1)$/);
+  const m = String(nameNorm || '').match(/^shenon golin e (?:(trete|katert|peste|gjashte|shtate|tete|nente|dhjete)(?: \(?skuadra\)?)?|(\d+) pjesa ?1)$/);
   if (!m) return null;
-  return m[1] ? { n: m[1] === 'trete' ? 3 : 5, half1: false } : { n: Number(m[2]), half1: true };
+  return m[1] ? { n: NTH_GOAL_WORDS[m[1]], half1: false } : { n: Number(m[2]), half1: true };
 }
 export const FIRST_GOAL_H1_NAMES = new Set(['goli i pare ne pjesen e pare', 'gola i pare ne pjesen e pare', 'goli i pare ne pjese te pare', 'first goal 1st half']);
 // Markets decided by the ORDER of match events (the feed gives corner / card / goal events with their

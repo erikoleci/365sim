@@ -84,3 +84,25 @@ describe('markets whose options carry no line are hidden (nothing to settle)', (
     for (const n of ['Lart/Poshte Gola Aziatik ne Pjesen 1', 'Lart/Poshtë Gola Aziatikë', 'Numri i Golave Pritesi', 'Sa Gola Shënohen në Pjesën e 1re']) expect(isHiddenMarketName(n)).toBe(false);
   });
 });
+
+describe('more ordinal goal markets (2026-11-04 audit)', () => {
+  it('Nth goal of the match up to the tenth, and of the first half for any N', () => {
+    expect(nthGoalSpec('shenon golin e katert (skuadra)')).toEqual({ n: 4, half1: false });
+    expect(nthGoalSpec('shenon golin e gjashte (skuadra)')).toEqual({ n: 6, half1: false });
+    expect(nthGoalSpec('shenon golin e nente (skuadra)')).toEqual({ n: 9, half1: false });
+    expect(nthGoalSpec('shenon golin e 3 pjesa1')).toEqual({ n: 3, half1: true });
+    expect(nthGoalSpec('shenon golin e 5 pjesa1')).toEqual({ n: 5, half1: true });
+  });
+  it('third / fourth goal before a minute have a rule and decide from the goal timeline', async () => {
+    const { parseProviderMarket, providerOutcome } = await import('../server/providerMarkets.js');
+    const spec = parseProviderMarket('goli i trete shenohet perpara min. 70:00');
+    expect(spec).toEqual({ type: 'goal_before', k: 3, side: null, minute: 70 });
+    const tl = [{ minute: 10, side: 'HOME' }, { minute: 40, side: 'AWAY' }, { minute: 66, side: 'HOME' }];
+    expect(providerOutcome(spec, 'po', { goalTimeline: tl })).toBe('WON');
+    expect(providerOutcome(spec, 'jo', { goalTimeline: tl })).toBe('LOST');
+    const s4 = parseProviderMarket('goli i katert shenohet perpara min. 80:00');
+    expect(providerOutcome(s4, 'po', { goalTimeline: tl })).toBe('LOST');
+    const t3 = parseProviderMarket('goli i trete i udhetuesit perpara min. 70:00');
+    expect(providerOutcome(t3, 'jo', { goalTimeline: tl })).toBe('WON');
+  });
+});

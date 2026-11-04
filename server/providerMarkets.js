@@ -11,6 +11,7 @@
 // (the minute in progress, floor(T/60)+1), so "before N:00" means a label <= N.
 // providerOutcome returns 'WON' | 'LOST' | null (null = cannot be decided safely, stays PENDING).
 
+const GOAL_ORDINAL = { pare: 1, dyte: 2, trete: 3, katert: 4 };
 const side = (w) => (/^pritesi/.test(w) ? 'HOME' : 'AWAY');
 
 export function parseProviderMarket(nameNorm) {
@@ -24,10 +25,10 @@ export function parseProviderMarket(nameNorm) {
   m = n.match(/^gol ?\/ ?jo ?gol ne p([12])$/);
   if (m) return { type: 'btts_half', half: Number(m[1]) };
   if (n === 'rezultat final/gol-gol') return { type: 'result_btts' };
-  m = n.match(/^goli i (pare|dyte) shenohet perpara min\.? (\d+):00$/);
-  if (m) return { type: 'goal_before', k: m[1] === 'pare' ? 1 : 2, side: null, minute: Number(m[2]) };
-  m = n.match(/^goli i (pare|dyte) i (pritesit|udhetuesit) perpara min\.? (\d+):00$/);
-  if (m) return { type: 'goal_before', k: m[1] === 'pare' ? 1 : 2, side: side(m[2]), minute: Number(m[3]) };
+  m = n.match(/^goli i (pare|dyte|trete|katert) shenohet perpara min\.? (\d+):00$/);
+  if (m) return { type: 'goal_before', k: GOAL_ORDINAL[m[1]], side: null, minute: Number(m[2]) };
+  m = n.match(/^goli i (pare|dyte|trete|katert) i (pritesit|udhetuesit) perpara min\.? (\d+):00$/);
+  if (m) return { type: 'goal_before', k: GOAL_ORDINAL[m[1]], side: side(m[2]), minute: Number(m[3]) };
   m = n.match(/^rf-(\d+)min$/);
   if (m) return { type: 'rf_at', minute: Number(m[1]) };
   if (/^rezultati final gola \d+\+$/.test(n)) return { type: 'result_goals' };

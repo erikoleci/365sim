@@ -126,7 +126,7 @@ se buxheti, rifreskohen të gjitha në çdo cikël.
 | `LIVE_BET_ODDS_MAX_AGE_MS` | `120000` | bastet refuzohen nëse tregjet jo-1X2 s'janë rifreskuar kaq kohë (`0` = fikur) |
 | `PG_POOL_MAX` | `7` | lidhje DB për instancë (2 instanca gjatë deploy duhet të futen nën limitin e pooler-it) |
 | `SETTLE_SCORE_WITHOUT_CLOCK_AFTER_MIN` | `130` (`0` = off) | një rezultat i ruajtur pa orë ndeshjeje besohet vetëm pas kaq minutash nga fillimi (p.sh. `130`). Pa të, bileta e një ndeshjeje pa orë rri hapur deri te rimbursimi 24h. Shiko `/api/admin/settle-diagnose` para se ta ndezësh |
-| `BET_REQUIRE_SETTLEMENT_RULE` | çaktivizuar | `1` = refuzo (dhe shfaq të kyçur) çdo treg pa rregull settlement-i automatik, para ndeshjes dhe gjatë saj. Garanton që asnjë biletë e pranuar nuk mbetet pa mënyrë vendosjeje; shiko `/api/admin/market-coverage` para se ta ndezësh |
+| `BET_REQUIRE_SETTLEMENT_RULE` | aktiv (`0` e fik) | `1` = refuzo (dhe shfaq të kyçur) çdo treg pa rregull settlement-i automatik, para ndeshjes dhe gjatë saj. Garanton që asnjë biletë e pranuar nuk mbetet pa mënyrë vendosjeje; shiko `/api/admin/market-coverage` para se ta ndezësh |
 
 ### Mjete diagnostikuese për adminin
 
