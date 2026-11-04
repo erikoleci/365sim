@@ -4,6 +4,7 @@ import type { Bet } from '../types';
 
 // Player side of Support: write a problem (optionally tag one of your tickets and one of its matches), read the answers.
 // Answers come from "Support": the player is never told which admin wrote them.
+const FIELD = 'w-full rounded-lg border border-brand-divider bg-brand-bg text-white placeholder:text-brand-textMuted px-3 py-2 text-sm outline-none focus:border-brand-yellow [color-scheme:dark]';
 const when = (ms: number) => new Date(ms).toLocaleString(undefined, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 const Compose: React.FC<{ myBets: Bet[]; initialBetId?: string | null; onCreated: (id: string) => void; onCancel: () => void }> = ({ myBets, initialBetId, onCreated, onCancel }) => {
@@ -12,7 +13,10 @@ const Compose: React.FC<{ myBets: Bet[]; initialBetId?: string | null; onCreated
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const bet = myBets.find((b) => b.id === betId);
+  const [fresh, setFresh] = useState<Bet[] | null>(null);
+  useEffect(() => { let on = true; api.fetchMyBets().then((b) => { if (on) setFresh(b); }).catch(() => {}); return () => { on = false; }; }, []);
+  const bets = fresh && fresh.length ? fresh : myBets;
+  const bet = bets.find((b) => b.id === betId);
   useEffect(() => setLegIdx(-1), [betId]);
   const send = async () => {
     if (!text.trim() || busy) return;
@@ -30,22 +34,22 @@ const Compose: React.FC<{ myBets: Bet[]; initialBetId?: string | null; onCreated
         <p>Për shembull: bileta është mbyllur gabim, bileta është ende e hapur ndërsa ndeshja ka mbaruar, serveri ka ngecur ose rezultati nuk përditësohet. Zgjidh biletën më poshtë që ta shohim shpejt.</p>
       </div>
       <label className="block text-[11px] text-brand-textMuted">Bileta (opsionale)
-        <select value={betId} onChange={(e) => setBetId(e.target.value)} className="input w-full mt-1">
+        <select value={betId} onChange={(e) => setBetId(e.target.value)} className={FIELD + " mt-1"}>
           <option value="">— pa biletë —</option>
-          {myBets.slice(0, 60).map((b) => (
+          {bets.slice(0, 60).map((b) => (
             <option key={b.id} value={b.id}>#{b.ticketNo ?? b.id.slice(-6)} · {b.selections.length > 1 ? `${b.selections.length}-Fish` : 'Bast i thjeshtë'} · {b.status}</option>
           ))}
         </select>
       </label>
       {bet && bet.selections.length > 0 && (
         <label className="block text-[11px] text-brand-textMuted">Ndeshja e biletës (opsionale)
-          <select value={legIdx} onChange={(e) => setLegIdx(Number(e.target.value))} className="input w-full mt-1">
+          <select value={legIdx} onChange={(e) => setLegIdx(Number(e.target.value))} className={FIELD + " mt-1"}>
             <option value={-1}>— e gjithë bileta —</option>
             {bet.selections.map((l, i) => <option key={i} value={i}>{l.matchHome} - {l.matchAway} · {l.selectionName}</option>)}
           </select>
         </label>
       )}
-      <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={2000} rows={5} placeholder="Shkruaj këtu…" className="input w-full" />
+      <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={2000} rows={5} placeholder="Shkruaj këtu…" className={FIELD} />
       {err && <div className="text-red-400 text-xs">{err}</div>}
       <div className="flex gap-2">
         <button onClick={onCancel} className="flex-1 border border-brand-divider text-brand-text py-2 rounded font-bold">Anulo</button>
@@ -87,7 +91,7 @@ const Conversation: React.FC<{ id: string; onBack: () => void }> = ({ id, onBack
         <div ref={bottom} />
       </div>
       <div className="flex gap-2 pt-2 border-t border-brand-divider">
-        <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={2000} rows={2} placeholder="Shkruaj një mesazh…" className="input flex-1" />
+        <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={2000} rows={2} placeholder="Shkruaj një mesazh…" className={FIELD + " flex-1"} />
         <button onClick={send} disabled={busy || !text.trim()} className="bg-brand-yellow text-brand-bg px-4 rounded font-bold disabled:opacity-50">Dërgo</button>
       </div>
     </div>

@@ -69,7 +69,7 @@ const Thread: React.FC<{ id: string; isSuper: boolean; onBack: () => void }> = (
         <div ref={bottom} />
       </div>
       <div className="flex gap-2 pt-2 border-t border-brand-divider">
-        <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={2000} rows={2} placeholder="Përgjigju lojtarit… (ai nuk sheh emrin tënd)" className="input flex-1" />
+        <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={2000} rows={2} placeholder="Përgjigju lojtarit… (ai nuk sheh emrin tënd)" className="flex-1 rounded-lg border border-brand-divider bg-brand-bg text-white placeholder:text-brand-textMuted px-3 py-2 text-sm outline-none focus:border-brand-yellow [color-scheme:dark]" />
         <button onClick={send} disabled={busy || !text.trim()} className="bg-brand-yellow text-brand-bg px-4 rounded font-bold disabled:opacity-50">Dërgo</button>
       </div>
     </div>
