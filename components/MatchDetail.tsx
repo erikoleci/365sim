@@ -297,47 +297,50 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
       <button onClick={onClose} aria-label={t('Kthehu')} className="md:hidden fixed bottom-4 left-4 z-40 flex items-center gap-1 bg-brand-yellow text-black font-bold text-sm px-4 min-h-[48px] rounded-full shadow-2xl border-2 border-white">
         <span aria-hidden="true">←</span> {t('Kthehu')}
       </button>
-      {/* Match Header */}
-      <div className="bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] bg-brand-headerDark/30 p-6 relative border-b border-brand-divider">
-        <button onClick={onClose} className="absolute top-4 left-4 text-brand-textMuted hover:text-white text-xs font-bold flex items-center gap-1">
+      {/* Match Header: compact. League + clock on one line, the score on ONE row (small crest + name each side), then the pitch.
+          The old header stacked a big league label, a clock pill, a huge crest + 2xl name per team and a 3xl score above
+          the pitch, which left little room for the markets on a phone. */}
+      <div className="bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] bg-brand-headerDark/30 px-2 py-2 sm:px-4 sm:py-3 relative border-b border-brand-divider">
+        <button onClick={onClose} className="hidden md:flex absolute top-3 left-4 text-brand-textMuted hover:text-white text-xs font-bold items-center gap-1">
           ‹ Soccer
         </button>
-        
-        <div className="mt-4 text-center">
-             <div className="text-xs text-brand-textMuted uppercase tracking-wider mb-2">{leagueLabel}</div>
-             {isLive && (
-               <div className={`inline-block mb-2 text-xs font-bold px-3 py-1 rounded-full ${isHalftime(match) ? 'bg-brand-yellow text-black' : 'bg-brand-accent/90 text-black'}`}>
-                 {isHalftime(match) ? t('Pushim') : headerClock ? formatLiveClock(headerClock) : liveMinuteFallback(match)}
-                 {isLiveClockStale(match) && <span title={t('Pa përditësim nga provider-i')} className="ml-1 text-amber-400">●</span>}
-               </div>
-             )}
-             {isLive && (
-               <div className="mb-4">
-                 <StadiumPitch match={match} stats={liveDetail?.statistics ?? null} flash={cardFlash} />
-               </div>
-             )}
-             <div className="flex justify-center items-center gap-8">
-                 <div className="flex flex-col items-center gap-1">
-                   <TeamLogo name={match.homeTeam} league={match.league} providerLogo={match.homeTeamLogo} size="xl" />
-                   <div className="text-2xl font-bold text-white">{match.homeTeam}</div>
-                 </div>
-                 <div className="text-3xl text-brand-yellow font-mono">
-                    {isFinished
-                      ? `${match.score?.home} - ${match.score?.away}`
-                      : isLive
-                        ? `${formatScore(match.liveHomeScore)} - ${formatScore(match.liveAwayScore)}`
-                        : 'v'}
-                 </div>
-                 <div className="flex flex-col items-center gap-1">
-                   <TeamLogo name={match.awayTeam} league={match.league} providerLogo={match.awayTeamLogo} size="xl" />
-                   <div className="text-2xl font-bold text-white">{match.awayTeam}</div>
-                 </div>
-             </div>
-             {isFinished && (
-                <div className="mt-2 text-xs text-brand-accent">
-                    FT | HT: {match.score?.htHome}-{match.score?.htAway} | Corners: {match.score?.homeCorners}-{match.score?.awayCorners}
-                </div>
-             )}
+        <div className="text-center">
+          <div className="flex items-center justify-center gap-2 mb-1.5">
+            <span className="text-[10px] sm:text-xs text-brand-textMuted uppercase tracking-wider truncate">{leagueLabel}</span>
+            {isLive && (
+              <span className={`shrink-0 text-[11px] font-bold px-2 py-0.5 rounded-full ${isHalftime(match) ? 'bg-brand-yellow text-black' : 'bg-brand-accent/90 text-black'}`}>
+                {isHalftime(match) ? t('Pushim') : headerClock ? formatLiveClock(headerClock) : liveMinuteFallback(match)}
+                {isLiveClockStale(match) && <span title={t('Pa përditësim nga provider-i')} className="ml-1 text-amber-400">●</span>}
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-4 max-w-[640px] mx-auto">
+            <div className="flex items-center justify-end gap-2 min-w-0">
+              <div className="text-sm sm:text-lg font-bold text-white text-right leading-tight break-words min-w-0">{match.homeTeam}</div>
+              <TeamLogo name={match.homeTeam} league={match.league} providerLogo={match.homeTeamLogo} size={28} />
+            </div>
+            <div className="text-xl sm:text-2xl text-brand-yellow font-mono font-bold whitespace-nowrap px-1">
+              {isFinished
+                ? `${match.score?.home} - ${match.score?.away}`
+                : isLive
+                  ? `${formatScore(match.liveHomeScore)} - ${formatScore(match.liveAwayScore)}`
+                  : 'v'}
+            </div>
+            <div className="flex items-center justify-start gap-2 min-w-0">
+              <TeamLogo name={match.awayTeam} league={match.league} providerLogo={match.awayTeamLogo} size={28} />
+              <div className="text-sm sm:text-lg font-bold text-white text-left leading-tight break-words min-w-0">{match.awayTeam}</div>
+            </div>
+          </div>
+          {isLive && (
+            <div className="mt-2">
+              <StadiumPitch match={match} stats={liveDetail?.statistics ?? null} flash={cardFlash} />
+            </div>
+          )}
+          {isFinished && (
+            <div className="mt-2 text-xs text-brand-accent">
+              FT | HT: {match.score?.htHome}-{match.score?.htAway} | Corners: {match.score?.homeCorners}-{match.score?.awayCorners}
+            </div>
+          )}
         </div>
       </div>
 
