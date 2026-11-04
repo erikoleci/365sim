@@ -39,3 +39,13 @@ describe('isLostForSure (in-play loss)', () => {
     expect(sureOutcome(leg('m-h2h', 'Match Winner', 'HOME'), { h: 3, a: 0 })).toBe(null);
   });
 });
+
+describe('canSettleFromLiveScore: frozen clock projected forward', () => {
+  it('a match frozen at 61 for 35 minutes can be settled, one silent for 10 minutes cannot', async () => {
+    const { canSettleFromLiveScore } = await import('../server/matchSettlement.js');
+    const now = Date.now();
+    const base = { live_home_score: 0, live_away_score: 2, live_minute: "61'", start_time: new Date(now - 100 * 60000).toISOString() };
+    expect(canSettleFromLiveScore({ ...base, live_minute_updated_at: now - 35 * 60000 }, now)).toBe(true);
+    expect(canSettleFromLiveScore({ ...base, live_minute_updated_at: now - 10 * 60000 }, now)).toBe(false);
+  });
+});

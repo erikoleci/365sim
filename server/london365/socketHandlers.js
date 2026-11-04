@@ -95,7 +95,7 @@ export async function markLondon365GameEnded(gameId) {
   if (!isTrackedGame(id)) return 0; // never imported: nothing to end (was a SELECT + UPDATE per message)
   return withDbLock(id, async () => {
     const { rows } = await pool.query(
-      'SELECT live_home_score, live_away_score, live_minute, start_time FROM matches_cache WHERE id = $1', [id]
+      'SELECT live_home_score, live_away_score, live_minute, live_minute_updated_at, start_time FROM matches_cache WHERE id = $1', [id]
     );
     const res = await pool.query(
       `UPDATE matches_cache SET status = 'FINISHED', live_status = 'ended' WHERE id = $1 AND status = 'LIVE'`,

@@ -1630,6 +1630,7 @@ export async function settleOpenLegsOfFinishedMatches() {
 // Anything weaker stays PENDING; nothing is settled on an invented or early score.
 export const SETTLE_MIN_ELAPSED_MS = 105 * 60 * 1000;
 const SETTLE_MIN_CLOCK_MINUTE = 88;
+const PROJECTED_END_MINUTE = 92; // clock minute + silence since its last update
 
 // SETTLE_SCORE_WITHOUT_CLOCK_AFTER_MIN (default 130; 0 = off): a match whose provider score is stored but whose
 // clock never was (the feed gave a result and no minute) is NOT settled by default, because such a score
@@ -1657,6 +1658,11 @@ export function canSettleFromLiveScore(row, now = Date.now()) {
   }
   const minute = minuteOf(row.live_minute);
   if (minute != null && minute >= SETTLE_MIN_CLOCK_MINUTE) return true;
+  // The clock froze (the feed stopped sending minutes) and the match then left the feed: project the clock forward from
+  // the moment it was last updated. A match frozen at 61' that has been silent for 31+ minutes is over -- without this
+  // its tickets waited for the 105 minute / 3 hour fallbacks.
+  const clockStamp = Number(row.live_minute_updated_at);
+  if (minute != null && Number.isFinite(clockStamp) && clockStamp > 0 && minute + (now - clockStamp) / 60000 >= PROJECTED_END_MINUTE) return true;
   const kickoff = Date.parse(row.start_time);
   return Number.isFinite(kickoff) && now - kickoff >= SETTLE_MIN_ELAPSED_MS;
 }

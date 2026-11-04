@@ -306,14 +306,19 @@ export async function syncLondon365LiveOnce() {
     bump('endDetection.ran');
     const endQueryStartedAt = Date.now();
     const { rows } = await pool.query(
-      "SELECT id, live_home_score, live_away_score, live_minute, start_time, fetched_at FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
+      "SELECT id, live_home_score, live_away_score, live_minute, live_minute_updated_at, start_time, fetched_at FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
     );
     retainLiveKnown(rows.map((r) => r.id), endQueryStartedAt);
     for (const row of rows) {
       // A match the provider still lists as live 3h+ after kickoff (frozen clock, never flipped to ended)
       // is over in practice: treat it like one that left the feed so its tickets close.
       const kickoffMs = Date.parse(row.start_time);
-      const overdue = Number.isFinite(kickoffMs) && Date.now() - kickoffMs >= 180 * 60000 && hasRealLiveResult(row);
+      // ... or whose clock has been silent for 20+ minutes and, projected forward, is past full time (frozen at 61' for
+      // 31+ min): the provider stopped sending minutes, the match is over in practice.
+      const lastMinute = parseInt(String(row.live_minute || ''), 10);
+      const silentMs = Date.now() - Number(row.live_minute_updated_at || 0);
+      const stalledPastEnd = Number.isFinite(lastMinute) && Number(row.live_minute_updated_at) > 0 && silentMs >= 20 * 60000 && lastMinute + silentMs / 60000 >= 92;
+      const overdue = ((Number.isFinite(kickoffMs) && Date.now() - kickoffMs >= 180 * 60000) || stalledPastEnd) && hasRealLiveResult(row);
       if (liveIds.has(row.id) && !overdue) {
         missedLiveCycles.delete(row.id);
         continue;
