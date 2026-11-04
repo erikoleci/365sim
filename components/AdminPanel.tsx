@@ -542,6 +542,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                 <table className="w-full min-w-[640px] text-left text-sm text-brand-text">
                   <thead className="bg-brand-bg text-brand-textMuted text-xs uppercase sticky top-0">
                     <tr>
+                      <th className="p-3">#</th>
                       <th className="p-3">Time</th>
                       <th className="p-3">User</th>
                       <th className="p-3">Match</th>
@@ -555,13 +556,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                   </thead>
                   <tbody className="divide-y divide-brand-divider">
                     {allBets.length === 0 ? (
-                        <tr><td colSpan={9} className="p-8 text-center text-brand-textMuted">No bets placed yet.</td></tr>
+                        <tr><td colSpan={10} className="p-8 text-center text-brand-textMuted">No bets placed yet.</td></tr>
                     ) : (
                         allBets.sort((a,b) => b.timestamp - a.timestamp).map(bet => {
                             const user = users.find(u => u.id === bet.userId);
                             return (
                                 <tr key={bet.id} className="hover:bg-brand-bg/50 cursor-pointer" title="Hap biletën"
                                     onClick={() => setOpenTicket({ id: bet.id, ticketNo: bet.ticketNo, createdAt: bet.timestamp, status: bet.status, type: bet.type, stake: bet.stake, totalOdds: bet.totalOdds, potentialReturn: bet.potentialReturn, currency: bet.currency, user: user ? user.username : undefined, legs: bet.selections })}>
+                                    <td className="p-3 text-xs font-bold text-brand-yellow tabular-nums whitespace-nowrap">{bet.ticketNo != null ? `#${bet.ticketNo}` : '–'}</td>
                                     <td className="p-3 text-xs text-brand-textMuted">{new Date(bet.timestamp).toLocaleString()}</td>
                                     <td className="p-3">
                                         <div className="flex items-center gap-1">
