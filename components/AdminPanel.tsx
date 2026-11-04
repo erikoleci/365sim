@@ -561,7 +561,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                             const user = users.find(u => u.id === bet.userId);
                             return (
                                 <tr key={bet.id} className="hover:bg-brand-bg/50 cursor-pointer" title="Hap biletën"
-                                    onClick={() => setOpenTicket({ id: bet.id, createdAt: bet.timestamp, status: bet.status, type: bet.type, stake: bet.stake, totalOdds: bet.totalOdds, potentialReturn: bet.potentialReturn, currency: bet.currency, user: user ? user.username : undefined, legs: bet.selections })}>
+                                    onClick={() => setOpenTicket({ id: bet.id, ticketNo: bet.ticketNo, createdAt: bet.timestamp, status: bet.status, type: bet.type, stake: bet.stake, totalOdds: bet.totalOdds, potentialReturn: bet.potentialReturn, currency: bet.currency, user: user ? user.username : undefined, legs: bet.selections })}>
                                     <td className="p-3 text-xs text-brand-textMuted">{new Date(bet.timestamp).toLocaleString()}</td>
                                     <td className="p-3">
                                         <div className="flex items-center gap-1">

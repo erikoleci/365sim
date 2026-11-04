@@ -149,6 +149,8 @@ export interface BetSelectionItem {
 
 export interface Bet {
   id: string;
+  /** Sequential ticket number (#1, #2, ...), the one people see and quote. */
+  ticketNo?: number;
   userId: string;
   type: 'SINGLE' | 'ACCUMULATOR';
   selections: BetSelectionItem[];

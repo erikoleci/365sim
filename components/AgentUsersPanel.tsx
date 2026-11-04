@@ -327,7 +327,7 @@ const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanc
                         <div className="space-y-2 max-h-[420px] overflow-y-auto">
                           {tickets[u.id].map((tk) => (
                             <div key={tk.id} className="border border-[#444] rounded p-2 bg-brand-panel cursor-pointer hover:border-brand-yellow/60" title={t('Hap biletën')}
-                              onClick={() => setOpenTicket({ id: tk.id, createdAt: tk.createdAt, status: tk.status, type: tk.type, stake: tk.stake, totalOdds: tk.totalOdds, potentialReturn: tk.potentialReturn, currency: tk.currency, user: u.name || u.username, legs: tk.selections })}>
+                              onClick={() => setOpenTicket({ id: tk.id, ticketNo: tk.ticketNo, createdAt: tk.createdAt, status: tk.status, type: tk.type, stake: tk.stake, totalOdds: tk.totalOdds, potentialReturn: tk.potentialReturn, currency: tk.currency, user: u.name || u.username, legs: tk.selections })}>
                               <div className="flex justify-between text-xs mb-1">
                                 <span className="text-brand-textMuted">{t('{date} - Stake: {stake} - Kuota: {odds}', { date: dateFmt(tk.createdAt), stake: money(tk.stake) + (tk.currency === 'EUR' ? ' €' : ' L'), odds: tk.totalOdds })}</span>
                                 <span className={'font-bold ' + (statusColor[tk.status] || '')}>{tk.status}</span>

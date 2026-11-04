@@ -293,6 +293,7 @@ export async function fetchMyBets(): Promise<Bet[]> {
 function mapServerBet(b: any): Bet {
   return {
     id: b.id,
+    ticketNo: b.ticket_no == null ? undefined : Number(b.ticket_no),
     userId: b.user_id,
     type: b.type,
     stake: b.stake,
@@ -552,7 +553,7 @@ export interface AgentTicketSelection {
   odds: number; status: string;
 }
 export interface AgentTicket {
-  id: string; type: string; stake: number; totalOdds: number; potentialReturn: number;
+  id: string; ticketNo?: number | null; type: string; stake: number; totalOdds: number; potentialReturn: number;
   status: string; createdAt: number; currency?: 'ALL' | 'EUR'; selections: AgentTicketSelection[];
 }
 export async function agentFetchUserTickets(userId: string) {

@@ -10,6 +10,7 @@ import MatchTimeline, { TimelineState } from './MatchTimeline';
 // One ticket in a shape every screen can fill: the user's own bets, the admin's table, the agent's lists.
 export interface TicketView {
   id: string;
+  ticketNo?: number | null;
   createdAt: number;
   status: string;
   type?: string;
@@ -99,7 +100,7 @@ const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => vo
       <div className="bg-brand-panel border border-brand-divider rounded-lg shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 p-4 border-b border-brand-divider">
           <div className="min-w-0">
-            <div className="font-bold text-white">{kind} <span className="text-brand-textMuted font-normal text-xs">#{ticket.id.slice(-8)}</span></div>
+            <div className="font-bold text-white">{kind} <span className="text-brand-textMuted font-normal text-xs">#{ticket.ticketNo ?? ticket.id.slice(-8)}</span></div>
             <div className="text-xs text-brand-textMuted tabular-nums">{when}{ticket.user ? ` · ${ticket.user}` : ''}</div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
