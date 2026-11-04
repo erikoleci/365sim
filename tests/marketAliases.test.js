@@ -106,3 +106,10 @@ describe('more ordinal goal markets (2026-11-04 audit)', () => {
     expect(providerOutcome(t3, 'jo', { goalTimeline: tl })).toBe('WON');
   });
 });
+
+describe('markets with no settlement rule are hidden (audit 2026-11-04)', () => {
+  it('hides the three families the feed cannot settle', () => {
+    for (const n of ['Menyra Golit te 3-te', 'Goditje Total Pritesi - 10.5', 'Goditje Total Udhetuesi - 19.5', 'L/P GPP 6.5', 'L/P GPU 5.5']) expect(isHiddenMarketName(n)).toBe(true);
+    for (const n of ['Rezultat Final', 'Numri i Golave Pritesi', 'Lart/Poshtë Korne']) expect(isHiddenMarketName(n)).toBe(false);
+  });
+});
