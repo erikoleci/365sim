@@ -1,20 +1,36 @@
-import React from 'react';
+import React, { useId } from 'react';
 
 // Small inline-SVG icons for the live pitch (no external image files).
 
-export const BallIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
-  <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-    <circle cx="12" cy="12" r="11" fill="#fff" stroke="#222" strokeWidth="1.2" />
-    <polygon points="12,6.2 16.2,9.2 14.6,14.2 9.4,14.2 7.8,9.2" fill="#222" />
-    <g stroke="#222" strokeWidth="1.1" strokeLinecap="round">
-      <line x1="12" y1="6.2" x2="12" y2="1.4" />
-      <line x1="16.2" y1="9.2" x2="21" y2="7.6" />
-      <line x1="14.6" y1="14.2" x2="17.8" y2="19" />
-      <line x1="9.4" y1="14.2" x2="6.2" y2="19" />
-      <line x1="7.8" y1="9.2" x2="3" y2="7.6" />
-    </g>
-  </svg>
-);
+export const BallIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => {
+  const id = useId().replace(/:/g, '');
+  const patch = '#1b1d22';
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <defs>
+        <radialGradient id={`bl-${id}`} cx="36%" cy="30%" r="78%">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="0.55" stopColor="#eceff3" />
+          <stop offset="1" stopColor="#aab1bb" />
+        </radialGradient>
+        <clipPath id={`bc-${id}`}><circle cx="12" cy="12" r="11" /></clipPath>
+      </defs>
+      <circle cx="12" cy="12" r="11" fill={`url(#bl-${id})`} />
+      <g clipPath={`url(#bc-${id})`} fill={patch}>
+        <polygon points="12,7.4 15.6,10 14.2,14.2 9.8,14.2 8.4,10" />
+        <polygon points="12,-0.6 15,1.6 12,4.2 9,1.6" />
+        <polygon points="25,8 25.6,13.4 21.6,14.4 19.4,10.6 21.4,7.2" />
+        <polygon points="-1,8 -1.6,13.4 2.4,14.4 4.6,10.6 2.6,7.2" />
+        <polygon points="6.4,25 9.4,20.6 14.6,20.6 17.6,25" />
+      </g>
+      <g stroke="#3a3f48" strokeWidth="0.9" strokeLinecap="round" fill="none" opacity="0.85">
+        <path d="M12 7.4V4.2M15.6 10l3.8-2.4M14.2 14.2l2.6 3.8M9.8 14.2l-2.6 3.8M8.4 10 4.6 7.6" />
+      </g>
+      <circle cx="12" cy="12" r="10.6" fill="none" stroke="rgba(0,0,0,0.55)" strokeWidth="0.9" />
+      <ellipse cx="8.6" cy="6.6" rx="3.4" ry="2" fill="rgba(255,255,255,0.55)" transform="rotate(-30 8.6 6.6)" />
+    </svg>
+  );
+};
 
 // Corner flag on its pole.
 export const CornerFlagIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-7' }) => (

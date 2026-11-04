@@ -37,12 +37,11 @@ describe('hidden markets', () => {
     for (const n of ['Overtime & goal', 'Winning method', 'Will there be a penalty shootout']) {
       expect(isHiddenMarketName(n)).toBe(true);
     }
-    // offered again: penalty kicks are logged as PENALTY events and settled in extraMarkets.js
-    expect(isHiddenMarketName('A do te kete penallti gjate ndeshjes?')).toBe(false);
-    expect(isHiddenMarketName('Will there be a penalty')).toBe(false);
-    // only "Po" / "Yes" is on the coupon, "Jo" / "No" never
+    // hidden too: the feed's penalty code is unknown, so the market can be neither closed in time nor settled
+    expect(isHiddenMarketName('A do te kete penallti gjate ndeshjes?')).toBe(true);
+    expect(isHiddenMarketName('Will there be a penalty')).toBe(true);
     const m = { id: 'pen', name: 'A do te kete penallti gjate ndeshjes?', options: [{ id: 'Po', name: 'Po', odd: 3 }, { id: 'Jo', name: 'Jo', odd: 1.3 }] };
-    expect(hidePlayerOdds([m], 'A', 'B')[0].options.map((o) => o.id)).toEqual(['Po']);
+    expect(hidePlayerOdds([m], 'A', 'B')).toEqual([]);
     expect(isUnofferedNoBetOption(m.name, { id: 'Jo', name: 'Jo' })).toBe(true);
     expect(isUnofferedNoBetOption(m.name, { id: 'Po', name: 'Po' })).toBe(false);
     expect(isUnofferedNoBetOption('Will there be a penalty', { id: 'No', name: 'No' })).toBe(true);

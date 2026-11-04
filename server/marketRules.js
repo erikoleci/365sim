@@ -225,10 +225,10 @@ const PLAYER_MARKET = /\b(lojtar\w*|shenues\w*|golashenues\w*|autor\w*|scorers?|
 export const isPlayerMarketName = (name) => PLAYER_MARKET.test(norm(name));
 // Markets the board never offers and the coverage report never lists (no way to settle them from our data).
 // "A do te kete kohe shtese?" / "Will there be extra time" / "Overtime & goal" / "Winning method": no extra-time data
-// in the feed. "Will there be a penalty shootout": no shootout events. ("A do te kete penallti gjate ndeshjes?" is offered again: penalty kicks are logged as PENALTY events and the market is settled in extraMarkets.js.)
+// in the feed. "Will there be a penalty shootout": no shootout events. ("A do te kete penallti gjate ndeshjes?" / "Will there be a penalty" is hidden too (2026-11-04): the feed's penalty code is unknown, so no PENALTY event is logged and the market could neither be closed at the right moment nor settled; tickets already placed on it stay and are decided by hand.)
 // The last three: live-only markets whose options come without a line ("Lart" / "Poshte" only, seen on 40+ live matches), so
 // no ticket on them could ever be decided. Hidden like the extra-time / penalty markets.
-const HIDDEN_MARKET = /^(fitohet loja (mbas penallt|ne shtese)|menyra e fitores|a do te kete kohe shtese|will there be (an )?extra time\b|overtime\b|winning method\b|will there be an? penalty shootout|sa gola do shenohen nga ekipi (vendas|udhetues)$|lart\/poshte gola aziatike ne pjesen e 1re$)/;
+const HIDDEN_MARKET = /^(fitohet loja (mbas penallt|ne shtese)|menyra e fitores|a do te kete kohe shtese|will there be (an )?extra time\b|overtime\b|winning method\b|will there be an? penalty( shootout)?\??$|a do te kete penallti gjate ndeshjes\??$|sa gola do shenohen nga ekipi (vendas|udhetues)$|lart\/poshte gola aziatike ne pjesen e 1re$)/;
 export const isHiddenMarketName = (name) => HIDDEN_MARKET.test(norm(name));
 // "Home no bet" (option 1: home win = won, draw = refund, away win = lost) and "Away no bet" (option 2: the same for the
 // away side). Only that one option has a confirmed meaning; every other option of these markets (X, or the other side)

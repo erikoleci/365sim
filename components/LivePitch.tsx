@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { Match, MatchStatus } from '../types';
 import type { LiveStatistics } from '../services/api';
 import { formatLiveStatus, isHalftime, formatScore, pickClockSource } from '../utils/liveStatus';
@@ -89,8 +89,15 @@ const VIGNETTE = 'radial-gradient(130% 120% at 50% 45%, rgba(0,0,0,0) 55%, rgba(
 // round, goals sit in the run-off), so circles are circles at any width.
 const LINE = 'rgba(255,255,255,0.78)';
 
-const PitchLines: React.FC = () => (
+const PitchLines: React.FC = () => {
+  const uid = useId().replace(/:/g, '');
+  return (
   <svg viewBox="0 0 110 73" className="absolute inset-0 w-full h-full" aria-hidden="true">
+    <defs>
+      <pattern id={`net-${uid}`} width="0.55" height="0.55" patternUnits="userSpaceOnUse">
+        <path d="M0 0L0.55 0.55M0.55 0L0 0.55" stroke="rgba(255,255,255,0.7)" strokeWidth="0.07" fill="none" />
+      </pattern>
+    </defs>
     <g fill="none" stroke={LINE} strokeWidth="0.38" strokeLinejoin="round">
       <rect x="2.5" y="2.5" width="105" height="68" />
       <line x1="55" y1="2.5" x2="55" y2="70.5" />
@@ -113,13 +120,89 @@ const PitchLines: React.FC = () => (
       <circle cx="13.5" cy="36.5" r="0.5" />
       <circle cx="96.5" cy="36.5" r="0.5" />
     </g>
-    {/* goals in the run-off */}
-    <g fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.7)" strokeWidth="0.3">
-      <rect x="0.4" y="32.84" width="2.1" height="7.32" />
-      <rect x="107.5" y="32.84" width="2.1" height="7.32" />
-    </g>
+    {/* goals in the run-off: posts, crossbar and a net that narrows towards the back (seen from above, in perspective) */}
+    {[{ front: 2.5, back: 0.15 }, { front: 107.5, back: 109.85 }].map((g, i) => (
+      <g key={i}>
+        <polygon points={`${g.front},32.84 ${g.back},33.7 ${g.back},39.3 ${g.front},40.16`} fill={`url(#net-${uid})`} stroke="rgba(255,255,255,0.75)" strokeWidth="0.22" strokeLinejoin="round" />
+        <polygon points={`${g.front},32.84 ${g.back},33.7 ${g.back},39.3 ${g.front},40.16`} fill="rgba(0,0,0,0.22)" />
+        <line x1={g.front} y1="32.84" x2={g.front} y2="40.16" stroke="#fff" strokeWidth="0.42" strokeLinecap="round" />
+        <circle cx={g.front} cy="32.84" r="0.36" fill="#fff" />
+        <circle cx={g.front} cy="40.16" r="0.36" fill="#fff" />
+      </g>
+    ))}
+  </svg>
+  );
+};
+
+// Players: drawn as small figures that stand in formation and slide with the play (the whole block shifts toward the ball,
+// the nearest man of the team on the ball steps up to it). Decorative: the feed has no player positions.
+type Role = 'gk' | 'def' | 'mid' | 'fwd';
+const SHIFT: Record<Role, number> = { gk: 0.08, def: 0.55, mid: 0.9, fwd: 1 };
+// home attacks to the right
+const HOME_FORMATION: Array<[number, number, Role]> = [
+  [6, 50, 'gk'], [20, 15, 'def'], [20, 38, 'def'], [20, 62, 'def'], [20, 85, 'def'],
+  [38, 16, 'mid'], [38, 39, 'mid'], [38, 61, 'mid'], [38, 84, 'mid'], [55, 36, 'fwd'], [55, 64, 'fwd'],
+];
+const AWAY_FORMATION: Array<[number, number, Role]> = [
+  [94, 50, 'gk'], [80, 17, 'def'], [80, 39, 'def'], [80, 61, 'def'], [80, 83, 'def'],
+  [64, 26, 'mid'], [64, 50, 'mid'], [64, 74, 'mid'], [46, 22, 'fwd'], [45, 50, 'fwd'], [46, 78, 'fwd'],
+];
+const KITS = {
+  home: { shirt: '#f4f6f8', shorts: '#e4e8ee', socks: '#f4f6f8', trim: '#c9ced6' },
+  away: { shirt: '#24262c', shorts: '#16171b', socks: '#24262c', trim: '#ffdf1b' },
+  homeGk: { shirt: '#3ee05a', shorts: '#1a6b2c', socks: '#1a6b2c', trim: '#c9ffd2' },
+  awayGk: { shirt: '#ffb21e', shorts: '#7a4a00', socks: '#7a4a00', trim: '#fff0c4' },
+};
+
+const Player: React.FC<{ kit: typeof KITS.home }> = ({ kit }) => (
+  <svg viewBox="0 0 14 28" className="w-full h-full overflow-visible" aria-hidden="true">
+    <ellipse cx="7" cy="26.6" rx="5.6" ry="1.7" fill="rgba(0,0,0,0.38)" />
+    <rect x="4.7" y="15.5" width="2" height="9.6" rx="0.9" fill="#d9a77d" />
+    <rect x="7.3" y="15.5" width="2" height="9.6" rx="0.9" fill="#d9a77d" />
+    <rect x="4.5" y="21" width="2.4" height="4.4" rx="1" fill={kit.socks} />
+    <rect x="7.1" y="21" width="2.4" height="4.4" rx="1" fill={kit.socks} />
+    <path d="M3.9 12.4h6.2l.5 5H3.4z" fill={kit.shorts} />
+    <rect x="2.9" y="5" width="8.2" height="8.6" rx="2.6" fill={kit.shirt} />
+    <rect x="2.9" y="9.6" width="8.2" height="1" fill={kit.trim} opacity="0.7" />
+    <rect x="1.2" y="5.8" width="2" height="7" rx="1" fill="#d9a77d" />
+    <rect x="10.8" y="5.8" width="2" height="7" rx="1" fill="#d9a77d" />
+    <circle cx="7" cy="3.3" r="2.5" fill="#e3b48a" />
+    <path d="M4.6 3.1a2.4 2.4 0 0 1 4.8 0c-.9-.9-3.9-.9-4.8 0z" fill="#2b2118" />
   </svg>
 );
+
+const Players: React.FC<{ ball: { x: number; y: number } | null; side: 'home' | 'away' | null | undefined }> = ({ ball, side }) => {
+  const shift = ball ? (ball.x - 50) * 0.38 : 0;
+  const place = (team: 'home' | 'away') => {
+    const formation = team === 'home' ? HOME_FORMATION : AWAY_FORMATION;
+    const list = formation.map(([bx, by, role]) => ({ x: Math.min(95, Math.max(5, bx + shift * SHIFT[role])), y: by, role }));
+    if (ball && side === team) {
+      // the man closest to the ball (not the keeper) steps up to it
+      let best = -1, bestD = Infinity;
+      list.forEach((p, i) => { if (p.role === 'gk') return; const d = Math.hypot(p.x - ball.x, (p.y - ball.y) * 0.7); if (d < bestD) { bestD = d; best = i; } });
+      if (best >= 0) list[best] = { ...list[best], x: ball.x + (team === 'home' ? -2.6 : 2.6), y: Math.min(94, Math.max(8, ball.y + 1.5)) };
+    }
+    return list;
+  };
+  return (
+    <>
+      {(['home', 'away'] as const).flatMap((team) => place(team).map((p, i) => (
+        <div
+          key={`${team}-${i}`}
+          className="absolute pointer-events-none"
+          style={{
+            left: `${p.x}%`, top: `${p.y}%`, width: '2.5%', aspectRatio: '1 / 2',
+            transform: 'translate(-50%, -88%)',
+            zIndex: 2 + Math.floor(p.y / 14),
+            transition: `left 1400ms ${EASE}, top 1400ms ${EASE}`,
+          }}
+        >
+          <Player kit={p.role === 'gk' ? (team === 'home' ? KITS.homeGk : KITS.awayGk) : KITS[team]} />
+        </div>
+      )))}
+    </>
+  );
+};
 
 // Live pitch. Everything drawn here comes from a decoded provider action or
 // real stats; with no known action the pitch just shows the clock and the
@@ -197,6 +280,9 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
 
       <PitchLines />
 
+      {/* the players in formation (decorative), sliding with the play */}
+      <Players ball={scene?.ball ?? null} side={action?.side} />
+
       {/* corner wedge, like the provider's corner view */}
       {scene?.corner && (
         <div
@@ -231,8 +317,8 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
         {scene?.pulse && (
           <span className="absolute -left-4 -top-4 w-8 h-8 rounded-full border-2" style={{ borderColor: hot ? 'rgba(255,120,90,0.9)' : 'rgba(255,255,255,0.85)', animation: 'pitch-ping 1.4s ease-out infinite' }} />
         )}
-        <span className="absolute -left-2.5 top-1 w-5 h-1.5 rounded-full bg-black/40 blur-[2px]" />
-        <span className="absolute -left-2 -top-2 block w-4 h-4 md:w-[18px] md:h-[18px] -translate-x-[1px] -translate-y-[1px] drop-shadow-[0_2px_3px_rgba(0,0,0,0.55)]">
+        <span className="absolute -left-3 top-1.5 w-6 h-2 rounded-full bg-black/45 blur-[2px]" />
+        <span className="absolute -left-2.5 -top-2.5 block w-5 h-5 md:w-[22px] md:h-[22px] drop-shadow-[0_2px_3px_rgba(0,0,0,0.6)]">
           <BallIcon className="w-full h-full" />
         </span>
         {action?.kind === 'corner' && scene?.ball && (
