@@ -6,6 +6,7 @@ import CountUp from './CountUp';
 import BigWin, { winTier } from './BigWin';
 import { casinoLiveDogsState, casinoLiveDogsBet, LiveDogsState } from '../../services/api';
 import { sfx, setSound, soundOn } from './slotSound';
+import { raceSfx } from './raceAudio';
 import './casino.css';
 
 interface Props { onSetBalance: (balance: number) => void; userBalance: number; onClose: () => void }
@@ -37,12 +38,14 @@ const LiveDogs: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
     const tick = () => {
       if (!alive.current) return;
       const s = Math.max(0, (Date.now() + offset.current - startedAt) / 1000);
+      raceSfx.setCrowd(Math.min(1, s / 6));
       setProgress(t.map((T, i) => { const x = Math.min(1, s / T); return Math.min(1, x + Math.sin(x * Math.PI) * wob[i].a * Math.sin(wob[i].f * x * 6 + wob[i].p)); }));
       if (s >= finish[5]) {
-        setProgress(t.map(() => 1)); setFinished(order); setRacing(false);
+        setProgress(t.map(() => 1)); setFinished(order); setRacing(false); raceSfx.stopGallop(); window.setTimeout(() => raceSfx.stopCrowd(), 3500);
         const mine = pending.current.filter((x) => x.order[0] === order[0]); pending.current = [];
         const staked = mine.reduce((a, x) => a + x.staked, 0); const paid = mine.reduce((a, x) => a + x.payout, 0);
         setMsg(`${stRef.current?.runners[order[0]]?.name ?? 'Dog'} wins!`);
+        raceSfx.finish(paid > 0);
         if (paid > 0) { setWinAmt(paid); setBurst((b) => b + 1); sfx.win(true); const tier = winTier(paid, staked); if (tier > 0) setBigWin({ tier: tier as 1 | 2 | 3, amount: paid }); } else if (staked > 0) sfx.stop();
         return;
       }
@@ -60,13 +63,13 @@ const LiveDogs: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       if (lastRound.current !== null && lastRound.current !== s.round) { setDraft({}); setProgress([0, 0, 0, 0, 0, 0]); setFinished(null); setWinAmt(0); setMsg('Back your greyhounds'); }
       lastRound.current = s.round;
       if (s.phase === 'race' && s.order && racedFor.current !== s.round) {
-        racedFor.current = s.round; setMsg('And they\'re off!'); sfx.spin();
+        racedFor.current = s.round; setMsg('And they\'re off!'); raceSfx.startCrowd(); raceSfx.gates(); window.setTimeout(() => raceSfx.startGallop(() => 0.8), 700);
         run(s.order, Math.floor((s.serverNow) / s.cycleMs) * s.cycleMs + s.betMs);
       }
     } catch { /* retry */ }
   }, [onSetBalance, run]);
 
-  useEffect(() => { alive.current = true; refresh(); const t = window.setInterval(refresh, 1500); return () => { alive.current = false; window.clearInterval(t); cancelAnimationFrame(raf.current); }; }, [refresh]);
+  useEffect(() => { alive.current = true; refresh(); const t = window.setInterval(refresh, 1500); return () => { alive.current = false; window.clearInterval(t); cancelAnimationFrame(raf.current); raceSfx.stopAll(); }; }, [refresh]);
   useEffect(() => {
     const t = window.setInterval(() => { const s = stRef.current; if (!s) return; const el = (Date.now() + offset.current) % s.cycleMs; setLeft(el < s.betMs ? s.betMs - el : s.cycleMs - el); }, 200);
     return () => window.clearInterval(t);
@@ -98,8 +101,8 @@ const LiveDogs: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       </div>
       <div className="h-1.5 rounded-full bg-black/40 overflow-hidden mb-2"><div className={`h-full ${betting ? 'bg-yellow-300' : 'bg-red-500'}`} style={{ width: `${pct * 100}%`, transition: 'width .2s linear' }} /></div>
 
-      <div className="relative rounded-2xl overflow-hidden mb-3 border border-yellow-500/40" style={{ aspectRatio: '16/7' }}>
-        <img src={finished ? '/casino/dograce-finish.jpg' : '/casino/dograce-start.jpg'} alt="" className="absolute inset-0 w-full h-full object-cover" draggable={false} />
+      <div className="relative dog-hero rounded-2xl overflow-hidden mb-3 border border-yellow-500/40 p-2" style={{ aspectRatio: '16/6' }}>
+        <img src="/casino/dogs/track.png" alt="" className="absolute inset-0 w-full h-full object-contain p-2" draggable={false} />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
       </div>
       <DogTrack dogs={horses} progress={progress} running={racing} finishOrder={finished} />

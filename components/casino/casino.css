@@ -172,4 +172,9 @@
 @keyframes dog-swing { from { transform: rotate(-38deg); } to { transform: rotate(38deg); } }
 .dog-body { animation: dog-bob .21s ease-in-out infinite alternate; transform-origin: 60px 24px; }
 @keyframes dog-bob { from { transform: translateY(0) rotate(-1.2deg); } to { transform: translateY(-2.4px) rotate(1.2deg); } }
-@media (prefers-reduced-motion: reduce) { .dog-leg, .dog-body { animation: none; } }
+@keyframes dog-gallop { 0% { transform: translateY(0) rotate(-2.5deg) scale(1.03,.97); } 50% { transform: translateY(-9%) rotate(2deg) scale(.98,1.03); } 100% { transform: translateY(0) rotate(-2.5deg) scale(1.03,.97); } }
+.dog-gallop { animation: dog-gallop .36s ease-in-out infinite; transform-origin: 50% 90%; }
+@keyframes dog-dust { 0% { opacity: .55; transform: translateX(0) scale(.5); } 100% { opacity: 0; transform: translateX(-34px) scale(1.6); } }
+.dog-dust { position: absolute; left: 4%; bottom: 6%; width: 18px; height: 14px; border-radius: 50%; background: radial-gradient(#e7c58f, rgba(231,197,143,0)); animation: dog-dust .45s ease-out infinite; box-shadow: -16px -3px 0 -3px rgba(231,197,143,.35), -30px 2px 0 -5px rgba(231,197,143,.25); }
+.dog-hero { background: radial-gradient(ellipse at 50% 0%, #1e3a8a 0%, #0b1330 55%, #05070f 100%); }
+@media (prefers-reduced-motion: reduce) { .dog-leg, .dog-body, .dog-gallop, .dog-dust { animation: none; } }

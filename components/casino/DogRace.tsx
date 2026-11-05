@@ -6,6 +6,7 @@ import BigWin, { winTier } from './BigWin';
 import DogTrack from './DogTrack';
 import { casinoDogsInfo, casinoDogsRace, Dog } from '../../services/api';
 import { sfx, setSound, soundOn } from './slotSound';
+import { raceSfx } from './raceAudio';
 import './casino.css';
 
 interface Props { onSetBalance: (balance: number) => void; userBalance: number; onClose: () => void }
@@ -25,7 +26,7 @@ const DogRace: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
   const [bigWin, setBigWin] = useState<{ tier: 1 | 2 | 3; amount: number } | null>(null);
   const [snd, setSnd] = useState(soundOn());
   const alive = useRef(true); const raf = useRef(0);
-  useEffect(() => { alive.current = true; casinoDogsInfo().then((r) => setDogs(r.dogs)).catch(() => {}); return () => { alive.current = false; cancelAnimationFrame(raf.current); }; }, []);
+  useEffect(() => { alive.current = true; casinoDogsInfo().then((r) => setDogs(r.dogs)).catch(() => {}); return () => { alive.current = false; cancelAnimationFrame(raf.current); raceSfx.stopAll(); }; }, []);
 
   const run = (ord: number[]) => new Promise<void>((resolve) => {
     const finish = ord.map((_, place) => 7 + place * 0.4);
@@ -36,6 +37,7 @@ const DogRace: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       if (!alive.current) return resolve();
       const s = (performance.now() - t0) / 1000;
       setProgress(t.map((T, i) => { const x = Math.min(1, s / T); return Math.min(1, x + Math.sin(x * Math.PI) * wob[i].a * Math.sin(wob[i].f * x * 6 + wob[i].p)); }));
+      raceSfx.setCrowd(Math.min(1, s / 6));
       if (s >= finish[5]) { setProgress(t.map(() => 1)); resolve(); return; }
       raf.current = requestAnimationFrame(tick);
     };
@@ -46,10 +48,11 @@ const DogRace: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
     if (racing) return;
     if (pick === null) { setMsg('Pick a greyhound first!'); return; }
     if (userBalance < stake) { setMsg('Insufficient balance'); return; }
-    setRacing(true); setOrder(null); setWinAmt(0); setProgress([0, 0, 0, 0, 0, 0]); setMsg('The hare is running… and they\'re off!'); sfx.spin();
+    setRacing(true); setOrder(null); setWinAmt(0); setProgress([0, 0, 0, 0, 0, 0]); setMsg('The hare is running… and they\'re off!'); raceSfx.startCrowd(); raceSfx.gates(); window.setTimeout(() => raceSfx.startGallop(() => 0.8), 700);
     try {
       const r = await casinoDogsRace(stake, pick);
       await run(r.order);
+      raceSfx.stopGallop(); raceSfx.finish(r.payout > 0); window.setTimeout(() => raceSfx.stopCrowd(), 3500);
       if (!alive.current) return;
       setOrder(r.order); onSetBalance(r.balance);
       if (r.payout > 0) { setWinAmt(r.payout); setBurst((b) => b + 1); sfx.win(true); setMsg(`${dogs[pick].name} wins!`); const t = winTier(r.payout, stake); if (t > 0) setBigWin({ tier: t as 1 | 2 | 3, amount: r.payout }); }
@@ -67,8 +70,8 @@ const DogRace: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
         <button onClick={() => { setSound(!snd); setSnd(!snd); }} className="text-sm px-2 py-1 rounded bg-white/10">{snd ? '🔊' : '🔇'}</button>
       </div>
 
-      <div className="relative rounded-2xl overflow-hidden mb-3 border border-yellow-500/40" style={{ aspectRatio: '16/8' }}>
-        <img src={order ? '/casino/dograce-finish.jpg' : '/casino/dograce-start.jpg'} alt="" className="absolute inset-0 w-full h-full object-cover" draggable={false} />
+      <div className="relative dog-hero rounded-2xl overflow-hidden mb-3 border border-yellow-500/40 p-2" style={{ aspectRatio: '16/6' }}>
+        <img src="/casino/dogs/track.png" alt="" className="absolute inset-0 w-full h-full object-contain p-2" draggable={false} />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
         <div className="absolute bottom-2 inset-x-0 text-center font-extrabold text-lg" style={{ textShadow: '0 2px 6px #000' }}>
           {winAmt > 0 ? <span className="text-brand-yellow win-pop inline-block">You won <CountUp value={winAmt} format={(v) => `${v.toFixed(2)} L`} /></span> : msg}
