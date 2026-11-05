@@ -930,3 +930,27 @@ export async function casinoHoldWinInfo() {
 export async function casinoHoldWinPlay(stake: number) {
   return request<HoldWinRound>('/casino/holdwin/play', { method: 'POST', body: JSON.stringify({ stake }) });
 }
+
+// ---- Penalty / Tower (chain games), Horse Race, Three Cups ----
+export type ChainGame = 'penalty' | 'tower';
+export type ChainCfg = { doors: number; traps: number; maxSteps: number };
+export async function casinoChainStart(game: ChainGame, stake: number, difficulty?: string) {
+  return request<{ roundId: string; cfg: ChainCfg; step: number; balance: number }>(`/casino/${game}/start`, { method: 'POST', body: JSON.stringify({ stake, difficulty }) });
+}
+export async function casinoChainPick(game: ChainGame, id: string, choice: number) {
+  return request<{ safe: boolean; traps: number[]; total?: number; steps?: number; finished: boolean; payout?: number; balance?: number }>(`/casino/${game}/${id}/pick`, { method: 'POST', body: JSON.stringify({ choice }) });
+}
+export async function casinoChainCashout(game: ChainGame, id: string) {
+  return request<{ multiplier: number; payout: number; balance: number }>(`/casino/${game}/${id}/cashout`, { method: 'POST', body: '{}' });
+}
+export async function casinoTowerLevels() {
+  return request<{ levels: Record<string, ChainCfg & { step: number }> }>('/casino/tower/levels');
+}
+export type Horse = { id: number; name: string; p: number; color: string; odds: number };
+export async function casinoHorsesInfo() { return request<{ horses: Horse[] }>('/casino/horses/info'); }
+export async function casinoHorsesRace(stake: number, horse: number) {
+  return request<{ order: number[]; payout: number; odds: number; balance: number }>('/casino/horses/race', { method: 'POST', body: JSON.stringify({ stake, horse }) });
+}
+export async function casinoCupsPlay(stake: number, cup: number) {
+  return request<{ start: number; swaps: [number, number][]; final: number; won: boolean; payout: number; multiplier: number; balance: number }>('/casino/cups/play', { method: 'POST', body: JSON.stringify({ stake, cup }) });
+}

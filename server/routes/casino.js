@@ -12,6 +12,9 @@ import * as tumbleEngine from '../slots/tumble.js';
 import * as crashEngine from '../crash.js';
 import * as hiloEngine from '../hilo.js';
 import * as holdWinEngine from '../holdwin.js';
+import * as chain from '../chain.js';
+import * as horseEngine from '../horses.js';
+import * as cupsEngine from '../cups.js';
 import { normalizeCurrency, walletColumn, accountCurrencyOf, allowsCurrency, accountCurrencyError } from '../ledger.js';
 import { SLOT_GAMES as VIDEO_SLOTS, getSlotGame as getVideoSlot, publicGame } from '../slots/games.js';
 import { playRound } from '../slots/engine.js';
@@ -931,6 +934,101 @@ router.post('/holdwin/play', async (req, res) => {
   await creditPayout(req.user.id, payout);
   await logRound(req.user.id, 'holdwin', stake, payout, { coins: round.start.length, full: round.full, multiplier: round.multiplier });
   res.json({ ...round, payout, balance: await getBalance(req.user.id) });
+});
+
+// =====================================================================
+// CHAIN GAMES: Penalty Shootout and Gold Tower share one engine (server/chain.js)
+// =====================================================================
+function registerChainGame(key, cfgFor) {
+  async function load(req, res) {
+    const { rows } = await pool.query('SELECT * FROM casino_rounds WHERE id = $1', [req.params.id]);
+    const row = rows[0];
+    if (!row || row.game !== key) { res.status(404).json({ error: 'Round not found' }); return null; }
+    if (row.user_id !== req.user.id) { res.status(403).json({ error: 'Not your round' }); return null; }
+    if (row.status !== 'PLAYING') { res.status(400).json({ error: 'Round already finished' }); return null; }
+    return { row, st: JSON.parse(row.state) };
+  }
+  router.post(`/${key}/start`, async (req, res) => {
+    const { stake } = req.body || {};
+    if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
+    const cfg = cfgFor(req.body || {});
+    if (!cfg) return res.status(400).json({ error: 'Invalid difficulty' });
+    const ok = await deductStake(req.user.id, stake);
+    if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
+    const roundId = randomUUID();
+    await pool.query(`INSERT INTO casino_rounds (id, user_id, game, stake, status, state, created_at) VALUES ($1,$2,$3,$4,'PLAYING',$5,$6)`,
+      [roundId, req.user.id, key, stake, JSON.stringify({ cfg, total: 1, steps: 0 }), Date.now()]);
+    res.json({ roundId, cfg, step: chain.roundMult(chain.stepMultiplier(cfg)), balance: await getBalance(req.user.id) });
+  });
+  router.post(`/${key}/:id/pick`, async (req, res) => {
+    const loaded = await load(req, res); if (!loaded) return;
+    const { row, st } = loaded;
+    const r = chain.playStep({ cfg: st.cfg, total: st.total, steps: st.steps, choice: req.body?.choice }, (n) => randomInt(n));
+    if (r.error) return res.status(400).json({ error: 'Invalid choice' });
+    if (!r.safe) {
+      await pool.query(`UPDATE casino_rounds SET status='FINISHED', payout=0, result=$1, resolved_at=$2 WHERE id=$3 AND status='PLAYING'`,
+        [JSON.stringify({ steps: st.steps, hit: req.body.choice }), Date.now(), row.id]);
+      return res.json({ safe: false, traps: r.traps, finished: true, payout: 0, balance: await getBalance(req.user.id) });
+    }
+    const next = { cfg: st.cfg, total: r.total, steps: r.steps };
+    if (r.finished) {
+      const payout = roundMoney(Number(row.stake) * r.total);
+      const upd = await pool.query(`UPDATE casino_rounds SET status='FINISHED', state=$1, payout=$2, result=$3, resolved_at=$4 WHERE id=$5 AND status='PLAYING'`,
+        [JSON.stringify(next), payout, JSON.stringify({ steps: r.steps, completed: true }), Date.now(), row.id]);
+      if (upd.rowCount) await creditPayout(req.user.id, payout);
+      return res.json({ safe: true, traps: r.traps, total: r.total, steps: r.steps, finished: true, payout, balance: await getBalance(req.user.id) });
+    }
+    await pool.query('UPDATE casino_rounds SET state = $1 WHERE id = $2', [JSON.stringify(next), row.id]);
+    res.json({ safe: true, traps: r.traps, total: r.total, steps: r.steps, finished: false });
+  });
+  router.post(`/${key}/:id/cashout`, async (req, res) => {
+    const loaded = await load(req, res); if (!loaded) return;
+    const { row, st } = loaded;
+    if (st.steps < 1) return res.status(400).json({ error: 'Make at least one safe pick first' });
+    const payout = roundMoney(Number(row.stake) * st.total);
+    const upd = await pool.query(`UPDATE casino_rounds SET status='FINISHED', payout=$1, result=$2, resolved_at=$3 WHERE id=$4 AND status='PLAYING'`,
+      [payout, JSON.stringify({ steps: st.steps, cashedOut: true, multiplier: st.total }), Date.now(), row.id]);
+    if (upd.rowCount === 0) return res.status(400).json({ error: 'Round already finished' });
+    await creditPayout(req.user.id, payout);
+    res.json({ multiplier: st.total, payout, balance: await getBalance(req.user.id) });
+  });
+}
+registerChainGame('penalty', () => chain.PENALTY_CFG);
+registerChainGame('tower', (body) => chain.TOWER_LEVELS[body.difficulty || 'medium'] || null);
+router.get('/tower/levels', (req, res) => res.json({ levels: Object.fromEntries(Object.entries(chain.TOWER_LEVELS).map(([k, c]) => [k, { ...c, step: chain.roundMult(chain.stepMultiplier(c)) }])) }));
+
+// =====================================================================
+// HORSE RACE
+// =====================================================================
+router.get('/horses/info', (req, res) => res.json({ horses: horseEngine.HORSES }));
+router.post('/horses/race', async (req, res) => {
+  const { stake, horse } = req.body || {};
+  if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
+  if (!Number.isInteger(horse) || horse < 0 || horse >= horseEngine.HORSES.length) return res.status(400).json({ error: 'Pick a horse' });
+  const ok = await deductStake(req.user.id, stake);
+  if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
+  const order = horseEngine.drawOrder((n) => randomInt(n));
+  const payout = horseEngine.horsePayout(stake, horse, order);
+  await creditPayout(req.user.id, payout);
+  await logRound(req.user.id, 'horses', stake, payout, { horse, order });
+  res.json({ order, payout, odds: horseEngine.HORSES[horse].odds, balance: await getBalance(req.user.id) });
+});
+
+// =====================================================================
+// THREE CUPS
+// =====================================================================
+router.post('/cups/play', async (req, res) => {
+  const { stake, cup } = req.body || {};
+  if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
+  if (!Number.isInteger(cup) || cup < 0 || cup > 2) return res.status(400).json({ error: 'Pick a cup' });
+  const ok = await deductStake(req.user.id, stake);
+  if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
+  const shuffle = cupsEngine.drawShuffle((n) => randomInt(n));
+  const won = shuffle.final === cup;
+  const payout = won ? roundMoney(stake * cupsEngine.CUPS_PAYOUT) : 0;
+  await creditPayout(req.user.id, payout);
+  await logRound(req.user.id, 'cups', stake, payout, { cup, final: shuffle.final });
+  res.json({ ...shuffle, won, payout, multiplier: cupsEngine.CUPS_PAYOUT, balance: await getBalance(req.user.id) });
 });
 
 export default router;

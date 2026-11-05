@@ -97,3 +97,66 @@ describe('game keys', () => {
     for (const k of ['crash', 'hilo', 'holdwin']) { expect(CASINO_GAME_KEYS).toContain(k); expect(gameKeyForPath(`/${k}/start`)).toBe(k); }
   });
 });
+
+import * as chainE from '../server/chain.js';
+import * as horses from '../server/horses.js';
+import * as cups from '../server/cups.js';
+
+describe('chain games (penalty / tower)', () => {
+  it('every step is 97% fair', () => {
+    for (const cfg of [chainE.PENALTY_CFG, ...Object.values(chainE.TOWER_LEVELS)]) {
+      expect(((cfg.doors - cfg.traps) / cfg.doors) * chainE.stepMultiplier(cfg)).toBeCloseTo(0.97, 10);
+    }
+  });
+  it('traps are distinct and in range', () => {
+    for (let i = 0; i < 2000; i += 1) {
+      const t = chainE.drawTraps({ doors: 3, traps: 2, maxSteps: 8 }, rnd);
+      expect(new Set(t).size).toBe(2);
+      t.forEach((x) => { expect(x).toBeGreaterThanOrEqual(0); expect(x).toBeLessThan(3); });
+    }
+  });
+  it('rejects invalid choices and a trapped pick pays nothing', () => {
+    expect(chainE.playStep({ cfg: chainE.PENALTY_CFG, total: 1, steps: 0, choice: 7 }, rnd).error).toBeTruthy();
+    const lost = chainE.playStep({ cfg: chainE.PENALTY_CFG, total: 1.4, steps: 1, choice: 0 }, () => 0); // trap at index 0
+    expect(lost.safe).toBe(false);
+  });
+  it('simulated single-step RTP ~97%', () => {
+    let paid = 0; const N = 200000;
+    for (let i = 0; i < N; i += 1) { const r = chainE.playStep({ cfg: chainE.TOWER_LEVELS.expert, total: 1, steps: 0, choice: 1 }, rnd); if (r.safe) paid += r.total; }
+    expect(paid / N).toBeGreaterThan(0.94);
+    expect(paid / N).toBeLessThan(1.0);
+  });
+  it('finishes at the max number of steps', () => {
+    const r = chainE.playStep({ cfg: chainE.PENALTY_CFG, total: 20, steps: 9, choice: 1 }, () => 0);
+    expect(r.safe && r.finished).toBe(true);
+  });
+});
+
+describe('horse race', () => {
+  it('probabilities add up to 1 and odds carry a 5% edge', () => {
+    expect(horses.HORSES.reduce((a, h) => a + h.p, 0)).toBeCloseTo(1, 10);
+    horses.HORSES.forEach((h) => expect(h.p * h.odds).toBeLessThanOrEqual(0.95 + 1e-9));
+  });
+  it('each horse wins about as often as its probability, and orders are permutations', () => {
+    const wins = Array(6).fill(0); const N = 60000;
+    for (let i = 0; i < N; i += 1) { const o = horses.drawOrder(rnd); expect([...o].sort().join()).toBe('0,1,2,3,4,5'); wins[o[0]] += 1; }
+    horses.HORSES.forEach((h) => expect(Math.abs(wins[h.id] / N - h.p)).toBeLessThan(0.015));
+  });
+  it('pays only the winner', () => {
+    expect(horses.horsePayout(100, 2, [2, 0, 1, 3, 4, 5])).toBe(horses.HORSES[2].odds * 100);
+    expect(horses.horsePayout(100, 1, [2, 0, 1, 3, 4, 5])).toBe(0);
+  });
+});
+
+describe('three cups', () => {
+  it('final cup is uniform and consistent with the swaps', () => {
+    const c = [0, 0, 0]; const N = 60000;
+    for (let i = 0; i < N; i += 1) {
+      const s = cups.drawShuffle(rnd);
+      let ball = s.start; for (const [a, b] of s.swaps) { if (ball === a) ball = b; else if (ball === b) ball = a; }
+      expect(ball).toBe(s.final); c[s.final] += 1;
+    }
+    c.forEach((x) => expect(Math.abs(x / N - 1 / 3)).toBeLessThan(0.015));
+  });
+  it('payout keeps a house edge', () => { expect(cups.CUPS_PAYOUT / 3).toBeLessThan(1); expect(cups.CUPS_PAYOUT / 3).toBeGreaterThan(0.9); });
+});
