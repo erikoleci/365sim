@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import './casino.css';
+import SymbolIcon from './SymbolIcon';
 
 // One slot reel drawn as a real 3D drum: ten faces around a horizontal axis, seen in perspective. While
 // `spinning` the drum turns (blurred) in a loop; when it stops it decelerates onto the final symbols,
@@ -42,7 +43,7 @@ const SlotReel: React.FC<Props> = ({ symbols, spinning, pool, litRows = [], rowC
           const lit = !spinning && row >= 0 && litRows.includes(row);
           return (
             <div key={i} className={`reel-face ${lit ? 'cell-win' : ''}`} style={{ transform: `rotateX(${i * STEP}deg) translateZ(var(--reel-r))` }}>
-              <span style={{ fontSize: '52cqw', lineHeight: 1 }}>{faceSymbol(i)}</span>
+              <span style={{ fontSize: '52cqw', lineHeight: 1, width: '66cqw', height: '66cqw', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><SymbolIcon symbol={faceSymbol(i)} className="w-full h-full" /></span>
             </div>
           );
         })}
