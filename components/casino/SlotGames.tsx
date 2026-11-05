@@ -4,6 +4,7 @@ import SlotReel from './SlotReel';
 import CountUp from './CountUp';
 import CoinBurst from './CoinBurst';
 import SymbolIcon from './SymbolIcon';
+import { sfx, setSound, soundOn } from './slotSound';
 
 // The ten paylines (row per reel), same as the server's engine: used only to light up the winning cells.
 const PAYLINES = [
@@ -100,6 +101,7 @@ const SlotGame: React.FC<{
   const [freeInfo, setFreeInfo] = useState('');
   const [burst, setBurst] = useState(0); // bumps for every win worth celebrating (key of the coin shower)
   const [showPay, setShowPay] = useState(false);
+  const [snd, setSnd] = useState(soundOn());
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
 
@@ -112,8 +114,10 @@ const SlotGame: React.FC<{
   const animateStop = useCallback(async (finalGrid: string[][], quick: boolean) => {
     setLit(new Set());
     setSpinning([true, true, true, true, true]);
+    sfx.spin();
     for (let r = 0; r < 5; r += 1) {
       await sleep(quick ? 150 : 380);
+      sfx.stop();
       spinningRef.current[r] = false;
       setGrid((g) => g.map((col, i) => (i === r ? finalGrid[r].map((s) => game.symbols[s]) : col)));
       setSpinning((sp) => sp.map((v, i) => (i === r ? false : v)));
@@ -146,6 +150,7 @@ const SlotGame: React.FC<{
         shown += sp.win;
         setLastWin(shown);
         lightUp(sp);
+        if (sp.win > 0) sfx.win(sp.win >= stake * 3);
         if (sp.win > 0) await sleep(i === 0 ? 900 : 650);
         else if (i > 0) await sleep(350);
       }
@@ -171,7 +176,10 @@ const SlotGame: React.FC<{
       <div className="flex items-center justify-between px-4 py-3 bg-black/40">
         <button onClick={onBack} disabled={busy} className="text-sm text-gray-300 hover:text-white disabled:opacity-40">← Slots</button>
         <div className="text-center"><div className="font-bold text-white">{game.name}</div><div className="text-[10px] text-brand-yellow">RTP {game.rtp.toFixed(2)}% · {game.volatility} · {game.lines} linja</div></div>
-        <button onClick={() => setShowPay(true)} className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white">Pagesat</button>
+        <div className="flex gap-1.5">
+          <button onClick={() => { setSound(!snd); setSnd(!snd); }} aria-label="Tingulli" className="text-sm px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white">{snd ? '🔊' : '🔇'}</button>
+          <button onClick={() => setShowPay(true)} className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white">Pagesat</button>
+        </div>
       </div>
 
       <div className="p-4">
