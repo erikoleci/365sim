@@ -1,3 +1,4 @@
+import { startMusic, stopMusic, musicPref, setMusicPref } from './casino/casinoMusic';
 import LiveWins from './casino/LiveWins';
 import Penalty from './casino/Penalty';
 import Tower from './casino/Tower';
@@ -43,6 +44,19 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
   const open = (key: string) => (showAllGames || !disabled.includes(key)) && (!euroOnly || key === 'slots');
 
   const [loadingTile, setLoadingTile] = useState<{ game: NonNullable<typeof activeGame>; name: string; img?: string; art?: React.ReactNode } | null>(null);
+  // Lounge music: starts at the first tap in the casino (browsers block autoplay), unless the player turned it off; stops when leaving.
+  const [music, setMusic] = useState(musicPref());
+  useEffect(() => {
+    if (!music) { stopMusic(); return undefined; }
+    const go = () => startMusic();
+    window.addEventListener('pointerdown', go, { once: true });
+    return () => window.removeEventListener('pointerdown', go);
+  }, [music]);
+  useEffect(() => () => stopMusic(), []);
+  const musicBtn = (
+    <button onClick={() => { const v = !music; setMusic(v); setMusicPref(v); if (v) startMusic(); else stopMusic(); }} aria-label={music ? 'Turn music off' : 'Turn music on'}
+      className="fixed bottom-4 right-4 z-[96] w-11 h-11 rounded-full bg-black/70 border border-yellow-500/50 text-lg shadow-lg hover:bg-black/90 active:scale-95">{music ? '🎵' : '🔇'}</button>
+  );
   const close = () => setActiveGame(null);
   const b = { userBalance, onSetBalance, onClose: close };
   const gameEl: Record<string, React.ReactNode> = {
@@ -58,6 +72,7 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
   if (activeGame && gameEl[activeGame]) {
     return (
       <div className="fixed inset-0 z-[80] overflow-y-auto bg-[#0b0b10]">
+        {musicBtn}
         <div className="max-w-5xl mx-auto p-2 sm:p-4 min-h-full">{gameEl[activeGame]}</div>
       </div>
     );
@@ -89,6 +104,7 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
 
   return (
     <div className="p-3 sm:p-6 text-white min-h-[80vh]">
+      {musicBtn}
       {loadingTile && <GameLoader name={loadingTile.name} img={loadingTile.img} art={loadingTile.art} onDone={() => { setActiveGame(loadingTile.game); setLoadingTile(null); }} />}
       <h1 className="text-3xl sm:text-4xl font-bold italic mb-1">Casino <span className="text-brand-yellow">Classics</span></h1>
       <p className="text-sm opacity-70 mb-6">Slots and table games. Instant wins, no waiting.</p>
