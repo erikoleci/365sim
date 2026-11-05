@@ -87,17 +87,17 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
   }
 
   // key = access key (what the super admin can switch off), game = what opens, img = photo cover in public/casino
-  const TILES: { key: string; game: typeof activeGame; img?: string; art?: React.ReactNode; name: string }[] = [
+  const TILES: { key: string; game: typeof activeGame; img?: string; art?: React.ReactNode; name: string; shape?: 'wide' | 'banner' }[] = [
     { key: 'slots', game: 'slots', img: 'slots', name: 'Super Slots' },
     { key: 'tumble', game: 'tumble', art: <TumbleCover />, name: 'Sugar Cascade' },
     { key: 'dogs', game: 'dogs', img: 'dograce-start-cover', name: 'Dog Race' },
-    { key: 'penalty', game: 'penalty', art: <PlainCover title="PENALTY SHOOTOUT" sub="Beat the keeper, chain the goals" from="#14532d" to="#0b1b3a" />, name: 'Penalty Shootout' },
-    { key: 'horses', game: 'horses', art: <PlainCover title="HORSE RACE" sub="Back a horse, win up to 13x" from="#166534" to="#78350f" />, name: 'Horse Race' },
-    { key: 'tower', game: 'tower', art: <PlainCover title="GOLD TOWER" sub="Climb the floors, dodge the traps" from="#78350f" to="#1c1917" />, name: 'Gold Tower' },
-    { key: 'cups', game: 'cups', art: <PlainCover title="THREE CUPS" sub="Find the ball, win 2.85x" from="#7f1d1d" to="#1c0a05" />, name: 'Three Cups' },
-    { key: 'crash', game: 'crash', art: <PlainCover title="CRASH" sub="Cash out before it blows" from="#0f172a" to="#7c2d12" />, name: 'Crash' },
-    { key: 'holdwin', game: 'holdwin', art: <PlainCover title="HOLD & WIN" sub="Lock coins, fill the board" from="#3b0764" to="#78350f" />, name: 'Hold & Win' },
-    { key: 'hilo', game: 'hilo', art: <PlainCover title="HI-LO" sub="Higher or lower? Chain your wins" from="#065f46" to="#022c22" />, name: 'Hi-Lo' },
+    { key: 'penalty', game: 'penalty', img: 'penalty', shape: 'wide', name: 'Penalty Shootout' },
+    { key: 'horses', game: 'horses', img: 'horses', shape: 'wide', name: 'Horse Race' },
+    { key: 'tower', game: 'tower', img: 'tower', shape: 'wide', name: 'Gold Tower' },
+    { key: 'cups', game: 'cups', img: 'cups', shape: 'wide', name: 'Three Cups' },
+    { key: 'crash', game: 'crash', img: 'crash', shape: 'wide', name: 'Crash' },
+    { key: 'holdwin', game: 'holdwin', img: 'holdwin', shape: 'wide', name: 'Hold & Win' },
+    { key: 'hilo', game: 'hilo', img: 'hilo', shape: 'wide', name: 'Hi-Lo' },
     { key: 'plinko', game: 'plinko', img: 'plinko', name: 'Plinko' },
     { key: 'mines', game: 'mines', img: 'mines', name: 'Mines' },
     { key: 'dragontiger', game: 'dragontiger', img: 'dragontiger', name: 'Dragon Tiger' },
@@ -112,15 +112,15 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
   ];
 
   const LIVE_TILES: typeof TILES = [
-    { key: 'liveroulette', game: 'liveroulette', art: <PlainCover title="LIVE ROULETTE" sub="One shared wheel · a spin every 30s" from="#065f46" to="#022c22" />, name: 'Live Roulette' },
-    { key: 'livehorses', game: 'livehorses', art: <PlainCover title="LIVE HORSE RACE" sub="A shared race every 45s" from="#166534" to="#78350f" />, name: 'Live Horse Race' },
+    { key: 'liveroulette', game: 'liveroulette', img: 'liveroulette', shape: 'banner', name: 'Live Roulette' },
+    { key: 'livehorses', game: 'livehorses', img: 'livehorses', shape: 'banner', name: 'Live Horse Race' },
     { key: 'livedogs', game: 'livedogs', img: 'dograce-finish-cover', name: 'Live Dog Race' },
     { key: 'livecrash', game: 'livecrash', art: <PlainCover title="LIVE CRASH" sub="One rocket, the whole table" from="#1e1b4b" to="#7c2d12" />, name: 'Live Crash' },
     { key: 'livekeno', game: 'livekeno', art: <PlainCover title="LIVE KENO" sub="A shared draw every 30s" from="#164e63" to="#0b1220" />, name: 'Live Keno' },
   ];
   const tileBtn = (t: typeof TILES[number]) => (
     <button key={t.key} onClick={() => setLoadingTile({ game: t.game as NonNullable<typeof activeGame>, name: t.name, img: t.img ? `/casino/${t.img}.jpg` : undefined, art: t.art })} aria-label={t.name}
-      className="lobby-card lobby-shine group relative aspect-[4/5] rounded-2xl overflow-hidden cursor-pointer shadow-xl border border-white/10 hover:border-brand-yellow/60 text-left">
+      className={`lobby-card lobby-shine group relative ${t.shape === 'banner' ? 'col-span-2 md:col-span-3 xl:col-span-5 aspect-[27/5]' : t.shape === 'wide' ? 'col-span-2 aspect-[2/1]' : 'aspect-[4/5]'} rounded-2xl overflow-hidden cursor-pointer shadow-xl border border-white/10 hover:border-brand-yellow/60 text-left`}>
       {t.img ? <img src={`/casino/${t.img}.jpg`} alt={t.name} loading="lazy" draggable={false} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" /> : t.art}
     </button>
   );
@@ -146,11 +146,11 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
       {section === 'live' && (
         <>
           <LiveWins />
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-5">{LIVE_TILES.filter((t) => open(t.key)).map(tileBtn)}</div>
+          <div className="grid grid-flow-dense grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-5">{LIVE_TILES.filter((t) => open(t.key)).map(tileBtn)}</div>
         </>
       )}
 
-      {section === 'games' && <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-5">{TILES.filter((t) => open(t.key)).map(tileBtn)}</div>}
+      {section === 'games' && <div className="grid grid-flow-dense grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-5">{TILES.filter((t) => open(t.key)).map(tileBtn)}</div>}
     </div>
   );
 };
