@@ -959,3 +959,13 @@ export type LiveWin = { simulated?: boolean; game: string; currency: 'ALL' | 'EU
 export async function casinoLive() {
   return request<{ feed: LiveWin[]; playersLastHour: number; roundsLastHour: number; preview?: boolean }>('/casino/live');
 }
+
+// ---- Live Roulette ----
+export type LiveRouletteState = {
+  serverNow: number; round: number; phase: 'betting' | 'spin'; msLeft: number; cycleMs: number; betMs: number; result: number | null; history: number[];
+  myBets: Record<string, number>; settled: { round: number; result: number; staked: number; payout: number }[]; balance: number; tablePlayers?: number; simulatedPlayers?: boolean;
+};
+export async function casinoLiveRouletteState() { return request<LiveRouletteState>('/casino/live-roulette/state'); }
+export async function casinoLiveRouletteBet(round: number, bets: Record<string, number>) {
+  return request<{ ok: boolean; balance: number }>('/casino/live-roulette/bet', { method: 'POST', body: JSON.stringify({ round, bets }) });
+}

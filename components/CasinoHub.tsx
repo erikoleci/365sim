@@ -1,5 +1,6 @@
 import { startMusic, stopMusic, musicPref, setMusicPref } from './casino/casinoMusic';
 import LiveWins from './casino/LiveWins';
+import LiveRoulette from './casino/LiveRoulette';
 import Penalty from './casino/Penalty';
 import Tower from './casino/Tower';
 import Horses from './casino/Horses';
@@ -37,7 +38,7 @@ interface CasinoHubProps {
 
 const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, accountCurrency = 'BOTH', onSetBalance, showAllGames = false }) => {
   const euroOnly = accountCurrency === 'EUR';
-  const [activeGame, setActiveGame] = useState<'slots' | 'blackjack' | 'roulette' | 'poker' | 'baccarat' | 'dice' | 'plinko' | 'mines' | 'dragontiger' | 'wheel' | 'keno' | 'scratch' | 'tumble' | 'crash' | 'hilo' | 'holdwin' | 'penalty' | 'tower' | 'horses' | 'cups' | null>(null);
+  const [activeGame, setActiveGame] = useState<'slots' | 'blackjack' | 'roulette' | 'poker' | 'baccarat' | 'dice' | 'plinko' | 'mines' | 'dragontiger' | 'wheel' | 'keno' | 'scratch' | 'tumble' | 'crash' | 'hilo' | 'holdwin' | 'penalty' | 'tower' | 'horses' | 'cups' | 'liveroulette' | null>(null);
   const [disabled, setDisabled] = useState<string[]>([]);
   useEffect(() => { casinoAccess().then((a) => setDisabled(a.disabledGames || [])).catch(() => {}); }, []);
   // The table games are played in lek: a euro-only account gets the slots only.
@@ -64,7 +65,7 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
     baccarat: <Baccarat {...b} />, plinko: <Plinko {...b} />, mines: <Mines {...b} />, dragontiger: <DragonTiger {...b} />,
     tumble: <TumbleSlot balance={userBalance} balanceEur={userBalanceEur} accountCurrency={accountCurrency} onBalances={onSetBalance} onClose={close} />,
     keno: <Keno {...b} />, scratch: <Scratch {...b} />, wheel: <Wheel {...b} />, dice: <Dice {...b} />,
-    penalty: <Penalty {...b} />, tower: <Tower {...b} />, horses: <Horses {...b} />, cups: <Cups {...b} />,
+    penalty: <Penalty {...b} />, tower: <Tower {...b} />, horses: <Horses {...b} />, cups: <Cups {...b} />, liveroulette: <LiveRoulette {...b} />,
     crash: <Crash {...b} />, hilo: <HiLo {...b} />, holdwin: <HoldWin {...b} />,
   };
   // A game opens as its own full page (not a box inside the lobby): the lobby is replaced, the page starts at the top.
@@ -82,6 +83,7 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
   const TILES: { key: string; game: typeof activeGame; img?: string; art?: React.ReactNode; name: string }[] = [
     { key: 'slots', game: 'slots', img: 'slots', name: 'Super Slots' },
     { key: 'tumble', game: 'tumble', art: <TumbleCover />, name: 'Sugar Cascade' },
+    { key: 'liveroulette', game: 'liveroulette', art: <PlainCover title="LIVE ROULETTE" sub="One shared wheel · a spin every 30s" from="#065f46" to="#022c22" />, name: 'Live Roulette' },
     { key: 'penalty', game: 'penalty', art: <PlainCover title="PENALTY SHOOTOUT" sub="Beat the keeper, chain the goals" from="#14532d" to="#0b1b3a" />, name: 'Penalty Shootout' },
     { key: 'horses', game: 'horses', art: <PlainCover title="HORSE RACE" sub="Back a horse, win up to 13x" from="#166534" to="#78350f" />, name: 'Horse Race' },
     { key: 'tower', game: 'tower', art: <PlainCover title="GOLD TOWER" sub="Climb the floors, dodge the traps" from="#78350f" to="#1c1917" />, name: 'Gold Tower' },

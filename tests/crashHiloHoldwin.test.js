@@ -180,3 +180,26 @@ describe('live preview simulation', () => {
     a.forEach((f) => { expect(f.simulated).toBe(true); expect(f.at).toBeLessThanOrEqual(now); });
   });
 });
+
+import * as lr from '../server/liveRoulette.js';
+describe('live roulette', () => {
+  it('phases follow the clock', () => {
+    const base = 1_800_000_000_000 - (1_800_000_000_000 % lr.CYCLE_MS);
+    expect(lr.phaseAt(base + 1000).phase).toBe('betting');
+    expect(lr.phaseAt(base + lr.BET_MS + 1).phase).toBe('spin');
+    expect(lr.roundNo(base)).toBe(lr.roundNo(base + lr.CYCLE_MS - 1));
+    expect(lr.roundNo(base + lr.CYCLE_MS)).toBe(lr.roundNo(base) + 1);
+  });
+  it('validates spots', () => {
+    ['0', '17', '36', 'RED', 'D2', 'LOW'].forEach((s) => expect(lr.validSpot(s)).toBe(true));
+    ['37', '-1', '05', 'GREEN', '', '1.5'].forEach((s) => expect(lr.validSpot(s)).toBe(false));
+  });
+  it('every spot has the same 2.7% edge (zero loses outside bets)', () => {
+    const rtp = (spot) => { let t = 0; for (let n = 0; n <= 36; n += 1) t += lr.spotMultiplier(spot, n); return t / 37; };
+    ['RED', 'BLACK', 'EVEN', 'ODD', 'LOW', 'HIGH', 'D1', 'D2', 'D3', '7'].forEach((s) => expect(rtp(s)).toBeCloseTo(36 / 37, 10));
+  });
+  it('settles several bets at once', () => {
+    expect(lr.settleBets({ RED: 10, '7': 5, EVEN: 10 }, 7)).toBe(20 + 180);
+    expect(lr.settleBets({ RED: 10, ODD: 10 }, 0)).toBe(0);
+  });
+});

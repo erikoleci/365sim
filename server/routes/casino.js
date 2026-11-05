@@ -15,6 +15,7 @@ import * as holdWinEngine from '../holdwin.js';
 import * as chain from '../chain.js';
 import * as horseEngine from '../horses.js';
 import * as cupsEngine from '../cups.js';
+import * as liveRoulette from '../liveRoulette.js';
 import { simulatedFeed, simulatedPlayers } from '../liveSim.js';
 import { normalizeCurrency, walletColumn, accountCurrencyOf, allowsCurrency, accountCurrencyError } from '../ledger.js';
 import { SLOT_GAMES as VIDEO_SLOTS, getSlotGame as getVideoSlot, publicGame } from '../slots/games.js';
@@ -1059,6 +1060,71 @@ router.get('/live', async (req, res) => {
     players += simulatedPlayers(); rounds += sim.filter((f) => f.at > Date.now() - 3600 * 1000).length * 6;
   }
   res.json({ feed: all, playersLastHour: players, roundsLastHour: rounds, preview });
+});
+
+// =====================================================================
+// LIVE ROULETTE: shared wheel, a new round every 30 s (server/liveRoulette.js)
+// =====================================================================
+async function liveRouletteResult(round) {
+  const key = `liveroulette_${round}`;
+  await pool.query('INSERT INTO kv_store (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING', [key, String(randomInt(37))]);
+  const { rows } = await pool.query('SELECT value FROM kv_store WHERE key = $1', [key]);
+  return Number(rows[0].value);
+}
+async function liveRouletteHistory(current) {
+  const keys = Array.from({ length: 14 }, (_, i) => `liveroulette_${current - 1 - i}`);
+  const { rows } = await pool.query('SELECT key, value FROM kv_store WHERE key = ANY($1)', [keys]);
+  const m = new Map(rows.map((r) => [r.key, Number(r.value)]));
+  return keys.map((k) => m.get(k)).filter((v) => v !== undefined);
+}
+async function settleLiveRoulette(userId) {
+  const now = Date.now(); const cur = liveRoulette.roundNo(now); const { phase } = liveRoulette.phaseAt(now);
+  const { rows } = await pool.query(`SELECT * FROM casino_rounds WHERE user_id = $1 AND game = 'liveroulette' AND status = 'PLAYING'`, [userId]);
+  const settled = [];
+  for (const row of rows) {
+    const st = JSON.parse(row.state);
+    if (!(st.round < cur || (st.round === cur && phase !== 'betting'))) continue;
+    const result = await liveRouletteResult(st.round);
+    const payout = liveRoulette.settleBets(st.bets, result);
+    const upd = await pool.query(`UPDATE casino_rounds SET status='FINISHED', payout=$1, result=$2, resolved_at=$3 WHERE id=$4 AND status='PLAYING'`,
+      [payout, JSON.stringify({ round: st.round, result }), Date.now(), row.id]);
+    if (upd.rowCount === 0) continue;
+    if (payout > 0) await creditPayout(userId, payout);
+    settled.push({ round: st.round, result, staked: Number(row.stake), payout });
+  }
+  return settled;
+}
+router.get('/live-roulette/state', async (req, res) => {
+  const now = Date.now(); const round = liveRoulette.roundNo(now); const { phase, msLeft } = liveRoulette.phaseAt(now);
+  const settled = await settleLiveRoulette(req.user.id);
+  const result = phase === 'betting' ? null : await liveRouletteResult(round);
+  const { rows: mine } = await pool.query(`SELECT state FROM casino_rounds WHERE user_id = $1 AND game = 'liveroulette' AND status = 'PLAYING'`, [req.user.id]);
+  const myBets = {};
+  for (const r of mine) { const st = JSON.parse(r.state); if (st.round === round) for (const [k, v] of Object.entries(st.bets)) myBets[k] = (myBets[k] || 0) + v; }
+  const sim = process.env.LIVE_SIM_ENABLED !== '0';
+  res.json({ serverNow: now, round, phase, msLeft, cycleMs: liveRoulette.CYCLE_MS, betMs: liveRoulette.BET_MS, result, history: await liveRouletteHistory(round), myBets, settled,
+    balance: await getBalance(req.user.id), tablePlayers: sim ? 14 + ((round * 7) % 29) : undefined, simulatedPlayers: sim });
+});
+router.post('/live-roulette/bet', async (req, res) => {
+  const { bets, round } = req.body || {};
+  const now = Date.now(); const cur = liveRoulette.roundNo(now);
+  if (liveRoulette.phaseAt(now).phase !== 'betting' || round !== cur) return res.status(400).json({ error: 'Betting is closed for this spin' });
+  if (!bets || typeof bets !== 'object' || Array.isArray(bets) || Object.keys(bets).length === 0) return res.status(400).json({ error: 'At least one bet is required' });
+  let total = 0; const clean = {};
+  for (const [spot, amount] of Object.entries(bets)) {
+    if (!liveRoulette.validSpot(spot)) return res.status(400).json({ error: `Unknown bet spot: ${spot}` });
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0 || Math.round(amount * 100) / 100 !== amount) return res.status(400).json({ error: `Invalid bet amount for ${spot}` });
+    clean[spot] = amount; total += amount;
+  }
+  total = roundMoney(total);
+  if (!validateStake(total)) return res.status(400).json({ error: `Total bet must be between ${MIN_STAKE} and ${MAX_STAKE}` });
+  const { rows: mine } = await pool.query(`SELECT COALESCE(SUM(stake),0) AS s FROM casino_rounds WHERE user_id = $1 AND game = 'liveroulette' AND status = 'PLAYING' AND state::json->>'round' = $2`, [req.user.id, String(cur)]);
+  if (Number(mine[0].s) + total > liveRoulette.MAX_TABLE_BET) return res.status(400).json({ error: `Table limit is ${liveRoulette.MAX_TABLE_BET} per spin` });
+  const ok = await deductStake(req.user.id, total);
+  if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
+  await pool.query(`INSERT INTO casino_rounds (id, user_id, game, stake, status, state, created_at) VALUES ($1,$2,'liveroulette',$3,'PLAYING',$4,$5)`,
+    [randomUUID(), req.user.id, total, JSON.stringify({ round: cur, bets: clean }), Date.now()]);
+  res.json({ ok: true, balance: await getBalance(req.user.id) });
 });
 
 export default router;

@@ -25,7 +25,7 @@ export const canOpenCasino = (mode, role) => mode === 'all' || (mode === 'super'
 
 // Per-game switches: the super admin can close single games (e.g. 'plinko') to players, whatever the casino mode is.
 // The super admin can still open a closed game, to test it.
-export const CASINO_GAME_KEYS = ['slots', 'roulette', 'baccarat', 'blackjack', 'videopoker', 'dice', 'plinko', 'mines', 'dragontiger', 'wheel', 'keno', 'scratch', 'tumble', 'crash', 'hilo', 'holdwin', 'penalty', 'tower', 'horses', 'cups'];
+export const CASINO_GAME_KEYS = ['slots', 'roulette', 'baccarat', 'blackjack', 'videopoker', 'dice', 'plinko', 'mines', 'dragontiger', 'wheel', 'keno', 'scratch', 'tumble', 'crash', 'hilo', 'holdwin', 'penalty', 'tower', 'horses', 'cups', 'liveroulette'];
 const GAMES_KEY = 'casino_games_disabled';
 
 export async function getDisabledGames() {
@@ -49,5 +49,6 @@ export const gameKeyForPath = (path) => {
   const seg = String(path).split('/')[1] || '';
   if (seg === 'slot-games' || seg === 'slots') return 'slots';
   if (seg === 'dragon-tiger') return 'dragontiger';
+  if (seg === 'live-roulette') return 'liveroulette';
   return CASINO_GAME_KEYS.includes(seg) ? seg : null;
 };
