@@ -1049,9 +1049,9 @@ router.get('/live', async (req, res) => {
   const { rows: cnt } = await pool.query(
     `SELECT COUNT(DISTINCT user_id)::int AS players, COUNT(*)::int AS rounds FROM casino_rounds r JOIN users u ON u.id = r.user_id
       WHERE r.created_at > $1 AND u.role <> 'SUPER_ADMIN'`, [Date.now() - 3600 * 1000]);
-  // Preview mode: while the casino is closed to players (access 'super') the super admin also sees simulated activity.
-  // As soon as the casino opens to players the simulation is gone and only real rounds are returned.
-  const preview = (await getCasinoAccess()) === 'super';
+  // This is a demo-money simulator, so the Live strip is topped up with simulated players (flagged `simulated`).
+  // Set LIVE_SIM_ENABLED=0 in the server env to switch the simulation off and show real rounds only.
+  const preview = process.env.LIVE_SIM_ENABLED !== '0';
   let all = feed; let players = cnt[0]?.players || 0; let rounds = cnt[0]?.rounds || 0;
   if (preview) {
     const sim = simulatedFeed();

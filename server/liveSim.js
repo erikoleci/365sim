@@ -1,6 +1,5 @@
-// PREVIEW-ONLY simulated activity for the Casino Live strip. It exists so the super admin can see how the lobby feels
-// while the casino is still closed to players. The route only uses it while casino access is 'super', so real players
-// can never be shown invented activity.
+// Simulated activity for the Casino Live strip of this demo-money simulator (switch off with LIVE_SIM_ENABLED=0).
+// Entries are flagged `simulated: true` and the UI says the feed includes simulated players.
 const SLOT = 7000; // one possible round per 7 seconds
 const WINDOW_SLOTS = 120; // ~14 minutes of history
 const NAMES = ['Ar', 'Er', 'Be', 'Dr', 'Gj', 'Ke', 'Li', 'Mi', 'Ol', 'Re', 'Sa', 'Te', 'Vi', 'Xh', 'Zo', 'En', 'Fl', 'Ja', 'Kl', 'Lu'];
