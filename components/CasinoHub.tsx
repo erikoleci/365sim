@@ -1,3 +1,4 @@
+import LiveWins from './casino/LiveWins';
 import Penalty from './casino/Penalty';
 import Tower from './casino/Tower';
 import Horses from './casino/Horses';
@@ -91,6 +92,8 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
       {loadingTile && <GameLoader name={loadingTile.name} img={loadingTile.img} art={loadingTile.art} onDone={() => { setActiveGame(loadingTile.game); setLoadingTile(null); }} />}
       <h1 className="text-3xl sm:text-4xl font-bold italic mb-1">Casino <span className="text-brand-yellow">Classics</span></h1>
       <p className="text-sm opacity-70 mb-6">Slots and table games. Instant wins, no waiting.</p>
+
+      <LiveWins />
 
       <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><span className="w-1 h-6 bg-brand-yellow rounded-full"></span>Slots</h3>
       {open('slots') && <div className="mb-10"><SlotGames balance={userBalance} balanceEur={userBalanceEur} accountCurrency={accountCurrency} onBalances={onSetBalance} /></div>}

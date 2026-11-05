@@ -1031,4 +1031,24 @@ router.post('/cups/play', async (req, res) => {
   res.json({ ...shuffle, won, payout, multiplier: cupsEngine.CUPS_PAYOUT, balance: await getBalance(req.user.id) });
 });
 
+// =====================================================================
+// LIVE WINS: the most recent rounds of REAL players (names masked), never invented.
+// =====================================================================
+export const maskName = (u) => { const t = String(u || '').trim(); return t.length <= 2 ? `${t[0] || '?'}***` : `${t.slice(0, 2)}***${t.slice(-1)}`; };
+router.get('/live', async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT r.game, r.currency, r.stake, r.payout, r.created_at, u.username, u.role
+       FROM casino_rounds r JOIN users u ON u.id = r.user_id
+      WHERE r.status = 'FINISHED' AND u.role <> 'SUPER_ADMIN' AND r.created_at > $1
+      ORDER BY r.created_at DESC LIMIT 40`, [Date.now() - 24 * 3600 * 1000]);
+  const feed = rows.map((r) => ({
+    game: r.game, currency: r.currency === 'EUR' ? 'EUR' : 'ALL', stake: Number(r.stake), payout: Number(r.payout),
+    multiplier: Number(r.stake) > 0 ? Math.round((Number(r.payout) / Number(r.stake)) * 100) / 100 : 0, at: Number(r.created_at), player: maskName(r.username),
+  }));
+  const { rows: cnt } = await pool.query(
+    `SELECT COUNT(DISTINCT user_id)::int AS players, COUNT(*)::int AS rounds FROM casino_rounds r JOIN users u ON u.id = r.user_id
+      WHERE r.created_at > $1 AND u.role <> 'SUPER_ADMIN'`, [Date.now() - 3600 * 1000]);
+  res.json({ feed, playersLastHour: cnt[0]?.players || 0, roundsLastHour: cnt[0]?.rounds || 0 });
+});
+
 export default router;

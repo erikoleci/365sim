@@ -954,3 +954,8 @@ export async function casinoHorsesRace(stake: number, horse: number) {
 export async function casinoCupsPlay(stake: number, cup: number) {
   return request<{ start: number; swaps: [number, number][]; final: number; won: boolean; payout: number; multiplier: number; balance: number }>('/casino/cups/play', { method: 'POST', body: JSON.stringify({ stake, cup }) });
 }
+
+export type LiveWin = { game: string; currency: 'ALL' | 'EUR'; stake: number; payout: number; multiplier: number; at: number; player: string };
+export async function casinoLive() {
+  return request<{ feed: LiveWin[]; playersLastHour: number; roundsLastHour: number }>('/casino/live');
+}

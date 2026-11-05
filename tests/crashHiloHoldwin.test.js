@@ -160,3 +160,12 @@ describe('three cups', () => {
   });
   it('payout keeps a house edge', () => { expect(cups.CUPS_PAYOUT / 3).toBeLessThan(1); expect(cups.CUPS_PAYOUT / 3).toBeGreaterThan(0.9); });
 });
+
+import { maskName } from '../server/routes/casino.js';
+describe('live feed privacy', () => {
+  it('masks usernames', () => {
+    expect(maskName('erikoleci')).toBe('er***i');
+    expect(maskName('ab')).toBe('a***');
+    expect(maskName('')).toBe('?***');
+  });
+});
