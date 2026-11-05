@@ -15,6 +15,7 @@ import * as holdWinEngine from '../holdwin.js';
 import * as chain from '../chain.js';
 import * as horseEngine from '../horses.js';
 import * as cupsEngine from '../cups.js';
+import { simulatedFeed, simulatedPlayers } from '../liveSim.js';
 import { normalizeCurrency, walletColumn, accountCurrencyOf, allowsCurrency, accountCurrencyError } from '../ledger.js';
 import { SLOT_GAMES as VIDEO_SLOTS, getSlotGame as getVideoSlot, publicGame } from '../slots/games.js';
 import { playRound } from '../slots/engine.js';
@@ -1048,7 +1049,16 @@ router.get('/live', async (req, res) => {
   const { rows: cnt } = await pool.query(
     `SELECT COUNT(DISTINCT user_id)::int AS players, COUNT(*)::int AS rounds FROM casino_rounds r JOIN users u ON u.id = r.user_id
       WHERE r.created_at > $1 AND u.role <> 'SUPER_ADMIN'`, [Date.now() - 3600 * 1000]);
-  res.json({ feed, playersLastHour: cnt[0]?.players || 0, roundsLastHour: cnt[0]?.rounds || 0 });
+  // Preview mode: while the casino is closed to players (access 'super') the super admin also sees simulated activity.
+  // As soon as the casino opens to players the simulation is gone and only real rounds are returned.
+  const preview = (await getCasinoAccess()) === 'super';
+  let all = feed; let players = cnt[0]?.players || 0; let rounds = cnt[0]?.rounds || 0;
+  if (preview) {
+    const sim = simulatedFeed();
+    all = [...feed, ...sim].sort((a, b) => b.at - a.at).slice(0, 40);
+    players += simulatedPlayers(); rounds += sim.filter((f) => f.at > Date.now() - 3600 * 1000).length * 6;
+  }
+  res.json({ feed: all, playersLastHour: players, roundsLastHour: rounds, preview });
 });
 
 export default router;

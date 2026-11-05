@@ -169,3 +169,14 @@ describe('live feed privacy', () => {
     expect(maskName('')).toBe('?***');
   });
 });
+
+import { simulatedFeed } from '../server/liveSim.js';
+describe('live preview simulation', () => {
+  it('is deterministic per moment, recent, and flagged as simulated', () => {
+    const now = 1_800_000_000_000;
+    const a = simulatedFeed(now); const b = simulatedFeed(now);
+    expect(a).toEqual(b);
+    expect(a.length).toBeGreaterThan(10);
+    a.forEach((f) => { expect(f.simulated).toBe(true); expect(f.at).toBeLessThanOrEqual(now); });
+  });
+});

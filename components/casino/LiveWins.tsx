@@ -12,7 +12,7 @@ const money = (n: number, c: string) => `${n.toLocaleString(undefined, { minimum
 
 // LIVE: real rounds played by real players on this site in the last 24 hours (names masked). Nothing here is invented.
 const LiveWins: React.FC = () => {
-  const [data, setData] = useState<{ feed: LiveWin[]; playersLastHour: number; roundsLastHour: number } | null>(null);
+  const [data, setData] = useState<{ feed: LiveWin[]; playersLastHour: number; roundsLastHour: number; preview?: boolean } | null>(null);
   const [tab, setTab] = useState<'wins' | 'all'>('wins');
   useEffect(() => {
     let on = true;
@@ -25,7 +25,7 @@ const LiveWins: React.FC = () => {
   return (
     <div className="mb-8 rounded-2xl border border-white/10 bg-gradient-to-b from-[#1a1a24] to-[#101018] p-4">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-        <h3 className="text-xl font-bold flex items-center gap-2"><span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" /><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" /></span>Casino Live</h3>
+        <h3 className="text-xl font-bold flex items-center gap-2"><span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" /><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" /></span>Casino Live{data.preview && <span className="ml-2 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/10 text-gray-400" title="Only you can see the casino right now, so this strip also shows simulated activity. It switches off automatically when the casino opens to players.">preview</span>}</h3>
         <div className="text-xs text-gray-400"><b className="text-white">{data.playersLastHour}</b> players · <b className="text-white">{data.roundsLastHour}</b> rounds in the last hour</div>
       </div>
       <div className="flex gap-1.5 mb-3">
