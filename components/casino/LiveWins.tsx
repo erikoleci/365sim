@@ -41,7 +41,7 @@ const LiveWins: React.FC = () => {
           ))}
         </ul>
       )}
-      {data.preview && <div className="text-[10px] text-gray-500 mt-3 text-center">Demo money only · the live feed includes simulated players</div>}
+      {data.preview && <div className="text-[10px] text-gray-500 mt-3 text-center">Credit only · the live feed includes simulated players</div>}
     </div>
   );
 };
