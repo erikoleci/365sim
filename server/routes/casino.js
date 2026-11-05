@@ -5,6 +5,7 @@ import { requireAuth } from './auth.js';
 import { getCasinoAccess, canOpenCasino, getDisabledGames, gameKeyForPath } from '../casinoAccess.js';
 import { PLINKO_ROWS, PLINKO_RISKS, plinkoMultipliers, minesMultiplier, MINES_TILES, dragonTigerPayout, DT_PAYOUT } from '../casinoMath.js';
 import { isSuperAdmin } from '../roles.js';
+import { WHEEL_SEGMENTS, wheelSpin } from '../wheel.js';
 import { normalizeCurrency, walletColumn, accountCurrencyOf, allowsCurrency, accountCurrencyError } from '../ledger.js';
 import { SLOT_GAMES as VIDEO_SLOTS, getSlotGame as getVideoSlot, publicGame } from '../slots/games.js';
 import { playRound } from '../slots/engine.js';
@@ -682,6 +683,20 @@ router.post('/dragon-tiger/deal', async (req, res) => {
   await creditPayout(req.user.id, payout);
   await logRound(req.user.id, 'dragontiger', stake, payout, { bet, result });
   res.json({ dragon, tiger, result, payout, balance: await getBalance(req.user.id) });
+});
+
+// WHEEL OF FORTUNE ("Rrota e Fatit"): one spin, 24 equal segments (server/wheel.js), pays stake x the segment multiplier.
+router.get('/wheel/segments', (req, res) => res.json({ segments: WHEEL_SEGMENTS }));
+router.post('/wheel/spin', async (req, res) => {
+  const { stake } = req.body || {};
+  if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
+  const ok = await deductStake(req.user.id, stake);
+  if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
+  const { index, multiplier } = wheelSpin((n) => randomInt(0, n));
+  const payout = roundMoney(stake * multiplier);
+  await creditPayout(req.user.id, payout);
+  await logRound(req.user.id, 'wheel', stake, payout, { index, multiplier });
+  res.json({ index, multiplier, payout, balance: await getBalance(req.user.id) });
 });
 
 export default router;

@@ -837,6 +837,13 @@ export async function casinoDragonTigerDeal(stake: number, bet: 'DRAGON' | 'TIGE
     '/casino/dragon-tiger/deal', { method: 'POST', body: JSON.stringify({ stake, bet }) });
 }
 
+export async function casinoWheelSegments() {
+  return request<{ segments: number[] }>('/casino/wheel/segments');
+}
+export async function casinoWheelSpin(stake: number) {
+  return request<{ index: number; multiplier: number; payout: number; balance: number }>('/casino/wheel/spin', { method: 'POST', body: JSON.stringify({ stake }) });
+}
+
 // ---- Support (player writes, his admin and the super admin answer; staff replies carry no name) ----
 export interface SupportThread {
   id: string; status: 'OPEN' | 'CLOSED'; ticketNo: number | null; matchLabel: string | null;
