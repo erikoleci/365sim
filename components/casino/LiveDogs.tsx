@@ -101,10 +101,6 @@ const LiveDogs: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       </div>
       <div className="h-1.5 rounded-full bg-black/40 overflow-hidden mb-2"><div className={`h-full ${betting ? 'bg-yellow-300' : 'bg-red-500'}`} style={{ width: `${pct * 100}%`, transition: 'width .2s linear' }} /></div>
 
-      <div className="relative dog-hero rounded-2xl overflow-hidden mb-3 border border-yellow-500/40 p-2" style={{ aspectRatio: '16/6' }}>
-        <img src="/casino/dogs/track.png" alt="" className="absolute inset-0 w-full h-full object-contain p-2" draggable={false} />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-      </div>
       <DogTrack dogs={horses} progress={progress} running={racing} finishOrder={finished} />
       <div className="flex gap-1 justify-center my-2 min-h-[22px]">{(st?.winners ?? []).map((w, i) => <span key={i} className="w-5 h-5 rounded-md text-[10px] font-black flex items-center justify-center text-black" style={{ background: horses[w]?.color }}>{(horses[w]?.trap ?? w + 1)}</span>)}</div>
       <div className="text-center font-bold min-h-[26px]">{winAmt > 0 ? <span className="text-brand-yellow win-pop inline-block text-lg">You won <CountUp value={winAmt} format={(v) => `${v.toFixed(2)} L`} /></span> : msg}</div>

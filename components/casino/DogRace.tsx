@@ -70,15 +70,9 @@ const DogRace: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
         <button onClick={() => { setSound(!snd); setSnd(!snd); }} className="text-sm px-2 py-1 rounded bg-white/10">{snd ? '🔊' : '🔇'}</button>
       </div>
 
-      <div className="relative dog-hero rounded-2xl overflow-hidden mb-3 border border-yellow-500/40 p-2" style={{ aspectRatio: '16/6' }}>
-        <img src="/casino/dogs/track.png" alt="" className="absolute inset-0 w-full h-full object-contain p-2" draggable={false} />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-        <div className="absolute bottom-2 inset-x-0 text-center font-extrabold text-lg" style={{ textShadow: '0 2px 6px #000' }}>
-          {winAmt > 0 ? <span className="text-brand-yellow win-pop inline-block">You won <CountUp value={winAmt} format={(v) => `${v.toFixed(2)} L`} /></span> : msg}
-        </div>
-      </div>
-
-      <DogTrack dogs={dogs} progress={progress} running={racing} finishOrder={order} selected={pick} onSelect={racing ? undefined : setPick} />
+      <DogTrack dogs={dogs} progress={progress} running={racing} finishOrder={order} selected={pick}>
+        {winAmt > 0 ? <span className="text-brand-yellow win-pop inline-block">You won <CountUp value={winAmt} format={(v) => `${v.toFixed(2)} L`} /></span> : msg}
+      </DogTrack>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-3">
         {dogs.map((d) => (

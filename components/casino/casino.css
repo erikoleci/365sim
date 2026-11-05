@@ -176,5 +176,7 @@
 .dog-gallop { animation: dog-gallop .36s ease-in-out infinite; transform-origin: 50% 90%; }
 @keyframes dog-dust { 0% { opacity: .55; transform: translateX(0) scale(.5); } 100% { opacity: 0; transform: translateX(-34px) scale(1.6); } }
 .dog-dust { position: absolute; left: 4%; bottom: 6%; width: 18px; height: 14px; border-radius: 50%; background: radial-gradient(#e7c58f, rgba(231,197,143,0)); animation: dog-dust .45s ease-out infinite; box-shadow: -16px -3px 0 -3px rgba(231,197,143,.35), -30px 2px 0 -5px rgba(231,197,143,.25); }
+.dog-speed { background: repeating-linear-gradient(90deg, rgba(255,255,255,0) 0 90px, rgba(255,255,255,.07) 90px 94px, rgba(255,255,255,0) 94px 190px); background-size: 190px 100%; animation: dog-speed .35s linear infinite; mix-blend-mode: screen; }
+@keyframes dog-speed { from { background-position: 0 0; } to { background-position: -190px 0; } }
 .dog-hero { background: radial-gradient(ellipse at 50% 0%, #1e3a8a 0%, #0b1330 55%, #05070f 100%); }
-@media (prefers-reduced-motion: reduce) { .dog-leg, .dog-body, .dog-gallop, .dog-dust { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .dog-leg, .dog-body, .dog-gallop, .dog-dust, .dog-speed { animation: none; } }
