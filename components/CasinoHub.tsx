@@ -11,6 +11,8 @@ import Baccarat from './casino/Baccarat';
 import Dice from './casino/Dice';
 import SlotGames from './casino/SlotGames';
 import Wheel from './casino/Wheel';
+import Keno from './casino/Keno';
+import Scratch from './casino/Scratch';
 
 interface CasinoHubProps {
   userBalance: number;
@@ -23,7 +25,7 @@ interface CasinoHubProps {
 
 const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, accountCurrency = 'BOTH', onSetBalance, showAllGames = false }) => {
   const euroOnly = accountCurrency === 'EUR';
-  const [activeGame, setActiveGame] = useState<'slots' | 'blackjack' | 'roulette' | 'poker' | 'baccarat' | 'dice' | 'plinko' | 'mines' | 'dragontiger' | 'wheel' | null>(null);
+  const [activeGame, setActiveGame] = useState<'slots' | 'blackjack' | 'roulette' | 'poker' | 'baccarat' | 'dice' | 'plinko' | 'mines' | 'dragontiger' | 'wheel' | 'keno' | 'scratch' | null>(null);
   const [disabled, setDisabled] = useState<string[]>([]);
   useEffect(() => { casinoAccess().then((a) => setDisabled(a.disabledGames || [])).catch(() => {}); }, []);
   // The table games are played in lek: a euro-only account gets the slots only.
@@ -37,6 +39,8 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
   if (activeGame === 'plinko') return <Plinko userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
   if (activeGame === 'mines') return <Mines userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
   if (activeGame === 'dragontiger') return <DragonTiger userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
+  if (activeGame === 'keno') return <Keno userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
+  if (activeGame === 'scratch') return <Scratch userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
   if (activeGame === 'wheel') return <Wheel userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
   if (activeGame === 'dice') return <Dice userBalance={userBalance} onSetBalance={onSetBalance} onClose={() => setActiveGame(null)} />;
 
@@ -69,6 +73,28 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
           
+          {open('keno') && (
+          <div onClick={() => setActiveGame('keno')} className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-brand-yellow/50">
+               <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"></div>
+               <div className="absolute bottom-4 left-4 z-20">
+                  <div className="bg-emerald-600 text-xs font-bold px-2 py-0.5 rounded w-fit mb-1">NEW</div>
+                  <h3 className="text-2xl font-bold text-white group-hover:text-brand-yellow transition-colors">Keno</h3>
+                  <p className="text-xs text-gray-300">Zgjidh numrat, fito deri 1000x</p>
+               </div>
+               <div className="h-full w-full bg-gradient-to-br from-emerald-900 to-black flex items-center justify-center text-8xl group-hover:scale-110 transition-transform duration-500">🎱</div>
+          </div>
+          )}
+          {open('scratch') && (
+          <div onClick={() => setActiveGame('scratch')} className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-brand-yellow/50">
+               <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"></div>
+               <div className="absolute bottom-4 left-4 z-20">
+                  <div className="bg-emerald-600 text-xs font-bold px-2 py-0.5 rounded w-fit mb-1">NEW</div>
+                  <h3 className="text-2xl font-bold text-white group-hover:text-brand-yellow transition-colors">Gërvisht & Fito</h3>
+                  <p className="text-xs text-gray-300">Letra me çmime deri 50x</p>
+               </div>
+               <div className="h-full w-full bg-gradient-to-br from-orange-900 to-black flex items-center justify-center text-8xl group-hover:scale-110 transition-transform duration-500">🎟️</div>
+          </div>
+          )}
           {open('wheel') && (
           <div onClick={() => setActiveGame('wheel')} className="lobby-card lobby-shine group relative h-64 bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-lg border border-transparent hover:border-brand-yellow/50">
                <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"></div>

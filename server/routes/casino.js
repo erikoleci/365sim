@@ -6,6 +6,8 @@ import { getCasinoAccess, canOpenCasino, getDisabledGames, gameKeyForPath } from
 import { PLINKO_ROWS, PLINKO_RISKS, plinkoMultipliers, minesMultiplier, MINES_TILES, dragonTigerPayout, DT_PAYOUT } from '../casinoMath.js';
 import { isSuperAdmin } from '../roles.js';
 import { WHEEL_SEGMENTS, wheelSpin } from '../wheel.js';
+import { KENO_PAYTABLE, KENO_POOL, KENO_MAX_PICKS, drawKeno, kenoResult } from '../keno.js';
+import { scratchCard } from '../scratch.js';
 import { normalizeCurrency, walletColumn, accountCurrencyOf, allowsCurrency, accountCurrencyError } from '../ledger.js';
 import { SLOT_GAMES as VIDEO_SLOTS, getSlotGame as getVideoSlot, publicGame } from '../slots/games.js';
 import { playRound } from '../slots/engine.js';
@@ -697,6 +699,37 @@ router.post('/wheel/spin', async (req, res) => {
   await creditPayout(req.user.id, payout);
   await logRound(req.user.id, 'wheel', stake, payout, { index, multiplier });
   res.json({ index, multiplier, payout, balance: await getBalance(req.user.id) });
+});
+
+// KENO: pick 1-8 of 40, the house draws 10 (server/keno.js).
+router.get('/keno/paytable', (req, res) => res.json({ pool: KENO_POOL, maxPicks: KENO_MAX_PICKS, paytable: KENO_PAYTABLE }));
+router.post('/keno/play', async (req, res) => {
+  const { stake, picks } = req.body || {};
+  const ok = Array.isArray(picks) && picks.length >= 1 && picks.length <= KENO_MAX_PICKS
+    && picks.every((n) => Number.isInteger(n) && n >= 1 && n <= KENO_POOL) && new Set(picks).size === picks.length;
+  if (!ok) return res.status(400).json({ error: `Pick 1 to ${KENO_MAX_PICKS} different numbers from 1 to ${KENO_POOL}` });
+  if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
+  const paid = await deductStake(req.user.id, stake);
+  if (!paid) return res.status(400).json({ error: 'Insufficient balance' });
+  const drawn = drawKeno((n) => randomInt(0, n));
+  const { hits, multiplier } = kenoResult(picks, drawn);
+  const payout = roundMoney(stake * multiplier);
+  await creditPayout(req.user.id, payout);
+  await logRound(req.user.id, 'keno', stake, payout, { picks, drawn, hits });
+  res.json({ drawn, hits, multiplier, payout, balance: await getBalance(req.user.id) });
+});
+
+// SCRATCH CARD: 9 cells, three equal prizes win (server/scratch.js).
+router.post('/scratch/play', async (req, res) => {
+  const { stake } = req.body || {};
+  if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
+  const paid = await deductStake(req.user.id, stake);
+  if (!paid) return res.status(400).json({ error: 'Insufficient balance' });
+  const { cells, multiplier } = scratchCard((n) => randomInt(0, n));
+  const payout = roundMoney(stake * multiplier);
+  await creditPayout(req.user.id, payout);
+  await logRound(req.user.id, 'scratch', stake, payout, { cells, multiplier });
+  res.json({ cells, multiplier, payout, balance: await getBalance(req.user.id) });
 });
 
 export default router;

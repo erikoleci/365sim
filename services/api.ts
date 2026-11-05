@@ -844,6 +844,16 @@ export async function casinoWheelSpin(stake: number) {
   return request<{ index: number; multiplier: number; payout: number; balance: number }>('/casino/wheel/spin', { method: 'POST', body: JSON.stringify({ stake }) });
 }
 
+export async function casinoKenoPaytable() {
+  return request<{ pool: number; maxPicks: number; paytable: Record<string, Record<string, number>> }>('/casino/keno/paytable');
+}
+export async function casinoKenoPlay(stake: number, picks: number[]) {
+  return request<{ drawn: number[]; hits: number; multiplier: number; payout: number; balance: number }>('/casino/keno/play', { method: 'POST', body: JSON.stringify({ stake, picks }) });
+}
+export async function casinoScratchPlay(stake: number) {
+  return request<{ cells: number[]; multiplier: number; payout: number; balance: number }>('/casino/scratch/play', { method: 'POST', body: JSON.stringify({ stake }) });
+}
+
 // ---- Support (player writes, his admin and the super admin answer; staff replies carry no name) ----
 export interface SupportThread {
   id: string; status: 'OPEN' | 'CLOSED'; ticketNo: number | null; matchLabel: string | null;
