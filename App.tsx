@@ -5,7 +5,6 @@ import MatchDetail from './components/MatchDetail';
 const OwnerDashboard = React.lazy(() => import('./components/OwnerDashboard'));
 const AgentUsersPanel = React.lazy(() => import('./components/AgentUsersPanel'));
 import Login from './components/Login';
-const PublicOdds = React.lazy(() => import('./components/PublicOdds'));
 const CasinoHub = React.lazy(() => import('./components/CasinoHub'));
 import BetSlipPanels from './components/sportsbook/BetSlipPanels';
 import SlipBlockedToast from './components/SlipBlockedToast';
@@ -140,16 +139,9 @@ const App: React.FC = () => {
     onToggleFavoriteTeam,
   }), [slip.toggleSelection, slip.selectedIds, openMatchById, currentUser?.role, admin.settleMatch, admin.simulatingMatchId, favoriteTeams, onToggleFavoriteTeam]);
 
-  // 365sim.uk/koeficientet: public, read-only odds board (no sign-in). Only on the 365sim.uk domain.
-  if (/(^|\.)365sim\.uk$/i.test(window.location.hostname) && /^\/koeficientet\/?$/i.test(window.location.pathname)) {
-    return <React.Suspense fallback={<FullScreenSpinner />}><PublicOdds /></React.Suspense>;
-  }
+  // Any path on 365sim.uk (e.g. /koeficientet) behaves like the front door: sign-in first, and the address stays a clean 365sim.uk
+  if (!currentUser && authChecked && window.location.pathname !== '/') { try { window.history.replaceState(null, '', '/'); } catch { /* ignore */ } }
   if (!authChecked) return <FullScreenSpinner />;
-  // On 365sim.uk the front door is the public odds board (what people see when the link is shared); sign-in is one tap away
-  // at /hyr. Players already signed in go straight to the app as before.
-  if (!currentUser && /(^|\.)365sim\.uk$/i.test(window.location.hostname) && !/^\/hyr\/?$/i.test(window.location.pathname)) {
-    return <React.Suspense fallback={<FullScreenSpinner />}><PublicOdds /></React.Suspense>;
-  }
   if (!currentUser) return <Login onAuthenticated={(user: User) => setCurrentUser(user)} />;
 
   // The owner (ADMIN) gets a separate, read-first page and never the sportsbook/casino shell, so
