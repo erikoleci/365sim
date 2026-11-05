@@ -4,7 +4,7 @@ const SLOT = 7000; // one possible round per 7 seconds
 const WINDOW_SLOTS = 120; // ~14 minutes of history
 const NAMES = ['Ar', 'Er', 'Be', 'Dr', 'Gj', 'Ke', 'Li', 'Mi', 'Ol', 'Re', 'Sa', 'Te', 'Vi', 'Xh', 'Zo', 'En', 'Fl', 'Ja', 'Kl', 'Lu'];
 const TAILS = ['on', 'it', 'ar', 'is', 'jo', 'en', 'ik', 'al', 'ed', 'or'];
-const GAMES = ['tumble', 'plinko', 'mines', 'wheel', 'keno', 'crash', 'hilo', 'holdwin', 'penalty', 'tower', 'horses', 'cups', 'roulette', 'blackjack', 'baccarat', 'dice', 'scratch', 'hot-fruits', 'lucky-dragon', 'diamond-rush'];
+const GAMES = ['tumble', 'plinko', 'mines', 'wheel', 'keno', 'crash', 'hilo', 'holdwin', 'penalty', 'tower', 'horses', 'cups', 'dogs', 'livedogs', 'livecrash', 'livekeno', 'liveroulette', 'roulette', 'blackjack', 'baccarat', 'dice', 'scratch', 'hot-fruits', 'lucky-dragon', 'diamond-rush'];
 const STAKES = [50, 100, 100, 200, 250, 500, 500, 1000, 2000];
 const MULTS = [0.5, 1.5, 1.5, 2, 2, 3, 4, 5, 8, 12, 25, 60];
 

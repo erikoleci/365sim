@@ -4,7 +4,7 @@ import { casinoLive, LiveWin } from '../../services/api';
 const NAMES: Record<string, string> = {
   tumble: 'Sugar Cascade', plinko: 'Plinko', mines: 'Mines', dragontiger: 'Dragon Tiger', wheel: 'Wheel of Fortune', keno: 'Keno', scratch: 'Scratch & Win',
   baccarat: 'Baccarat', blackjack: 'Blackjack', roulette: 'Roulette', videopoker: 'Video Poker', dice: 'Dice', crash: 'Crash', hilo: 'Hi-Lo',
-  holdwin: 'Hold & Win', penalty: 'Penalty Shootout', tower: 'Gold Tower', horses: 'Horse Race', cups: 'Three Cups',
+  holdwin: 'Hold & Win', penalty: 'Penalty Shootout', tower: 'Gold Tower', horses: 'Horse Race', cups: 'Three Cups', dogs: 'Dog Race', liveroulette: 'Live Roulette', livehorses: 'Live Horse Race', livedogs: 'Live Dog Race', livecrash: 'Live Crash', livekeno: 'Live Keno',
 };
 const gameName = (g: string) => NAMES[g] || g.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 const ago = (t: number) => { const s = Math.max(0, Math.round((Date.now() - t) / 1000)); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : `${Math.floor(s / 3600)}h ago`; };

@@ -226,3 +226,53 @@ describe('live horse race', () => {
     expect(lh.validHorse('5')).toBe(true); expect(lh.validHorse('6')).toBe(false);
   });
 });
+
+import * as dogs from '../server/dogs.js';
+import * as ld from '../server/liveDogs.js';
+describe('dog race', () => {
+  it('probabilities sum to 1, odds keep a 5% edge, winners follow probabilities', () => {
+    expect(dogs.DOGS.reduce((a, d) => a + d.p, 0)).toBeCloseTo(1, 10);
+    dogs.DOGS.forEach((d) => expect(d.p * d.odds).toBeLessThanOrEqual(0.95 + 1e-9));
+    const wins = Array(6).fill(0); const N = 60000;
+    for (let i = 0; i < N; i += 1) { const o = dogs.drawOrder(rnd); expect([...o].sort().join()).toBe('0,1,2,3,4,5'); wins[o[0]] += 1; }
+    dogs.DOGS.forEach((d) => expect(Math.abs(wins[d.id] / N - d.p)).toBeLessThan(0.015));
+  });
+  it('live table phases and settlement', () => {
+    const base = 1_800_000_000_000 - (1_800_000_000_000 % ld.CYCLE_MS);
+    expect(ld.phaseAt(base + 1).phase).toBe('betting');
+    expect(ld.phaseAt(base + ld.BET_MS + 1).phase).toBe('race');
+    expect(ld.settle({ '0': 100 }, [0, 1, 2, 3, 4, 5])).toBe(dogs.DOGS[0].odds * 100);
+    expect(ld.settle({ '1': 100 }, [0, 1, 2, 3, 4, 5])).toBe(0);
+  });
+});
+
+import * as lc from '../server/liveCrash.js';
+import * as lk from '../server/liveKeno.js';
+describe('live crash', () => {
+  const R = 50000; // some round number
+  const start = lc.flightStart(R);
+  it('betting then flight, crash reveals at the right time', () => {
+    expect(lc.infoAt(R * lc.CYCLE_MS + 100).phase).toBe('betting');
+    expect(lc.infoAt(start + 500, 5).phase).toBe('flight');
+    expect(lc.infoAt(start + lc.timeTo(5) * 1000 + 50, 5).phase).toBe('crashed');
+  });
+  it('outcomes: loss after the crash, auto cash-out pays the target, still flying otherwise', () => {
+    const cp = 5;
+    expect(lc.outcome({ round: R, auto: null }, cp, start + 1000).done).toBe(false);
+    expect(lc.outcome({ round: R, auto: null }, cp, start + lc.timeTo(cp) * 1000 + 100)).toEqual({ done: true, multiplier: 0 });
+    expect(lc.outcome({ round: R, auto: 2 }, cp, start + lc.timeTo(2) * 1000 + 100)).toEqual({ done: true, multiplier: 2 });
+    expect(lc.outcome({ round: R, auto: 8 }, cp, start + lc.timeTo(cp) * 1000 + 100)).toEqual({ done: true, multiplier: 0 });
+    expect(lc.outcome({ round: R, auto: null }, 1000, (R + 1) * lc.CYCLE_MS + 5)).toEqual({ done: true, multiplier: 0 });
+  });
+  it('crash points are capped and the flight fits in the window', () => {
+    for (let i = 0; i < 3000; i += 1) { const c = lc.draw(rnd); expect(c).toBeLessThanOrEqual(lc.LIVE_CAP); expect(lc.timeTo(c) * 1000 + lc.BET_MS).toBeLessThan(lc.CYCLE_MS); }
+  });
+});
+describe('live keno', () => {
+  it('phases and pick validation', () => {
+    const base = 1_800_000_000_000 - (1_800_000_000_000 % lk.CYCLE_MS);
+    expect(lk.phaseAt(base + 5).phase).toBe('betting'); expect(lk.phaseAt(base + lk.BET_MS + 5).phase).toBe('draw');
+    expect(lk.validPicks([1, 2, 40])).toBe(true); expect(lk.validPicks([])).toBe(false); expect(lk.validPicks([1, 1])).toBe(false); expect(lk.validPicks([41])).toBe(false);
+  });
+  it('draws 10 distinct balls', () => { const d = lk.draw((n) => randomInt(0, n)); expect(new Set(d).size).toBe(10); });
+});

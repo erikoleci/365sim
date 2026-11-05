@@ -979,3 +979,40 @@ export async function casinoLiveHorsesState() { return request<LiveHorsesState>(
 export async function casinoLiveHorsesBet(round: number, bets: Record<string, number>) {
   return request<{ ok: boolean; balance: number }>('/casino/live-horses/bet', { method: 'POST', body: JSON.stringify({ round, bets }) });
 }
+
+// ---- Dog Race (single + live) ----
+export type Dog = { id: number; name: string; trap: number; p: number; color: string; odds: number };
+export async function casinoDogsInfo() { return request<{ dogs: Dog[] }>('/casino/dogs/info'); }
+export async function casinoDogsRace(stake: number, dog: number) {
+  return request<{ order: number[]; payout: number; odds: number; balance: number }>('/casino/dogs/race', { method: 'POST', body: JSON.stringify({ stake, dog }) });
+}
+export type LiveDogsState = {
+  serverNow: number; round: number; phase: 'betting' | 'race'; msLeft: number; cycleMs: number; betMs: number; order: number[] | null; winners: number[];
+  myBets: Record<string, number>; settled: { round: number; order: number[]; staked: number; payout: number }[]; balance: number; tablePlayers?: number; simulatedPlayers?: boolean; runners: Dog[];
+};
+export async function casinoLiveDogsState() { return request<LiveDogsState>('/casino/live-dogs/state'); }
+export async function casinoLiveDogsBet(round: number, bets: Record<string, number>) {
+  return request<{ ok: boolean; balance: number }>('/casino/live-dogs/bet', { method: 'POST', body: JSON.stringify({ round, bets }) });
+}
+
+// ---- Live Crash / Live Keno ----
+export type LiveCrashState = {
+  serverNow: number; round: number; phase: 'betting' | 'flight' | 'crashed'; msLeft: number; t: number; cycleMs: number; betMs: number; growth: number; crashPoint: number | null;
+  history: number[]; my: { round: number; auto: number | null; stake: number } | null;
+  settled: { round: number; crashPoint: number; staked: number; payout: number; multiplier: number }[]; balance: number; tablePlayers?: number; simulatedPlayers?: boolean;
+};
+export async function casinoLiveCrashState() { return request<LiveCrashState>('/casino/live-crash/state'); }
+export async function casinoLiveCrashBet(round: number, stake: number, autoCashout?: number | null) {
+  return request<{ ok: boolean; balance: number }>('/casino/live-crash/bet', { method: 'POST', body: JSON.stringify({ round, stake, autoCashout: autoCashout || undefined }) });
+}
+export async function casinoLiveCrashCashout() {
+  return request<{ multiplier: number; payout: number; crashed: boolean; balance: number }>('/casino/live-crash/cashout', { method: 'POST', body: '{}' });
+}
+export type LiveKenoState = {
+  serverNow: number; round: number; phase: 'betting' | 'draw'; msLeft: number; cycleMs: number; betMs: number; drawn: number[] | null; tickets: { round: number; picks: number[]; stake: number }[];
+  settled: { round: number; drawn: number[]; hits: number; staked: number; payout: number; multiplier: number }[]; balance: number; tablePlayers?: number; simulatedPlayers?: boolean;
+};
+export async function casinoLiveKenoState() { return request<LiveKenoState>('/casino/live-keno/state'); }
+export async function casinoLiveKenoBet(round: number, stake: number, picks: number[]) {
+  return request<{ ok: boolean; balance: number }>('/casino/live-keno/bet', { method: 'POST', body: JSON.stringify({ round, stake, picks }) });
+}

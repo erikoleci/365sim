@@ -165,3 +165,11 @@
 @keyframes bigwin-pulse { 0%,100% { transform: scale(1) } 50% { transform: scale(1.08) } }
 .bigwin-amount { font-size: clamp(30px, 8vw, 64px); font-weight: 900; color: #fde047; text-shadow: 0 3px 0 #92400e, 0 0 24px rgba(253,224,71,.9); font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { .bigwin-rays, .bigwin-title, .bulbs::before, .bulbs::after, .cabinet-glow { animation: none } }
+
+/* ---- greyhound running cycle ---- */
+.dog-leg { animation: dog-swing .42s ease-in-out infinite alternate; }
+.dog-leg-b { animation-direction: alternate-reverse; }
+@keyframes dog-swing { from { transform: rotate(-38deg); } to { transform: rotate(38deg); } }
+.dog-body { animation: dog-bob .21s ease-in-out infinite alternate; transform-origin: 60px 24px; }
+@keyframes dog-bob { from { transform: translateY(0) rotate(-1.2deg); } to { transform: translateY(-2.4px) rotate(1.2deg); } }
+@media (prefers-reduced-motion: reduce) { .dog-leg, .dog-body { animation: none; } }
