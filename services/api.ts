@@ -604,8 +604,13 @@ export interface AdminsReport {
   admins: (AdminMoneyRow & { id: string; name: string; username: string; balance: number; balanceEur: number; agents: number; users: number })[];
   unowned: AdminMoneyRow & { users: number };
 }
-export async function adminFetchAdminsReport(month?: string) {
-  const q = month ? `?month=${encodeURIComponent(month)}` : '';
+export async function adminFetchAdminsReport(month?: string, opts: { from?: string; to?: string; all?: boolean; adminId?: string } = {}) {
+  const qs = new URLSearchParams();
+  if (opts.from || opts.to) { if (opts.from) qs.set('from', opts.from); if (opts.to) qs.set('to', opts.to); }
+  else if (opts.all) qs.set('month', 'all');
+  else if (month) qs.set('month', month);
+  if (opts.adminId) qs.set('adminId', opts.adminId);
+  const q = qs.toString() ? `?${qs}` : '';
   return request<AdminsReport>(`/admin/reports/admins${q}`);
 }
 // Super admin: the book of credit given to the admins (see server/creditLedger.js).

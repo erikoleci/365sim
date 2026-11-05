@@ -330,7 +330,9 @@ router.get('/reports/monthly', async (req, res) => {
 // tickets they placed, the turnover, what the players won and lost, and the admin's net result (netResult =
 // losses - wins). `unowned` are the users nobody owns yet. Same counting rules as above.
 router.get('/reports/admins', requireSuperAdmin, async (req, res) => {
-  const { rangeStart, rangeEnd, label } = monthRange(req.query.month);
+  // ?from=YYYY-MM-DD&to=YYYY-MM-DD (days included) | ?month=YYYY-MM | ?month=all ; ?adminId= limits it to one admin.
+  const { rangeStart, rangeEnd, label } = reportRange(req.query, monthRange);
+  const onlyAdmin = req.query.adminId ? String(req.query.adminId) : null;
   const { rows } = await pool.query(
     `SELECT a.id, a.name, a.username, a.balance, a.balance_eur AS "balanceEur",
             (SELECT COUNT(*)::int FROM users x WHERE x.admin_id = a.id AND x.role = 'AGENT') AS agents,
@@ -339,18 +341,18 @@ router.get('/reports/admins', requireSuperAdmin, async (req, res) => {
      FROM users a
      LEFT JOIN users u ON u.admin_id = a.id AND u.role = 'USER'
      LEFT JOIN bets b ON b.user_id = u.id AND b.status <> 'CANCELLED' AND b.created_at >= $1 AND b.created_at < $2
-     WHERE a.role = 'ADMIN'
+     WHERE a.role = 'ADMIN' AND ($3::text IS NULL OR a.id = $3)
      GROUP BY a.id
      ORDER BY turnover DESC`,
-    [rangeStart, rangeEnd]
+    [rangeStart, rangeEnd, onlyAdmin]
   );
   const { rows: unownedRows } = await pool.query(
     `SELECT COUNT(DISTINCT u.id)::int AS users,
             ${TICKET_SUMS}
      FROM users u
      LEFT JOIN bets b ON b.user_id = u.id AND b.status <> 'CANCELLED' AND b.created_at >= $1 AND b.created_at < $2
-     WHERE u.role = 'USER' AND u.admin_id IS NULL`,
-    [rangeStart, rangeEnd]
+     WHERE u.role = 'USER' AND u.admin_id IS NULL AND $3::text IS NULL`,
+    [rangeStart, rangeEnd, onlyAdmin]
   );
   res.json({ month: label, admins: rows.map(withNet), unowned: withNet(unownedRows[0]) });
 });

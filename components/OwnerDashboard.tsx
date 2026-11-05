@@ -71,6 +71,13 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
 
   const [monthly, setMonthly] = useState<api.AdminMonthlyReport | null>(null);
   const [monthInput, setMonthInput] = useState('');
+  // Admins tab filters: one admin or all, a day range or every date.
+  const [fromDay, setFromDay] = useState('');
+  const [toDay, setToDay] = useState('');
+  const [allDates, setAllDates] = useState(false);
+  const [adminSel, setAdminSel] = useState('');
+  const [adminOptions, setAdminOptions] = useState<{ id: string; name: string; username: string }[]>([]);
+  const filtered = !!(fromDay || toDay || allDates || adminSel);
 
   const [showCreateAgent, setShowCreateAgent] = useState(false);
   const [newAgent, setNewAgent] = useState({ name: '', username: '', password: '', balance: 0 });
@@ -102,12 +109,13 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
 
   useEffect(() => {
     if (tab !== 'admins' || !isSuper) return;
-    if (monthInput) setAdminsReport(null); // another month: do not show the old numbers under the new label
-    api.adminFetchAdminsReport(monthInput || undefined).then((r) => {
+    if (monthInput || filtered) setAdminsReport(null); // another period / admin: do not show the old numbers under the new label
+    api.adminFetchAdminsReport(monthInput || undefined, { from: fromDay || undefined, to: toDay || undefined, all: allDates, adminId: adminSel || undefined }).then((r) => {
       setAdminsReport(r);
-      if (!monthInput) writeOwnerCache(currentUser.id, 'adminsReport', r);
+      if (!monthInput && !filtered) writeOwnerCache(currentUser.id, 'adminsReport', r);
+      if (!adminSel) setAdminOptions(r.admins.map((a) => ({ id: a.id, name: a.name, username: a.username })));
     }).catch((e) => console.error(e));
-  }, [tab, monthInput, isSuper, currentUser.id]);
+  }, [tab, monthInput, fromDay, toDay, allDates, adminSel, filtered, isSuper, currentUser.id]);
 
   // The super admin's admins report is fetched right away (in parallel with the overview), so that tab opens ready.
   useEffect(() => {
@@ -349,7 +357,23 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
           <div className="bg-brand-panel border border-[#444] rounded p-4">
             <div className="flex items-center gap-2 mb-4">
               <label className="text-xs text-brand-textMuted">{t('Muaji:')}</label>
-              <input type="month" value={monthInput} onChange={(e) => setMonthInput(e.target.value)} className="input w-40" />
+              <input type="month" value={monthInput} onChange={(e) => { setMonthInput(e.target.value); setFromDay(''); setToDay(''); setAllDates(false); }} className="input w-40" />
+            </div>
+            <div className="flex flex-wrap items-end gap-2 mb-4 text-xs">
+              <label className="text-brand-textMuted">Admin
+                <select value={adminSel} onChange={(e) => setAdminSel(e.target.value)} className="input block mt-1 w-44">
+                  <option value="">{t('Të gjithë')}</option>
+                  {adminOptions.map((a) => <option key={a.id} value={a.id}>{a.name} (@{a.username})</option>)}
+                </select>
+              </label>
+              <label className="text-brand-textMuted">{t('Nga data')}
+                <input type="date" value={fromDay} onChange={(e) => { setFromDay(e.target.value); setAllDates(false); setMonthInput(''); }} className="input block mt-1" />
+              </label>
+              <label className="text-brand-textMuted">{t('Deri më')}
+                <input type="date" value={toDay} onChange={(e) => { setToDay(e.target.value); setAllDates(false); setMonthInput(''); }} className="input block mt-1" />
+              </label>
+              <button onClick={() => { setAllDates(true); setFromDay(''); setToDay(''); setMonthInput(''); }} className={'px-3 py-2 rounded font-bold border ' + (allDates ? 'bg-brand-yellow text-black border-brand-yellow' : 'border-[#444] text-brand-textMuted hover:text-white')}>{t('Të gjitha datat')}</button>
+              {(filtered || monthInput) && <button onClick={() => { setFromDay(''); setToDay(''); setAllDates(false); setAdminSel(''); setMonthInput(''); }} className="px-3 py-2 rounded border border-[#444] text-brand-textMuted hover:text-white">{t('Pastro')}</button>}
             </div>
             {!adminsReport ? (
               <div className="text-sm text-brand-textMuted">{t('Duke ngarkuar...')}</div>
@@ -360,7 +384,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
               const netEur = sum('losses_eur') - sum('wins_eur');
               return (
                 <>
-                  <div className="text-xs text-brand-textMuted mb-2">{t('Muaji: {month}', { month: adminsReport.month })}</div>
+                  <div className="text-xs text-brand-textMuted mb-2">{t('Muaji: {month}', { month: adminsReport.month === 'all' ? t('Të gjitha datat') : adminsReport.month })}</div>
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
                     <KpiCard label={t('Kupona')} value={String(sum('tickets'))} />
                     <KpiCard label={t('Xhiro (vënë)')} value={money(sum('turnover'))} eur={money(sum('turnover_eur'))} />
