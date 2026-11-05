@@ -16,7 +16,7 @@ const GameLoader: React.FC<{ name: string; img?: string; art?: React.ReactNode; 
         {img ? <img src={img} alt={name} draggable={false} className="absolute inset-0 w-full h-full object-cover" /> : art}
       </div>
       <div className="text-xl sm:text-2xl font-extrabold tracking-wide mb-1">{name}</div>
-      <div className="text-xs text-gray-400 mb-4">Duke ngarkuar lojën…</div>
+      <div className="text-xs text-gray-400 mb-4">Loading game…</div>
       <div className="w-full max-w-xs h-2.5 rounded-full bg-white/10 overflow-hidden border border-white/10">
         <div className="h-full rounded-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 shadow-[0_0_12px_rgba(250,204,21,0.7)]" style={{ width: `${pct}%`, transition: 'width 80ms linear' }} />
       </div>

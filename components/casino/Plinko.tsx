@@ -15,7 +15,7 @@ const Plinko: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
   const [busy, setBusy] = useState(false);
   const [ball, setBall] = useState<{ x: number; y: number } | null>(null);
   const [landed, setLanded] = useState<number | null>(null);
-  const [message, setMessage] = useState('Zgjidh rrezikun dhe lësho topin');
+  const [message, setMessage] = useState('Pick the risk and drop the ball');
   const [burst, setBurst] = useState(0);
   const timer = useRef<number | null>(null);
   useEffect(() => { casinoPlinkoConfig().then((c) => setTables(c.tables)).catch(() => {}); return () => { if (timer.current) window.clearInterval(timer.current); }; }, []);
@@ -43,13 +43,13 @@ const Plinko: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
           if (timer.current) window.clearInterval(timer.current);
           setBall(null); setLanded(res.bucket); setBusy(false);
           onSetBalance(res.balance);
-          if (res.payout > stake) { setBurst((n) => n + 1); setMessage(`${res.multiplier}x - fitove ${res.payout.toFixed(2)} L`); }
+          if (res.payout > stake) { setBurst((n) => n + 1); setMessage(`${res.multiplier}x - you won ${res.payout.toFixed(2)} L`); }
           else setMessage(`${res.multiplier}x - ${res.payout.toFixed(2)} L`);
           return;
         }
         setBall(pts[step]);
       }, 140);
-    } catch (e: any) { setMessage(e?.message || 'Gabim'); setBusy(false); }
+    } catch (e: any) { setMessage(e?.message || 'Error'); setBusy(false); }
   };
 
   return (

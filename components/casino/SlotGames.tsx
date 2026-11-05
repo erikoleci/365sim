@@ -1,3 +1,6 @@
+import BigWin, { winTier } from './BigWin';
+import SlotLever from './SlotLever';
+import StakeInput from './StakeInput';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as api from '../../services/api';
 import SlotReel from './SlotReel';
@@ -38,15 +41,15 @@ const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, accountCurren
   const [data, setData] = useState<Awaited<ReturnType<typeof api.casinoSlotGames>> | null>(null);
   const [game, setGame] = useState<api.VideoSlotInfo | null>(null);
   const [error, setError] = useState('');
-  const [cat, setCat] = useState('Të gjitha');
+  const [cat, setCat] = useState('All');
   const [query, setQuery] = useState('');
   const [loadingGame, setLoadingGame] = useState<api.VideoSlotInfo | null>(null);
   const [favs, setFavs] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('slotFavs') || '[]'); } catch { return []; } });
   const toggleFav = (id: string) => setFavs((f) => { const n = f.includes(id) ? f.filter((x) => x !== id) : [...f, id]; try { localStorage.setItem('slotFavs', JSON.stringify(n)); } catch { /* ignore */ } return n; });
 
-  useEffect(() => { api.casinoSlotGames().then(setData).catch((e) => setError(e?.message || 'Gabim')); }, []);
+  useEffect(() => { api.casinoSlotGames().then(setData).catch((e) => setError(e?.message || 'Error')); }, []);
   if (error) return <div className="text-red-400 text-sm p-4">{error}</div>;
-  if (!data) return <div className="text-brand-textMuted text-sm p-4">Duke ngarkuar...</div>;
+  if (!data) return <div className="text-brand-textMuted text-sm p-4">Loading...</div>;
 
   if (game) return <div className="fixed inset-0 z-[90] overflow-y-auto bg-[#0b0b10]"><div className="max-w-5xl mx-auto p-2 sm:p-4"><SlotGame game={game} stakes={data.stakes} demo={data.demo} balance={balance} balanceEur={balanceEur} accountCurrency={accountCurrency} onBalances={onBalances} onBack={() => setGame(null)} /></div></div>;
 
@@ -61,20 +64,20 @@ const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, accountCurren
           </button>
         ))}
       </div>
-      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Kërko lojë…" className="w-full mb-3 rounded-lg border border-white/15 bg-black/40 text-white placeholder:text-gray-400 px-3 py-2 text-sm outline-none focus:border-brand-yellow" />
+      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search games…" className="w-full mb-3 rounded-lg border border-white/15 bg-black/40 text-white placeholder:text-gray-400 px-3 py-2 text-sm outline-none focus:border-brand-yellow" />
       <div className="flex gap-2 overflow-x-auto pb-3 mb-1">
-        {['Të gjitha', '♥ Të preferuarat', ...Array.from(new Set(data.games.map((g) => g.category || 'Klasike')))].map((c) => (
+        {['All', '♥ Favourites', ...Array.from(new Set(data.games.map((g) => g.category || 'Classic')))].map((c) => (
           <button key={c} onClick={() => setCat(c)} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors ${cat === c ? 'bg-brand-yellow text-black border-brand-yellow' : 'bg-white/5 text-gray-200 border-white/15 hover:bg-white/10'}`}>{c}</button>
         ))}
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
-        {data.games.filter((g) => (cat === 'Të gjitha' || (cat === '♥ Të preferuarat' ? favs.includes(g.id) : (g.category || 'Klasike') === cat)) && (!query.trim() || g.name.toLowerCase().includes(query.trim().toLowerCase()))).map((g) => (
+        {data.games.filter((g) => (cat === 'All' || (cat === '♥ Favourites' ? favs.includes(g.id) : (g.category || 'Classic') === cat)) && (!query.trim() || g.name.toLowerCase().includes(query.trim().toLowerCase()))).map((g) => (
           <button key={g.id} onClick={() => setLoadingGame(g)} className="lobby-card lobby-shine relative text-left rounded-xl overflow-hidden border border-white/10 hover:border-brand-yellow/60 shadow-lg"
             style={{ background: `linear-gradient(145deg, ${g.color[0]}, ${g.color[1]})` }}>
             <CoverImg id={g.id} name={g.name}>
             <div className="flex justify-center gap-1 text-3xl pt-5 pb-3">{['WILD', Object.keys(g.paytable).find((k) => k !== 'WILD' && g.paytable[k][5] === Math.max(...Object.keys(g.paytable).filter((x) => x !== 'WILD').map((x) => g.paytable[x][5])))!, 'SCATTER'].map((k, i) => <span key={i} className="w-9 h-9 inline-block"><SymbolIcon symbol={g.symbols[k]} className="w-full h-full" /></span>)}</div>
             </CoverImg>
-            <span role="button" aria-label="Të preferuarat" onClick={(e) => { e.stopPropagation(); toggleFav(g.id); }} className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/55 flex items-center justify-center text-lg">{favs.includes(g.id) ? <span className="text-red-500">♥</span> : <span className="text-white/80">♡</span>}</span>
+            <span role="button" aria-label="Favourites" onClick={(e) => { e.stopPropagation(); toggleFav(g.id); }} className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/55 flex items-center justify-center text-lg">{favs.includes(g.id) ? <span className="text-red-500">♥</span> : <span className="text-white/80">♡</span>}</span>
             <div className="px-3 pb-3 bg-black/40 pt-2">
               <div className="font-bold text-white">{g.name}</div>
               <div className="text-[11px] text-gray-300 min-h-[30px]">{g.tagline}</div>
@@ -102,6 +105,7 @@ const SlotGame: React.FC<{
   const [msg, setMsg] = useState('');
   const [lastWin, setLastWin] = useState(0);
   const [freeInfo, setFreeInfo] = useState('');
+  const [bigWin, setBigWin] = useState<{ tier: 1 | 2 | 3; amount: number } | null>(null);
   const [burst, setBurst] = useState(0); // bumps for every win worth celebrating (key of the coin shower)
   const [showPay, setShowPay] = useState(false);
   const [snd, setSnd] = useState(soundOn());
@@ -137,7 +141,7 @@ const SlotGame: React.FC<{
 
   const spin = async () => {
     if (busy) return;
-    if (bal < stake) { setMsg('Gjendja nuk mjafton.'); return; }
+    if (bal < stake) { setMsg('Insufficient balance.'); return; }
     setBusy(true); setMsg(''); setLastWin(0); setFreeInfo('');
     try {
       spinningRef.current = [true, true, true, true, true];
@@ -161,10 +165,11 @@ const SlotGame: React.FC<{
       else if (res.balance !== undefined) onBalances?.(res.balance, res.balanceEur ?? balanceEur);
       setLastWin(res.payout);
       if (res.payout >= stake * 3) setBurst((n) => n + 1);
-      setMsg(res.payout > 0 ? `Fitove ${fmt(res.payout, currency)}!` : '');
-      if (res.freeSpins > 0) setFreeInfo(`${res.freeSpins} rrotullime falas u luajtën`);
+      { const tier = winTier(res.payout, stake); if (tier > 0) setBigWin({ tier: tier as 1 | 2 | 3, amount: res.payout }); }
+      setMsg(res.payout > 0 ? `You won ${fmt(res.payout, currency)}!` : '');
+      if (res.freeSpins > 0) setFreeInfo(`${res.freeSpins} free spins played`);
     } catch (e: any) {
-      setMsg(e?.message || 'Gabim');
+      setMsg(e?.message || 'Error');
     } finally {
       spinningRef.current = [false, false, false, false, false];
       setSpinning([false, false, false, false, false]);
@@ -176,12 +181,13 @@ const SlotGame: React.FC<{
   return (
     <div className="rounded-xl overflow-hidden border border-white/10 relative" style={{ background: `linear-gradient(160deg, ${game.color[0]}, ${game.color[1]})` }}>
       {burst > 0 && <CoinBurst key={burst} />}
+      {bigWin && <BigWin tier={bigWin.tier} amount={bigWin.amount} format={(v) => fmt(v, currency)} onDone={() => setBigWin(null)} />}
       <div className="flex items-center justify-between px-4 py-3 bg-black/40">
         <button onClick={onBack} disabled={busy} className="text-sm text-gray-300 hover:text-white disabled:opacity-40">← Slots</button>
-        <div className="text-center"><div className="font-bold text-white">{game.name}</div><div className="text-[10px] text-brand-yellow">RTP {game.rtp.toFixed(2)}% · {game.volatility} · {game.lines} linja</div></div>
+        <div className="text-center"><div className="font-bold text-white">{game.name}</div><div className="text-[10px] text-brand-yellow">RTP {game.rtp.toFixed(2)}% · {game.volatility} · {game.lines} lines</div></div>
         <div className="flex gap-1.5">
-          <button onClick={() => { setSound(!snd); setSnd(!snd); }} aria-label="Tingulli" className="text-sm px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white">{snd ? '🔊' : '🔇'}</button>
-          <button onClick={() => setShowPay(true)} className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white">Pagesat</button>
+          <button onClick={() => { setSound(!snd); setSnd(!snd); }} aria-label="Sound" className="text-sm px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white">{snd ? '🔊' : '🔇'}</button>
+          <button onClick={() => setShowPay(true)} className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white">Paytable</button>
         </div>
       </div>
 
@@ -192,11 +198,12 @@ const SlotGame: React.FC<{
               <button key={c} onClick={() => switchCurrency(c)} className={`px-3 py-1 ${currency === c ? 'bg-brand-yellow text-black font-bold' : 'bg-black/30 text-gray-300'}`}>{c === 'ALL' ? 'L' : '€'}</button>
             ))}
           </div>
-          <div className="text-white">Gjendja: <b className="tabular-nums">{fmt(bal, currency)}</b></div>
+          <div className="text-white">Balance: <b className="tabular-nums">{fmt(bal, currency)}</b></div>
         </div>
 
         <div className="bulbs w-full" />
-        <div className="bg-black/60 rounded-xl p-2 sm:p-3 border-4 border-yellow-600/70 shadow-[inset_0_0_30px_rgba(0,0,0,0.8),0_0_24px_rgba(212,175,55,0.25)]">
+        <div className="flex items-center gap-2">
+<div className="flex-1 min-w-0 cabinet-glow bg-black/60 rounded-xl p-2 sm:p-3 border-4 border-yellow-600/70 shadow-[inset_0_0_30px_rgba(0,0,0,0.8),0_0_24px_rgba(212,175,55,0.25)]">
           <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
             {grid.map((col, r) => (
               <SlotReel
@@ -209,38 +216,36 @@ const SlotGame: React.FC<{
             ))}
           </div>
         </div>
+          <SlotLever onPull={spin} disabled={busy || bal < stake} className="shrink-0" />
+        </div>
 
         <div className="h-12 flex flex-col items-center justify-center text-center">
           {freeInfo && <div className="text-xs font-bold text-cyan-300">{freeInfo}</div>}
-          {(lastWin > 0 || msg) && <div className={`text-lg font-extrabold ${lastWin > 0 ? 'text-brand-yellow' : 'text-red-300'}`}>{busy && lastWin > 0 ? `Fitim: ${fmt(lastWin, currency)}` : lastWin > 0 ? <span key={lastWin} className="win-pop inline-block">Fitove <CountUp value={lastWin} format={(n) => fmt(n, currency)} />!</span> : msg}</div>}
+          {(lastWin > 0 || msg) && <div className={`text-lg font-extrabold ${lastWin > 0 ? 'text-brand-yellow' : 'text-red-300'}`}>{busy && lastWin > 0 ? `Win: ${fmt(lastWin, currency)}` : lastWin > 0 ? <span key={lastWin} className="win-pop inline-block">You won <CountUp value={lastWin} format={(n) => fmt(n, currency)} />!</span> : msg}</div>}
         </div>
 
-        <div className="flex flex-wrap items-center justify-center gap-1.5 mb-3">
-          {stakes[currency].map((s) => (
-            <button key={s} disabled={busy} onClick={() => setStake(s)} className={`px-2.5 py-1 rounded text-xs tabular-nums ${stake === s ? 'bg-brand-yellow text-black font-bold' : 'bg-black/40 text-gray-200 hover:bg-black/60'}`}>{s}</button>
-          ))}
-        </div>
+        <div className="mb-3"><StakeInput value={stake} onChange={setStake} min={stakes[currency][0]} max={stakes[currency][stakes[currency].length - 1]} presets={stakes[currency]} unit={currency === 'EUR' ? '€' : 'L'} balance={bal} disabled={busy} /></div>
         <button onClick={spin} disabled={busy || bal < stake} className="w-full py-3 rounded-xl font-extrabold text-lg bg-green-600 hover:bg-green-500 text-white disabled:opacity-50">
-          {busy ? '...' : `ROTULLO · ${stake} ${currency === 'EUR' ? '€' : 'L'}`}
+          {busy ? '...' : `SPIN · ${stake} ${currency === 'EUR' ? '€' : 'L'}`}
         </button>
-        <div className="text-[10px] text-center text-gray-400 mt-2">3 ose më shumë {game.symbols.SCATTER} ({game.scatterName}) japin rrotullime falas. {game.symbols.WILD} ({game.wildName}) zëvendëson simbolet.</div>
+        <div className="text-[10px] text-center text-gray-400 mt-2">3 or more {game.symbols.SCATTER} ({game.scatterName}) award free spins. {game.symbols.WILD} ({game.wildName}) substitutes for symbols.</div>
       </div>
 
       {showPay && (
         <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4" onClick={() => setShowPay(false)}>
           <div className="bg-brand-panel rounded-xl max-w-md w-full max-h-[85vh] overflow-y-auto p-4 text-white" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-2"><b>{game.name} · Tabela e pagesave</b><button onClick={() => setShowPay(false)}>✕</button></div>
-            <div className="text-[11px] text-gray-400 mb-3">Pagesat janë shumëfisha të bastit për një linjë (stake ÷ {game.lines}). RTP teorik: {game.rtp.toFixed(2)}%. Simbolet: Twemoji (CC-BY 4.0).</div>
+            <div className="text-[11px] text-gray-400 mb-3">Payouts are multiples of the bet per line (stake ÷ {game.lines}). Theoretical RTP: {game.rtp.toFixed(2)}%. Symbols: Twemoji (CC-BY 4.0).</div>
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr className="text-gray-400 text-xs"><th className="text-left">Simboli</th><th>x3</th><th>x4</th><th>x5</th></tr></thead>
               <tbody>
                 {[...top.reverse(), 'WILD'].map((k) => (
                   <tr key={k} className="border-t border-white/10"><td className="py-1"><span className="inline-block w-8 h-8"><SymbolIcon symbol={game.symbols[k]} className="w-full h-full" /></span></td>{[3, 4, 5].map((n) => <td key={n} className="text-center tabular-nums">{game.paytable[k][n]}</td>)}</tr>
                 ))}
-                <tr className="border-t border-white/10"><td className="py-1"><span className="inline-block w-8 h-8"><SymbolIcon symbol={game.symbols.SCATTER} className="w-full h-full" /></span></td>{[3, 4, 5].map((n) => <td key={n} className="text-center tabular-nums text-xs">{game.scatterPay[n]}× stake<br />{game.freeSpins[n]} falas</td>)}</tr>
+                <tr className="border-t border-white/10"><td className="py-1"><span className="inline-block w-8 h-8"><SymbolIcon symbol={game.symbols.SCATTER} className="w-full h-full" /></span></td>{[3, 4, 5].map((n) => <td key={n} className="text-center tabular-nums text-xs">{game.scatterPay[n]}× stake<br />{game.freeSpins[n]} free</td>)}</tr>
               </tbody>
             </table></div>
-            <div className="text-[11px] text-gray-400 mt-3">Rrotullimet falas paguajnë x{game.freeSpinMultiplier}.{game.wildExpand ? ' Wild zgjerohet mbi gjithë rrotën.' : ''} Fitimi maksimal për një raund: 2000× stake.</div>
+            <div className="text-[11px] text-gray-400 mt-3">Free spins pay x{game.freeSpinMultiplier}.{game.wildExpand ? ' Wild expands over the whole reel.' : ''} Maximum win per round: 2000× stake.</div>
           </div>
         </div>
       )}

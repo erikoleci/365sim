@@ -1,3 +1,6 @@
+import BigWin, { winTier } from './BigWin';
+import SlotLever from './SlotLever';
+import StakeInput from './StakeInput';
 import React, { useEffect, useRef, useState } from 'react';
 import * as api from '../../services/api';
 import SymbolIcon from './SymbolIcon';
@@ -29,6 +32,7 @@ const TumbleSlot: React.FC<Props> = ({ balance = 0, balanceEur = 0, accountCurre
   const [freeLeft, setFreeLeft] = useState<{ n: number; of: number } | null>(null);
   const [msg, setMsg] = useState('');
   const [final, setFinal] = useState(0);
+  const [bigWin, setBigWin] = useState<{ tier: 1 | 2 | 3; amount: number } | null>(null);
   const [burst, setBurst] = useState(0);
   const [snd, setSnd] = useState(soundOn());
   const [demoBal, setDemoBal] = useState({ ...DEMO_START });
@@ -39,16 +43,16 @@ const TumbleSlot: React.FC<Props> = ({ balance = 0, balanceEur = 0, accountCurre
     api.casinoTumbleInfo().then((i) => {
       setInfo(i); setStake(i.stakes[startCur][3]);
       setGrid(Array.from({ length: i.cols }, (_, c) => Array.from({ length: i.rows }, (_, r) => ['GUMMY', 'LOLLI', 'DONUT', 'CUPCAKE', 'ICECREAM', 'CAKE', 'CHOCO'][(c * 2 + r * 3) % 7])));
-    }).catch((e) => setMsg(e?.message || 'Gabim'));
+    }).catch((e) => setMsg(e?.message || 'Error'));
   }, [startCur]);
 
-  if (!info) return <div className="text-brand-textMuted text-sm p-4">{msg || 'Duke ngarkuar...'}</div>;
+  if (!info) return <div className="text-brand-textMuted text-sm p-4">{msg || 'Loading...'}</div>;
   const demo = info.demo;
   const bal = demo ? demoBal[currency] : currency === 'EUR' ? balanceEur : balance;
 
   const play = async () => {
     if (busy) return;
-    if (bal < stake) { setMsg('Gjendja nuk mjafton.'); return; }
+    if (bal < stake) { setMsg('Insufficient balance.'); return; }
     setBusy(true); setMsg(''); setFinal(0); setRunning(0); setMult(1); setFreeLeft(null); setPop(new Set());
     try {
       const res = await api.casinoTumbleSpin(stake, currency);
@@ -57,7 +61,7 @@ const TumbleSlot: React.FC<Props> = ({ balance = 0, balanceEur = 0, accountCurre
       for (let i = 0; i < res.spins.length; i += 1) {
         const sp = res.spins[i];
         if (sp.free) setFreeLeft({ n: i, of: freeTotal });
-        if (i === 1) { setMsg(`${freeTotal} RROTULLIME FALAS!`); sfx.win(true); await sleep(1100); setMsg(''); }
+        if (i === 1) { setMsg(`${freeTotal} FREE SPINS!`); sfx.win(true); await sleep(1100); setMsg(''); }
         setMult(1); sfx.spin();
         setGrid(sp.first); setGen((g) => g + 1); await sleep(650);
         if (sp.scatterWin > 0) { shown += sp.scatterWin; setRunning(shown); sfx.win(true); await sleep(500); }
@@ -74,18 +78,20 @@ const TumbleSlot: React.FC<Props> = ({ balance = 0, balanceEur = 0, accountCurre
       else if (res.balance !== undefined) onBalances?.(res.balance, res.balanceEur ?? balanceEur);
       setFinal(res.payout); setFreeLeft(null);
       if (res.payout >= stake * 5) setBurst((n) => n + 1);
-    } catch (e: any) { setMsg(e?.message || 'Gabim'); } finally { setPop(new Set()); if (alive.current) setBusy(false); }
+      { const tier = winTier(res.payout, stake); if (tier > 0) setBigWin({ tier: tier as 1 | 2 | 3, amount: res.payout }); }
+    } catch (e: any) { setMsg(e?.message || 'Error'); } finally { setPop(new Set()); if (alive.current) setBusy(false); }
   };
 
   return (
     <div className="relative rounded-2xl overflow-hidden text-white" style={{ background: 'radial-gradient(ellipse at 50% 0%, #be185d 0%, #4a044e 45%, #12041a 100%)' }}>
       {burst > 0 && <CoinBurst key={burst} />}
+      {bigWin && <BigWin tier={bigWin.tier} amount={bigWin.amount} format={(v) => fmt(v, currency)} onDone={() => setBigWin(null)} />}
       <div className="flex items-center justify-between px-4 py-3 bg-black/40">
         <button onClick={onClose} disabled={busy} className="text-sm text-gray-200 hover:text-white disabled:opacity-40">‹ Lobby</button>
-        <div className="text-center"><div className="font-extrabold text-lg text-pink-200">Sugar Cascade</div><div className="text-[10px] text-brand-yellow">RTP ~94% · 8+ simbole paguajnë kudo · deri {info.maxWin}x</div></div>
+        <div className="text-center"><div className="font-extrabold text-lg text-pink-200">Sugar Cascade</div><div className="text-[10px] text-brand-yellow">RTP ~94% · 8+ symbols pay anywhere · up to {info.maxWin}x</div></div>
         <div className="flex gap-1.5">
           <button onClick={() => { setSound(!snd); setSnd(!snd); }} className="text-sm px-2 py-1 rounded bg-white/10">{snd ? '🔊' : '🔇'}</button>
-          <button onClick={() => setShowPay(true)} className="text-xs px-2 py-1 rounded bg-white/10">Pagesat</button>
+          <button onClick={() => setShowPay(true)} className="text-xs px-2 py-1 rounded bg-white/10">Paytable</button>
         </div>
       </div>
       <div className="p-3 sm:p-4 max-w-2xl mx-auto">
@@ -95,10 +101,10 @@ const TumbleSlot: React.FC<Props> = ({ balance = 0, balanceEur = 0, accountCurre
               <button key={c} disabled={busy} onClick={() => { setCurrency(c); setStake(info.stakes[c][3]); }} className={`px-3 py-1 ${currency === c ? 'bg-brand-yellow text-black font-bold' : 'bg-black/30 text-gray-300'}`}>{c === 'ALL' ? 'L' : '€'}</button>
             ))}
           </div>
-          <div>Gjendja: <b className="tabular-nums">{fmt(bal, currency)}</b></div>
+          <div>Balance: <b className="tabular-nums">{fmt(bal, currency)}</b></div>
         </div>
-        {freeLeft && <div className="text-center text-xs font-bold text-cyan-200 mb-1">RROTULLIM FALAS {freeLeft.n}/{freeLeft.of}</div>}
-        <div className="relative rounded-2xl p-2 sm:p-3 border-4 border-pink-300/70 bg-black/45 shadow-[0_0_30px_rgba(244,114,182,0.35)]">
+        {freeLeft && <div className="text-center text-xs font-bold text-cyan-200 mb-1">FREE SPIN {freeLeft.n}/{freeLeft.of}</div>}
+        <div className="flex items-center gap-2"><div className="relative flex-1 min-w-0 rounded-2xl p-2 sm:p-3 border-4 border-pink-300/70 bg-black/45 shadow-[0_0_30px_rgba(244,114,182,0.35)]">
           {mult > 1 && <div className="absolute -top-3 right-3 z-10 px-3 py-0.5 rounded-full bg-gradient-to-b from-yellow-300 to-amber-500 text-black font-black text-sm shadow">x{mult}</div>}
           <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${info.cols}, minmax(0, 1fr))` }}>
             {grid.map((col, c) => (
@@ -115,28 +121,28 @@ const TumbleSlot: React.FC<Props> = ({ balance = 0, balanceEur = 0, accountCurre
             ))}
           </div>
         </div>
-        <div className="h-14 flex flex-col items-center justify-center text-center">
+          <SlotLever onPull={play} disabled={busy || bal < stake} className="shrink-0" />
+        </div>
+<div className="h-14 flex flex-col items-center justify-center text-center">
           {msg && <div className="text-sm font-extrabold text-cyan-200">{msg}</div>}
-          {!msg && (busy ? running > 0 && <div className="text-lg font-extrabold text-brand-yellow">Fitim: {fmt(running, currency)}</div> : final > 0 ? <div className="text-xl font-extrabold text-brand-yellow win-pop">Fitove <CountUp value={final} format={(n) => fmt(n, currency)} />!</div> : null)}
+          {!msg && (busy ? running > 0 && <div className="text-lg font-extrabold text-brand-yellow">Win: {fmt(running, currency)}</div> : final > 0 ? <div className="text-xl font-extrabold text-brand-yellow win-pop">You won <CountUp value={final} format={(n) => fmt(n, currency)} />!</div> : null)}
         </div>
-        <div className="flex flex-wrap items-center justify-center gap-1.5 mb-3">
-          {info.stakes[currency].map((s) => (<button key={s} disabled={busy} onClick={() => setStake(s)} className={`px-2.5 py-1 rounded text-xs tabular-nums ${stake === s ? 'bg-brand-yellow text-black font-bold' : 'bg-black/40 text-gray-200'}`}>{s}</button>))}
-        </div>
-        <button onClick={play} disabled={busy || bal < stake} className="w-full py-3 rounded-xl font-extrabold text-lg bg-gradient-to-b from-pink-500 to-fuchsia-700 text-white disabled:opacity-50 shadow-lg">{busy ? '...' : `ROTULLO · ${stake} ${currency === 'EUR' ? '€' : 'L'}`}</button>
-        <div className="text-[10px] text-center text-gray-300 mt-2">4+ {SYM.SCATTER} (dhurata) japin {info.freeSpins} rrotullime falas. Në rrotullimet falas, çdo shembje fituese e rrit shumëzuesin me +1 deri në fund të raundit.</div>
+        <div className="mb-3"><StakeInput value={stake} onChange={setStake} min={info.stakes[currency][0]} max={info.stakes[currency][info.stakes[currency].length - 1]} presets={info.stakes[currency]} unit={currency === 'EUR' ? '€' : 'L'} balance={bal} disabled={busy} /></div>
+        <button onClick={play} disabled={busy || bal < stake} className="w-full py-3 rounded-xl font-extrabold text-lg bg-gradient-to-b from-pink-500 to-fuchsia-700 text-white disabled:opacity-50 shadow-lg">{busy ? '...' : `SPIN · ${stake} ${currency === 'EUR' ? '€' : 'L'}`}</button>
+        <div className="text-[10px] text-center text-gray-300 mt-2">4+ {SYM.SCATTER} (gifts) award {info.freeSpins} free spins. During free spins every winning tumble raises the multiplier by +1 until the round ends.</div>
       </div>
       {showPay && (
         <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4" onClick={() => setShowPay(false)}>
           <div className="bg-brand-panel rounded-xl max-w-md w-full max-h-[85vh] overflow-y-auto p-4 text-white" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-2"><b>Sugar Cascade · Pagesat</b><button onClick={() => setShowPay(false)}>✕</button></div>
-            <div className="text-[11px] text-gray-400 mb-3">Shumëfisha të bastit total për 8–9 / 10–11 / 12+ simbole të njëjta kudo në tabelë.</div>
+            <div className="flex justify-between items-center mb-2"><b>Sugar Cascade · Paytable</b><button onClick={() => setShowPay(false)}>✕</button></div>
+            <div className="text-[11px] text-gray-400 mb-3">Multiples of the total stake for 8–9 / 10–11 / 12+ matching symbols anywhere on the grid.</div>
             <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-gray-400 text-xs"><th className="text-left">Simboli</th><th>8-9</th><th>10-11</th><th>12+</th></tr></thead><tbody>
               {Object.entries(info.paytable).reverse().map(([k, v]) => (
                 <tr key={k} className="border-t border-white/10"><td className="py-1"><span className="inline-block w-8 h-8"><SymbolIcon symbol={SYM[k]} className="w-full h-full" /></span></td>{v.map((x, i) => <td key={i} className="text-center tabular-nums">{x}x</td>)}</tr>
               ))}
               <tr className="border-t border-white/10"><td className="py-1"><span className="inline-block w-8 h-8"><SymbolIcon symbol={SYM.SCATTER} className="w-full h-full" /></span></td>{[4, 5, 6].map((n) => <td key={n} className="text-center text-xs">{n}{n === 6 ? '+' : ''}: {info.scatterPay[n]}x</td>)}</tr>
             </tbody></table></div>
-            <div className="text-[11px] text-gray-400 mt-3">Fitimi maksimal për një raund: {info.maxWin}x bastin. Simbolet: Twemoji (CC-BY 4.0).</div>
+            <div className="text-[11px] text-gray-400 mt-3">Maximum win per round: {info.maxWin}x stake. Symbols: Twemoji (CC-BY 4.0).</div>
           </div>
         </div>
       )}

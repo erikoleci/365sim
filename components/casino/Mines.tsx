@@ -16,7 +16,7 @@ const Mines: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
   const [multiplier, setMultiplier] = useState(1);
   const [next, setNext] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('Zgjidh numrin e minave dhe nis');
+  const [message, setMessage] = useState('Choose the number of mines and start');
   const [burst, setBurst] = useState(0);
   const playing = roundId !== null;
 
@@ -27,8 +27,8 @@ const Mines: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
     try {
       const r = await casinoMinesStart(stake, mineCount);
       setRoundId(r.roundId); setOpened([]); setMines([]); setHit(null); setMultiplier(1); setNext(r.nextMultiplier);
-      onSetBalance(r.balance); setMessage('Hap një kuti');
-    } catch (e: any) { setMessage(e?.message || 'Gabim'); }
+      onSetBalance(r.balance); setMessage('Open a tile');
+    } catch (e: any) { setMessage(e?.message || 'Error'); }
     setBusy(false);
   };
 
@@ -37,12 +37,12 @@ const Mines: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
     setBusy(true);
     try {
       const r = await casinoMinesReveal(roundId, i);
-      if (!r.safe) { setHit(i); setMines(r.mines || []); setRoundId(null); setMessage('BOMBË! Humbe'); if (r.balance !== undefined) onSetBalance(r.balance); }
+      if (!r.safe) { setHit(i); setMines(r.mines || []); setRoundId(null); setMessage('BOOM! You lost'); if (r.balance !== undefined) onSetBalance(r.balance); }
       else {
         setOpened((o) => [...o, i]); setMultiplier(r.multiplier || 1); setNext(r.nextMultiplier || 0);
-        if (r.finished) { setMines(r.mines || []); setRoundId(null); setBurst((n) => n + 1); setMessage(`Pastrove tavolinën! ${r.payout?.toFixed(2)} L`); if (r.balance !== undefined) onSetBalance(r.balance); }
+        if (r.finished) { setMines(r.mines || []); setRoundId(null); setBurst((n) => n + 1); setMessage(`Board cleared! ${r.payout?.toFixed(2)} L`); if (r.balance !== undefined) onSetBalance(r.balance); }
       }
-    } catch (e: any) { setMessage(e?.message || 'Gabim'); }
+    } catch (e: any) { setMessage(e?.message || 'Error'); }
     setBusy(false);
   };
 
@@ -52,8 +52,8 @@ const Mines: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
     try {
       const r = await casinoMinesCashout(roundId);
       setMines(r.mines); setRoundId(null); onSetBalance(r.balance); setBurst((n) => n + 1);
-      setMessage(`Mblodhe ${r.payout.toFixed(2)} L (${r.multiplier}x)`);
-    } catch (e: any) { setMessage(e?.message || 'Gabim'); }
+      setMessage(`Cashed out ${r.payout.toFixed(2)} L (${r.multiplier}x)`);
+    } catch (e: any) { setMessage(e?.message || 'Error'); }
     setBusy(false);
   };
 
@@ -62,7 +62,7 @@ const Mines: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       {burst > 0 && <CoinBurst key={burst} />}
       <button onClick={onClose} className="absolute top-4 left-4 text-white/50 hover:text-white font-bold z-10">‹ Exit</button>
       <h2 className="font-bold tracking-widest casino-gold-text mb-2">MINES</h2>
-      <div className="text-sm mb-2">Shumëzuesi: <b className="text-yellow-400">{multiplier.toFixed(2)}x</b>{playing && next > 0 && <span className="opacity-70"> · tjetra {next.toFixed(2)}x</span>}</div>
+      <div className="text-sm mb-2">Multiplier: <b className="text-yellow-400">{multiplier.toFixed(2)}x</b>{playing && next > 0 && <span className="opacity-70"> · next {next.toFixed(2)}x</span>}</div>
       <div className="grid grid-cols-5 gap-2 mb-3" style={{ perspective: 700, transform: 'rotateX(12deg)' }}>
         {Array.from({ length: 25 }, (_, i) => {
           const isOpen = opened.includes(i), isMine = mines.includes(i), isHit = hit === i;

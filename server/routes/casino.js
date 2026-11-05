@@ -102,11 +102,17 @@ export const SLOT_STAKES = {
   ALL: [10, 20, 50, 100, 200, 500, 1000, 2000, 5000],
   EUR: [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50],
 };
+export const SLOT_LIMITS = { ALL: { min: 10, max: 5000 }, EUR: { min: 0.1, max: 50 } };
+// Players type any stake they like (max 2 decimals) inside the currency's limits; the preset chips are only shortcuts.
+export function validSlotStake(currency, stake) {
+  const lim = SLOT_LIMITS[currency];
+  return !!lim && typeof stake === 'number' && Number.isFinite(stake) && Math.round(stake * 100) / 100 === stake && stake >= lim.min && stake <= lim.max;
+}
 const MAX_WIN_MULTIPLIER = 2000; // one round never pays more than 2000x the stake
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 router.get('/slot-games', (req, res) => {
-  res.json({ games: VIDEO_SLOTS.map(publicGame), stakes: SLOT_STAKES, demo: isSuperAdmin(req.user.role) });
+  res.json({ games: VIDEO_SLOTS.map(publicGame), stakes: SLOT_STAKES, limits: SLOT_LIMITS, demo: isSuperAdmin(req.user.role) });
 });
 
 // Shared by every slot-like game: super admin plays a demo round, everybody else is debited / credited in one transaction.
@@ -149,7 +155,7 @@ router.post('/slot-games/:id/spin', async (req, res) => {
   const currency = req.body?.currency === undefined && acct === 'EUR' ? 'EUR' : normalizeCurrency(req.body?.currency);
   if (!allowsCurrency(acct, currency)) return res.status(400).json({ error: accountCurrencyError(acct) });
   const stake = req.body?.stake;
-  if (typeof stake !== 'number' || !SLOT_STAKES[currency].includes(stake)) return res.status(400).json({ error: 'Invalid stake' });
+  if (!validSlotStake(currency, stake)) return res.status(400).json({ error: 'Invalid stake' });
 
   const draw = () => {
     const r = playRound(game, (n) => randomInt(n));
@@ -710,7 +716,7 @@ router.post('/wheel/spin', async (req, res) => {
 
 // SUGAR CASCADE: 6x5 scatter-pays slot with tumbles (server/slots/tumble.js). Same wallet / demo rules as the other slots.
 router.get('/tumble/info', (req, res) => res.json({
-  stakes: SLOT_STAKES, demo: isSuperAdmin(req.user.role), cols: tumbleEngine.COLS, rows: tumbleEngine.ROWS, minCluster: tumbleEngine.MIN_CLUSTER,
+  stakes: SLOT_STAKES, limits: SLOT_LIMITS, demo: isSuperAdmin(req.user.role), cols: tumbleEngine.COLS, rows: tumbleEngine.ROWS, minCluster: tumbleEngine.MIN_CLUSTER,
   paytable: tumbleEngine.PAYTABLE, scatterPay: tumbleEngine.SCATTER_PAY, freeSpins: tumbleEngine.FREE_SPINS, maxWin: tumbleEngine.MAX_WIN_MULTIPLIER,
 }));
 router.post('/tumble/spin', async (req, res) => {
@@ -718,7 +724,7 @@ router.post('/tumble/spin', async (req, res) => {
   const currency = req.body?.currency === undefined && acct === 'EUR' ? 'EUR' : normalizeCurrency(req.body?.currency);
   if (!allowsCurrency(acct, currency)) return res.status(400).json({ error: accountCurrencyError(acct) });
   const stake = req.body?.stake;
-  if (typeof stake !== 'number' || !SLOT_STAKES[currency].includes(stake)) return res.status(400).json({ error: 'Invalid stake' });
+  if (!validSlotStake(currency, stake)) return res.status(400).json({ error: 'Invalid stake' });
   const draw = () => {
     const r = tumbleEngine.playRound((n) => randomInt(n));
     return {

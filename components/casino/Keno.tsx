@@ -1,3 +1,4 @@
+import StakeInput from './StakeInput';
 import React, { useEffect, useRef, useState } from 'react';
 import { casinoKenoPaytable, casinoKenoPlay } from '../../services/api';
 import CoinBurst from './CoinBurst';
@@ -16,7 +17,7 @@ const Keno: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
   const [shown, setShown] = useState<number[]>([]);
   const [stake, setStake] = useState(100);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState('Zgjidh 1 deri 8 numra');
+  const [msg, setMsg] = useState('Pick 1 to 8 numbers');
   const [win, setWin] = useState(0);
   const [burst, setBurst] = useState(0);
   const [snd, setSnd] = useState(soundOn());
@@ -31,8 +32,8 @@ const Keno: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
   };
   const play = async () => {
     if (busy || picks.length === 0) return;
-    if (userBalance < stake) { setMsg('Gjendje e pamjaftueshme'); return; }
-    setBusy(true); setShown([]); setWin(0); setMsg('Topat po tërhiqen...');
+    if (userBalance < stake) { setMsg('Insufficient balance'); return; }
+    setBusy(true); setShown([]); setWin(0); setMsg('Drawing the balls...');
     try {
       const r = await casinoKenoPlay(stake, picks);
       for (let i = 0; i < r.drawn.length; i += 1) {
@@ -41,9 +42,9 @@ const Keno: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
         setShown(r.drawn.slice(0, i + 1)); sfx.stop();
       }
       onSetBalance(r.balance);
-      if (r.payout > 0) { setWin(r.payout); sfx.win(r.multiplier >= 5); if (r.multiplier >= 3) setBurst((b) => b + 1); setMsg(`${r.hits} goditje · ${r.multiplier}x`); }
-      else setMsg(`${r.hits} goditje. Provo përsëri!`);
-    } catch (e: any) { setMsg(e?.message || 'Gabim'); } finally { if (alive.current) setBusy(false); }
+      if (r.payout > 0) { setWin(r.payout); sfx.win(r.multiplier >= 5); if (r.multiplier >= 3) setBurst((b) => b + 1); setMsg(`${r.hits} hits · ${r.multiplier}x`); }
+      else setMsg(`${r.hits} hits. Try again!`);
+    } catch (e: any) { setMsg(e?.message || 'Error'); } finally { if (alive.current) setBusy(false); }
   };
   const table = pay[String(picks.length)] || {};
 
@@ -64,21 +65,19 @@ const Keno: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
         })}
       </div>
       <div className="h-14 flex flex-col items-center justify-center text-center mt-3">
-        {win > 0 ? <div className="text-2xl font-extrabold text-brand-yellow win-pop">{msg} · Fitove <CountUp value={win} format={(v) => `${v.toFixed(2)} L`} /></div> : <div className="text-lg font-bold text-gray-100">{msg}</div>}
+        {win > 0 ? <div className="text-2xl font-extrabold text-brand-yellow win-pop">{msg} · You won <CountUp value={win} format={(v) => `${v.toFixed(2)} L`} /></div> : <div className="text-lg font-bold text-gray-100">{msg}</div>}
       </div>
       {picks.length > 0 && (
         <div className="flex flex-wrap justify-center gap-1.5 text-[11px] mb-3">
-          {Object.entries(table).map(([h, m]) => <span key={h} className="px-2 py-0.5 rounded bg-black/40 border border-white/10">{h} goditje <b className="text-brand-yellow">{m}x</b></span>)}
+          {Object.entries(table).map(([h, m]) => <span key={h} className="px-2 py-0.5 rounded bg-black/40 border border-white/10">{h} hits <b className="text-brand-yellow">{m}x</b></span>)}
         </div>
       )}
-      <div className="flex flex-wrap justify-center gap-2 mb-3">
-        {STAKES.map((s) => (<button key={s} disabled={busy} onClick={() => setStake(s)} className={`px-3 py-1.5 rounded-lg text-sm tabular-nums border ${stake === s ? 'bg-brand-yellow text-black font-bold border-brand-yellow' : 'bg-black/40 text-gray-200 border-white/15'}`}>{s}</button>))}
-      </div>
+      <div className="mb-3"><StakeInput value={stake} onChange={setStake} min={1} max={5000} presets={STAKES} unit="L" balance={userBalance} disabled={busy} /></div>
       <div className="flex gap-2 max-w-sm mx-auto">
-        <button onClick={() => { setPicks([]); setShown([]); setWin(0); setMsg('Zgjidh 1 deri 8 numra'); }} disabled={busy} className="px-4 rounded-xl border border-white/20 text-gray-200 disabled:opacity-50">Pastro</button>
+        <button onClick={() => { setPicks([]); setShown([]); setWin(0); setMsg('Pick 1 to 8 numbers'); }} disabled={busy} className="px-4 rounded-xl border border-white/20 text-gray-200 disabled:opacity-50">Clear</button>
         <button onClick={play} disabled={busy || picks.length === 0 || userBalance < stake} className="flex-1 py-3 rounded-xl font-extrabold text-lg bg-gradient-to-b from-green-500 to-green-700 text-white disabled:opacity-50 shadow-lg">{busy ? '...' : `LUAJ · ${stake} L`}</button>
       </div>
-      <div className="text-[11px] text-gray-400 text-center mt-2">Gjendja: <b className="tabular-nums text-white">{userBalance.toFixed(2)} L</b> · RTP ~94% · fitimi maksimal 1000x</div>
+      <div className="text-[11px] text-gray-400 text-center mt-2">Balance: <b className="tabular-nums text-white">{userBalance.toFixed(2)} L</b> · RTP ~94% · fitimi maksimal 1000x</div>
     </div>
   );
 };

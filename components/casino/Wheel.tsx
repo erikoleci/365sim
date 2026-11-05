@@ -1,3 +1,4 @@
+import StakeInput from './StakeInput';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { casinoWheelSegments, casinoWheelSpin } from '../../services/api';
 import CoinBurst from './CoinBurst';
@@ -19,7 +20,7 @@ const Wheel: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
   const [stake, setStake] = useState(100);
   const [angle, setAngle] = useState(0);
   const [spinning, setSpinning] = useState(false);
-  const [msg, setMsg] = useState('Zgjidh shumën dhe rrotullo');
+  const [msg, setMsg] = useState('Choose your stake and spin');
   const [win, setWin] = useState(0);
   const [burst, setBurst] = useState(0);
   const [snd, setSnd] = useState(soundOn());
@@ -37,8 +38,8 @@ const Wheel: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
 
   const spin = async () => {
     if (spinning) return;
-    if (userBalance < stake) { setMsg('Gjendje e pamjaftueshme'); return; }
-    setSpinning(true); setWin(0); setMsg('Rrota po rrotullohet...'); sfx.spin();
+    if (userBalance < stake) { setMsg('Insufficient balance'); return; }
+    setSpinning(true); setWin(0); setMsg('The wheel is spinning...'); sfx.spin();
     try {
       const r = await casinoWheelSpin(stake);
       // land the centre of segment `index` under the pointer (top), after several full turns
@@ -48,8 +49,8 @@ const Wheel: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       if (!alive.current) return;
       sfx.stop();
       onSetBalance(r.balance);
-      if (r.payout > 0) { setWin(r.payout); sfx.win(r.multiplier >= 3); if (r.multiplier >= 2) setBurst((b) => b + 1); setMsg(`${r.multiplier}x`); } else setMsg('Këtë herë asgjë. Provo përsëri!');
-    } catch (e: any) { setMsg(e?.message || 'Gabim'); } finally { if (alive.current) setSpinning(false); }
+      if (r.payout > 0) { setWin(r.payout); sfx.win(r.multiplier >= 3); if (r.multiplier >= 2) setBurst((b) => b + 1); setMsg(`${r.multiplier}x`); } else setMsg('Nothing this time. Try again!');
+    } catch (e: any) { setMsg(e?.message || 'Error'); } finally { if (alive.current) setSpinning(false); }
   };
 
   return (
@@ -57,7 +58,7 @@ const Wheel: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       {burst > 0 && <CoinBurst key={burst} />}
       <div className="w-full flex items-center justify-between">
         <button onClick={onClose} className="text-sm text-gray-200 hover:text-white font-semibold">‹ Lobby</button>
-        <div className="font-extrabold text-xl tracking-wide text-brand-yellow">Rrota e Fatit</div>
+        <div className="font-extrabold text-xl tracking-wide text-brand-yellow">Wheel of Fortune</div>
         <button onClick={() => { setSound(!snd); setSnd(!snd); }} className="text-sm px-2 py-1 rounded bg-white/10">{snd ? '🔊' : '🔇'}</button>
       </div>
       <div className="relative mt-4 w-full max-w-[380px] aspect-square">
@@ -81,13 +82,11 @@ const Wheel: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
         </svg>
       </div>
       <div className="h-14 flex flex-col items-center justify-center text-center">
-        {win > 0 ? <div className="text-2xl font-extrabold text-brand-yellow win-pop">{msg} · Fitove <CountUp value={win} format={(v) => `${v.toFixed(2)} L`} /></div> : <div className="text-lg font-bold text-gray-100">{msg}</div>}
+        {win > 0 ? <div className="text-2xl font-extrabold text-brand-yellow win-pop">{msg} · You won <CountUp value={win} format={(v) => `${v.toFixed(2)} L`} /></div> : <div className="text-lg font-bold text-gray-100">{msg}</div>}
       </div>
-      <div className="flex flex-wrap justify-center gap-2 mb-3">
-        {STAKES.map((s) => (<button key={s} disabled={spinning} onClick={() => setStake(s)} className={`px-3 py-1.5 rounded-lg text-sm tabular-nums border ${stake === s ? 'bg-brand-yellow text-black font-bold border-brand-yellow' : 'bg-black/40 text-gray-200 border-white/15'}`}>{s}</button>))}
-      </div>
-      <button onClick={spin} disabled={spinning || userBalance < stake} className="w-full max-w-sm py-3 rounded-xl font-extrabold text-lg bg-gradient-to-b from-green-500 to-green-700 hover:from-green-400 text-white disabled:opacity-50 shadow-lg">{spinning ? '...' : `RROTULLO · ${stake} L`}</button>
-      <div className="text-[11px] text-gray-400 mt-2">Gjendja: <b className="tabular-nums text-white">{userBalance.toFixed(2)} L</b> · RTP 94% · çdo segment ka të njëjtën shansë</div>
+      <div className="mb-3"><StakeInput value={stake} onChange={setStake} min={1} max={5000} presets={STAKES} unit="L" balance={userBalance} disabled={spinning} /></div>
+      <button onClick={spin} disabled={spinning || userBalance < stake} className="w-full max-w-sm py-3 rounded-xl font-extrabold text-lg bg-gradient-to-b from-green-500 to-green-700 hover:from-green-400 text-white disabled:opacity-50 shadow-lg">{spinning ? '...' : `SPIN · ${stake} L`}</button>
+      <div className="text-[11px] text-gray-400 mt-2">Balance: <b className="tabular-nums text-white">{userBalance.toFixed(2)} L</b> · RTP 94% · every segment has the same chance</div>
     </div>
   );
 };

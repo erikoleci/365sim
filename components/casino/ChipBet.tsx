@@ -1,7 +1,8 @@
 import React from 'react';
 import Chip from './Chip';
+import StakeInput from './StakeInput';
 
-// Click a chip to add it to the stake right away; Clear resets it.
+// Click a chip to add it to the stake, or type any amount.
 const ChipBet: React.FC<{ stake: number; onChange: (n: number) => void; disabled?: boolean }> = ({ stake, onChange, disabled }) => (
   <div className="flex flex-col items-center gap-2">
     <div className="flex items-center gap-2">
@@ -11,10 +12,7 @@ const ChipBet: React.FC<{ stake: number; onChange: (n: number) => void; disabled
         </button>
       ))}
     </div>
-    <div className="flex items-center gap-2 text-xs text-white">
-      <span>Stake</span><span className="font-bold text-yellow-400">{stake}</span>
-      <button disabled={disabled} onClick={() => onChange(0)} className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 disabled:opacity-40">Clear</button>
-    </div>
+    <StakeInput value={stake || 1} onChange={onChange} min={1} max={5000} disabled={disabled} unit="L" />
   </div>
 );
 export default ChipBet;

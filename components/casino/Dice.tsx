@@ -14,9 +14,9 @@ interface DiceProps {
 
 type Bet = 'UNDER' | 'SEVEN' | 'OVER';
 const BETS: { id: Bet; label: string; hint: string; cls: string }[] = [
-  { id: 'UNDER', label: 'UNDER 7', hint: 'shuma 2 - 6', cls: 'bg-sky-900/70 border-sky-400/60' },
-  { id: 'SEVEN', label: 'SEVEN', hint: 'shuma 7', cls: 'bg-emerald-900/70 border-emerald-400/60' },
-  { id: 'OVER', label: 'OVER 7', hint: 'shuma 8 - 12', cls: 'bg-rose-900/70 border-rose-400/60' },
+  { id: 'UNDER', label: 'UNDER 7', hint: 'sum 2 - 6', cls: 'bg-sky-900/70 border-sky-400/60' },
+  { id: 'SEVEN', label: 'SEVEN', hint: 'sum 7', cls: 'bg-emerald-900/70 border-emerald-400/60' },
+  { id: 'OVER', label: 'OVER 7', hint: 'sum 8 - 12', cls: 'bg-rose-900/70 border-rose-400/60' },
 ];
 
 const Dice: React.FC<DiceProps> = ({ onSetBalance, userBalance, onClose }) => {
@@ -25,7 +25,7 @@ const Dice: React.FC<DiceProps> = ({ onSetBalance, userBalance, onClose }) => {
   const [busy, setBusy] = useState(false);
   const [bet, setBet] = useState<Bet | null>(null);
   const [stake, setStake] = useState(50);
-  const [message, setMessage] = useState('Zgjidh një basti dhe hidh zaret');
+  const [message, setMessage] = useState('Pick a bet and roll the dice');
   const [won, setWon] = useState<boolean | null>(null);
   const [winAmount, setWinAmount] = useState(0);
   const [burst, setBurst] = useState(0);
@@ -34,9 +34,9 @@ const Dice: React.FC<DiceProps> = ({ onSetBalance, userBalance, onClose }) => {
 
   const roll = async () => {
     if (busy) return;
-    if (!bet) { setMessage('Zgjidh fillimisht një bast!'); return; }
-    if (userBalance < stake) { setMessage('Gjendje e pamjaftueshme'); return; }
-    setBusy(true); setWon(null); setWinAmount(0); setSum(null); setMessage('Zaret po rrotullohen...');
+    if (!bet) { setMessage('Pick a bet first!'); return; }
+    if (userBalance < stake) { setMessage('Insufficient balance'); return; }
+    setBusy(true); setWon(null); setWinAmount(0); setSum(null); setMessage('Rolling the dice...');
     try {
       const r = await casinoDiceRoll(stake, bet);
       setDice(r.dice);
@@ -46,7 +46,7 @@ const Dice: React.FC<DiceProps> = ({ onSetBalance, userBalance, onClose }) => {
       setSum(r.sum);
       const win = r.payout > 0;
       setWon(win); setWinAmount(r.payout);
-      if (win) { setBurst((n) => n + 1); setMessage(`FITOVE! ${r.payout.toFixed(2)} L`); } else setMessage(`Humbe - doli ${r.sum}`);
+      if (win) { setBurst((n) => n + 1); setMessage(`YOU WON! ${r.payout.toFixed(2)} L`); } else setMessage(`Lost - rolled ${r.sum}`);
     } catch (e: any) {
       setMessage(e?.message || 'Something went wrong');
     } finally {
@@ -70,7 +70,7 @@ const Dice: React.FC<DiceProps> = ({ onSetBalance, userBalance, onClose }) => {
 
       <div className="grid grid-cols-3 gap-3 w-full max-w-xl mt-4">
         {BETS.map((b) => (
-          <button key={b.id} disabled={busy} onClick={() => { setBet(b.id); setMessage(`Bast ${stake} L mbi ${b.label}`); }}
+          <button key={b.id} disabled={busy} onClick={() => { setBet(b.id); setMessage(`Bet ${stake} on ${b.label}`); }}
             className={`rounded-xl border-2 py-4 transition-all ${b.cls} ${bet === b.id ? 'ring-4 ring-yellow-300 scale-105' : 'opacity-85 hover:opacity-100'}`}>
             <div className="font-extrabold">{b.label}</div>
             <div className="text-xs text-gray-200">{b.hint}</div>

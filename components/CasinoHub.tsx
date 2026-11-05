@@ -62,7 +62,7 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
     { key: 'dragontiger', game: 'dragontiger', img: 'dragontiger', name: 'Dragon Tiger' },
     { key: 'wheel', game: 'wheel', art: <WheelCover />, name: 'Rrota e Fatit' },
     { key: 'keno', game: 'keno', art: <KenoCover />, name: 'Keno' },
-    { key: 'scratch', game: 'scratch', art: <ScratchCover />, name: 'Gërvisht & Fito' },
+    { key: 'scratch', game: 'scratch', art: <ScratchCover />, name: 'Scratch & Win' },
     { key: 'baccarat', game: 'baccarat', img: 'baccarat', name: 'Baccarat' },
     { key: 'blackjack', game: 'blackjack', img: 'blackjack', name: 'Blackjack Pro' },
     { key: 'roulette', game: 'roulette', img: 'roulette', name: 'Roulette' },
@@ -74,12 +74,12 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
     <div className="p-3 sm:p-6 text-white min-h-[80vh]">
       {loadingTile && <GameLoader name={loadingTile.name} img={loadingTile.img} art={loadingTile.art} onDone={() => { setActiveGame(loadingTile.game); setLoadingTile(null); }} />}
       <h1 className="text-3xl sm:text-4xl font-bold italic mb-1">Casino <span className="text-brand-yellow">Classics</span></h1>
-      <p className="text-sm opacity-70 mb-6">Slots dhe lojëra tavoline. Fitime të menjëhershme, pa pritje.</p>
+      <p className="text-sm opacity-70 mb-6">Slots and table games. Instant wins, no waiting.</p>
 
       <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><span className="w-1 h-6 bg-brand-yellow rounded-full"></span>Slots</h3>
       {open('slots') && <div className="mb-10"><SlotGames balance={userBalance} balanceEur={userBalanceEur} accountCurrency={accountCurrency} onBalances={onSetBalance} /></div>}
 
-      <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><span className="w-1 h-6 bg-brand-yellow rounded-full"></span>Lojëra</h3>
+      <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><span className="w-1 h-6 bg-brand-yellow rounded-full"></span>Games</h3>
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-5">
         {TILES.filter((t) => open(t.key)).map((t) => (
           <button key={t.key} onClick={() => setLoadingTile({ game: t.game as NonNullable<typeof activeGame>, name: t.name, img: t.img ? `/casino/${t.img}.jpg` : undefined, art: t.art })} aria-label={t.name}

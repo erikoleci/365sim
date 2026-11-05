@@ -29,7 +29,7 @@ export const WheelCover = () => {
         <circle r="16" fill="#fde68a" stroke="#fff7b0" strokeWidth="3" />
         <path d="M-9 -104 L9 -104 L0 -84 Z" fill="#fde047" stroke="#7c2d12" strokeWidth="1.5" />
       </svg>
-      <Title a="RROTA E FATIT" b="Rrotulloje dhe fito deri 8x" />
+      <Title a="WHEEL OF FORTUNE" b="Spin and win up to 8x" />
     </Frame>
   );
 };
@@ -41,7 +41,7 @@ export const KenoCover = () => (
         <div key={n} className={`aspect-square rounded-full flex items-center justify-center text-sm font-black border-2 ${i % 3 === 0 ? 'bg-gradient-to-b from-yellow-200 to-amber-500 text-black border-yellow-50 shadow-[0_0_14px_rgba(250,204,21,0.9)]' : i % 3 === 1 ? 'bg-red-600 border-red-300 text-white' : 'bg-emerald-400 border-emerald-100 text-black'}`}>{n}</div>
       ))}
     </div>
-    <Title a="KENO" b="Zgjidh numrat, fito deri 1000x" />
+    <Title a="KENO" b="Pick your numbers, win up to 1000x" />
   </Frame>
 );
 export const ScratchCover = () => (
@@ -54,7 +54,7 @@ export const ScratchCover = () => (
         ))}
       </div>
     </div>
-    <Title a="GËRVISHT & FITO" b="Letra me çmime deri 50x" />
+    <Title a="SCRATCH & WIN" b="Cards with prizes up to 50x" />
   </Frame>
 );
 export const TumbleCover = () => (
@@ -65,6 +65,6 @@ export const TumbleCover = () => (
         <div key={i} className="aspect-square rounded-lg bg-white/15 p-1" style={{ transform: `translateY(${(i % 4) * 3}px)` }}><SymbolIcon symbol={s} className="w-full h-full" /></div>
       ))}
     </div>
-    <Title a="SUGAR CASCADE" b="8+ simbole paguajnë kudo · shumëzues" color="#f9a8d4" />
+    <Title a="SUGAR CASCADE" b="8+ symbols pay anywhere · multipliers" color="#f9a8d4" />
   </Frame>
 );

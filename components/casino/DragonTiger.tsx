@@ -29,7 +29,7 @@ const DragonTiger: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) =>
   const [cards, setCards] = useState<{ dragon: Card | null; tiger: Card | null }>({ dragon: null, tiger: null });
   const [busy, setBusy] = useState(false);
   const [mood, setMood] = useState<CroupierMood>('idle');
-  const [message, setMessage] = useState('Zgjidh anën dhe ndaj letrat');
+  const [message, setMessage] = useState('Pick a side and deal the cards');
   const [burst, setBurst] = useState(0);
 
   const deal = async () => {
@@ -39,10 +39,10 @@ const DragonTiger: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) =>
     try {
       const r = await casinoDragonTigerDeal(stake, bet);
       setCards({ dragon: r.dragon, tiger: r.tiger }); onSetBalance(r.balance);
-      if (r.payout > stake) { setMood('win'); setBurst((n) => n + 1); setMessage(`${r.result} fiton! +${(r.payout - stake).toFixed(2)} L`); }
-      else if (r.payout > 0) { setMood('idle'); setMessage(`TIE - gjysma e basti kthehet (${r.payout.toFixed(2)} L)`); }
-      else { setMood('lose'); setMessage(`${r.result} fiton - humbe`); }
-    } catch (e: any) { setMessage(e?.message || 'Gabim'); setMood('idle'); }
+      if (r.payout > stake) { setMood('win'); setBurst((n) => n + 1); setMessage(`${r.result} wins! +${(r.payout - stake).toFixed(2)} L`); }
+      else if (r.payout > 0) { setMood('idle'); setMessage(`TIE - half the bet is returned (${r.payout.toFixed(2)} L)`); }
+      else { setMood('lose'); setMessage(`${r.result} wins - you lost`); }
+    } catch (e: any) { setMessage(e?.message || 'Error'); setMood('idle'); }
     setBusy(false);
   };
 

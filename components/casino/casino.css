@@ -144,3 +144,24 @@
 @keyframes tumble-pop { to { transform: scale(0); opacity: 0; } }
 .tumble-pop { animation: tumble-pop 0.28s ease-in both; }
 @media (prefers-reduced-motion: reduce) { .tumble-drop, .tumble-win, .tumble-pop { animation: none !important; } }
+
+/* ---- extravagant cabinet polish ---- */
+.bulbs::before, .bulbs::after { animation: bulb-chase 1.1s steps(2, end) infinite; }
+.bulbs::after { animation-delay: .55s; opacity: .9; }
+@keyframes bulb-chase { 0% { opacity: 1; filter: drop-shadow(0 0 6px rgba(255,214,90,1)); } 50% { opacity: .35; filter: drop-shadow(0 0 1px rgba(255,214,90,.4)); } 100% { opacity: 1; } }
+.cabinet-glow { animation: cabinet-glow 2.6s ease-in-out infinite; }
+@keyframes cabinet-glow { 0%,100% { box-shadow: inset 0 0 30px rgba(0,0,0,.8), 0 0 22px rgba(212,175,55,.25); } 50% { box-shadow: inset 0 0 30px rgba(0,0,0,.8), 0 0 46px rgba(255,214,90,.6); } }
+.cabinet-shake { animation: cabinet-shake .5s linear 2; }
+@keyframes cabinet-shake { 0%,100% { transform: translate(0,0) } 20% { transform: translate(-3px,2px) } 40% { transform: translate(3px,-2px) } 60% { transform: translate(-2px,-3px) } 80% { transform: translate(2px,3px) } }
+
+/* ---- big win overlay ---- */
+.bigwin-root { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle, rgba(0,0,0,.35), rgba(0,0,0,.85)); animation: bigwin-fade .3s ease-out; cursor: pointer; overflow: hidden; }
+@keyframes bigwin-fade { from { opacity: 0 } to { opacity: 1 } }
+.bigwin-rays { position: absolute; width: 190vmax; height: 190vmax; left: 50%; top: 50%; margin: -95vmax 0 0 -95vmax; background: repeating-conic-gradient(from 0deg, rgba(255,226,122,.28) 0 7deg, transparent 7deg 18deg); animation: bigwin-spin 14s linear infinite; mask-image: radial-gradient(circle, #000 5%, transparent 55%); -webkit-mask-image: radial-gradient(circle, #000 5%, transparent 55%); }
+@keyframes bigwin-spin { to { transform: rotate(360deg) } }
+.bigwin-card { position: relative; text-align: center; animation: bigwin-pop .7s cubic-bezier(.2,1.6,.4,1); }
+@keyframes bigwin-pop { from { transform: scale(.2) rotate(-8deg); opacity: 0 } to { transform: scale(1) rotate(0); opacity: 1 } }
+.bigwin-title { font-size: clamp(40px, 11vw, 92px); font-weight: 900; letter-spacing: .04em; -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-stroke: 2px rgba(0,0,0,.55); filter: drop-shadow(0 6px 0 rgba(0,0,0,.5)) drop-shadow(0 0 28px rgba(255,200,60,.8)); animation: bigwin-pulse 1s ease-in-out infinite; }
+@keyframes bigwin-pulse { 0%,100% { transform: scale(1) } 50% { transform: scale(1.08) } }
+.bigwin-amount { font-size: clamp(30px, 8vw, 64px); font-weight: 900; color: #fde047; text-shadow: 0 3px 0 #92400e, 0 0 24px rgba(253,224,71,.9); font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .bigwin-rays, .bigwin-title, .bulbs::before, .bulbs::after, .cabinet-glow { animation: none } }
