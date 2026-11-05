@@ -1,5 +1,6 @@
 import { startMusic, stopMusic, musicPref, setMusicPref } from './casino/casinoMusic';
 import LiveWins from './casino/LiveWins';
+import LiveHorses from './casino/LiveHorses';
 import LiveRoulette from './casino/LiveRoulette';
 import Penalty from './casino/Penalty';
 import Tower from './casino/Tower';
@@ -38,7 +39,7 @@ interface CasinoHubProps {
 
 const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, accountCurrency = 'BOTH', onSetBalance, showAllGames = false }) => {
   const euroOnly = accountCurrency === 'EUR';
-  const [activeGame, setActiveGame] = useState<'slots' | 'blackjack' | 'roulette' | 'poker' | 'baccarat' | 'dice' | 'plinko' | 'mines' | 'dragontiger' | 'wheel' | 'keno' | 'scratch' | 'tumble' | 'crash' | 'hilo' | 'holdwin' | 'penalty' | 'tower' | 'horses' | 'cups' | 'liveroulette' | null>(null);
+  const [activeGame, setActiveGame] = useState<'slots' | 'blackjack' | 'roulette' | 'poker' | 'baccarat' | 'dice' | 'plinko' | 'mines' | 'dragontiger' | 'wheel' | 'keno' | 'scratch' | 'tumble' | 'crash' | 'hilo' | 'holdwin' | 'penalty' | 'tower' | 'horses' | 'cups' | 'liveroulette' | 'livehorses' | null>(null);
   const [disabled, setDisabled] = useState<string[]>([]);
   useEffect(() => { casinoAccess().then((a) => setDisabled(a.disabledGames || [])).catch(() => {}); }, []);
   // The table games are played in lek: a euro-only account gets the slots only.
@@ -46,6 +47,7 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
 
   const [loadingTile, setLoadingTile] = useState<{ game: NonNullable<typeof activeGame>; name: string; img?: string; art?: React.ReactNode } | null>(null);
   // Lounge music: starts at the first tap in the casino (browsers block autoplay), unless the player turned it off; stops when leaving.
+  const [section, setSection] = useState<'slots' | 'live' | 'games'>('slots');
   const [music, setMusic] = useState(musicPref());
   useEffect(() => {
     if (!music) { stopMusic(); return undefined; }
@@ -65,7 +67,7 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
     baccarat: <Baccarat {...b} />, plinko: <Plinko {...b} />, mines: <Mines {...b} />, dragontiger: <DragonTiger {...b} />,
     tumble: <TumbleSlot balance={userBalance} balanceEur={userBalanceEur} accountCurrency={accountCurrency} onBalances={onSetBalance} onClose={close} />,
     keno: <Keno {...b} />, scratch: <Scratch {...b} />, wheel: <Wheel {...b} />, dice: <Dice {...b} />,
-    penalty: <Penalty {...b} />, tower: <Tower {...b} />, horses: <Horses {...b} />, cups: <Cups {...b} />, liveroulette: <LiveRoulette {...b} />,
+    penalty: <Penalty {...b} />, tower: <Tower {...b} />, horses: <Horses {...b} />, cups: <Cups {...b} />, liveroulette: <LiveRoulette {...b} />, livehorses: <LiveHorses {...b} />,
     crash: <Crash {...b} />, hilo: <HiLo {...b} />, holdwin: <HoldWin {...b} />,
   };
   // A game opens as its own full page (not a box inside the lobby): the lobby is replaced, the page starts at the top.
@@ -83,7 +85,6 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
   const TILES: { key: string; game: typeof activeGame; img?: string; art?: React.ReactNode; name: string }[] = [
     { key: 'slots', game: 'slots', img: 'slots', name: 'Super Slots' },
     { key: 'tumble', game: 'tumble', art: <TumbleCover />, name: 'Sugar Cascade' },
-    { key: 'liveroulette', game: 'liveroulette', art: <PlainCover title="LIVE ROULETTE" sub="One shared wheel · a spin every 30s" from="#065f46" to="#022c22" />, name: 'Live Roulette' },
     { key: 'penalty', game: 'penalty', art: <PlainCover title="PENALTY SHOOTOUT" sub="Beat the keeper, chain the goals" from="#14532d" to="#0b1b3a" />, name: 'Penalty Shootout' },
     { key: 'horses', game: 'horses', art: <PlainCover title="HORSE RACE" sub="Back a horse, win up to 13x" from="#166534" to="#78350f" />, name: 'Horse Race' },
     { key: 'tower', game: 'tower', art: <PlainCover title="GOLD TOWER" sub="Climb the floors, dodge the traps" from="#78350f" to="#1c1917" />, name: 'Gold Tower' },
@@ -104,6 +105,17 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
     { key: 'dice', game: 'dice', img: 'dice', name: 'Dice' },
   ];
 
+  const LIVE_TILES: typeof TILES = [
+    { key: 'liveroulette', game: 'liveroulette', art: <PlainCover title="LIVE ROULETTE" sub="One shared wheel · a spin every 30s" from="#065f46" to="#022c22" />, name: 'Live Roulette' },
+    { key: 'livehorses', game: 'livehorses', art: <PlainCover title="LIVE HORSE RACE" sub="A shared race every 45s" from="#166534" to="#78350f" />, name: 'Live Horse Race' },
+  ];
+  const tileBtn = (t: typeof TILES[number]) => (
+    <button key={t.key} onClick={() => setLoadingTile({ game: t.game as NonNullable<typeof activeGame>, name: t.name, img: t.img ? `/casino/${t.img}.jpg` : undefined, art: t.art })} aria-label={t.name}
+      className="lobby-card lobby-shine group relative aspect-[4/5] rounded-2xl overflow-hidden cursor-pointer shadow-xl border border-white/10 hover:border-brand-yellow/60 text-left">
+      {t.img ? <img src={`/casino/${t.img}.jpg`} alt={t.name} loading="lazy" draggable={false} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" /> : t.art}
+    </button>
+  );
+
   return (
     <div className="p-3 sm:p-6 text-white min-h-[80vh]">
       {musicBtn}
@@ -111,20 +123,25 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
       <h1 className="text-3xl sm:text-4xl font-bold italic mb-1">Casino <span className="text-brand-yellow">Classics</span></h1>
       <p className="text-sm opacity-70 mb-6">Slots and table games. Instant wins, no waiting.</p>
 
-      <LiveWins />
-
-      <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><span className="w-1 h-6 bg-brand-yellow rounded-full"></span>Slots</h3>
-      {open('slots') && <div className="mb-10"><SlotGames balance={userBalance} balanceEur={userBalanceEur} accountCurrency={accountCurrency} onBalances={onSetBalance} /></div>}
-
-      <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><span className="w-1 h-6 bg-brand-yellow rounded-full"></span>Games</h3>
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-5">
-        {TILES.filter((t) => open(t.key)).map((t) => (
-          <button key={t.key} onClick={() => setLoadingTile({ game: t.game as NonNullable<typeof activeGame>, name: t.name, img: t.img ? `/casino/${t.img}.jpg` : undefined, art: t.art })} aria-label={t.name}
-            className="lobby-card lobby-shine group relative aspect-[4/5] rounded-2xl overflow-hidden cursor-pointer shadow-xl border border-white/10 hover:border-brand-yellow/60 text-left">
-            {t.img ? <img src={`/casino/${t.img}.jpg`} alt={t.name} loading="lazy" draggable={false} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" /> : t.art}
+      <div className="flex gap-2 mb-6 overflow-x-auto" role="tablist">
+        {([['slots', 'Slots'], ['live', 'Live Casino'], ['games', 'Games']] as const).map(([k, label]) => (
+          <button key={k} role="tab" aria-selected={section === k} onClick={() => setSection(k)}
+            className={`whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-extrabold border transition ${section === k ? 'bg-brand-yellow text-black border-brand-yellow shadow-[0_0_18px_rgba(250,204,21,.4)]' : 'bg-white/5 text-gray-200 border-white/15 hover:bg-white/10'}`}>
+            {k === 'live' && <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse mr-2" />}{label}
           </button>
         ))}
       </div>
+
+      {section === 'slots' && (open('slots') ? <div className="mb-10"><SlotGames balance={userBalance} balanceEur={userBalanceEur} accountCurrency={accountCurrency} onBalances={onSetBalance} /></div> : <div className="text-sm text-gray-400">Slots are closed right now.</div>)}
+
+      {section === 'live' && (
+        <>
+          <LiveWins />
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-5">{LIVE_TILES.filter((t) => open(t.key)).map(tileBtn)}</div>
+        </>
+      )}
+
+      {section === 'games' && <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-5">{TILES.filter((t) => open(t.key)).map(tileBtn)}</div>}
     </div>
   );
 };

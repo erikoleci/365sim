@@ -969,3 +969,13 @@ export async function casinoLiveRouletteState() { return request<LiveRouletteSta
 export async function casinoLiveRouletteBet(round: number, bets: Record<string, number>) {
   return request<{ ok: boolean; balance: number }>('/casino/live-roulette/bet', { method: 'POST', body: JSON.stringify({ round, bets }) });
 }
+
+// ---- Live Horse Race ----
+export type LiveHorsesState = {
+  serverNow: number; round: number; phase: 'betting' | 'race'; msLeft: number; cycleMs: number; betMs: number; order: number[] | null; winners: number[];
+  myBets: Record<string, number>; settled: { round: number; order: number[]; staked: number; payout: number }[]; balance: number; tablePlayers?: number; simulatedPlayers?: boolean; horses: Horse[];
+};
+export async function casinoLiveHorsesState() { return request<LiveHorsesState>('/casino/live-horses/state'); }
+export async function casinoLiveHorsesBet(round: number, bets: Record<string, number>) {
+  return request<{ ok: boolean; balance: number }>('/casino/live-horses/bet', { method: 'POST', body: JSON.stringify({ round, bets }) });
+}

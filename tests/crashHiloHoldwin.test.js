@@ -214,3 +214,15 @@ describe('slot player counts', () => {
     expect(simulatedPlaying(ids, 1_800_000_000_000 + 300000)).not.toEqual(a);
   });
 });
+
+import * as lh from '../server/liveHorses.js';
+describe('live horse race', () => {
+  it('phases follow the clock and only the winner pays', () => {
+    const base = 1_800_000_000_000 - (1_800_000_000_000 % lh.CYCLE_MS);
+    expect(lh.phaseAt(base + 1).phase).toBe('betting');
+    expect(lh.phaseAt(base + lh.BET_MS + 1).phase).toBe('race');
+    expect(lh.settle({ '2': 100, '1': 50 }, [2, 0, 1, 3, 4, 5])).toBeGreaterThan(0);
+    expect(lh.settle({ '1': 50 }, [2, 0, 1, 3, 4, 5])).toBe(0);
+    expect(lh.validHorse('5')).toBe(true); expect(lh.validHorse('6')).toBe(false);
+  });
+});
