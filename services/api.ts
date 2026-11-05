@@ -899,3 +899,34 @@ export async function supportInboxReply(id: string, message: string) {
 export async function supportInboxStatus(id: string, status: 'OPEN' | 'CLOSED') {
   return request<{ ok: boolean }>(`/support/inbox/${encodeURIComponent(id)}/status`, { method: 'POST', body: JSON.stringify({ status }) });
 }
+
+// ---- Crash / Hi-Lo / Hold & Win ----
+export async function casinoCrashStart(stake: number, autoCashout?: number | null) {
+  return request<{ roundId: string; growth: number; autoCashout: number | null; balance: number }>('/casino/crash/start', { method: 'POST', body: JSON.stringify({ stake, autoCashout: autoCashout || undefined }) });
+}
+export type CrashState = { status: 'RUNNING' | 'CRASHED' | 'WON'; multiplier?: number; crashPoint?: number; payout?: number; balance?: number };
+export async function casinoCrashState(id: string) {
+  return request<CrashState>(`/casino/crash/${id}/state`);
+}
+export async function casinoCrashCashout(id: string) {
+  return request<CrashState>(`/casino/crash/${id}/cashout`, { method: 'POST', body: '{}' });
+}
+export type HiLoCard = { rank: number; suit: number };
+export type HiLoOptions = { higher: number; lower: number };
+export async function casinoHiLoStart(stake: number) {
+  return request<{ roundId: string; card: HiLoCard; total: number; options: HiLoOptions; balance: number }>('/casino/hilo/start', { method: 'POST', body: JSON.stringify({ stake }) });
+}
+export async function casinoHiLoGuess(id: string, guess: 'higher' | 'lower') {
+  return request<{ won: boolean; card: HiLoCard; total?: number; steps?: number; options?: HiLoOptions; payout?: number; finished: boolean; balance?: number }>(`/casino/hilo/${id}/guess`, { method: 'POST', body: JSON.stringify({ guess }) });
+}
+export async function casinoHiLoCashout(id: string) {
+  return request<{ multiplier: number; payout: number; balance: number }>(`/casino/hilo/${id}/cashout`, { method: 'POST', body: '{}' });
+}
+export type HoldWinCoin = { cell: number; value: number };
+export type HoldWinRound = { bonus: boolean; start: HoldWinCoin[]; respins: { landed: HoldWinCoin[]; lives: number }[]; full: boolean; multiplier: number; payout: number; balance: number };
+export async function casinoHoldWinInfo() {
+  return request<{ cols: number; rows: number; minTrigger: number; lives: number; coinTable: number[]; fullBoardBonus: number; maxWin: number }>('/casino/holdwin/info');
+}
+export async function casinoHoldWinPlay(stake: number) {
+  return request<HoldWinRound>('/casino/holdwin/play', { method: 'POST', body: JSON.stringify({ stake }) });
+}

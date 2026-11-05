@@ -68,3 +68,11 @@ export const TumbleCover = () => (
     <Title a="SUGAR CASCADE" b="8+ symbols pay anywhere · multipliers" color="#f9a8d4" />
   </Frame>
 );
+
+// Text-only cover (gradient + title) used until a photo cover is added to public/casino/<name>.jpg
+export const PlainCover: React.FC<{ title: string; sub: string; from: string; to: string }> = ({ title, sub, from, to }) => (
+  <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-3" style={{ background: `radial-gradient(circle at 50% 30%, ${from}, ${to})` }}>
+    <div className="font-black text-white leading-tight" style={{ fontSize: 'clamp(22px, 4vw, 34px)', textShadow: '0 3px 0 rgba(0,0,0,.5), 0 0 20px rgba(250,204,21,.5)' }}>{title}</div>
+    <div className="text-[11px] sm:text-xs text-yellow-200/90 mt-2">{sub}</div>
+  </div>
+);

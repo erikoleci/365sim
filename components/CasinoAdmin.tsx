@@ -41,7 +41,7 @@ const CasinoAdmin: React.FC<CasinoAdminProps> = ({ userBalance, userBalanceEur =
   return (
     <div className="space-y-4">
       <div className="bg-brand-panel border border-[#444] rounded p-4">
-        <div className="text-sm font-bold mb-2">Kush e sheh kazinon</div>
+        <div className="text-sm font-bold mb-2">Who can see the casino</div>
         <div className="flex flex-wrap gap-2">
           {MODES.map((m) => (
             <button key={m.value} onClick={() => change(m.value)}
@@ -60,7 +60,7 @@ const CasinoAdmin: React.FC<CasinoAdminProps> = ({ userBalance, userBalanceEur =
           {gameKeys.map((g) => (
             <button key={g} onClick={() => toggleGame(g)}
               className={`px-3 py-1.5 rounded text-xs border ${disabledGames.includes(g) ? 'bg-red-900/40 text-red-300 border-red-700' : 'bg-green-900/30 text-green-300 border-green-700'}`}>
-              {g} · {disabledGames.includes(g) ? 'MBYLLUR' : 'HAPUR'}
+              {g} · {disabledGames.includes(g) ? 'CLOSED' : 'OPEN'}
             </button>
           ))}
         </div>

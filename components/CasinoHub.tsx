@@ -1,3 +1,6 @@
+import Crash from './casino/Crash';
+import HiLo from './casino/HiLo';
+import HoldWin from './casino/HoldWin';
 import React, { useEffect, useState } from 'react';
 import { casinoAccess } from '../services/api';
 import Plinko from './casino/Plinko';
@@ -10,7 +13,7 @@ import VideoPoker from './casino/VideoPoker';
 import Baccarat from './casino/Baccarat';
 import Dice from './casino/Dice';
 import SlotGames from './casino/SlotGames';
-import { WheelCover, KenoCover, ScratchCover, TumbleCover } from './casino/CasinoCovers';
+import { WheelCover, KenoCover, ScratchCover, TumbleCover, PlainCover } from './casino/CasinoCovers';
 import Wheel from './casino/Wheel';
 import GameLoader from './casino/GameLoader';
 import Keno from './casino/Keno';
@@ -28,7 +31,7 @@ interface CasinoHubProps {
 
 const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, accountCurrency = 'BOTH', onSetBalance, showAllGames = false }) => {
   const euroOnly = accountCurrency === 'EUR';
-  const [activeGame, setActiveGame] = useState<'slots' | 'blackjack' | 'roulette' | 'poker' | 'baccarat' | 'dice' | 'plinko' | 'mines' | 'dragontiger' | 'wheel' | 'keno' | 'scratch' | 'tumble' | null>(null);
+  const [activeGame, setActiveGame] = useState<'slots' | 'blackjack' | 'roulette' | 'poker' | 'baccarat' | 'dice' | 'plinko' | 'mines' | 'dragontiger' | 'wheel' | 'keno' | 'scratch' | 'tumble' | 'crash' | 'hilo' | 'holdwin' | null>(null);
   const [disabled, setDisabled] = useState<string[]>([]);
   useEffect(() => { casinoAccess().then((a) => setDisabled(a.disabledGames || [])).catch(() => {}); }, []);
   // The table games are played in lek: a euro-only account gets the slots only.
@@ -42,6 +45,7 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
     baccarat: <Baccarat {...b} />, plinko: <Plinko {...b} />, mines: <Mines {...b} />, dragontiger: <DragonTiger {...b} />,
     tumble: <TumbleSlot balance={userBalance} balanceEur={userBalanceEur} accountCurrency={accountCurrency} onBalances={onSetBalance} onClose={close} />,
     keno: <Keno {...b} />, scratch: <Scratch {...b} />, wheel: <Wheel {...b} />, dice: <Dice {...b} />,
+    crash: <Crash {...b} />, hilo: <HiLo {...b} />, holdwin: <HoldWin {...b} />,
   };
   // A game opens as its own full page (not a box inside the lobby): the lobby is replaced, the page starts at the top.
   useEffect(() => { if (activeGame) window.scrollTo(0, 0); }, [activeGame]);
@@ -57,10 +61,13 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
   const TILES: { key: string; game: typeof activeGame; img?: string; art?: React.ReactNode; name: string }[] = [
     { key: 'slots', game: 'slots', img: 'slots', name: 'Super Slots' },
     { key: 'tumble', game: 'tumble', art: <TumbleCover />, name: 'Sugar Cascade' },
+    { key: 'crash', game: 'crash', art: <PlainCover title="CRASH" sub="Cash out before it blows" from="#0f172a" to="#7c2d12" />, name: 'Crash' },
+    { key: 'holdwin', game: 'holdwin', art: <PlainCover title="HOLD & WIN" sub="Lock coins, fill the board" from="#3b0764" to="#78350f" />, name: 'Hold & Win' },
+    { key: 'hilo', game: 'hilo', art: <PlainCover title="HI-LO" sub="Higher or lower? Chain your wins" from="#065f46" to="#022c22" />, name: 'Hi-Lo' },
     { key: 'plinko', game: 'plinko', img: 'plinko', name: 'Plinko' },
     { key: 'mines', game: 'mines', img: 'mines', name: 'Mines' },
     { key: 'dragontiger', game: 'dragontiger', img: 'dragontiger', name: 'Dragon Tiger' },
-    { key: 'wheel', game: 'wheel', art: <WheelCover />, name: 'Rrota e Fatit' },
+    { key: 'wheel', game: 'wheel', art: <WheelCover />, name: 'Wheel of Fortune' },
     { key: 'keno', game: 'keno', art: <KenoCover />, name: 'Keno' },
     { key: 'scratch', game: 'scratch', art: <ScratchCover />, name: 'Scratch & Win' },
     { key: 'baccarat', game: 'baccarat', img: 'baccarat', name: 'Baccarat' },

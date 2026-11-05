@@ -9,6 +9,9 @@ import { WHEEL_SEGMENTS, wheelSpin } from '../wheel.js';
 import { KENO_PAYTABLE, KENO_POOL, KENO_MAX_PICKS, drawKeno, kenoResult } from '../keno.js';
 import { scratchCard } from '../scratch.js';
 import * as tumbleEngine from '../slots/tumble.js';
+import * as crashEngine from '../crash.js';
+import * as hiloEngine from '../hilo.js';
+import * as holdWinEngine from '../holdwin.js';
 import { normalizeCurrency, walletColumn, accountCurrencyOf, allowsCurrency, accountCurrencyError } from '../ledger.js';
 import { SLOT_GAMES as VIDEO_SLOTS, getSlotGame as getVideoSlot, publicGame } from '../slots/games.js';
 import { playRound } from '../slots/engine.js';
@@ -768,6 +771,166 @@ router.post('/scratch/play', async (req, res) => {
   await creditPayout(req.user.id, payout);
   await logRound(req.user.id, 'scratch', stake, payout, { cells, multiplier });
   res.json({ cells, multiplier, payout, balance: await getBalance(req.user.id) });
+});
+
+// =====================================================================
+// CRASH: the crash point is drawn at the start and stays on the server. The browser polls /state while it watches the
+// multiplier climb and calls /cashout; the server decides from its own clock whether the cash-out beat the crash.
+// =====================================================================
+async function settleCrash(userId, row) {
+  const st = JSON.parse(row.state);
+  const elapsed = (Date.now() - st.startedAt) / 1000;
+  const now = crashEngine.multiplierAt(elapsed);
+  const stake = Number(row.stake);
+  const finish = async (payout, result) => {
+    const upd = await pool.query(`UPDATE casino_rounds SET status='FINISHED', payout=$1, result=$2, resolved_at=$3 WHERE id=$4 AND status='PLAYING'`,
+      [payout, JSON.stringify(result), Date.now(), row.id]);
+    if (upd.rowCount === 0) return false;
+    if (payout > 0) await creditPayout(userId, payout);
+    return true;
+  };
+  if (st.auto && st.crashPoint >= st.auto && elapsed + 0.05 >= crashEngine.timeToMultiplier(st.auto)) {
+    const payout = roundMoney(stake * st.auto);
+    await finish(payout, { crashPoint: st.crashPoint, cashedOutAt: st.auto, auto: true });
+    return { status: 'WON', multiplier: st.auto, payout, crashPoint: st.crashPoint };
+  }
+  if (now >= st.crashPoint) {
+    await finish(0, { crashPoint: st.crashPoint });
+    return { status: 'CRASHED', crashPoint: st.crashPoint, payout: 0 };
+  }
+  return { status: 'RUNNING', multiplier: now, st };
+}
+async function loadCrash(req, res) {
+  const { rows } = await pool.query('SELECT * FROM casino_rounds WHERE id = $1', [req.params.id]);
+  const row = rows[0];
+  if (!row || row.game !== 'crash') { res.status(404).json({ error: 'Round not found' }); return null; }
+  if (row.user_id !== req.user.id) { res.status(403).json({ error: 'Not your round' }); return null; }
+  return row;
+}
+router.post('/crash/start', async (req, res) => {
+  const { stake } = req.body || {};
+  let auto = req.body?.autoCashout;
+  if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
+  if (auto !== undefined && auto !== null && auto !== '') {
+    auto = Number(auto);
+    if (!Number.isFinite(auto) || auto < 1.01 || auto > crashEngine.CRASH_MAX) return res.status(400).json({ error: 'Auto cash-out must be between 1.01x and 1000x' });
+    auto = Math.round(auto * 100) / 100;
+  } else auto = null;
+  const ok = await deductStake(req.user.id, stake);
+  if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
+  const crashPoint = crashEngine.drawCrashPoint((n) => randomInt(n));
+  const roundId = randomUUID();
+  await pool.query(
+    `INSERT INTO casino_rounds (id, user_id, game, stake, status, state, created_at) VALUES ($1,$2,'crash',$3,'PLAYING',$4,$5)`,
+    [roundId, req.user.id, stake, JSON.stringify({ crashPoint, auto, startedAt: Date.now() }), Date.now()]
+  );
+  res.json({ roundId, growth: crashEngine.GROWTH, autoCashout: auto, balance: await getBalance(req.user.id) });
+});
+router.get('/crash/:id/state', async (req, res) => {
+  const row = await loadCrash(req, res); if (!row) return;
+  if (row.status !== 'PLAYING') {
+    const r = JSON.parse(row.result || '{}');
+    return res.json(r.cashedOutAt ? { status: 'WON', multiplier: r.cashedOutAt, payout: Number(row.payout), crashPoint: r.crashPoint, balance: await getBalance(req.user.id) }
+      : { status: 'CRASHED', crashPoint: r.crashPoint, payout: Number(row.payout), balance: await getBalance(req.user.id) });
+  }
+  const out = await settleCrash(req.user.id, row);
+  if (out.status === 'RUNNING') return res.json({ status: 'RUNNING', multiplier: out.multiplier });
+  res.json({ ...out, balance: await getBalance(req.user.id) });
+});
+router.post('/crash/:id/cashout', async (req, res) => {
+  const row = await loadCrash(req, res); if (!row) return;
+  if (row.status !== 'PLAYING') return res.status(400).json({ error: 'Round already finished' });
+  const out = await settleCrash(req.user.id, row);
+  if (out.status !== 'RUNNING') return res.json({ ...out, balance: await getBalance(req.user.id) });
+  const multiplier = out.multiplier;
+  const payout = roundMoney(Number(row.stake) * multiplier);
+  const upd = await pool.query(`UPDATE casino_rounds SET status='FINISHED', payout=$1, result=$2, resolved_at=$3 WHERE id=$4 AND status='PLAYING'`,
+    [payout, JSON.stringify({ crashPoint: out.st.crashPoint, cashedOutAt: multiplier }), Date.now(), row.id]);
+  if (upd.rowCount === 0) return res.status(400).json({ error: 'Round already finished' });
+  await creditPayout(req.user.id, payout);
+  res.json({ status: 'WON', multiplier, payout, crashPoint: out.st.crashPoint, balance: await getBalance(req.user.id) });
+});
+
+// =====================================================================
+// HI-LO: higher / lower card chain
+// =====================================================================
+const hiloOptions = (rank, total) => ({
+  higher: hiloEngine.winCount(rank, 'higher') ? Math.min(hiloEngine.HILO_MAX, hiloEngine.roundMult(total * hiloEngine.stepMultiplier(rank, 'higher'))) : 0,
+  lower: hiloEngine.winCount(rank, 'lower') ? Math.min(hiloEngine.HILO_MAX, hiloEngine.roundMult(total * hiloEngine.stepMultiplier(rank, 'lower'))) : 0,
+});
+async function loadHilo(req, res) {
+  const { rows } = await pool.query('SELECT * FROM casino_rounds WHERE id = $1', [req.params.id]);
+  const row = rows[0];
+  if (!row || row.game !== 'hilo') { res.status(404).json({ error: 'Round not found' }); return null; }
+  if (row.user_id !== req.user.id) { res.status(403).json({ error: 'Not your round' }); return null; }
+  if (row.status !== 'PLAYING') { res.status(400).json({ error: 'Round already finished' }); return null; }
+  return { row, st: JSON.parse(row.state) };
+}
+router.post('/hilo/start', async (req, res) => {
+  const { stake } = req.body || {};
+  if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
+  const ok = await deductStake(req.user.id, stake);
+  if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
+  const rank = hiloEngine.drawRank((n) => randomInt(n));
+  const suit = randomInt(4);
+  const roundId = randomUUID();
+  await pool.query(`INSERT INTO casino_rounds (id, user_id, game, stake, status, state, created_at) VALUES ($1,$2,'hilo',$3,'PLAYING',$4,$5)`,
+    [roundId, req.user.id, stake, JSON.stringify({ rank, suit, total: 1, steps: 0 }), Date.now()]);
+  res.json({ roundId, card: { rank, suit }, total: 1, options: hiloOptions(rank, 1), balance: await getBalance(req.user.id) });
+});
+router.post('/hilo/:id/guess', async (req, res) => {
+  const guess = req.body?.guess;
+  if (guess !== 'higher' && guess !== 'lower') return res.status(400).json({ error: 'Invalid guess' });
+  const loaded = await loadHilo(req, res); if (!loaded) return;
+  const { row, st } = loaded;
+  const step = hiloEngine.playStep({ rank: st.rank, guess, total: st.total }, (n) => randomInt(n));
+  if (step.error) return res.status(400).json({ error: 'That guess is impossible for this card' });
+  const suit = randomInt(4);
+  if (!step.won) {
+    await pool.query(`UPDATE casino_rounds SET status='FINISHED', payout=0, result=$1, resolved_at=$2 WHERE id=$3 AND status='PLAYING'`,
+      [JSON.stringify({ steps: st.steps, lostOn: step.next }), Date.now(), row.id]);
+    return res.json({ won: false, card: { rank: step.next, suit }, payout: 0, finished: true, balance: await getBalance(req.user.id) });
+  }
+  const next = { rank: step.next, suit, total: step.total, steps: st.steps + 1 };
+  if (step.capped) {
+    const payout = roundMoney(Number(row.stake) * next.total);
+    const upd = await pool.query(`UPDATE casino_rounds SET status='FINISHED', state=$1, payout=$2, result=$3, resolved_at=$4 WHERE id=$5 AND status='PLAYING'`,
+      [JSON.stringify(next), payout, JSON.stringify({ steps: next.steps, maxed: true }), Date.now(), row.id]);
+    if (upd.rowCount) await creditPayout(req.user.id, payout);
+    return res.json({ won: true, card: { rank: next.rank, suit }, total: next.total, payout, finished: true, balance: await getBalance(req.user.id) });
+  }
+  await pool.query('UPDATE casino_rounds SET state = $1 WHERE id = $2', [JSON.stringify(next), row.id]);
+  res.json({ won: true, card: { rank: next.rank, suit }, total: next.total, steps: next.steps, options: hiloOptions(next.rank, next.total), finished: false });
+});
+router.post('/hilo/:id/cashout', async (req, res) => {
+  const loaded = await loadHilo(req, res); if (!loaded) return;
+  const { row, st } = loaded;
+  if (st.steps < 1) return res.status(400).json({ error: 'Win at least one guess first' });
+  const payout = roundMoney(Number(row.stake) * st.total);
+  const upd = await pool.query(`UPDATE casino_rounds SET status='FINISHED', payout=$1, result=$2, resolved_at=$3 WHERE id=$4 AND status='PLAYING'`,
+    [payout, JSON.stringify({ steps: st.steps, cashedOut: true, multiplier: st.total }), Date.now(), row.id]);
+  if (upd.rowCount === 0) return res.status(400).json({ error: 'Round already finished' });
+  await creditPayout(req.user.id, payout);
+  res.json({ multiplier: st.total, payout, balance: await getBalance(req.user.id) });
+});
+
+// =====================================================================
+// HOLD & WIN: the whole bonus is drawn at once (server/holdwin.js); the browser plays it back step by step.
+// =====================================================================
+router.get('/holdwin/info', (req, res) => res.json({
+  cols: holdWinEngine.COLS, rows: holdWinEngine.ROWS, minTrigger: holdWinEngine.MIN_TRIGGER, lives: holdWinEngine.START_LIVES,
+  coinTable: holdWinEngine.COIN_TABLE.map((c) => c.v), fullBoardBonus: holdWinEngine.FULL_BOARD_BONUS, maxWin: holdWinEngine.MAX_WIN_MULTIPLIER,
+}));
+router.post('/holdwin/play', async (req, res) => {
+  const { stake } = req.body || {};
+  if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
+  const ok = await deductStake(req.user.id, stake);
+  if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
+  const round = holdWinEngine.playRound((n) => randomInt(n));
+  const payout = roundMoney(stake * round.multiplier);
+  await creditPayout(req.user.id, payout);
+  await logRound(req.user.id, 'holdwin', stake, payout, { coins: round.start.length, full: round.full, multiplier: round.multiplier });
+  res.json({ ...round, payout, balance: await getBalance(req.user.id) });
 });
 
 export default router;
