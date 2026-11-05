@@ -203,3 +203,14 @@ describe('live roulette', () => {
     expect(lr.settleBets({ RED: 10, ODD: 10 }, 0)).toBe(0);
   });
 });
+
+import { simulatedPlaying } from '../server/liveSim.js';
+describe('slot player counts', () => {
+  it('are stable, positive and drift over time', () => {
+    const ids = ['hot-fruits', 'lucky-dragon'];
+    const a = simulatedPlaying(ids, 1_800_000_000_000);
+    expect(simulatedPlaying(ids, 1_800_000_000_000)).toEqual(a);
+    ids.forEach((i) => expect(a[i]).toBeGreaterThan(1));
+    expect(simulatedPlaying(ids, 1_800_000_000_000 + 300000)).not.toEqual(a);
+  });
+});

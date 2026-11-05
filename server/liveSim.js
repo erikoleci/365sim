@@ -28,3 +28,16 @@ export function simulatedFeed(now = Date.now()) {
   return out.filter((f) => f.at <= now).sort((a, b) => b.at - a.at);
 }
 export const simulatedPlayers = (now = Date.now()) => 38 + Math.floor(mulberry32(Math.floor(now / 600000))() * 55);
+
+// "N playing now" per slot: a stable popularity per game that drifts slowly with the clock.
+function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i += 1) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+export function simulatedPlaying(ids, now = Date.now()) {
+  const out = {};
+  for (const id of ids) {
+    const h = hashStr(id);
+    const base = 9 + (h % 52);
+    const wave = Math.sin(now / 95000 + (h % 628) / 100) * 0.28 + Math.sin(now / 31000 + (h % 311) / 50) * 0.1;
+    out[id] = Math.max(2, Math.round(base * (1 + wave)));
+  }
+  return out;
+}

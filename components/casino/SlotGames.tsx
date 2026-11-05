@@ -70,6 +70,7 @@ const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, accountCurren
           <button key={c} onClick={() => setCat(c)} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors ${cat === c ? 'bg-brand-yellow text-black border-brand-yellow' : 'bg-white/5 text-gray-200 border-white/15 hover:bg-white/10'}`}>{c}</button>
         ))}
       </div>
+      {data.simulatedPlayers && <div className="text-[10px] text-gray-500 mb-2">Credit only · player counts include simulated players</div>}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
         {data.games.filter((g) => (cat === 'All' || (cat === '♥ Favourites' ? favs.includes(g.id) : (g.category || 'Classic') === cat)) && (!query.trim() || g.name.toLowerCase().includes(query.trim().toLowerCase()))).map((g) => (
           <button key={g.id} onClick={() => setLoadingGame(g)} className="lobby-card lobby-shine relative text-left rounded-xl overflow-hidden border border-white/10 hover:border-brand-yellow/60 shadow-lg"
@@ -77,6 +78,7 @@ const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, accountCurren
             <CoverImg id={g.id} name={g.name}>
             <div className="flex justify-center gap-1 text-3xl pt-5 pb-3">{['WILD', Object.keys(g.paytable).find((k) => k !== 'WILD' && g.paytable[k][5] === Math.max(...Object.keys(g.paytable).filter((x) => x !== 'WILD').map((x) => g.paytable[x][5])))!, 'SCATTER'].map((k, i) => <span key={i} className="w-9 h-9 inline-block"><SymbolIcon symbol={g.symbols[k]} className="w-full h-full" /></span>)}</div>
             </CoverImg>
+            {data.playing?.[g.id] ? <span className="absolute top-2 left-2 z-10 flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/65 text-[10px] font-bold text-green-300"><span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />{data.playing[g.id]} playing</span> : null}
             <span role="button" aria-label="Favourites" onClick={(e) => { e.stopPropagation(); toggleFav(g.id); }} className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/55 flex items-center justify-center text-lg">{favs.includes(g.id) ? <span className="text-red-500">♥</span> : <span className="text-white/80">♡</span>}</span>
             <div className="px-3 pb-3 bg-black/40 pt-2">
               <div className="font-bold text-white">{g.name}</div>

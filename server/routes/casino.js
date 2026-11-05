@@ -16,7 +16,7 @@ import * as chain from '../chain.js';
 import * as horseEngine from '../horses.js';
 import * as cupsEngine from '../cups.js';
 import * as liveRoulette from '../liveRoulette.js';
-import { simulatedFeed, simulatedPlayers } from '../liveSim.js';
+import { simulatedFeed, simulatedPlayers, simulatedPlaying } from '../liveSim.js';
 import { normalizeCurrency, walletColumn, accountCurrencyOf, allowsCurrency, accountCurrencyError } from '../ledger.js';
 import { SLOT_GAMES as VIDEO_SLOTS, getSlotGame as getVideoSlot, publicGame } from '../slots/games.js';
 import { playRound } from '../slots/engine.js';
@@ -119,8 +119,19 @@ export function validSlotStake(currency, stake) {
 const MAX_WIN_MULTIPLIER = 2000; // one round never pays more than 2000x the stake
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 
-router.get('/slot-games', (req, res) => {
-  res.json({ games: VIDEO_SLOTS.map(publicGame), stakes: SLOT_STAKES, limits: SLOT_LIMITS, demo: isSuperAdmin(req.user.role) });
+router.get('/slot-games', async (req, res) => {
+  // "playing now": real players of the last 5 minutes per game, topped up with simulated ones (LIVE_SIM_ENABLED=0 switches that off)
+  const ids = VIDEO_SLOTS.map((g) => g.id);
+  const playing = {};
+  try {
+    const { rows } = await pool.query(
+      `SELECT r.game, COUNT(DISTINCT r.user_id)::int AS n FROM casino_rounds r JOIN users u ON u.id = r.user_id
+        WHERE r.created_at > $1 AND u.role <> 'SUPER_ADMIN' GROUP BY r.game`, [Date.now() - 5 * 60 * 1000]);
+    for (const r of rows) playing[r.game] = r.n;
+  } catch { /* counts are cosmetic */ }
+  const sim = process.env.LIVE_SIM_ENABLED !== '0';
+  if (sim) { const extra = simulatedPlaying(ids); for (const id of ids) playing[id] = (playing[id] || 0) + extra[id]; }
+  res.json({ games: VIDEO_SLOTS.map(publicGame), stakes: SLOT_STAKES, limits: SLOT_LIMITS, demo: isSuperAdmin(req.user.role), playing, simulatedPlayers: sim });
 });
 
 // Shared by every slot-like game: super admin plays a demo round, everybody else is debited / credited in one transaction.

@@ -803,7 +803,7 @@ export interface VideoSlotInfo {
 export interface SlotSpin { grid: string[][]; wins: { line: number; symbol: string; count: number; pay: number }[]; scatters: number; free: boolean; win: number }
 export interface SlotRound { spins: SlotSpin[]; payout: number; freeSpins: number; demo: boolean; balance?: number; balanceEur?: number }
 export async function casinoSlotGames() {
-  return request<{ games: VideoSlotInfo[]; stakes: { ALL: number[]; EUR: number[] }; demo: boolean }>('/casino/slot-games');
+  return request<{ games: VideoSlotInfo[]; stakes: { ALL: number[]; EUR: number[] }; demo: boolean; playing?: Record<string, number>; simulatedPlayers?: boolean }>('/casino/slot-games');
 }
 export async function casinoSlotSpin(id: string, stake: number, currency: 'ALL' | 'EUR') {
   return request<SlotRound>(`/casino/slot-games/${id}/spin`, { method: 'POST', body: JSON.stringify({ stake, currency }) });
