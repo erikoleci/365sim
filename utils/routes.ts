@@ -40,7 +40,9 @@ export function navToPath(nav: Nav): string {
   if (nav.currentLeague === FAVORITES) return PATHS.favorites;
   if (isCountryFilter(nav.currentLeague)) return PATHS.country + encodeURIComponent(countryFromFilter(nav.currentLeague));
   if (nav.currentLeague !== ALL_LEAGUES) return PATHS.league + encodeURIComponent(nav.currentLeague);
-  return PATHS.odds;
+  // On 365sim.uk the home screen is the bare domain (no /koeficientet in the address or in shared links)
+  const host = typeof window !== 'undefined' ? window.location.hostname : '';
+  return /(^|\.)365sim\.uk$/i.test(host) ? '/' : PATHS.odds;
 }
 
 const decode = (s: string): string => {
