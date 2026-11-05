@@ -4,6 +4,7 @@ import SlotReel from './SlotReel';
 import CountUp from './CountUp';
 import CoinBurst from './CoinBurst';
 import SymbolIcon from './SymbolIcon';
+import GameLoader from './GameLoader';
 import { sfx, setSound, soundOn } from './slotSound';
 
 // The ten paylines (row per reel), same as the server's engine: used only to light up the winning cells.
@@ -39,6 +40,7 @@ const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, accountCurren
   const [error, setError] = useState('');
   const [cat, setCat] = useState('Të gjitha');
   const [query, setQuery] = useState('');
+  const [loadingGame, setLoadingGame] = useState<api.VideoSlotInfo | null>(null);
   const [favs, setFavs] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('slotFavs') || '[]'); } catch { return []; } });
   const toggleFav = (id: string) => setFavs((f) => { const n = f.includes(id) ? f.filter((x) => x !== id) : [...f, id]; try { localStorage.setItem('slotFavs', JSON.stringify(n)); } catch { /* ignore */ } return n; });
 
@@ -50,9 +52,10 @@ const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, accountCurren
 
   return (
     <div>
+      {loadingGame && <GameLoader name={loadingGame.name} img={`/slots/${loadingGame.id}.jpg`} onDone={() => { setGame(loadingGame); setLoadingGame(null); }} />}
       <div className="flex gap-3 overflow-x-auto pb-3 mb-3 snap-x [scrollbar-width:none]">
         {data.games.slice(0, 10).map((g) => (
-          <button key={g.id} onClick={() => setGame(g)} className="snap-start shrink-0 w-36 sm:w-44 text-center group">
+          <button key={g.id} onClick={() => setLoadingGame(g)} className="snap-start shrink-0 w-36 sm:w-44 text-center group">
             <img src={`/slots/${g.id}.jpg`} alt={g.name} loading="lazy" draggable={false} className="w-full aspect-[250/257] object-cover rounded-xl border border-white/10 group-hover:border-brand-yellow/70 group-hover:-translate-y-0.5 transition shadow-lg" />
             <div className="mt-1 text-xs font-semibold text-cyan-300 truncate">{g.name}</div>
           </button>
@@ -66,7 +69,7 @@ const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, accountCurren
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
         {data.games.filter((g) => (cat === 'Të gjitha' || (cat === '♥ Të preferuarat' ? favs.includes(g.id) : (g.category || 'Klasike') === cat)) && (!query.trim() || g.name.toLowerCase().includes(query.trim().toLowerCase()))).map((g) => (
-          <button key={g.id} onClick={() => setGame(g)} className="lobby-card lobby-shine relative text-left rounded-xl overflow-hidden border border-white/10 hover:border-brand-yellow/60 shadow-lg"
+          <button key={g.id} onClick={() => setLoadingGame(g)} className="lobby-card lobby-shine relative text-left rounded-xl overflow-hidden border border-white/10 hover:border-brand-yellow/60 shadow-lg"
             style={{ background: `linear-gradient(145deg, ${g.color[0]}, ${g.color[1]})` }}>
             <CoverImg id={g.id} name={g.name}>
             <div className="flex justify-center gap-1 text-3xl pt-5 pb-3">{['WILD', Object.keys(g.paytable).find((k) => k !== 'WILD' && g.paytable[k][5] === Math.max(...Object.keys(g.paytable).filter((x) => x !== 'WILD').map((x) => g.paytable[x][5])))!, 'SCATTER'].map((k, i) => <span key={i} className="w-9 h-9 inline-block"><SymbolIcon symbol={g.symbols[k]} className="w-full h-full" /></span>)}</div>
