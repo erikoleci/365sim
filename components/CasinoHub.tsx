@@ -115,8 +115,8 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
     { key: 'liveroulette', game: 'liveroulette', img: 'liveroulette', shape: 'banner', name: 'Live Roulette' },
     { key: 'livehorses', game: 'livehorses', img: 'livehorses', shape: 'banner', name: 'Live Horse Race' },
     { key: 'livedogs', game: 'livedogs', img: 'dograce-finish-cover', name: 'Live Dog Race' },
-    { key: 'livecrash', game: 'livecrash', art: <PlainCover title="LIVE CRASH" sub="One rocket, the whole table" from="#1e1b4b" to="#7c2d12" />, name: 'Live Crash' },
-    { key: 'livekeno', game: 'livekeno', art: <PlainCover title="LIVE KENO" sub="A shared draw every 30s" from="#164e63" to="#0b1220" />, name: 'Live Keno' },
+    { key: 'livecrash', game: 'livecrash', img: 'livecrash', name: 'Live Crash' },
+    { key: 'livekeno', game: 'livekeno', img: 'livekeno', name: 'Live Keno' },
   ];
   const tileBtn = (t: typeof TILES[number]) => (
     <button key={t.key} onClick={() => setLoadingTile({ game: t.game as NonNullable<typeof activeGame>, name: t.name, img: t.img ? `/casino/${t.img}.jpg` : undefined, art: t.art })} aria-label={t.name}
