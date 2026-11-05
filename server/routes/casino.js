@@ -8,6 +8,7 @@ import { isSuperAdmin } from '../roles.js';
 import { WHEEL_SEGMENTS, wheelSpin } from '../wheel.js';
 import { KENO_PAYTABLE, KENO_POOL, KENO_MAX_PICKS, drawKeno, kenoResult } from '../keno.js';
 import { scratchCard } from '../scratch.js';
+import * as tumbleEngine from '../slots/tumble.js';
 import { normalizeCurrency, walletColumn, accountCurrencyOf, allowsCurrency, accountCurrencyError } from '../ledger.js';
 import { SLOT_GAMES as VIDEO_SLOTS, getSlotGame as getVideoSlot, publicGame } from '../slots/games.js';
 import { playRound } from '../slots/engine.js';
@@ -108,6 +109,39 @@ router.get('/slot-games', (req, res) => {
   res.json({ games: VIDEO_SLOTS.map(publicGame), stakes: SLOT_STAKES, demo: isSuperAdmin(req.user.role) });
 });
 
+// Shared by every slot-like game: super admin plays a demo round, everybody else is debited / credited in one transaction.
+// `draw()` returns { payout, freeSpins, ...whatever the client animates }.
+async function runSlotRound(req, res, gameId, stake, currency, draw) {
+  // Super admin: demo round, no wallet involved.
+  if (isSuperAdmin(req.user.role)) return res.json({ ...draw(), demo: true });
+
+  const col = walletColumn(currency);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(`SELECT ${col} AS bal FROM users WHERE id = $1 FOR UPDATE`, [req.user.id]);
+    if (!rows[0] || Number(rows[0].bal) < stake) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Insufficient balance' });
+    }
+    const round = draw();
+    await client.query(`UPDATE users SET ${col} = ${col} - $1 + $2 WHERE id = $3`, [stake, round.payout, req.user.id]);
+    await client.query(
+      `INSERT INTO casino_rounds (id, user_id, game, currency, stake, payout, free_spins, status, created_at, resolved_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'FINISHED',$8,$8)`,
+      [randomUUID(), req.user.id, gameId, currency, stake, round.payout, round.freeSpins, Date.now()]
+    );
+    const { rows: bal } = await client.query('SELECT balance, balance_eur FROM users WHERE id = $1', [req.user.id]);
+    await client.query('COMMIT');
+    res.json({ ...round, demo: false, balance: Number(bal[0].balance), balanceEur: Number(bal[0].balance_eur) });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 router.post('/slot-games/:id/spin', async (req, res) => {
   const game = getVideoSlot(req.params.id);
   if (!game) return res.status(404).json({ error: 'Game not found' });
@@ -127,34 +161,7 @@ router.post('/slot-games/:id/spin', async (req, res) => {
     };
   };
 
-  // Super admin: demo round, no wallet involved.
-  if (isSuperAdmin(req.user.role)) return res.json({ ...draw(), demo: true });
-
-  const col = walletColumn(currency);
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const { rows } = await client.query(`SELECT ${col} AS bal FROM users WHERE id = $1 FOR UPDATE`, [req.user.id]);
-    if (!rows[0] || Number(rows[0].bal) < stake) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Insufficient balance' });
-    }
-    const round = draw();
-    await client.query(`UPDATE users SET ${col} = ${col} - $1 + $2 WHERE id = $3`, [stake, round.payout, req.user.id]);
-    await client.query(
-      `INSERT INTO casino_rounds (id, user_id, game, currency, stake, payout, free_spins, status, created_at, resolved_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'FINISHED',$8,$8)`,
-      [randomUUID(), req.user.id, game.id, currency, stake, round.payout, round.freeSpins, Date.now()]
-    );
-    const { rows: bal } = await client.query('SELECT balance, balance_eur FROM users WHERE id = $1', [req.user.id]);
-    await client.query('COMMIT');
-    res.json({ ...round, demo: false, balance: Number(bal[0].balance), balanceEur: Number(bal[0].balance_eur) });
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
+  return runSlotRound(req, res, game.id, stake, currency, draw);
 });
 
 // =====================================================================
@@ -699,6 +706,31 @@ router.post('/wheel/spin', async (req, res) => {
   await creditPayout(req.user.id, payout);
   await logRound(req.user.id, 'wheel', stake, payout, { index, multiplier });
   res.json({ index, multiplier, payout, balance: await getBalance(req.user.id) });
+});
+
+// SUGAR CASCADE: 6x5 scatter-pays slot with tumbles (server/slots/tumble.js). Same wallet / demo rules as the other slots.
+router.get('/tumble/info', (req, res) => res.json({
+  stakes: SLOT_STAKES, demo: isSuperAdmin(req.user.role), cols: tumbleEngine.COLS, rows: tumbleEngine.ROWS, minCluster: tumbleEngine.MIN_CLUSTER,
+  paytable: tumbleEngine.PAYTABLE, scatterPay: tumbleEngine.SCATTER_PAY, freeSpins: tumbleEngine.FREE_SPINS, maxWin: tumbleEngine.MAX_WIN_MULTIPLIER,
+}));
+router.post('/tumble/spin', async (req, res) => {
+  const acct = await accountCurrencyOf(req.user.id);
+  const currency = req.body?.currency === undefined && acct === 'EUR' ? 'EUR' : normalizeCurrency(req.body?.currency);
+  if (!allowsCurrency(acct, currency)) return res.status(400).json({ error: accountCurrencyError(acct) });
+  const stake = req.body?.stake;
+  if (typeof stake !== 'number' || !SLOT_STAKES[currency].includes(stake)) return res.status(400).json({ error: 'Invalid stake' });
+  const draw = () => {
+    const r = tumbleEngine.playRound((n) => randomInt(n));
+    return {
+      spins: r.spins.map((sp) => ({
+        first: sp.first, free: sp.free, scatters: sp.scatters, scatterWin: round2(sp.scatterWin * stake), win: round2(sp.win * stake),
+        steps: sp.steps.map((st) => ({ wins: st.wins, multiplier: st.multiplier, win: round2(st.win * stake), grid: st.grid })),
+      })),
+      payout: round2(r.totalMultiplier * stake),
+      freeSpins: r.freeSpins,
+    };
+  };
+  return runSlotRound(req, res, 'sugar-cascade', stake, currency, draw);
 });
 
 // KENO: pick 1-8 of 40, the house draws 10 (server/keno.js).

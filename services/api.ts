@@ -809,6 +809,16 @@ export async function casinoSlotSpin(id: string, stake: number, currency: 'ALL' 
   return request<SlotRound>(`/casino/slot-games/${id}/spin`, { method: 'POST', body: JSON.stringify({ stake, currency }) });
 }
 
+export interface TumbleStep { wins: { symbol: string; count: number; pay: number; cells: [number, number][] }[]; multiplier: number; win: number; grid: string[][] }
+export interface TumbleSpin { first: string[][]; free: boolean; scatters: number; scatterWin: number; win: number; steps: TumbleStep[] }
+export interface TumbleRound { spins: TumbleSpin[]; payout: number; freeSpins: number; demo: boolean; balance?: number; balanceEur?: number }
+export async function casinoTumbleInfo() {
+  return request<{ stakes: { ALL: number[]; EUR: number[] }; demo: boolean; cols: number; rows: number; minCluster: number; paytable: Record<string, number[]>; scatterPay: Record<string, number>; freeSpins: number; maxWin: number }>('/casino/tumble/info');
+}
+export async function casinoTumbleSpin(stake: number, currency: 'ALL' | 'EUR') {
+  return request<TumbleRound>('/casino/tumble/spin', { method: 'POST', body: JSON.stringify({ stake, currency }) });
+}
+
 export async function adminSetCasinoGames(disabled: string[]) {
   return request<{ casinoDisabledGames: string[] }>('/admin/settings/casino-games', { method: 'PUT', body: JSON.stringify({ disabled }) });
 }

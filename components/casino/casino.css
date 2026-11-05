@@ -135,3 +135,12 @@
 /* Slot symbols: vector pictures with a soft drop shadow and a little gloss so they read as game art, not emoji */
 .slot-sym { display: block; object-fit: contain; filter: drop-shadow(0 3px 3px rgba(0,0,0,0.55)) saturate(1.15) contrast(1.05); user-select: none; -webkit-user-drag: none; }
 .reel-face { background: radial-gradient(ellipse at 50% 35%, rgba(255,255,255,0.10), rgba(255,255,255,0) 62%); }
+
+/* Sugar Cascade: symbols drop into place, winners pulse and pop */
+@keyframes tumble-drop { from { transform: translateY(-140%); opacity: 0; } 60% { transform: translateY(6%); opacity: 1; } to { transform: translateY(0); } }
+.tumble-drop { animation: tumble-drop 0.42s cubic-bezier(0.3, 0.8, 0.3, 1) both; }
+@keyframes tumble-pulse { 0%,100% { transform: scale(1); filter: brightness(1); } 50% { transform: scale(1.14); filter: brightness(1.35) drop-shadow(0 0 8px #fde047); } }
+.tumble-win { animation: tumble-pulse 0.5s ease-in-out 2; }
+@keyframes tumble-pop { to { transform: scale(0); opacity: 0; } }
+.tumble-pop { animation: tumble-pop 0.28s ease-in both; }
+@media (prefers-reduced-motion: reduce) { .tumble-drop, .tumble-win, .tumble-pop { animation: none !important; } }
