@@ -17,6 +17,7 @@ const KEEP = [
   { currency: 'EUR', amount: 1000, at: at('2026-10-29T21:43:00+01:00'), test: false },
   { currency: 'EUR', amount: 2000, at: at('2026-11-03T19:49:00+01:00'), test: false },
   { currency: 'EUR', amount: 1000, at: at('2026-11-03T11:38:00+01:00'), test: true },
+  { currency: 'ALL', amount: 100000, at: at('2026-11-03T11:38:00+01:00'), test: true },
 ];
 const fmt = (ms) => new Date(ms).toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
 const money = (c, n) => (c === 'EUR' ? '€' : '') + Number(n).toLocaleString('en-US') + (c === 'EUR' ? '' : ' L');
