@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import DogTrack from './DogTrack';
+import DogTrack, { dogProgress } from './DogTrack';
 import StakeInput from './StakeInput';
 import CoinBurst from './CoinBurst';
 import CountUp from './CountUp';
@@ -39,9 +39,9 @@ const LiveDogs: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       if (!alive.current) return;
       const s = Math.max(0, (Date.now() + offset.current - startedAt) / 1000);
       raceSfx.setCrowd(Math.min(1, s / 6));
-      setProgress(t.map((T, i) => { const x = Math.min(1, s / T); return Math.min(1, x + Math.sin(x * Math.PI) * wob[i].a * Math.sin(wob[i].f * x * 6 + wob[i].p)); }));
+      setProgress(t.map((T, i) => dogProgress(s, T, wob[i])));
       if (s >= finish[5]) {
-        setProgress(t.map(() => 1)); setFinished(order); setRacing(false); raceSfx.stopGallop(); window.setTimeout(() => raceSfx.stopCrowd(), 3500);
+        setProgress(t.map((T, i) => dogProgress(finish[5], T, wob[i]))); setFinished(order); setRacing(false); raceSfx.stopGallop(); window.setTimeout(() => raceSfx.stopCrowd(), 3500);
         const mine = pending.current.filter((x) => x.order[0] === order[0]); pending.current = [];
         const staked = mine.reduce((a, x) => a + x.staked, 0); const paid = mine.reduce((a, x) => a + x.payout, 0);
         setMsg(`${stRef.current?.runners[order[0]]?.name ?? 'Dog'} wins!`);
