@@ -656,6 +656,7 @@ router.post('/admins', requireSuperAdmin, async (req, res) => {
 
 // Give credit to an admin (recorded in the ledger as SUPER_TO_ADMIN, like the admin -> agent credit).
 router.post('/admins/:id/credit', requireSuperAdmin, async (req, res) => {
+  const isTest = req.body?.isTest === true;
   const parts = amountParts(req.body);
   if (!parts || parts.some((p) => p.amount <= 0)) {
     return res.status(400).json({ error: 'amount must be a positive number' });
@@ -665,9 +666,10 @@ router.post('/admins/:id/credit', requireSuperAdmin, async (req, res) => {
   await transferBalances({
     actorId: req.user.id, sourceId: null, targetId: req.params.id,
     type: 'SUPER_TO_ADMIN', reference: rows[0].username,
-    feeRate: feeRateFromEnv(process.env.OWNER_CREDIT_FEE_RATE),
+    // A test / free credit keeps 0% for the super admin and is never counted in the book.
+    feeRate: isTest ? 0 : feeRateFromEnv(process.env.OWNER_CREDIT_FEE_RATE), isTest,
   }, parts);
-  await logAudit(req.user, 'ADMIN_CREDIT', req.params.id, { amounts: parts, username: rows[0].username });
+  await logAudit(req.user, 'ADMIN_CREDIT', req.params.id, { amounts: parts, username: rows[0].username, isTest });
   const admin = await readWallet(req.params.id);
   res.json({ balance: admin.balance, balanceEur: admin.balanceEur });
 });
@@ -698,19 +700,89 @@ router.post('/admins/:id/debit', requireSuperAdmin, async (req, res) => {
 // left on his balance, and the cash the super admin keeps for it (OWNER_CREDIT_FEE_RATE, default 10%).
 router.get('/credit-ledger', requireSuperAdmin, async (req, res) => {
   const adminId = req.query.adminId ? String(req.query.adminId) : null;
-  const [{ rows: admins }, { rows }] = await Promise.all([
+  const [{ rows: admins }, { rows }, { rows: settlements }] = await Promise.all([
     pool.query(`SELECT id, name, username, balance, balance_eur FROM users WHERE role = 'ADMIN'`),
     pool.query(
-      `SELECT id, created_at, amount, currency, type, fee_rate,
+      `SELECT id, created_at, amount, currency, type, fee_rate, is_test,
               CASE WHEN type = 'SUPER_TO_ADMIN' THEN target_id ELSE source_id END AS admin_id
          FROM transactions WHERE type IN ('SUPER_TO_ADMIN', 'ADMIN_TO_SUPER')`
     ),
+    pool.query(`SELECT id, admin_id, currency, amount, created_at, note FROM credit_settlements`),
   ]);
   res.json(buildCreditLedger({
-    admins, rows, adminId,
+    admins, rows, settlements, adminId,
     feeRate: feeRateFromEnv(process.env.OWNER_CREDIT_FEE_RATE),
     limit: Math.min(Number(req.query.limit) || 300, 1000),
   }));
+});
+
+// Change an old credit: mark it test / real and/or fix its date (ms since epoch). Test = 0% and never counted.
+router.patch('/credit-ledger/:id', requireSuperAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'bad id' });
+  const { isTest, at } = req.body || {};
+  const { rows } = await pool.query(`SELECT id, fee_rate, is_test, created_at FROM transactions WHERE id = $1 AND type = 'SUPER_TO_ADMIN'`, [id]);
+  if (!rows[0]) return res.status(404).json({ error: 'Credit not found' });
+  const nextTest = typeof isTest === 'boolean' ? isTest : rows[0].is_test === true;
+  let nextAt = Number(rows[0].created_at);
+  if (at !== undefined) {
+    const n = Number(at);
+    if (!Number.isFinite(n) || n < Date.UTC(2020, 0, 1) || n > Date.now() + 86400000) return res.status(400).json({ error: 'bad date' });
+    nextAt = Math.round(n);
+  }
+  const frozen = Number(rows[0].fee_rate);
+  const nextRate = nextTest ? 0 : frozen > 0 ? frozen : feeRateFromEnv(process.env.OWNER_CREDIT_FEE_RATE);
+  await pool.query('UPDATE transactions SET is_test = $1, fee_rate = $2, created_at = $3 WHERE id = $4', [nextTest, nextRate, nextAt, id]);
+  await logAudit(req.user, 'CREDIT_EDIT', String(id), { isTest: nextTest, at: nextAt });
+  res.json({ ok: true, isTest: nextTest, at: nextAt, feeRate: nextRate });
+});
+
+// The admin handed cash back for his credit ("shlyer"): written down so what is still owed is computed.
+router.post('/admins/:id/settle', requireSuperAdmin, async (req, res) => {
+  const parts = amountParts(req.body);
+  if (!parts || parts.some((p) => p.amount <= 0)) return res.status(400).json({ error: 'amount must be a positive number' });
+  const { rows } = await pool.query(`SELECT id, username FROM users WHERE id = $1 AND role = 'ADMIN'`, [req.params.id]);
+  if (!rows[0]) return res.status(404).json({ error: 'Admin not found' });
+  let at = Date.now();
+  if (req.body?.at !== undefined) {
+    const n = Number(req.body.at);
+    if (!Number.isFinite(n) || n < Date.UTC(2020, 0, 1) || n > Date.now() + 86400000) return res.status(400).json({ error: 'bad date' });
+    at = Math.round(n);
+  }
+  const note = req.body?.note ? String(req.body.note).slice(0, 200) : null;
+  for (const p of parts) {
+    await pool.query(
+      'INSERT INTO credit_settlements (admin_id, currency, amount, created_at, actor_id, note) VALUES ($1,$2,$3,$4,$5,$6)',
+      [req.params.id, p.currency, p.amount, at, req.user.id, note],
+    );
+  }
+  await logAudit(req.user, 'CREDIT_SETTLE', req.params.id, { amounts: parts, username: rows[0].username });
+  res.status(201).json({ ok: true });
+});
+
+router.delete('/credit-settlements/:id', requireSuperAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'bad id' });
+  const { rowCount } = await pool.query('DELETE FROM credit_settlements WHERE id = $1', [id]);
+  if (!rowCount) return res.status(404).json({ error: 'Not found' });
+  await logAudit(req.user, 'CREDIT_SETTLE_DELETE', String(id), {});
+  res.json({ ok: true });
+});
+
+// An admin's own page: the credit the super admin gave him, with the date and time. Nothing about the cash side.
+router.get('/my-credits', async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT id, created_at, amount, currency, type, is_test FROM transactions
+      WHERE type = 'SUPER_TO_ADMIN' AND target_id = $1 ORDER BY created_at DESC, id DESC LIMIT 500`,
+    [req.user.id],
+  );
+  const total = { ALL: 0, EUR: 0 };
+  const credits = rows.map((r) => {
+    const currency = r.currency === 'EUR' ? 'EUR' : 'ALL';
+    total[currency] += Number(r.amount) || 0;
+    return { id: r.id, at: Number(r.created_at), currency, amount: Math.round((Number(r.amount) || 0) * 100) / 100, isTest: r.is_test === true };
+  });
+  res.json({ credits, total: { ALL: Math.round(total.ALL * 100) / 100, EUR: Math.round(total.EUR * 100) / 100 } });
 });
 
 // Hand an agent (and every user he has) over to another admin, or to nobody (adminId null / missing).

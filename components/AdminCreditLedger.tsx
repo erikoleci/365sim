@@ -27,6 +27,8 @@ const AdminCreditLedger: React.FC = () => {
   const [lek, setLek] = useState('');
   const [eur, setEur] = useState('');
   const [busy, setBusy] = useState(false);
+  const [isTest, setIsTest] = useState(false);
+  const [pay, setPay] = useState<Record<string, { lek: string; eur: string }>>({});
 
   const load = useCallback(async () => {
     try {
@@ -44,18 +46,47 @@ const AdminCreditLedger: React.FC = () => {
     const b = Number(eur) || 0;
     if (!adminId || (a <= 0 && b <= 0) || a < 0 || b < 0) return;
     const admin = ledger?.admins.find((x) => x.id === adminId);
-    const rate = Math.round((ledger?.feeRate ?? 0.1) * 100);
+    const rate = isTest ? 0 : Math.round((ledger?.feeRate ?? 0.1) * 100);
     const msg = `${admin?.name || ''}: ${a > 0 ? money(a) + ' L' : ''}${a > 0 && b > 0 ? ' + ' : ''}${b > 0 ? '€' + money(b) : ''}\n` +
       t('Para dore ({rate}%): {cash}', { rate: String(rate), cash: `${a > 0 ? money(a * rate / 100) + ' L' : ''}${a > 0 && b > 0 ? ' + ' : ''}${b > 0 ? '€' + money(b * rate / 100) : ''}` });
     if (!window.confirm(msg)) return;
     setBusy(true);
     try {
-      await api.adminCreditAdmin(adminId, a, b);
-      setLek(''); setEur('');
+      await api.adminCreditAdmin(adminId, a, b, isTest);
+      setLek(''); setEur(''); setIsTest(false);
       await load();
     } catch (err: any) {
       alert(err.message || t('Veprimi deshtoi'));
     } finally { setBusy(false); }
+  };
+
+  const settle = async (a: api.CreditLedger['admins'][number]) => {
+    const p = pay[a.id] || { lek: '', eur: '' };
+    const l = Number(p.lek) || 0; const e = Number(p.eur) || 0;
+    if (l < 0 || e < 0 || (l <= 0 && e <= 0)) return;
+    const txt = `${a.name}: ${l > 0 ? money(l) + ' L' : ''}${l > 0 && e > 0 ? ' + ' : ''}${e > 0 ? '€' + money(e) : ''}`;
+    if (!window.confirm(t('Shlyer {x}?', { x: txt }))) return;
+    setBusy(true);
+    try { await api.adminSettleCredit(a.id, l, e); setPay((m) => ({ ...m, [a.id]: { lek: '', eur: '' } })); await load(); }
+    catch (err: any) { alert(err.message || t('Veprimi deshtoi')); } finally { setBusy(false); }
+  };
+  const toggleTest = async (h: api.CreditLedger['history'][number]) => {
+    if (typeof h.id !== 'number') return;
+    try { await api.adminEditCredit(h.id, { isTest: !h.isTest }); await load(); } catch (err: any) { alert(err.message || t('Veprimi deshtoi')); }
+  };
+  const editDate = async (h: api.CreditLedger['history'][number]) => {
+    if (typeof h.id !== 'number') return;
+    const d = new Date(h.at); const pad = (n: number) => String(n).padStart(2, '0');
+    const cur = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const v = window.prompt(t('Data dhe ora (VVVV-MM-DD HH:MM)'), cur);
+    if (!v) return;
+    const ms = new Date(v.trim().replace(' ', 'T')).getTime();
+    if (!Number.isFinite(ms)) { alert(t('Data nuk eshte e sakte')); return; }
+    try { await api.adminEditCredit(h.id, { at: ms }); await load(); } catch (err: any) { alert(err.message || t('Veprimi deshtoi')); }
+  };
+  const delSettlement = async (h: api.CreditLedger['history'][number]) => {
+    if (!h.settlementId || !window.confirm(t('Fshi kete shlyerje?'))) return;
+    try { await api.adminDeleteSettlement(h.settlementId); await load(); } catch (err: any) { alert(err.message || t('Veprimi deshtoi')); }
   };
 
   // The book as a spreadsheet (opens in Excel): date, admin, action, currency, amount and the cash kept.
@@ -64,7 +95,7 @@ const AdminCreditLedger: React.FC = () => {
     const lines = [['Data', 'Admini', 'Veprimi', 'Monedha', 'Shuma', 'Para dore', 'Perqindja'].map(esc).join(',')];
     for (const h of history) {
       lines.push([
-        new Date(h.at).toISOString().replace('T', ' ').slice(0, 19), h.adminName, h.kind === 'CREDIT' ? 'Kredi' : 'Marre mbrapsht',
+        new Date(h.at).toISOString().replace('T', ' ').slice(0, 19), h.adminName, h.kind === 'CREDIT' ? (h.isTest ? 'Kredi test' : 'Kredi') : h.kind === 'SETTLEMENT' ? 'Shlyer' : 'Marre mbrapsht',
         h.currency === 'EUR' ? 'EUR' : 'ALL', h.amount, h.kind === 'CREDIT' ? h.cash : '', h.kind === 'CREDIT' && h.feeRate != null ? Math.round(h.feeRate * 100) + '%' : '',
       ].map(esc).join(','));
     }
@@ -85,11 +116,12 @@ const AdminCreditLedger: React.FC = () => {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="bg-brand-panel border border-[#444] rounded p-3"><div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">{t('Kredi e dhene')}</div><Pair v={ledger.totals.given} /></div>
         <div className="bg-brand-panel border border-[#444] rounded p-3"><div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">{t('Marre mbrapsht')}</div><Pair v={ledger.totals.takenBack} /></div>
         <div className="bg-brand-panel border border-[#444] rounded p-3"><div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">{t('Mbetur te adminet')}</div><Pair v={ledger.totals.remaining} /></div>
         <div className="bg-brand-panel border border-[#444] rounded p-3"><div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">{t('Para dore ({rate}%)', { rate: String(feePct) })}</div><Pair v={ledger.totals.cash} className="text-green-400" /></div>
+        <div className="bg-brand-panel border border-yellow-500/60 rounded p-3"><div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">{t('Per t\'u shlyer')}</div><Pair v={ledger.totals.owed} className="text-brand-yellow" /></div>
       </div>
 
       <form onSubmit={submit} className="bg-brand-panel border border-[#444] rounded p-3 flex flex-wrap items-end gap-2">
@@ -108,6 +140,7 @@ const AdminCreditLedger: React.FC = () => {
           {t('Euro')}
           <input type="number" min="0" inputMode="decimal" value={eur} onChange={(e) => setEur(e.target.value)} className="input w-28" placeholder="1000" />
         </label>
+        <label className="flex items-center gap-1.5 text-xs text-brand-textMuted pb-2 cursor-pointer"><input type="checkbox" checked={isTest} onChange={(e) => setIsTest(e.target.checked)} />{t('Test / falas (0%)')}</label>
         <button type="submit" disabled={busy || !adminId} className="px-4 py-2 rounded bg-brand-yellow text-black text-xs font-bold uppercase disabled:opacity-50">{t('Shto kredi')}</button>
       </form>
 
@@ -125,6 +158,16 @@ const AdminCreditLedger: React.FC = () => {
                 <div><div className="text-[10px] uppercase text-brand-textMuted">{t('Mbetur')}</div><Pair v={a.remaining} className={low ? 'text-red-400' : 'text-white'} /></div>
                 <div><div className="text-[10px] uppercase text-brand-textMuted">{t('Perdorur')}</div><Pair v={a.used} /></div>
                 <div><div className="text-[10px] uppercase text-brand-textMuted">{t('Para dore')}</div><Pair v={a.cash} className="text-green-400" /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs mt-2 pt-2 border-t border-[#333]">
+                <div><div className="text-[10px] uppercase text-brand-textMuted">{t('Shlyer')}</div><Pair v={a.settled} /></div>
+                <div><div className="text-[10px] uppercase text-brand-textMuted">{t('Per t\'u shlyer')}</div><Pair v={a.owed} className={a.owed.ALL > 0 || a.owed.EUR > 0 ? 'text-brand-yellow' : 'text-white'} /></div>
+              </div>
+              {(a.testGiven.ALL > 0 || a.testGiven.EUR > 0) && <div className="text-[11px] text-brand-textMuted mt-1">{t('Test / falas (nuk llogaritet)')}: {a.testGiven.ALL > 0 ? money(a.testGiven.ALL) + ' L ' : ''}{a.testGiven.EUR > 0 ? '€' + money(a.testGiven.EUR) : ''}</div>}
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                <input type="number" min="0" inputMode="decimal" placeholder="L" value={pay[a.id]?.lek ?? ''} onChange={(e) => setPay((m) => ({ ...m, [a.id]: { lek: e.target.value, eur: m[a.id]?.eur ?? '' } }))} className="input w-24" />
+                <input type="number" min="0" inputMode="decimal" placeholder="€" value={pay[a.id]?.eur ?? ''} onChange={(e) => setPay((m) => ({ ...m, [a.id]: { lek: m[a.id]?.lek ?? '', eur: e.target.value } }))} className="input w-20" />
+                <button onClick={() => settle(a)} disabled={busy} className="px-3 py-1.5 rounded bg-green-600 text-white text-xs font-bold uppercase disabled:opacity-50">{t('Shlyer')}</button>
               </div>
               <div className="text-[11px] text-brand-textMuted mt-2">
                 {t('Mbetur')}: {a.leftPct.ALL != null ? a.leftPct.ALL + '% L' : '—'} · {a.leftPct.EUR != null ? a.leftPct.EUR + '% €' : '—'} · {t('Kredia e fundit')}: {when(a.lastCreditAt)}
@@ -144,15 +187,19 @@ const AdminCreditLedger: React.FC = () => {
         ) : (
           <div className="overflow-x-auto">
           <table className="w-full text-xs">
-            <thead><tr className="text-left text-brand-textMuted"><th className="p-2">{t('Data')}</th><th className="p-2">{t('Admini')}</th><th className="p-2">{t('Veprimi')}</th><th className="p-2 text-right">{t('Shuma')}</th><th className="p-2 text-right">{t('Para dore')}</th></tr></thead>
+            <thead><tr className="text-left text-brand-textMuted"><th className="p-2">{t('Data')}</th><th className="p-2">{t('Admini')}</th><th className="p-2">{t('Veprimi')}</th><th className="p-2 text-right">{t('Shuma')}</th><th className="p-2 text-right">{t('Para dore')}</th><th className="p-2"></th></tr></thead>
             <tbody>
               {history.map((h) => (
                 <tr key={h.id} className="border-t border-[#333]">
                   <td className="p-2 whitespace-nowrap">{when(h.at)}</td>
                   <td className="p-2">{h.adminName}</td>
-                  <td className="p-2">{h.kind === 'CREDIT' ? t('Kredi e dhene') : t('Marre mbrapsht')}</td>
-                  <td className={'p-2 text-right font-bold whitespace-nowrap ' + (h.kind === 'CREDIT' ? 'text-green-400' : 'text-red-400')}>{h.kind === 'CREDIT' ? '+' : '−'}{h.currency === 'EUR' ? '€' + money(h.amount) : money(h.amount) + ' L'}</td>
+                  <td className="p-2">{h.kind === 'CREDIT' ? <>{t('Kredi e dhene')}{h.isTest && <span className="ml-1.5 px-1.5 py-0.5 rounded bg-gray-600 text-[10px] font-bold uppercase">{t('Test')}</span>}</> : h.kind === 'SETTLEMENT' ? <span className="text-sky-300 font-bold">{t('Shlyer')}</span> : t('Marre mbrapsht')}</td>
+                  <td className={'p-2 text-right font-bold whitespace-nowrap ' + (h.kind === 'CREDIT' ? 'text-green-400' : h.kind === 'SETTLEMENT' ? 'text-sky-300' : 'text-red-400')}>{h.kind === 'CREDIT' ? '+' : '−'}{h.currency === 'EUR' ? '€' + money(h.amount) : money(h.amount) + ' L'}</td>
                   <td className="p-2 text-right whitespace-nowrap">{h.kind === 'CREDIT' ? (h.currency === 'EUR' ? '€' + money(h.cash) : money(h.cash) + ' L') : '—'}</td>
+                  <td className="p-2 text-right whitespace-nowrap text-[10px] uppercase">
+                    {h.kind === 'CREDIT' && <><button onClick={() => toggleTest(h)} className="text-brand-yellow mr-2">{h.isTest ? t('Bej real') : t('Bej test')}</button><button onClick={() => editDate(h)} className="text-brand-yellow">{t('Data')}</button></>}
+                    {h.kind === 'SETTLEMENT' && <button onClick={() => delSettlement(h)} className="text-red-400">{t('Fshi')}</button>}
+                  </td>
                 </tr>
               ))}
             </tbody>

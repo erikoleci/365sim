@@ -439,9 +439,21 @@ export async function adminDebitAdmin(adminId: string, amount: number, amountEur
   return request<{ balance: number; balanceEur: number }>(`/admin/admins/${adminId}/debit`, { method: 'POST', body: moneyBody(amount, amountEur) });
 }
 
-export async function adminCreditAdmin(adminId: string, amount: number, amountEur = 0) {
-  return request<{ balance: number; balanceEur: number }>(`/admin/admins/${adminId}/credit`, { method: 'POST', body: moneyBody(amount, amountEur) });
+export async function adminCreditAdmin(adminId: string, amount: number, amountEur = 0, isTest = false) {
+  return request<{ balance: number; balanceEur: number }>(`/admin/admins/${adminId}/credit`, { method: 'POST', body: JSON.stringify({ ...(amount ? { amount } : {}), ...(amountEur ? { amountEur } : {}), ...(isTest ? { isTest: true } : {}) }) });
 }
+/** Super admin: the admin handed cash back ("shlyer"); at = optional date (ms). */
+export async function adminSettleCredit(adminId: string, amount: number, amountEur = 0, at?: number, note?: string) {
+  return request<{ ok: true }>(`/admin/admins/${adminId}/settle`, { method: 'POST', body: JSON.stringify({ ...(amount ? { amount } : {}), ...(amountEur ? { amountEur } : {}), ...(at ? { at } : {}), ...(note ? { note } : {}) }) });
+}
+export async function adminDeleteSettlement(id: number) { return request<{ ok: true }>(`/admin/credit-settlements/${id}`, { method: 'DELETE' }); }
+/** Super admin: mark an old credit test / real and/or fix its date. */
+export async function adminEditCredit(id: number, patch: { isTest?: boolean; at?: number }) {
+  return request<{ ok: true }>(`/admin/credit-ledger/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+}
+/** Any admin: the credit the super admin gave him, with dates. */
+export interface MyCredits { credits: { id: number; at: number; currency: 'ALL' | 'EUR'; amount: number; isTest: boolean }[]; total: { ALL: number; EUR: number } }
+export async function adminFetchMyCredits() { return request<MyCredits>('/admin/my-credits'); }
 
 /** Super admin: erase any ticket (open, live or settled). adjust=false leaves all balances untouched. */
 export async function adminDeleteBet(betId: string, adjust = true) {
@@ -617,9 +629,9 @@ export async function adminFetchAdminsReport(month?: string, opts: { from?: stri
 export interface Dual { ALL: number; EUR: number }
 export interface CreditLedger {
   feeRate: number;
-  admins: { id: string; name: string; username: string; remaining: Dual; given: Dual; takenBack: Dual; net: Dual; cash: Dual; used: Dual; leftPct: { ALL: number | null; EUR: number | null }; credits: number; lastCreditAt: number | null }[];
-  totals: { given: Dual; takenBack: Dual; net: Dual; cash: Dual; remaining: Dual };
-  history: { id: number; at: number; adminId: string; adminName: string; adminUsername: string; kind: 'CREDIT' | 'TAKE_BACK'; currency: 'ALL' | 'EUR'; amount: number; cash: number; feeRate: number | null }[];
+  admins: { id: string; name: string; username: string; remaining: Dual; given: Dual; takenBack: Dual; net: Dual; cash: Dual; used: Dual; leftPct: { ALL: number | null; EUR: number | null }; credits: number; lastCreditAt: number | null; settled: Dual; owed: Dual; testGiven: Dual }[];
+  totals: { given: Dual; takenBack: Dual; net: Dual; cash: Dual; remaining: Dual; settled: Dual; owed: Dual; testGiven: Dual };
+  history: { id: number | string; settlementId?: number; at: number; adminId: string; adminName: string; adminUsername: string; kind: 'CREDIT' | 'TAKE_BACK' | 'SETTLEMENT'; currency: 'ALL' | 'EUR'; amount: number; cash: number; feeRate: number | null; isTest?: boolean; note?: string | null }[];
 }
 export async function adminFetchCreditLedger(adminId?: string) {
   const q = adminId ? `?adminId=${encodeURIComponent(adminId)}` : '';

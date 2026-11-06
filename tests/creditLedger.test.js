@@ -50,4 +50,25 @@ describe('credit ledger', () => {
     expect(feeRateFromEnv('abc')).toBe(0.1);
     expect(buildCreditLedger({ admins, rows, feeRate: 0.2 }).totals.cash.ALL).toBe(20000);
   });
+  it('test / free credit earns no cash, real credit 10%, and shlyer payments reduce what is owed (the London case)', () => {
+    const t = (iso) => Date.parse(iso);
+    const london = [
+      { id: 1, created_at: t('2026-10-29T21:43:00+01:00'), amount: 100000, currency: 'ALL', type: 'SUPER_TO_ADMIN', admin_id: 'a1', fee_rate: '0.1000', is_test: false },
+      { id: 2, created_at: t('2026-10-29T21:43:00+01:00'), amount: 1000, currency: 'EUR', type: 'SUPER_TO_ADMIN', admin_id: 'a1', fee_rate: '0.1000', is_test: false },
+      { id: 3, created_at: t('2026-11-03T19:49:00+01:00'), amount: 2000, currency: 'EUR', type: 'SUPER_TO_ADMIN', admin_id: 'a1', fee_rate: '0.1000', is_test: false },
+      { id: 4, created_at: t('2026-11-03T11:38:00+01:00'), amount: 1000, currency: 'EUR', type: 'SUPER_TO_ADMIN', admin_id: 'a1', fee_rate: '0.1000', is_test: true }, // test: 0% even with a frozen rate
+    ];
+    let l = buildCreditLedger({ admins, rows: london });
+    const a1 = l.admins.find((a) => a.id === 'a1');
+    expect(a1.cash).toEqual({ ALL: 10000, EUR: 300 });
+    expect(a1.owed).toEqual({ ALL: 10000, EUR: 300 });
+    expect(a1.testGiven).toEqual({ ALL: 0, EUR: 1000 });
+    expect(l.history.find((h) => h.id === 4)).toMatchObject({ isTest: true, cash: 0, feeRate: 0 });
+    l = buildCreditLedger({ admins, rows: london, settlements: [{ id: 7, admin_id: 'a1', currency: 'EUR', amount: 100, created_at: t('2026-11-05T10:00:00+01:00') }, { id: 8, admin_id: 'a1', currency: 'ALL', amount: 4000, created_at: 1 }] });
+    const after = l.admins.find((a) => a.id === 'a1');
+    expect(after.settled).toEqual({ ALL: 4000, EUR: 100 });
+    expect(after.owed).toEqual({ ALL: 6000, EUR: 200 });
+    expect(l.totals.owed).toEqual({ ALL: 6000, EUR: 200 });
+    expect(l.history[0]).toMatchObject({ kind: 'SETTLEMENT', settlementId: 7, currency: 'EUR', amount: 100 });
+  });
 });
