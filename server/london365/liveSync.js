@@ -39,6 +39,24 @@ export function hasRealLiveResult(row) {
   const hasClock = row.live_minute != null && String(row.live_minute).trim() !== '';
   return hasScore && hasClock;
 }
+// A match the provider STILL lists as live although it must be over. It used to be closed only when it had a score AND a
+// clock; a listed-but-clockless match (small leagues, youth games) stayed LIVE for ever and its tickets never closed.
+//   - 3 h+ after kickoff with a score the settlement rules trust (canSettleFromLiveScore): settle from it;
+//   - frozen clock projected past full time: settle from it (needs score + clock);
+//   - 4 h+ after kickoff with no usable result at all: close it (leaves every LIVE list) WITHOUT settling; its tickets
+//     stay for the second-source / manual settlement and are never decided on an invented score.
+export const GHOST_LIVE_MS = 240 * 60 * 1000;
+export function isOverdueLive(row, now = Date.now()) {
+  if (!row) return false;
+  const kickoffMs = Date.parse(row.start_time);
+  const sinceKickoff = Number.isFinite(kickoffMs) ? now - kickoffMs : 0;
+  const lastMinute = parseInt(String(row.live_minute || ''), 10);
+  const silentMs = now - Number(row.live_minute_updated_at || 0);
+  const stalledPastEnd = Number.isFinite(lastMinute) && Number(row.live_minute_updated_at) > 0 && silentMs >= 20 * 60000 && lastMinute + silentMs / 60000 >= 92;
+  if ((sinceKickoff >= 180 * 60000 || stalledPastEnd) && hasRealLiveResult(row)) return true;
+  if (sinceKickoff >= 180 * 60000 && canSettleFromLiveScore(row, now)) return true; // score without a clock
+  return sinceKickoff >= GHOST_LIVE_MS; // nothing usable and far too old to be playing
+}
 // "missing live data" is logged per game; with ~100 live games and a cycle every
 // 30s that is hundreds of lines a minute and buries everything else. Once per game
 // per 10 minutes is enough to see which games are affected.
@@ -310,15 +328,9 @@ export async function syncLondon365LiveOnce() {
     );
     retainLiveKnown(rows.map((r) => r.id), endQueryStartedAt);
     for (const row of rows) {
-      // A match the provider still lists as live 3h+ after kickoff (frozen clock, never flipped to ended)
-      // is over in practice: treat it like one that left the feed so its tickets close.
-      const kickoffMs = Date.parse(row.start_time);
-      // ... or whose clock has been silent for 20+ minutes and, projected forward, is past full time (frozen at 61' for
-      // 31+ min): the provider stopped sending minutes, the match is over in practice.
-      const lastMinute = parseInt(String(row.live_minute || ''), 10);
-      const silentMs = Date.now() - Number(row.live_minute_updated_at || 0);
-      const stalledPastEnd = Number.isFinite(lastMinute) && Number(row.live_minute_updated_at) > 0 && silentMs >= 20 * 60000 && lastMinute + silentMs / 60000 >= 92;
-      const overdue = ((Number.isFinite(kickoffMs) && Date.now() - kickoffMs >= 180 * 60000) || stalledPastEnd) && hasRealLiveResult(row);
+      // A match the provider still lists as live long after it must have ended is over in practice (see isOverdueLive):
+      // treat it like one that left the feed so its tickets close.
+      const overdue = isOverdueLive(row);
       if (liveIds.has(row.id) && !overdue) {
         missedLiveCycles.delete(row.id);
         continue;
@@ -330,7 +342,7 @@ export async function syncLondon365LiveOnce() {
       });
       if (!shouldSettle) continue;
       missedLiveCycles.delete(row.id);
-      if (!hasRealLiveResult(row)) {
+      if (!hasRealLiveResult(row) && !canSettleFromLiveScore(row)) {
         // Never had a real score/clock: close it (it leaves every LIVE list) but do
         // NOT settle bets with an invented 0-0 -- they stay PENDING for the admin.
         await pool.query("UPDATE matches_cache SET status = 'FINISHED', live_status = 'ended' WHERE id = $1 AND status = 'LIVE'", [row.id]);
