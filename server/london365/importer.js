@@ -7,7 +7,7 @@ import { ENABLED, FULL_DETAIL, LEAGUE_LIMIT, EXCLUDED_COUNTRIES, ONLY_COUNTRIES,
 import { ensureMarketNamesLoaded, fetchDetailRows, parseOddString, hydrateRowNames, buildEvent, marketNameById } from './markets.js';
 import { resolveSports, api } from './api.js';
 import { getCountryMap, leagueById, registerLeagueName } from './leagueRegistry.js';
-import { leagueRejectionReason } from './leagueRules.js';
+import { leagueRejectionReason, isYouthTeam } from './leagueRules.js';
 import { leagueKeyFromCountry, leagueCountryToken } from './leagueKeys.js';
 import { isoFromWholeDate, statusFromCommence } from './clock.js';
 import { upsertMatch } from './persist.js';
@@ -224,6 +224,7 @@ export async function importLondon365(opts) {
           if (isPriority) console.log('[london365] ' + league.name + ' (' + countryName + '): provider returned 0 games right now');
           return;
         }
+        games = games.filter((g) => !isYouthTeam(g.home_team) && !isYouthTeam(g.away_team)); // youth sides are never scored by the feed
         if (matchCap) games = games.slice(0, matchCap);
 
         // Ground-truth cross-check: every game from /ajax/gamesByLeague

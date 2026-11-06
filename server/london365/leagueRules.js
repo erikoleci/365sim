@@ -47,7 +47,7 @@ export function isAllowedInternationalCompetition(leagueName) {
   if (MINOR_LEAGUE_PATTERN.test(name)) return false;
   return isEuropeanInternationalCompetition(name) || (INTERNATIONAL_EXTRA_RE ? INTERNATIONAL_EXTRA_RE.test(name) : false);
 }
-export const MINOR_LEAGUE_PATTERN = /\bu-?1[0-9]\b|\bu-?2[0-3]\b|\byouth\b|\bjunior\b|\breserves?\b|\bwomen'?s?\b|\bfemale\b|\bfeminin[ao]?\b|\bamateur\b|\bacademy\b|\bfriendl(y|ies)\b|\besoccer\b|\be-?soccer\b|\bsimulated\b|\bvirtual\b/i;
+export const MINOR_LEAGUE_PATTERN = /\bu-?1[0-9]\b|\bu-?2[0-3]\b|\byouth\b|\bjunior\b|\breserves?\b|\bwomen'?s?\b|\bfemale\b|\bfeminin[ao]?\b|\bamateur\b|\bacademy\b|\bjeugd\b|\bjugend\b|\bjeunes?\b|\bjuvenil(es)?\b|\bgiovanili\b|\bprimavera\b|\bfriendl(y|ies)\b|\besoccer\b|\be-?soccer\b|\bsimulated\b|\bvirtual\b/i;
 // Brazil specifically has ~25 STATE championships running in parallel
 // (Serie A/B/C/D are the national ones worth keeping; everything named
 // after a state — Gaucho, Carioca, Paulista, Mineiro, Baiano, Amazonense,
@@ -146,7 +146,12 @@ export function logLondon365FilterConfig() {
   console.log('[london365] catalogue filter: ' + JSON.stringify(c));
   if (!c.whitelistActive) console.warn('[london365] WARNING: LONDON365_ONLY_COUNTRIES is disabled (\'*\') -> importing EVERY country worldwide');
 }
+// Youth sides are named in the team itself ("Jeugd Royal Francs Borains"): the provider lists them in an ordinary league,
+// takes bets, but never scores them (no result, no clock), so their tickets could never close. Not offered at all.
+export const YOUTH_TEAM_PATTERN = /\b(jeugd|jugend|jeunes?|juvenil(es)?|giovanili|primavera|youth|u-?1[0-9]|u-?2[0-3])\b/i;
+export function isYouthTeam(name) { return YOUTH_TEAM_PATTERN.test(String(name || '')); }
 export function isAllowedByCountryFilter(g, resolvedLeague) {
+  if (g && (isYouthTeam(g.home_team) || isYouthTeam(g.away_team))) return false;
   if (!ONLY_COUNTRIES.size) return true; // whitelist explicitly disabled ('*')
   // League known (from the import's own country/league data): the exact same
   // rule the import applied.
