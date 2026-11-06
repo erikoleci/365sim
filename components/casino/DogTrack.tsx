@@ -5,13 +5,13 @@ import './casino.css';
 // A running greyhound: a real rendered sprite, galloped with CSS (bounce, pitch and stretch) with dust kicked up behind it.
 export const Greyhound: React.FC<{ color: string; trap: number; coat?: string; running: boolean; delay?: number }> = ({ trap, running, delay = 0 }) => {
   const n = Math.min(6, Math.max(1, trap));
+  const state = running ? 'running' : 'paused';
   return (
     <div className="relative w-full h-full" aria-hidden>
-      <div className="absolute left-[8%] right-[6%] bottom-[2%] h-[10%] rounded-[50%] bg-black/45 blur-[2px]" />
+      <div className="absolute left-[10%] right-[8%] bottom-[0%] h-[9%] rounded-[50%] bg-black/45 blur-[2px]" />
       {running && <div className="dog-dust" style={{ animationDelay: `${delay}s` }} />}
-      <div className="dog-gallop absolute inset-0" style={{ animationPlayState: running ? 'running' : 'paused', animationDelay: `${delay}s` }}>
-        <img src={`/casino/dogs/dog${n}.png`} alt="" draggable={false} className="w-full h-full object-contain object-bottom select-none" />
-      </div>
+      {/* real greyhound run cycle: 20 frames in a 5x4 sprite sheet (see public/casino/dogs) */}
+      <div className="dog-run absolute inset-0" style={{ backgroundImage: `url(/casino/dogs/run${n}.webp)`, animationPlayState: `${state}, ${state}`, animationDelay: `${-delay}s, ${-delay}s` }} />
     </div>
   );
 };
@@ -32,7 +32,7 @@ const lane = (trap: number) => 1 - (Math.min(6, Math.max(1, trap)) - 0.5) / 6; /
 const headX = (f: number, p: number) => { const xs = 430 - 290 * f, xe = 1900 - 430 * f; return xs + (xe - xs) * Math.min(1, Math.max(0, p)); };
 const place = (trap: number, p: number) => {
   const f = lane(trap); const hx = headX(f, p);
-  const w = 100 + 105 * ((hx - 130) / 1770); // dogs grow as they run toward the camera
+  const w = 95 + 100 * ((hx - 130) / 1770); // dogs grow as they run toward the camera
   const cx = hx - w * 0.38; const fy = interp(FAR, cx); const y = fy + f * (interp(NEAR, cx) - fy);
   return { x: cx, y, w };
 };
@@ -53,7 +53,7 @@ const DogTrack: React.FC<Props> = ({ dogs, progress, running, finishOrder, selec
         {[...pos].sort((a, b) => a.y - b.y).map((q) => {
           const done = (progress[q.i] || 0) >= 1; const mine = selected === q.d.id;
           return (
-            <div key={q.d.id} className="absolute" style={{ left: `${(q.x / IW) * 100}%`, top: `${(q.y / IH) * 100}%`, width: `${(q.w / IW) * 100}%`, aspectRatio: '1.75', transform: 'translate(-50%,-100%)', zIndex: Math.round(q.y) }}>
+            <div key={q.d.id} className="absolute" style={{ left: `${(q.x / IW) * 100}%`, top: `${(q.y / IH) * 100}%`, width: `${(q.w / IW) * 100}%`, aspectRatio: '1.923', transform: 'translate(-50%,-100%)', zIndex: Math.round(q.y) }}>
               <Greyhound color={q.d.color} trap={q.d.trap} running={running && !done} delay={q.i * 0.05} />
               {mine && <div className="absolute left-1/2 -top-[34%] -translate-x-1/2 text-[10px] sm:text-xs font-black px-1.5 py-0.5 rounded bg-yellow-300 text-black whitespace-nowrap shadow">YOUR PICK ▼</div>}
               {finishOrder && <div className="absolute left-1/2 -top-[34%] -translate-x-1/2 text-[10px] sm:text-xs font-black px-1.5 py-0.5 rounded bg-black/80 text-white whitespace-nowrap">{['1st', '2nd', '3rd', '4th', '5th', '6th'][finishOrder.indexOf(q.d.id)]}</div>}
