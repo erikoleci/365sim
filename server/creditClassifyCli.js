@@ -13,9 +13,9 @@ const keepName = (args.includes('--keep') ? args[args.indexOf('--keep') + 1] : '
 const at = (iso) => Date.parse(iso);
 // Albanian local time (UTC+1 in the winter, as on these dates).
 const KEEP = [
-  { currency: 'ALL', amount: 100000, at: at('2026-10-29T21:43:00+01:00'), test: false },
-  { currency: 'EUR', amount: 1000, at: at('2026-10-29T21:43:00+01:00'), test: false },
-  { currency: 'EUR', amount: 2000, at: at('2026-11-03T19:49:00+01:00'), test: false },
+  { currency: 'ALL', amount: 100000, at: at('2026-10-29T22:50:00+01:00'), test: false },
+  { currency: 'EUR', amount: 1000, at: at('2026-10-29T22:50:00+01:00'), test: false },
+  { currency: 'EUR', amount: 2000, at: at('2026-11-03T19:50:00+01:00'), test: false },
   { currency: 'EUR', amount: 1000, at: at('2026-11-03T11:38:00+01:00'), test: true },
   { currency: 'ALL', amount: 100000, at: at('2026-11-03T11:38:00+01:00'), test: true },
 ];
