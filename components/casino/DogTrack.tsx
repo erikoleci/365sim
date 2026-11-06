@@ -29,9 +29,7 @@ interface Props { dogs: Dog[]; progress: number[]; running: boolean; finishOrder
 // race runs, the greyhounds are laid over it in lanes. The camera follows the leader: he sits at ~62% of the screen and the others
 // are placed behind / ahead of him by their real progress. Geometry below is in the 1280x720 frame of the video.
 const VW = 1280, VH = 720, SPAN = 2.4, SCALE_NEAR = 0.27, LINE_K = 1.11; // LINE_K: the finish line moves like the ground of the video
-const farY = (x: number) => 292 + 0.047 * x;      // far edge of the sand
-const nearY = (x: number) => 320 + 0.244 * x;    // the thick white line (nearest lane marking)
-const LANE_T = [0.1, 0.24, 0.39, 0.55, 0.75, 0.95]; // trap 6 .. trap 1: far -> near
+const LANE_Y = [345, 392, 445, 505, 568, 628]; // feet of the lane: far (trap 6) -> near (trap 1); the camera is side-on, lanes are flat bands
 const smooth = (a: number, b: number, v: number) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 const DogTrack: React.FC<Props> = ({ dogs, progress, running, finishOrder, selected, children }) => {
@@ -50,13 +48,10 @@ const DogTrack: React.FC<Props> = ({ dogs, progress, running, finishOrder, selec
   const fx = 0.3 + 0.32 * smooth(0, 0.3, lead); // where the leader stands on the screen
   const place = (trap: number, p: number) => {
     const k = Math.min(6, Math.max(1, trap)) - 1;
-    const t = LANE_T[5 - k];
+    const y = LANE_Y[5 - k];
     const x = fx + (p - lead) * SPAN - k * 0.012; // the traps are staggered a little
-    const px = Math.min(1.2, Math.max(-0.3, x)) * VW;
-    const fy = farY(px), ny = nearY(px);
-    const y = fy + (ny - fy) * t;
-    const s = 0.5 + 0.5 * t;
-    return { x, y, s, tilt: Math.atan((0.06 + 0.18 * t)) * 0.55 * (180 / Math.PI) };
+    const s = 0.55 + 0.45 * ((y - LANE_Y[0]) / (LANE_Y[5] - LANE_Y[0]));
+    return { x, y, s, tilt: 0 };
   };
   const pos = dogs.map((d, i) => ({ d, i, ...place(d.trap, progress[i] || 0) }));
   const xFinish = fx + (1 - lead) * LINE_K;
@@ -68,11 +63,9 @@ const DogTrack: React.FC<Props> = ({ dogs, progress, running, finishOrder, selec
         <source src="/casino/dogs/track.mp4" type="video/mp4" />
       </video>
       {xFinish < 1.25 && xFinish > -0.3 && (() => {
-        // chequered line across the lanes: far end (right, thin) to near end (left, wide), following the video's perspective
-        const L = xFinish - 0.1, W = 0.2;
-        const fy = farY((xFinish + 0.03) * VW), ny = nearY((xFinish - 0.06) * VW);
-        const f0 = (xFinish + 0.03 - 0.006 - L) / W * 100, f1 = (xFinish + 0.03 + 0.006 - L) / W * 100, n0 = (xFinish - 0.06 - 0.017 - L) / W * 100, n1 = (xFinish - 0.06 + 0.017 - L) / W * 100;
-        return <div className="absolute pointer-events-none" style={{ left: `${L * 100}%`, width: `${W * 100}%`, top: `${fy / VH * 100}%`, height: `${(ny - fy) / VH * 100}%`, clipPath: `polygon(${f0}% 0, ${f1}% 0, ${n1}% 100%, ${n0}% 100%)`, background: 'repeating-conic-gradient(#f5f5f5 0 25%, #1a1a1a 0 50%) 0 0 / 11px 11px', opacity: 0.9, filter: 'drop-shadow(0 0 2px rgba(0,0,0,.5))' }} />;
+        // chequered line straight across the lanes, a little wider at the near (bottom) end
+        const L = xFinish - 0.05, W = 0.1, top = 296, bottom = 640;
+        return <div className="absolute pointer-events-none" style={{ left: `${L * 100}%`, width: `${W * 100}%`, top: `${top / VH * 100}%`, height: `${(bottom - top) / VH * 100}%`, clipPath: 'polygon(42% 0, 58% 0, 68% 100%, 32% 100%)', background: 'repeating-conic-gradient(#f5f5f5 0 25%, #1a1a1a 0 50%) 0 0 / 12px 12px', opacity: 0.9 }} />;
       })()}
       {[...pos].sort((a, b) => a.y - b.y).map((q) => {
         if (q.x < -0.25 || q.x > 1.15) return null;
