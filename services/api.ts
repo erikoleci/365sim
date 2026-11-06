@@ -1000,7 +1000,7 @@ export async function casinoDogsRace(stake: number, dog: number) {
 }
 export type LiveDogsState = {
   serverNow: number; round: number; phase: 'betting' | 'race'; msLeft: number; cycleMs: number; betMs: number; order: number[] | null; winners: number[];
-  myBets: Record<string, number>; settled: { round: number; order: number[]; staked: number; payout: number }[]; balance: number; tablePlayers?: number; simulatedPlayers?: boolean; runners: Dog[];
+  myBets: Record<string, number>; settled: { round: number; order: number[]; staked: number; payout: number }[]; balance: number; tablePlayers?: number; simulatedPlayers?: boolean; runners: Dog[]; forecast?: (number | null)[][];
 };
 export async function casinoLiveDogsState() { return request<LiveDogsState>('/casino/live-dogs/state'); }
 export async function casinoLiveDogsBet(round: number, bets: Record<string, number>) {

@@ -17,10 +17,11 @@ export const Greyhound: React.FC<{ color: string; trap: number; coat?: string; r
 };
 
 /** Progress of one dog (0..1 on the track, then a short run-out past the line) after `s` seconds, finishing at `T` seconds. */
+export const RUN_OUT = 1.8; // seconds the dogs keep running after the last one is due, so every dog is clearly past the line
 export const dogProgress = (s: number, T: number, wob: { a: number; f: number; p: number }) => {
   const x = s / T;
   if (x <= 1) return Math.max(0, x + Math.sin(x * Math.PI) * wob.a * Math.sin(wob.f * x * 6 + wob.p));
-  return 1 + 0.18 * Math.tanh((x - 1) / 0.18); // slows down after the line
+  return 1 + 0.36 * Math.tanh((x - 1) / 0.36); // eases off after the line
 };
 
 interface Props { dogs: Dog[]; progress: number[]; running: boolean; finishOrder?: number[] | null; selected?: number | null; onSelect?: (id: number) => void; children?: React.ReactNode }
@@ -28,7 +29,7 @@ interface Props { dogs: Dog[]; progress: number[]; running: boolean; finishOrder
 // TV-style race view: a real track-side camera video (public/casino/dogs/track-s.mp4, 10 s, tracks to the right) plays while the
 // race runs, the greyhounds are laid over it in lanes. The camera follows the leader: he sits at ~62% of the screen and the others
 // are placed behind / ahead of him by their real progress. Geometry below is in the 1280x720 frame of the video.
-const VW = 1280, VH = 720, SPAN = 2.4, SCALE_NEAR = 0.27, LINE_K = 1.11, FAR_K = 0.85, PROP_Y = 315; // LINE_K: the finish line moves like the ground of the video
+const VH = 720, SPAN = 1.5, SCALE_NEAR = 0.27, LINE_K = SPAN; // dogs and the finish line share ONE scale, so a dog crosses the line exactly when its progress passes 1
 const LANE_Y = [345, 392, 445, 505, 568, 628]; // feet of the lane: far (trap 6) -> near (trap 1); the camera is side-on, lanes are flat bands
 const smooth = (a: number, b: number, v: number) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
 
@@ -39,7 +40,7 @@ const DogTrack: React.FC<Props> = ({ dogs, progress, running, finishOrder, selec
   const was = useRef(false);
   useEffect(() => {
     const v = vid.current; if (!v) return;
-    const active = running && started;
+    const active = running && started; // loops, so the picture never freezes mid-race
     if (active && !was.current) { try { v.currentTime = Math.min(8.5, lead * 7); } catch { /* not ready */ } void v.play().catch(() => {}); }
     if (!active) { v.pause(); if (!started) { try { v.currentTime = 0; } catch { /* not ready */ } } }
     was.current = active;
@@ -55,17 +56,13 @@ const DogTrack: React.FC<Props> = ({ dogs, progress, running, finishOrder, selec
   };
   const pos = dogs.map((d, i) => ({ d, i, ...place(d.trap, progress[i] || 0) }));
   const xFinish = fx + (1 - lead) * LINE_K;
-  const xStartProp = fx - lead * FAR_K;            // start traps stand behind the far lane and scroll away with the far ground
-  const xFinishProp = fx + (1 - lead) * FAR_K;     // the FINISH sign + chequered post
   const anyRun = running && started;
   return (
     <div className="relative dog-hero rounded-2xl overflow-hidden border-2 border-amber-500/50 shadow-[0_0_30px_rgba(245,158,11,.25)] mb-3" style={{ aspectRatio: '16/9' }}>
-      <video ref={vid} className="absolute inset-0 w-full h-full object-cover" muted playsInline preload="auto" poster="/casino/dogs/track-s-poster.jpg" aria-hidden>
+      <video ref={vid} className="absolute inset-0 w-full h-full object-cover" muted loop playsInline preload="auto" poster="/casino/dogs/track-s-poster.jpg" aria-hidden>
         <source src="/casino/dogs/track-s.webm" type="video/webm" />
         <source src="/casino/dogs/track-s.mp4" type="video/mp4" />
       </video>
-      {xStartProp > -0.4 && <img src="/casino/dogs/start.webp" alt="" draggable={false} className="absolute pointer-events-none select-none" style={{ left: `${xStartProp * 100}%`, top: `${PROP_Y / VH * 100}%`, width: '40%', transform: 'translate(-50%,-100%)', zIndex: 1 }} />}
-      {xFinishProp < 1.2 && xFinishProp > -0.3 && <img src="/casino/dogs/finish.webp" alt="" draggable={false} className="absolute pointer-events-none select-none" style={{ left: `${xFinishProp * 100}%`, top: `${PROP_Y / VH * 100}%`, width: '24%', transform: 'translate(-50%,-100%)', zIndex: 1 }} />}
       {xFinish < 1.25 && xFinish > -0.3 && (() => {
         // chequered line straight across the lanes, a little wider at the near (bottom) end
         const L = xFinish - 0.05, W = 0.1, top = 296, bottom = 640;

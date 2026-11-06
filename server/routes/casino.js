@@ -1258,7 +1258,7 @@ function registerLiveRace({ path, game, engine }) {
     const winners = keys.map((k) => pm.get(k)).filter((v) => v !== undefined);
     const sim = process.env.LIVE_SIM_ENABLED !== '0';
     res.json({ serverNow: now, round, phase, msLeft, cycleMs: engine.CYCLE_MS, betMs: engine.BET_MS, order, winners, myBets, settled, balance: await getBalance(req.user.id),
-      tablePlayers: sim ? 12 + ((round * 5) % 27) : undefined, simulatedPlayers: sim, runners: engine.RUNNERS });
+      tablePlayers: sim ? 12 + ((round * 5) % 27) : undefined, simulatedPlayers: sim, runners: engine.RUNNERS, ...(engine.FORECAST ? { forecast: engine.FORECAST } : {}) });
   });
   router.post(`/${path}/bet`, async (req, res) => {
     const { bets, round } = req.body || {};

@@ -3,7 +3,7 @@ import StakeInput from './StakeInput';
 import CoinBurst from './CoinBurst';
 import CountUp from './CountUp';
 import BigWin, { winTier } from './BigWin';
-import DogTrack, { dogProgress } from './DogTrack';
+import DogTrack, { dogProgress, RUN_OUT } from './DogTrack';
 import { casinoDogsInfo, casinoDogsRace, Dog } from '../../services/api';
 import { sfx, setSound, soundOn } from './slotSound';
 import { raceSfx } from './raceAudio';
@@ -38,7 +38,7 @@ const DogRace: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       const s = (performance.now() - t0) / 1000;
       setProgress(t.map((T, i) => dogProgress(s, T, wob[i])));
       raceSfx.setCrowd(Math.min(1, s / 6));
-      if (s >= finish[5]) { setProgress(t.map((T, i) => dogProgress(finish[5], T, wob[i]))); resolve(); return; }
+      if (s >= finish[5] + RUN_OUT) { setProgress(t.map((T, i) => dogProgress(finish[5] + RUN_OUT, T, wob[i]))); resolve(); return; }
       raf.current = requestAnimationFrame(tick);
     };
     raf.current = requestAnimationFrame(tick);

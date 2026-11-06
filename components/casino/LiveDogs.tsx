@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import DogTrack, { dogProgress } from './DogTrack';
+import DogTrack, { dogProgress, RUN_OUT } from './DogTrack';
 import StakeInput from './StakeInput';
 import CoinBurst from './CoinBurst';
 import CountUp from './CountUp';
@@ -26,6 +26,7 @@ const LiveDogs: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
   const [burst, setBurst] = useState(0);
   const [bigWin, setBigWin] = useState<{ tier: 1 | 2 | 3; amount: number } | null>(null);
   const [snd, setSnd] = useState(soundOn());
+  const [tab, setTab] = useState<'win' | 'fc'>('win');
   const offset = useRef(0); const stRef = useRef<LiveDogsState | null>(null); const lastRound = useRef<number | null>(null);
   const racedFor = useRef<number | null>(null); const pending = useRef<LiveDogsState['settled']>([]);
   const alive = useRef(true); const raf = useRef(0);
@@ -40,11 +41,11 @@ const LiveDogs: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       const s = Math.max(0, (Date.now() + offset.current - startedAt) / 1000);
       raceSfx.setCrowd(Math.min(1, s / 6));
       setProgress(t.map((T, i) => dogProgress(s, T, wob[i])));
-      if (s >= finish[5]) {
-        setProgress(t.map((T, i) => dogProgress(finish[5], T, wob[i]))); setFinished(order); setRacing(false); raceSfx.stopGallop(); window.setTimeout(() => raceSfx.stopCrowd(), 3500);
+      if (s >= finish[5] + RUN_OUT) {
+        setProgress(t.map((T, i) => dogProgress(finish[5] + RUN_OUT, T, wob[i]))); setFinished(order); setRacing(false); raceSfx.stopGallop(); window.setTimeout(() => raceSfx.stopCrowd(), 3500);
         const mine = pending.current.filter((x) => x.order[0] === order[0]); pending.current = [];
         const staked = mine.reduce((a, x) => a + x.staked, 0); const paid = mine.reduce((a, x) => a + x.payout, 0);
-        setMsg(`${stRef.current?.runners[order[0]]?.name ?? 'Dog'} wins!`);
+        setMsg(`${stRef.current?.runners[order[0]]?.name ?? 'Dog'} wins! · Forecast ${stRef.current?.runners[order[0]]?.trap ?? order[0] + 1}-${stRef.current?.runners[order[1]]?.trap ?? order[1] + 1}`);
         raceSfx.finish(paid > 0);
         if (paid > 0) { setWinAmt(paid); setBurst((b) => b + 1); sfx.win(true); const tier = winTier(paid, staked); if (tier > 0) setBigWin({ tier: tier as 1 | 2 | 3, amount: paid }); } else if (staked > 0) sfx.stop();
         return;
@@ -76,7 +77,7 @@ const LiveDogs: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
   }, []);
 
   const betting = st?.phase === 'betting' && (Date.now() + offset.current) % (st?.cycleMs ?? 40000) < (st?.betMs ?? 25000);
-  const add = (id: number) => { if (!betting) return; sfx.click(); setDraft((d) => ({ ...d, [id]: Math.round(((d[id] || 0) + chip) * 100) / 100 })); };
+  const add = (id: number | string) => { if (!betting) return; sfx.click(); setDraft((d) => ({ ...d, [id]: Math.round(((d[id] || 0) + chip) * 100) / 100 })); };
   const draftTotal = Object.values(draft).reduce((a, b) => a + b, 0);
   const place = async () => {
     if (!st || !betting || draftTotal <= 0) return;
@@ -105,7 +106,36 @@ const LiveDogs: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       <div className="flex gap-1 justify-center my-2 min-h-[22px]">{(st?.winners ?? []).map((w, i) => <span key={i} className="w-5 h-5 rounded-md text-[10px] font-black flex items-center justify-center text-black" style={{ background: horses[w]?.color }}>{(horses[w]?.trap ?? w + 1)}</span>)}</div>
       <div className="text-center font-bold min-h-[26px]">{winAmt > 0 ? <span className="text-brand-yellow win-pop inline-block text-lg">You won <CountUp value={winAmt} format={(v) => `${v.toFixed(2)} L`} /></span> : msg}</div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
+      <div className="grid grid-cols-2 gap-1 mt-2 p-1 rounded-xl bg-black/40 border border-white/10">
+        {([['win', 'Winner'], ['fc', 'Forecast 1st–2nd']] as const).map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)} className={`py-1.5 rounded-lg text-sm font-black ${tab === k ? 'bg-yellow-300 text-black' : 'text-gray-300'}`}>{label}</button>
+        ))}
+      </div>
+      {tab === 'fc' && st?.forecast && (
+        <div className="mt-2 rounded-xl border border-white/10 bg-black/40 p-1.5 overflow-x-auto">
+          <div className="grid gap-[3px] min-w-[300px]" style={{ gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}>
+            <div className="text-[9px] font-black text-gray-400 flex items-end justify-center leading-tight text-center">1st ↓<br />2nd →</div>
+            {horses.map((h) => <div key={'c' + h.id} className="rounded h-7 flex items-center justify-center text-sm font-black" style={{ background: h.color, color: h.color === '#f1f5f9' || h.color === '#eab308' ? '#111' : '#fff' }}>{h.trap}</div>)}
+            {horses.map((a) => (
+              <React.Fragment key={'r' + a.id}>
+                <div className="rounded h-9 flex items-center justify-center text-sm font-black" style={{ background: a.color, color: a.color === '#f1f5f9' || a.color === '#eab308' ? '#111' : '#fff' }}>{a.trap}</div>
+                {horses.map((b) => {
+                  if (a.id === b.id) return <div key={b.id} className="rounded h-9 bg-white/5" />;
+                  const k = `F${a.id}-${b.id}`; const on = (st.myBets[k] || 0) + (draft[k] || 0);
+                  return (
+                    <button key={b.id} disabled={!betting} onClick={() => add(k)} className={`relative rounded h-9 text-[11px] sm:text-xs font-black tabular-nums border ${on ? 'border-yellow-300 bg-yellow-300/20 text-yellow-200' : 'border-white/10 bg-white/90 text-gray-900 hover:bg-yellow-100'} disabled:opacity-70`}>
+                      {(st.forecast![a.id][b.id] ?? 0).toFixed(1)}
+                      {on > 0 && <span className={`absolute -top-1 -right-0.5 min-w-[16px] px-0.5 rounded-full text-[9px] font-black text-black ${draft[k] ? 'bg-yellow-300' : 'bg-green-400'}`}>{on}</span>}
+                    </button>
+                  );
+                })}
+              </React.Fragment>
+            ))}
+          </div>
+          <div className="text-[10px] text-gray-400 text-center mt-1">Pick the exact 1st and 2nd dog · pays the odds in the box</div>
+        </div>
+      )}
+      <div className={`grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2 ${tab === 'fc' ? 'hidden' : ''}`}>
         {horses.map((h) => {
           const on = (st?.myBets[h.id] || 0) + (draft[h.id] || 0);
           return (
@@ -120,7 +150,7 @@ const LiveDogs: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       <div className="mt-3"><StakeInput value={chip} onChange={setChip} min={1} max={5000} presets={[10, 50, 100, 500, 1000]} unit="L" balance={userBalance} disabled={!betting} /></div>
       <div className="flex gap-2 mt-2">
         <button disabled={!betting || draftTotal === 0} onClick={() => setDraft({})} className="px-4 rounded-xl border border-white/20 text-gray-200 disabled:opacity-40">Clear</button>
-        <button onClick={place} disabled={!betting || draftTotal === 0 || draftTotal > userBalance} className="flex-1 py-3.5 rounded-xl font-black text-lg bg-gradient-to-b from-green-400 to-green-700 text-white shadow-lg disabled:opacity-50">{draftTotal ? `PLACE BETS · ${draftTotal.toFixed(2)} L` : 'TAP A HORSE TO BET'}</button>
+        <button onClick={place} disabled={!betting || draftTotal === 0 || draftTotal > userBalance} className="flex-1 py-3.5 rounded-xl font-black text-lg bg-gradient-to-b from-green-400 to-green-700 text-white shadow-lg disabled:opacity-50">{draftTotal ? `PLACE BETS · ${draftTotal.toFixed(2)} L` : tab === 'fc' ? 'TAP A COMBINATION TO BET' : 'TAP A HORSE TO BET'}</button>
       </div>
       <div className="text-[11px] text-gray-400 mt-2 text-center">Balance: <b className="tabular-nums text-white">{userBalance.toFixed(2)} L</b> · RTP 95% · max 5000 L per race · credit only{st?.simulatedPlayers ? ' · table includes simulated players' : ''}</div>
     </div>
