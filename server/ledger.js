@@ -67,14 +67,14 @@ export async function transferBalance(args) {
   return out[normalizeCurrency(args.currency)];
 }
 
-async function transferOnClient(client, { actorId, sourceId, targetId, amount, type, reference, currency, feeRate, isTest }) {
+async function transferOnClient(client, { actorId, sourceId, targetId, amount, type, reference, currency, feeRate, isTest, at }) {
   if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
     throw new Error('amount must be a positive finite number');
   }
   const col = walletColumn(currency);
   const cur = normalizeCurrency(currency);
   const round = (n) => Math.round(n * 100) / 100;
-  const createdAt = Date.now();
+  const createdAt = Number.isFinite(at) && at > 0 ? Math.round(at) : Date.now();
 
   let sourceBefore = null;
   let sourceAfter = null;

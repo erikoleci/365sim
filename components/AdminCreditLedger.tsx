@@ -39,6 +39,8 @@ const AdminCreditLedger: React.FC = () => {
   const [eur, setEur] = useState('');
   const [busy, setBusy] = useState(false);
   const [isTest, setIsTest] = useState(false);
+  const [when_, setWhen] = useState('');
+  const [recordOnly, setRecordOnly] = useState(false);
   const [pay, setPay] = useState<Record<string, { lek: string; eur: string }>>({});
 
   const load = useCallback(async () => {
@@ -65,8 +67,10 @@ const AdminCreditLedger: React.FC = () => {
     if (!window.confirm(msg)) return;
     setBusy(true);
     try {
-      await api.adminCreditAdmin(adminId, a, b, isTest);
-      setLek(''); setEur(''); setIsTest(false);
+      const atMs = when_ ? new Date(when_).getTime() : undefined;
+      if (when_ && !Number.isFinite(atMs)) { alert(t('Data nuk eshte e sakte')); setBusy(false); return; }
+      await api.adminCreditAdmin(adminId, a, b, isTest, { at: atMs, recordOnly });
+      setLek(''); setEur(''); setIsTest(false); setWhen(''); setRecordOnly(false);
       await load();
     } catch (err: any) {
       alert(err.message || t('Veprimi deshtoi'));
@@ -153,6 +157,11 @@ const AdminCreditLedger: React.FC = () => {
           {t('Euro')}
           <input type="number" min="0" inputMode="decimal" value={eur} onChange={(e) => setEur(e.target.value)} className="input w-28" placeholder="1000" />
         </label>
+        <label className="text-[10px] text-brand-textMuted uppercase tracking-wide flex flex-col gap-1">
+          {t('Data dhe ora kur e dhe')}
+          <input type="datetime-local" value={when_} onChange={(e) => setWhen(e.target.value)} className="input w-52" />
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-brand-textMuted pb-2 cursor-pointer" title={t('Kredia u dha me pare: shkruhet vetem ne liber, balanca e adminit nuk ndryshon')}><input type="checkbox" checked={recordOnly} onChange={(e) => setRecordOnly(e.target.checked)} />{t('Vetem ne liber (balanca pa ndryshim)')}</label>
         <label className="flex items-center gap-1.5 text-xs text-brand-textMuted pb-2 cursor-pointer"><input type="checkbox" checked={isTest} onChange={(e) => setIsTest(e.target.checked)} />{t('Test / falas (0%)')}</label>
         <button type="submit" disabled={busy || !adminId} className="px-4 py-2 rounded bg-brand-yellow text-black text-xs font-bold uppercase disabled:opacity-50">{t('Shto kredi')}</button>
       </form>
@@ -182,6 +191,17 @@ const AdminCreditLedger: React.FC = () => {
                 <input type="number" min="0" inputMode="decimal" placeholder="€" value={pay[a.id]?.eur ?? ''} onChange={(e) => setPay((m) => ({ ...m, [a.id]: { lek: m[a.id]?.lek ?? '', eur: e.target.value } }))} className="input w-20" />
                 <button onClick={() => settle(a)} disabled={busy} className="px-3 py-1.5 rounded bg-green-600 text-white text-xs font-bold uppercase disabled:opacity-50">{t('Shlyer')}</button>
               </div>
+              {filter === a.id && (
+                <div className="mt-2 pt-2 border-t border-[#333] text-xs max-h-72 overflow-y-auto">
+                  {(ledger.history.filter((h) => h.adminId === a.id)).length === 0 ? <div className="text-brand-textMuted">{t('Asnje kredi e regjistruar.')}</div> : ledger.history.filter((h) => h.adminId === a.id).map((h) => (
+                    <div key={h.id} className="flex items-center justify-between gap-2 py-1 border-b border-[#333] last:border-0">
+                      <span className="whitespace-nowrap text-brand-textMuted">{when(h.at)}</span>
+                      <span className="flex-1 truncate">{h.kind === 'CREDIT' ? t('Kredi e dhene') : h.kind === 'SETTLEMENT' ? t('Shlyer') : t('Marre mbrapsht')}{h.isTest ? ' · ' + t('Test') : ''}</span>
+                      <span className={'font-bold whitespace-nowrap ' + (h.kind === 'CREDIT' ? 'text-green-400' : h.kind === 'SETTLEMENT' ? 'text-sky-300' : 'text-red-400')}>{h.kind === 'CREDIT' ? '+' : '−'}{h.currency === 'EUR' ? '€' + money(h.amount) : money(h.amount) + ' L'}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="text-[11px] text-brand-textMuted mt-2">
                 {t('Mbetur')}: {a.leftPct.ALL != null ? a.leftPct.ALL + '% L' : '—'} · {a.leftPct.EUR != null ? a.leftPct.EUR + '% €' : '—'} · {t('Kredia e fundit')}: {when(a.lastCreditAt)}
               </div>

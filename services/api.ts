@@ -439,8 +439,8 @@ export async function adminDebitAdmin(adminId: string, amount: number, amountEur
   return request<{ balance: number; balanceEur: number }>(`/admin/admins/${adminId}/debit`, { method: 'POST', body: moneyBody(amount, amountEur) });
 }
 
-export async function adminCreditAdmin(adminId: string, amount: number, amountEur = 0, isTest = false) {
-  return request<{ balance: number; balanceEur: number }>(`/admin/admins/${adminId}/credit`, { method: 'POST', body: JSON.stringify({ ...(amount ? { amount } : {}), ...(amountEur ? { amountEur } : {}), ...(isTest ? { isTest: true } : {}) }) });
+export async function adminCreditAdmin(adminId: string, amount: number, amountEur = 0, isTest = false, opts: { at?: number; recordOnly?: boolean } = {}) {
+  return request<{ balance: number; balanceEur: number }>(`/admin/admins/${adminId}/credit`, { method: 'POST', body: JSON.stringify({ ...(amount ? { amount } : {}), ...(amountEur ? { amountEur } : {}), ...(isTest ? { isTest: true } : {}), ...(opts.at ? { at: opts.at } : {}), ...(opts.recordOnly ? { recordOnly: true } : {}) }) });
 }
 /** Super admin: the admin handed cash back ("shlyer"); at = optional date (ms). */
 export async function adminSettleCredit(adminId: string, amount: number, amountEur = 0, at?: number, note?: string) {

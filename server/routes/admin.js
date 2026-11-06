@@ -657,19 +657,45 @@ router.post('/admins', requireSuperAdmin, async (req, res) => {
 // Give credit to an admin (recorded in the ledger as SUPER_TO_ADMIN, like the admin -> agent credit).
 router.post('/admins/:id/credit', requireSuperAdmin, async (req, res) => {
   const isTest = req.body?.isTest === true;
+  const recordOnly = req.body?.recordOnly === true; // already handed over before: only written in the book, balance unchanged
   const parts = amountParts(req.body);
   if (!parts || parts.some((p) => p.amount <= 0)) {
     return res.status(400).json({ error: 'amount must be a positive number' });
   }
+  let at;
+  if (req.body?.at !== undefined && req.body?.at !== null) {
+    const n = Number(req.body.at);
+    if (!Number.isFinite(n) || n < Date.UTC(2020, 0, 1) || n > Date.now() + 86400000) return res.status(400).json({ error: 'bad date' });
+    at = Math.round(n);
+  }
   const { rows } = await pool.query(`SELECT * FROM users WHERE id = $1 AND role = 'ADMIN'`, [req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: 'Admin not found' });
-  await transferBalances({
-    actorId: req.user.id, sourceId: null, targetId: req.params.id,
-    type: 'SUPER_TO_ADMIN', reference: rows[0].username,
-    // A test / free credit keeps 0% for the super admin and is never counted in the book.
-    feeRate: isTest ? 0 : feeRateFromEnv(process.env.OWNER_CREDIT_FEE_RATE), isTest,
-  }, parts);
-  await logAudit(req.user, 'ADMIN_CREDIT', req.params.id, { amounts: parts, username: rows[0].username, isTest });
+  // A test / free credit keeps 0% for the super admin and is never counted in the book.
+  const feeRate = isTest ? 0 : feeRateFromEnv(process.env.OWNER_CREDIT_FEE_RATE);
+  if (recordOnly) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const p of parts) {
+        const col = p.currency === 'EUR' ? 'balance_eur' : 'balance';
+        const { rows: w } = await client.query(`SELECT ${col} AS bal FROM users WHERE id = $1 FOR UPDATE`, [req.params.id]);
+        const bal = Number(w[0].bal);
+        await client.query(
+          `INSERT INTO transactions (actor_id, source_id, target_id, amount, type, reference, source_balance_before, source_balance_after,
+                                     target_balance_before, target_balance_after, created_at, currency, fee_rate, is_test)
+           VALUES ($1, NULL, $2, $3, 'SUPER_TO_ADMIN', $4, NULL, NULL, $5, $5, $6, $7, $8, $9)`,
+          [req.user.id, req.params.id, p.amount, `${rows[0].username} (regjistruar, pa ndryshuar balancën)`, bal, at ?? Date.now(), p.currency, feeRate, isTest],
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) { await client.query('ROLLBACK'); throw err; } finally { client.release(); }
+  } else {
+    await transferBalances({
+      actorId: req.user.id, sourceId: null, targetId: req.params.id,
+      type: 'SUPER_TO_ADMIN', reference: rows[0].username, feeRate, isTest, at,
+    }, parts);
+  }
+  await logAudit(req.user, 'ADMIN_CREDIT', req.params.id, { amounts: parts, username: rows[0].username, isTest, recordOnly, at: at ?? null });
   const admin = await readWallet(req.params.id);
   res.json({ balance: admin.balance, balanceEur: admin.balanceEur });
 });

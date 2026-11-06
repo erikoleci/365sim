@@ -1,5 +1,8 @@
 // English translations for the admin area, keyed by the exact Albanian source text.
 export const enAdmin: Record<string, string> = {
+  'Data dhe ora kur e dhe': 'Date and time it was given',
+  'Vetem ne liber (balanca pa ndryshim)': 'Book only (balance unchanged)',
+  'Kredia u dha me pare: shkruhet vetem ne liber, balanca e adminit nuk ndryshon': 'Already given before: written in the book only, the admin balance does not change',
   'Shlyer {x}?': 'Mark {x} as settled?',
   'Data dhe ora (VVVV-MM-DD HH:MM)': 'Date and time (YYYY-MM-DD HH:MM)',
   'Data nuk eshte e sakte': 'The date is not valid',
