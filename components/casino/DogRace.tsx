@@ -3,7 +3,7 @@ import StakeInput from './StakeInput';
 import CoinBurst from './CoinBurst';
 import CountUp from './CountUp';
 import BigWin, { winTier } from './BigWin';
-import DogTrack, { dogProgress, RUN_OUT } from './DogTrack';
+import DogTrack, { dogProgress, RUN_OUT, makeProgressStore } from './DogTrack';
 import { casinoDogsInfo, casinoDogsRace, Dog } from '../../services/api';
 import { sfx, setSound, soundOn } from './slotSound';
 import { raceSfx } from './raceAudio';
@@ -17,7 +17,7 @@ const DogRace: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
   const [dogs, setDogs] = useState<Dog[]>([]);
   const [pick, setPick] = useState<number | null>(null);
   const [stake, setStake] = useState(100);
-  const [progress, setProgress] = useState<number[]>([0, 0, 0, 0, 0, 0]);
+  const store = useRef(makeProgressStore()).current;
   const [order, setOrder] = useState<number[] | null>(null);
   const [racing, setRacing] = useState(false);
   const [msg, setMsg] = useState('Pick a greyhound and start the race');
@@ -36,9 +36,9 @@ const DogRace: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
     const tick = () => {
       if (!alive.current) return resolve();
       const s = (performance.now() - t0) / 1000;
-      setProgress(t.map((T, i) => dogProgress(s, T, wob[i])));
+      store.set(t.map((T, i) => dogProgress(s, T, wob[i])));
       raceSfx.setCrowd(Math.min(1, s / 6));
-      if (s >= finish[5] + RUN_OUT) { setProgress(t.map((T, i) => dogProgress(finish[5] + RUN_OUT, T, wob[i]))); resolve(); return; }
+      if (s >= finish[5] + RUN_OUT) { store.set(t.map((T, i) => dogProgress(finish[5] + RUN_OUT, T, wob[i]))); resolve(); return; }
       raf.current = requestAnimationFrame(tick);
     };
     raf.current = requestAnimationFrame(tick);
@@ -48,7 +48,7 @@ const DogRace: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
     if (racing) return;
     if (pick === null) { setMsg('Pick a greyhound first!'); return; }
     if (userBalance < stake) { setMsg('Insufficient balance'); return; }
-    setRacing(true); setOrder(null); setWinAmt(0); setProgress([0, 0, 0, 0, 0, 0]); setMsg('The hare is running… and they\'re off!'); raceSfx.startCrowd(); raceSfx.gates(); window.setTimeout(() => raceSfx.startGallop(() => 0.8), 700);
+    setRacing(true); setOrder(null); setWinAmt(0); store.set([0, 0, 0, 0, 0, 0]); setMsg('The hare is running… and they\'re off!'); raceSfx.startCrowd(); raceSfx.gates(); window.setTimeout(() => raceSfx.startGallop(() => 0.8), 700);
     try {
       const r = await casinoDogsRace(stake, pick);
       await run(r.order);
@@ -70,7 +70,7 @@ const DogRace: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
         <button onClick={() => { setSound(!snd); setSnd(!snd); }} className="text-sm px-2 py-1 rounded bg-white/10">{snd ? '🔊' : '🔇'}</button>
       </div>
 
-      <DogTrack dogs={dogs} progress={progress} running={racing} finishOrder={order} selected={pick}>
+      <DogTrack dogs={dogs} store={store} running={racing} finishOrder={order} selected={pick}>
         {winAmt > 0 ? <span className="text-brand-yellow win-pop inline-block">You won <CountUp value={winAmt} format={(v) => `${v.toFixed(2)} L`} /></span> : msg}
       </DogTrack>
 

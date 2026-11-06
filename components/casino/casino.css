@@ -155,10 +155,12 @@
 @media (prefers-reduced-motion: reduce) { .bigwin-rays, .bigwin-title, .bulbs::before, .bulbs::after, .cabinet-glow { animation: none } }
 
 /* ---- greyhound running cycle ---- */
-.dog-run { background-size: 500% 400%; background-repeat: no-repeat; animation: dog-run-x .2s steps(5) infinite, dog-run-y .8s steps(4) infinite; }
-@keyframes dog-run-x { from { background-position-x: 0%; } to { background-position-x: 125%; } }
-@keyframes dog-run-y { from { background-position-y: 0%; } to { background-position-y: 133.3333%; } }
+/* Sprite sheet 5x4 (20 frames): two NESTED transform animations step through it, so nothing repaints (background-position would). */
+.dog-run-y { position: absolute; left: 0; top: 0; width: 500%; height: 400%; will-change: transform; animation: dog-run-ty .8s steps(4) infinite; }
+.dog-run-x { width: 100%; height: 100%; background-size: 100% 100%; background-repeat: no-repeat; will-change: transform; animation: dog-run-tx .2s steps(5) infinite; }
+@keyframes dog-run-tx { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-100%, 0, 0); } }
+@keyframes dog-run-ty { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(0, -100%, 0); } }
 @keyframes dog-dust { 0% { opacity: .55; transform: translateX(0) scale(.5); } 100% { opacity: 0; transform: translateX(-34px) scale(1.6); } }
 .dog-dust { position: absolute; left: 4%; bottom: 6%; width: 18px; height: 14px; border-radius: 50%; background: radial-gradient(#e7c58f, rgba(231,197,143,0)); animation: dog-dust .45s ease-out infinite; box-shadow: -16px -3px 0 -3px rgba(231,197,143,.35), -30px 2px 0 -5px rgba(231,197,143,.25); }
 .dog-hero { background: radial-gradient(ellipse at 50% 0%, #1e3a8a 0%, #0b1330 55%, #05070f 100%); }
-@media (prefers-reduced-motion: reduce) { .dog-run, .dog-dust { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .dog-run-x, .dog-run-y, .dog-dust { animation: none; } }

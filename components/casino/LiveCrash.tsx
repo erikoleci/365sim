@@ -45,7 +45,14 @@ const LiveCrash: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
     const t = window.setInterval(refresh, phase === 'flight' ? 600 : 1500);
     return () => window.clearInterval(t);
   }, [refresh, st?.phase]);
-  useEffect(() => { let r = 0; const tick = () => { setNow(Date.now() + offset.current); r = requestAnimationFrame(tick); }; r = requestAnimationFrame(tick); return () => cancelAnimationFrame(r); }, []);
+  // The clock redraws the screen: ~30 fps only while the rocket flies, 4x a second otherwise (a 60 fps loop on a still screen made the whole page heavy).
+  const flightPhase = st?.phase === 'flight';
+  useEffect(() => {
+    if (!flightPhase) { const t = window.setInterval(() => setNow(Date.now() + offset.current), 250); return () => window.clearInterval(t); }
+    let r = 0; let last = 0;
+    const tick = (ts: number) => { if (ts - last >= 32) { last = ts; setNow(Date.now() + offset.current); } r = requestAnimationFrame(tick); };
+    r = requestAnimationFrame(tick); return () => cancelAnimationFrame(r);
+  }, [flightPhase]);
 
   const G = st?.growth ?? 0.18;
   const cycle = st?.cycleMs ?? 40000; const betMs = st?.betMs ?? 10000;
@@ -99,7 +106,8 @@ const LiveCrash: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       <div className={`relative rounded-2xl overflow-hidden border-2 border-yellow-500/50 cabinet-glow ${crashed ? 'cabinet-shake' : ''}`} style={{ background: 'radial-gradient(circle at 20% 100%, #1e1b4b, #020617 70%)' }}>
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full block" role="img" aria-label="Multiplier curve">
           {[0.25, 0.5, 0.75].map((f) => <line key={f} x1="0" x2={W} y1={H * f} y2={H * f} stroke="rgba(255,255,255,.06)" />)}
-          {!betting && <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="5" strokeLinecap="round" style={{ filter: `drop-shadow(0 0 8px ${color})` }} />}
+          {!betting && <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="13" strokeLinecap="round" opacity=".22" />}
+          {!betting && <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="5" strokeLinecap="round" />}
           {!betting && <polygon points={`0,${H} ${pts.join(' ')} ${tip[0]},${H}`} fill={color} opacity=".12" />}
           {flying && <g transform={`translate(${tip[0]},${tip[1]})`}><circle r="9" fill={color} /><circle r="16" fill={color} opacity=".25"><animate attributeName="r" values="10;22;10" dur="0.9s" repeatCount="indefinite" /></circle></g>}
           {crashed && <g transform={`translate(${tip[0]},${tip[1]})`}><circle r="26" fill="#ef4444" opacity=".35" /><text y="10" textAnchor="middle" fontSize="34">💥</text></g>}

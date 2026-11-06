@@ -1,9 +1,10 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Dog } from '../../services/api';
+import { makeProgressStore, type ProgressStore } from './raceProgress';
 import './casino.css';
 
 // A running greyhound: a real rendered sprite, galloped with CSS (bounce, pitch and stretch) with dust kicked up behind it.
-export const Greyhound: React.FC<{ color: string; trap: number; coat?: string; running: boolean; delay?: number }> = ({ trap, running, delay = 0 }) => {
+export const Greyhound: React.FC<{ color: string; trap: number; coat?: string; running: boolean; delay?: number }> = React.memo(({ trap, running, delay = 0 }) => {
   const n = Math.min(6, Math.max(1, trap));
   const state = running ? 'running' : 'paused';
   return (
@@ -11,10 +12,14 @@ export const Greyhound: React.FC<{ color: string; trap: number; coat?: string; r
       <div className="absolute left-[10%] right-[8%] bottom-[0%] h-[9%] rounded-[50%] bg-black/45 blur-[2px]" />
       {running && <div className="dog-dust" style={{ animationDelay: `${delay}s` }} />}
       {/* real greyhound run cycle: 20 frames in a 5x4 sprite sheet (see public/casino/dogs) */}
-      <div className="dog-run absolute inset-0" style={{ backgroundImage: `url(/casino/dogs/run${n}.webp)`, animationPlayState: `${state}, ${state}`, animationDelay: `${-delay}s, ${-delay}s` }} />
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="dog-run-y" style={{ animationPlayState: state, animationDelay: `${-delay}s` }}>
+          <div className="dog-run-x" style={{ backgroundImage: `url(/casino/dogs/run${n}.webp)`, animationPlayState: state, animationDelay: `${-delay}s` }} />
+        </div>
+      </div>
     </div>
   );
-};
+});
 
 /** Progress of one dog (0..1 on the track, then a short run-out past the line) after `s` seconds, finishing at `T` seconds. */
 export const RUN_OUT = 1.8; // seconds the dogs keep running after the last one is due, so every dog is clearly past the line
@@ -24,7 +29,10 @@ export const dogProgress = (s: number, T: number, wob: { a: number; f: number; p
   return 1 + 0.36 * Math.tanh((x - 1) / 0.36); // eases off after the line
 };
 
-interface Props { dogs: Dog[]; progress: number[]; running: boolean; finishOrder?: number[] | null; selected?: number | null; onSelect?: (id: number) => void; children?: React.ReactNode }
+export { makeProgressStore };
+const NO_STORE = makeProgressStore();
+
+interface Props { dogs: Dog[]; progress?: number[]; store?: ProgressStore; running: boolean; finishOrder?: number[] | null; selected?: number | null; onSelect?: (id: number) => void; children?: React.ReactNode }
 
 // TV-style race view: a real track-side camera video (public/casino/dogs/track-s.mp4, 10 s, tracks to the right) plays while the
 // race runs, the greyhounds are laid over it in lanes. The camera follows the leader: he sits at ~62% of the screen and the others
@@ -33,8 +41,22 @@ const VH = 720, SPAN = 1.5, SCALE_NEAR = 0.27, LINE_K = SPAN; // dogs and the fi
 const LANE_Y = [345, 392, 445, 505, 568, 628]; // feet of the lane: far (trap 6) -> near (trap 1); the camera is side-on, lanes are flat bands
 const smooth = (a: number, b: number, v: number) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
 
-const DogTrack: React.FC<Props> = ({ dogs, progress, running, finishOrder, selected, children }) => {
+const DogTrack: React.FC<Props> = ({ dogs, progress: progressProp, store, running, finishOrder, selected, children }) => {
+  const st = store ?? NO_STORE;
+  const fromStore = useSyncExternalStore(st.subscribe, st.get);
+  const progress = progressProp ?? fromStore;
   const vid = useRef<HTMLVideoElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  // Positions are written as transforms in pixels (cheap, GPU): left/top/width changes would re-layout the page every frame.
+  const [W, setW] = useState(720);
+  useLayoutEffect(() => {
+    const el = box.current; if (!el) return;
+    setW(el.clientWidth || 720);
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setW(el.clientWidth || 720));
+    ro.observe(el); return () => ro.disconnect();
+  }, []);
+  const H = (W * 9) / 16;
   const lead = progress.length ? Math.max(...progress) : 0;
   const started = lead > 0;
   const was = useRef(false);
@@ -58,27 +80,27 @@ const DogTrack: React.FC<Props> = ({ dogs, progress, running, finishOrder, selec
   const xFinish = fx + (1 - lead) * LINE_K;
   const anyRun = running && started;
   return (
-    <div className="relative dog-hero rounded-2xl overflow-hidden border-2 border-amber-500/50 shadow-[0_0_30px_rgba(245,158,11,.25)] mb-3" style={{ aspectRatio: '16/9' }}>
+    <div ref={box} className="relative dog-hero rounded-2xl overflow-hidden border-2 border-amber-500/50 shadow-[0_0_30px_rgba(245,158,11,.25)] mb-3" style={{ aspectRatio: '16/9', contain: 'layout paint style' }}>
       <video ref={vid} className="absolute inset-0 w-full h-full object-cover" muted loop playsInline preload="auto" poster="/casino/dogs/track-s-poster.jpg" aria-hidden>
         <source src="/casino/dogs/track-s.webm" type="video/webm" />
         <source src="/casino/dogs/track-s.mp4" type="video/mp4" />
       </video>
       {xFinish < 1.25 && xFinish > -0.3 && (() => {
         // chequered line straight across the lanes, a little wider at the near (bottom) end
-        const L = xFinish - 0.05, W = 0.1, top = 296, bottom = 640;
-        return <div className="absolute pointer-events-none" style={{ left: `${L * 100}%`, width: `${W * 100}%`, top: `${top / VH * 100}%`, height: `${(bottom - top) / VH * 100}%`, clipPath: 'polygon(42% 0, 58% 0, 68% 100%, 32% 100%)', background: 'repeating-conic-gradient(#f5f5f5 0 25%, #1a1a1a 0 50%) 0 0 / 12px 12px', opacity: 0.9 }} />;
+        const w = 0.1 * W, top = (296 / VH) * H, h = ((640 - 296) / VH) * H;
+        return <div className="absolute left-0 top-0 pointer-events-none" style={{ width: w, height: h, transform: `translate3d(${xFinish * W - w / 2}px, ${top}px, 0)`, willChange: 'transform', clipPath: 'polygon(42% 0, 58% 0, 68% 100%, 32% 100%)', background: 'repeating-conic-gradient(#f5f5f5 0 25%, #1a1a1a 0 50%) 0 0 / 12px 12px', opacity: 0.9 }} />;
       })()}
       {[...pos].sort((a, b) => a.y - b.y).map((q) => {
         if (q.x < -0.25 || q.x > 1.15) return null;
-        const w = SCALE_NEAR * q.s;
+        const w = SCALE_NEAR * q.s * W, h = w / 1.923;
         return (
-          <div key={q.d.id} className="absolute" style={{ left: `${q.x * 100}%`, top: `${(q.y / VH) * 100}%`, width: `${w * 100}%`, aspectRatio: '1.923', transform: `translate(-50%,-92%) rotate(${q.tilt}deg)`, transformOrigin: '50% 100%', zIndex: Math.round(q.y) }}>
+          <div key={q.d.id} className="absolute left-0 top-0" style={{ width: w, height: h, transform: `translate3d(${q.x * W - w / 2}px, ${(q.y / VH) * H - h * 0.92}px, 0)`, willChange: 'transform', zIndex: Math.round(q.y) }}>
             <Greyhound color={q.d.color} trap={q.d.trap} running={running} delay={q.i * 0.17} />
-            {selected === q.d.id && <div className="absolute left-1/2 -top-[26%] -translate-x-1/2 text-[10px] sm:text-xs font-black px-1.5 py-0.5 rounded bg-yellow-300 text-black whitespace-nowrap shadow" style={{ transform: `rotate(${-q.tilt}deg)` }}>YOUR PICK ▼</div>}
+            {selected === q.d.id && <div className="absolute left-1/2 -top-[26%] -translate-x-1/2 text-[10px] sm:text-xs font-black px-1.5 py-0.5 rounded bg-yellow-300 text-black whitespace-nowrap shadow">YOUR PICK ▼</div>}
           </div>
         );
       })}
-      <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: 'inset 0 0 70px 10px rgba(0,0,0,.55)' }} />
+      <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) 55%, rgba(0,0,0,.55) 100%)' }} />
       {(anyRun || finishOrder) && (
         <div className="absolute top-1.5 right-1.5 flex flex-col gap-0.5 pointer-events-none">
           {(finishOrder ? finishOrder.map((id) => pos.find((q) => q.d.id === id)).filter(Boolean) as typeof pos : [...pos].sort((a, b) => (progress[b.i] || 0) - (progress[a.i] || 0))).map((q, r) => (

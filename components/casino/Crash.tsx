@@ -117,7 +117,7 @@ const Crash: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       <div className={`relative rounded-2xl overflow-hidden border-2 border-yellow-500/50 cabinet-glow ${phase === 'crashed' ? 'cabinet-shake' : ''}`} style={{ background: 'radial-gradient(circle at 20% 100%, #1e1b4b, #020617 70%)' }}>
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full block" role="img" aria-label="Multiplier curve">
           {[0.25, 0.5, 0.75].map((f) => <line key={f} x1="0" x2={W} y1={H * f} y2={H * f} stroke="rgba(255,255,255,.06)" />)}
-          {phase !== 'idle' && <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="5" strokeLinecap="round" style={{ filter: `drop-shadow(0 0 8px ${color})` }} />}
+          {phase !== 'idle' && <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="5" strokeLinecap="round" />}
           {phase !== 'idle' && <polygon points={`0,${H} ${pts.join(' ')} ${tip[0]},${H}`} fill={color} opacity=".12" />}
           {phase === 'running' && <g transform={`translate(${tip[0]},${tip[1]})`}><circle r="9" fill={color} /><circle r="16" fill={color} opacity=".25"><animate attributeName="r" values="10;22;10" dur="0.9s" repeatCount="indefinite" /></circle></g>}
           {phase === 'crashed' && <g transform={`translate(${tip[0]},${tip[1]})`}><circle r="26" fill="#ef4444" opacity=".35" /><text y="10" textAnchor="middle" fontSize="34">💥</text></g>}

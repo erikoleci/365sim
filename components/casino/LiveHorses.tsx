@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import HorseSprite from './HorseSprite';
+import { makeProgressStore } from './raceProgress';
 import StakeInput from './StakeInput';
 import CoinBurst from './CoinBurst';
 import CountUp from './CountUp';
@@ -16,7 +18,7 @@ const LiveHorses: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => 
   const [chip, setChip] = useState(50);
   const [draft, setDraft] = useState<Record<string, number>>({});
   const [left, setLeft] = useState(0);
-  const [progress, setProgress] = useState<number[]>([0, 0, 0, 0, 0, 0]);
+  const store = useRef(makeProgressStore()).current;
   const [racing, setRacing] = useState(false);
   const [finished, setFinished] = useState<number[] | null>(null);
   const [msg, setMsg] = useState('Back your horses');
@@ -36,9 +38,9 @@ const LiveHorses: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => 
     const tick = () => {
       if (!alive.current) return;
       const s = Math.max(0, (Date.now() + offset.current - startedAt) / 1000);
-      setProgress(t.map((T, i) => { const x = Math.min(1, s / T); return Math.min(1, x + Math.sin(x * Math.PI) * wob[i].a * Math.sin(wob[i].f * x * 6 + wob[i].p)); }));
+      store.set(t.map((T, i) => { const x = Math.min(1, s / T); return Math.min(1, x + Math.sin(x * Math.PI) * wob[i].a * Math.sin(wob[i].f * x * 6 + wob[i].p)); }));
       if (s >= finish[5]) {
-        setProgress(t.map(() => 1)); setFinished(order); setRacing(false);
+        store.set(t.map(() => 1)); setFinished(order); setRacing(false);
         const mine = pending.current.filter((x) => x.order[0] === order[0]); pending.current = [];
         const staked = mine.reduce((a, x) => a + x.staked, 0); const paid = mine.reduce((a, x) => a + x.payout, 0);
         setMsg(`${stRef.current?.horses[order[0]]?.name ?? 'Horse'} wins!`);
@@ -56,7 +58,7 @@ const LiveHorses: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => 
       if (!alive.current) return;
       offset.current = s.serverNow - Date.now(); stRef.current = s; setSt(s); onSetBalance(s.balance);
       if (s.settled.length) pending.current = [...pending.current, ...s.settled];
-      if (lastRound.current !== null && lastRound.current !== s.round) { setDraft({}); setProgress([0, 0, 0, 0, 0, 0]); setFinished(null); setWinAmt(0); setMsg('Back your horses'); }
+      if (lastRound.current !== null && lastRound.current !== s.round) { setDraft({}); store.set([0, 0, 0, 0, 0, 0]); setFinished(null); setWinAmt(0); setMsg('Back your horses'); }
       lastRound.current = s.round;
       if (s.phase === 'race' && s.order && racedFor.current !== s.round) {
         racedFor.current = s.round; setMsg('And they\'re off!'); sfx.spin();
@@ -102,7 +104,7 @@ const LiveHorses: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => 
         {horses.map((h, i) => (
           <div key={h.id} className="relative h-11 border-b border-white/10" style={{ background: i % 2 ? 'rgba(0,0,0,.12)' : undefined }}>
             <div className="absolute left-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full text-[11px] font-black flex items-center justify-center text-black" style={{ background: h.color }}>{h.id + 1}</div>
-            <div className="absolute top-1/2 text-3xl select-none" style={{ left: `calc(${progress[i] * 82}% + 28px)`, transform: 'translateY(-50%) scaleX(-1)', filter: `drop-shadow(0 3px 2px rgba(0,0,0,.5)) drop-shadow(0 0 6px ${h.color})` }}>🏇</div>
+            <HorseSprite store={store} index={i} color={h.color} />
             {finished && <div className="absolute right-1 top-1/2 -translate-y-1/2 text-[11px] font-black px-1.5 rounded bg-black/60">{ORDINAL[finished.indexOf(h.id)]}</div>}
           </div>
         ))}

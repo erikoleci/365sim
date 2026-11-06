@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import DogTrack, { dogProgress, RUN_OUT } from './DogTrack';
+import DogTrack, { dogProgress, RUN_OUT, makeProgressStore } from './DogTrack';
 import StakeInput from './StakeInput';
 import CoinBurst from './CoinBurst';
 import CountUp from './CountUp';
@@ -17,7 +17,7 @@ const LiveDogs: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
   const [chip, setChip] = useState(50);
   const [draft, setDraft] = useState<Record<string, number>>({});
   const [left, setLeft] = useState(0);
-  const [progress, setProgress] = useState<number[]>([0, 0, 0, 0, 0, 0]);
+  const store = useRef(makeProgressStore()).current;
   const [racing, setRacing] = useState(false);
   const [finished, setFinished] = useState<number[] | null>(null);
   const [msg, setMsg] = useState('Back your greyhounds');
@@ -39,9 +39,9 @@ const LiveDogs: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       if (!alive.current) return;
       const s = Math.max(0, (Date.now() + offset.current - startedAt) / 1000);
       raceSfx.setCrowd(Math.min(1, s / 6));
-      setProgress(t.map((T, i) => dogProgress(s, T, wob[i])));
+      store.set(t.map((T, i) => dogProgress(s, T, wob[i])));
       if (s >= finish[5] + RUN_OUT) {
-        setProgress(t.map((T, i) => dogProgress(finish[5] + RUN_OUT, T, wob[i]))); setFinished(order); setRacing(false); raceSfx.stopGallop(); window.setTimeout(() => raceSfx.stopCrowd(), 3500);
+        store.set(t.map((T, i) => dogProgress(finish[5] + RUN_OUT, T, wob[i]))); setFinished(order); setRacing(false); raceSfx.stopGallop(); window.setTimeout(() => raceSfx.stopCrowd(), 3500);
         const mine = pending.current.filter((x) => x.order[0] === order[0]); pending.current = [];
         const staked = mine.reduce((a, x) => a + x.staked, 0); const paid = mine.reduce((a, x) => a + x.payout, 0);
         setMsg(`${stRef.current?.runners[order[0]]?.name ?? 'Dog'} wins! · Forecast ${stRef.current?.runners[order[0]]?.trap ?? order[0] + 1}-${stRef.current?.runners[order[1]]?.trap ?? order[1] + 1}`);
@@ -60,7 +60,7 @@ const LiveDogs: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       if (!alive.current) return;
       offset.current = s.serverNow - Date.now(); stRef.current = s; setSt(s); onSetBalance(s.balance);
       if (s.settled.length) pending.current = [...pending.current, ...s.settled];
-      if (lastRound.current !== null && lastRound.current !== s.round) { setDraft({}); setProgress([0, 0, 0, 0, 0, 0]); setFinished(null); setWinAmt(0); setMsg('Back your greyhounds'); }
+      if (lastRound.current !== null && lastRound.current !== s.round) { setDraft({}); store.set([0, 0, 0, 0, 0, 0]); setFinished(null); setWinAmt(0); setMsg('Back your greyhounds'); }
       lastRound.current = s.round;
       if (s.phase === 'race' && s.order && racedFor.current !== s.round) {
         racedFor.current = s.round; setMsg('And they\'re off!'); raceSfx.startCrowd(); raceSfx.gates(); window.setTimeout(() => raceSfx.startGallop(() => 0.8), 700);
@@ -101,7 +101,7 @@ const LiveDogs: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       </div>
       <div className="h-1.5 rounded-full bg-black/40 overflow-hidden mb-2"><div className={`h-full ${betting ? 'bg-yellow-300' : 'bg-red-500'}`} style={{ width: `${pct * 100}%`, transition: 'width .2s linear' }} /></div>
 
-      <DogTrack dogs={horses} progress={progress} running={racing} finishOrder={finished} />
+      <DogTrack dogs={horses} store={store} running={racing} finishOrder={finished} />
       <div className="flex gap-1 justify-center my-2 min-h-[22px]">{(st?.winners ?? []).map((w, i) => <span key={i} className="w-5 h-5 rounded-md text-[10px] font-black flex items-center justify-center text-black" style={{ background: horses[w]?.color }}>{(horses[w]?.trap ?? w + 1)}</span>)}</div>
       <div className="text-center font-bold min-h-[26px]">{winAmt > 0 ? <span className="text-brand-yellow win-pop inline-block text-lg">You won <CountUp value={winAmt} format={(v) => `${v.toFixed(2)} L`} /></span> : msg}</div>
 

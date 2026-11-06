@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import HorseSprite from './HorseSprite';
+import { makeProgressStore } from './raceProgress';
 import StakeInput from './StakeInput';
 import CoinBurst from './CoinBurst';
 import CountUp from './CountUp';
@@ -15,7 +17,7 @@ const Horses: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
   const [horses, setHorses] = useState<Horse[]>([]);
   const [pick, setPick] = useState<number | null>(null);
   const [stake, setStake] = useState(100);
-  const [progress, setProgress] = useState<number[]>([0, 0, 0, 0, 0, 0]);
+  const store = useRef(makeProgressStore()).current;
   const [order, setOrder] = useState<number[] | null>(null);
   const [racing, setRacing] = useState(false);
   const [msg, setMsg] = useState('Back a horse and start the race');
@@ -36,8 +38,8 @@ const Horses: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       if (!alive.current) return resolve();
       const s = (performance.now() - t0) / 1000;
       const prog = t.map((T, i) => { const x = Math.min(1, s / T); return Math.min(1, x + Math.sin(x * Math.PI) * wob[i].a * Math.sin(wob[i].f * x * 6 + wob[i].p)); });
-      setProgress(prog);
-      if (s >= finish[5]) { setProgress(t.map(() => 1)); resolve(); return; }
+      store.set(prog);
+      if (s >= finish[5]) { store.set(t.map(() => 1)); resolve(); return; }
       raf.current = requestAnimationFrame(tick);
     };
     raf.current = requestAnimationFrame(tick);
@@ -46,7 +48,7 @@ const Horses: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
   const race = async () => {
     if (racing || pick === null) { if (pick === null) setMsg('Pick a horse first!'); return; }
     if (userBalance < stake) { setMsg('Insufficient balance'); return; }
-    setRacing(true); setOrder(null); setWinAmt(0); setProgress([0, 0, 0, 0, 0, 0]); setMsg('And they\'re off!'); sfx.spin();
+    setRacing(true); setOrder(null); setWinAmt(0); store.set([0, 0, 0, 0, 0, 0]); setMsg('And they\'re off!'); sfx.spin();
     try {
       const r = await casinoHorsesRace(stake, pick);
       await run(r.order);
@@ -73,7 +75,7 @@ const Horses: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
         {horses.map((h, i) => (
           <div key={h.id} className={`relative h-12 border-b border-white/10 ${pick === h.id ? 'bg-white/10' : ''}`} style={{ background: i % 2 ? 'rgba(0,0,0,.12)' : undefined }}>
             <div className="absolute left-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full text-[11px] font-black flex items-center justify-center text-black" style={{ background: h.color }}>{h.id + 1}</div>
-            <div className="absolute top-1/2 -translate-y-1/2 text-3xl select-none" style={{ left: `calc(${progress[i] * 82}% + 28px)`, transform: 'translateY(-50%) scaleX(-1)', filter: `drop-shadow(0 3px 2px rgba(0,0,0,.5)) drop-shadow(0 0 6px ${h.color})` }}>🏇</div>
+            <HorseSprite store={store} index={i} color={h.color} />
             {order && <div className="absolute right-1 top-1/2 -translate-y-1/2 text-[11px] font-black px-1.5 rounded bg-black/60">{ORDINAL[order.indexOf(h.id)]}</div>}
           </div>
         ))}
