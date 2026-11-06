@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import * as api from '../services/api';
-import { useI18n } from '../i18n';
+import { useI18n, getLocale } from '../i18n';
 
-const money = (n: number, c: 'ALL' | 'EUR') => (c === 'EUR' ? '€' : '') + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + (c === 'ALL' ? ' L' : '');
-const when = (ms: number) => new Date(ms).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const money = (n: number, c: 'ALL' | 'EUR') => (n < 0 ? '−' : '') + (c === 'EUR' ? '€' : '') + Math.abs(n).toLocaleString(getLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + (c === 'ALL' ? ' L' : '');
+const when = (ms: number) => new Date(ms).toLocaleString(getLocale(), { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 /** Super admin: every ticket an admin cancelled, with the reason he wrote. Unread ones are highlighted; opening the tab marks them read. */
 const CancellationsPanel: React.FC<{ onChanged?: () => void }> = ({ onChanged }) => {
