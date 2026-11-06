@@ -45,6 +45,7 @@ export const enAdmin: Record<string, string> = {
   'Terhiq fonde te balanca e Owner-it': "Withdraw funds to the Owner's balance",
   'Komisioni (% e rezultatit neto te agjentit):': "Commission (% of the agent's net result):",
   'Ruaj': 'Save',
+  'Anulo': 'Cancel',
   'Aktual: {rate}%': 'Current: {rate}%',
   'Duke ngarkuar userat...': 'Loading users...',
   "Ky agjent s'ka usera ende.": 'This agent has no users yet.',

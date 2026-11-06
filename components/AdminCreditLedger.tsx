@@ -87,6 +87,14 @@ const AdminCreditLedger: React.FC = () => {
     try { await api.adminSettleCredit(a.id, l, e); setPay((m) => ({ ...m, [a.id]: { lek: '', eur: '' } })); await load(); }
     catch (err: any) { alert(err.message || t('Veprimi deshtoi')); } finally { setBusy(false); }
   };
+  const [dateEdit, setDateEdit] = useState<{ id: number; val: string } | null>(null);
+  const toLocalInput = (ms: number) => { const d = new Date(ms); const pad = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+  const saveDate = async () => {
+    if (!dateEdit) return;
+    const ms = new Date(dateEdit.val).getTime();
+    if (!Number.isFinite(ms)) { alert(t('Data nuk eshte e sakte')); return; }
+    try { await api.adminEditCredit(dateEdit.id, { at: ms }); setDateEdit(null); await load(); } catch (err: any) { alert(err.message || t('Veprimi deshtoi')); }
+  };
   const toggleTest = async (h: api.CreditLedger['history'][number]) => {
     if (typeof h.id !== 'number') return;
     try { await api.adminEditCredit(h.id, { isTest: !h.isTest }); await load(); } catch (err: any) { alert(err.message || t('Veprimi deshtoi')); }
@@ -194,10 +202,23 @@ const AdminCreditLedger: React.FC = () => {
               {filter === a.id && (
                 <div className="mt-2 pt-2 border-t border-[#333] text-xs max-h-72 overflow-y-auto">
                   {(ledger.history.filter((h) => h.adminId === a.id)).length === 0 ? <div className="text-brand-textMuted">{t('Asnje kredi e regjistruar.')}</div> : ledger.history.filter((h) => h.adminId === a.id).map((h) => (
-                    <div key={h.id} className="flex items-center justify-between gap-2 py-1 border-b border-[#333] last:border-0">
+                    <div key={h.id} className="flex flex-wrap items-center justify-between gap-2 py-1 border-b border-[#333] last:border-0">
                       <span className="whitespace-nowrap text-brand-textMuted">{when(h.at)}</span>
                       <span className="flex-1 truncate">{h.kind === 'CREDIT' ? t('Kredi e dhene') : h.kind === 'SETTLEMENT' ? t('Shlyer') : t('Marre mbrapsht')}{h.isTest ? ' · ' + t('Test') : ''}</span>
                       <span className={'font-bold whitespace-nowrap ' + (h.kind === 'CREDIT' ? 'text-green-400' : h.kind === 'SETTLEMENT' ? 'text-sky-300' : 'text-red-400')}>{h.kind === 'CREDIT' ? '+' : '−'}{h.currency === 'EUR' ? '€' + money(h.amount) : money(h.amount) + ' L'}</span>
+                      {h.kind === 'CREDIT' && typeof h.id === 'number' && (
+                        <span className="flex items-center gap-1.5 whitespace-nowrap">
+                          <button onClick={() => toggleTest(h)} className={'px-1.5 py-0.5 rounded text-[10px] font-bold ' + (h.isTest ? 'bg-green-600 text-white' : 'bg-gray-600 text-white')}>{h.isTest ? t('Bej real') : t('Bej test')}</button>
+                          <button onClick={() => setDateEdit({ id: h.id as number, val: toLocalInput(h.at) })} className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-brand-yellow text-black">{t('Data')}</button>
+                        </span>
+                      )}
+                      {dateEdit && dateEdit.id === h.id && (
+                        <div className="basis-full flex items-center gap-2 pt-1">
+                          <input type="datetime-local" value={dateEdit.val} onChange={(e) => setDateEdit({ id: dateEdit.id, val: e.target.value })} className="bg-[#111] border border-[#444] rounded px-2 py-1 text-xs text-white" />
+                          <button onClick={saveDate} className="px-2 py-1 rounded bg-green-600 text-white text-xs font-bold">{t('Ruaj')}</button>
+                          <button onClick={() => setDateEdit(null)} className="px-2 py-1 rounded bg-gray-600 text-white text-xs">{t('Anulo')}</button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
