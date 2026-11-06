@@ -951,13 +951,23 @@ router.patch('/users/:id/currency', async (req, res) => {
   res.json({ ok: true, accountCurrency: currency });
 });
 
+// Cancel a ticket (refund + remove). Rules:
+//  - a normal admin must write a reason (min 3 chars) and can only cancel an OPEN ticket none of whose matches has a
+//    result yet (no leg won / lost / half / void): once something is decided only the super admin can cancel it;
+//  - the super admin can cancel any ticket (a reason is optional for him);
+//  - every cancellation is written to ticket_cancellations and the super admin gets it as an unread notification.
 router.post('/bets/:id/cancel', async (req, res) => {
-  if (!isSuperAdmin(req.user.role) && !(await getTicketDeletionAllowed())) {
+  const superAdmin = isSuperAdmin(req.user.role);
+  if (!superAdmin && !(await getTicketDeletionAllowed())) {
     return res.status(403).json({ error: 'Fshirja e biletave është çaktivizuar nga super admini', code: 'TICKET_DELETE_DISABLED' });
   }
+  const reason = String(req.body?.reason ?? '').trim().slice(0, 300);
+  if (!superAdmin && reason.length < 3) return res.status(400).json({ error: 'Shkruaj arsyen e anulimit', code: 'REASON_REQUIRED' });
   const client = await pool.connect();
   let bet;
   let delta = 0;
+  let decidedLegs = 0;
+  let ownerAdminId = null;
   try {
     await client.query('BEGIN');
     // Lock the ticket: a settlement running at the same moment can no longer change its status between
@@ -968,12 +978,24 @@ router.post('/bets/:id/cancel', async (req, res) => {
     // A normal admin only deletes tickets of his own users.
     const { rows: ownerRows } = await client.query('SELECT admin_id FROM users WHERE id = $1', [bet.user_id]);
     if (!ownsRow(req.user, ownerRows[0])) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Bet not found' }); }
-    // Only an open ticket can be cancelled: once it is won, lost, refunded or already cancelled it is final.
-    if (bet.status !== 'PENDING') { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Vetëm biletat e hapura mund të anulohen', code: 'BET_NOT_PENDING' }); }
+    ownerAdminId = ownerRows[0]?.admin_id ?? null;
+    if (bet.status === 'CANCELLED') { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Bileta është anuluar tashmë', code: 'BET_NOT_PENDING' }); }
+    const { rows: legs } = await client.query('SELECT status FROM bet_selections WHERE bet_id = $1', [bet.id]);
+    decidedLegs = legs.filter((l) => l.status !== 'PENDING').length;
+    if (!superAdmin && (bet.status !== 'PENDING' || decidedLegs > 0)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Bileta ka tashmë rezultat (të paktën një ndeshje fituar/humbur): vetëm super admini mund ta anulojë', code: 'ONLY_SUPER_ADMIN' });
+    }
     // Put the money back as if the ticket had never been placed (PENDING / LOST: the stake; WON: the winnings
     // are taken back; VOID: it was refunded already, nothing to give twice).
     delta = betBalanceReversal(bet);
     if (delta !== 0) await client.query(`UPDATE users SET ${walletColumn(bet.currency)} = ${walletColumn(bet.currency)} + $1 WHERE id = $2`, [delta, bet.user_id]);
+    const now = Date.now();
+    await client.query(
+      `INSERT INTO ticket_cancellations (bet_id, ticket_no, user_id, owner_admin_id, actor_id, actor_username, actor_role, stake, currency, status_before, decided_legs, balance_change, reason, created_at, seen_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+      [bet.id, bet.ticket_no ?? null, bet.user_id, ownerAdminId, req.user.id, req.user.username ?? null, req.user.role, bet.stake, bet.currency || 'ALL', bet.status, decidedLegs, delta, reason || null, now, superAdmin ? now : null]
+    );
     // Cancelled = refunded AND removed from the lists right away (legs included); the audit log keeps the trace.
     await client.query('DELETE FROM bet_selections WHERE bet_id = $1', [bet.id]);
     await client.query('DELETE FROM bets WHERE id = $1', [bet.id]);
@@ -984,7 +1006,28 @@ router.post('/bets/:id/cancel', async (req, res) => {
   } finally {
     client.release();
   }
-  await logAudit(req.user, 'BET_CANCEL', bet.id, { userId: bet.user_id, stake: bet.stake, wasStatus: bet.status, balanceChange: delta });
+  await logAudit(req.user, 'BET_CANCEL', bet.id, { userId: bet.user_id, stake: bet.stake, wasStatus: bet.status, decidedLegs, balanceChange: delta, reason: reason || null });
+  res.json({ ok: true });
+});
+
+// Super admin: the cancellations done by admins (newest first) and how many he has not read yet.
+router.get('/cancellations', requireSuperAdmin, async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 200, 500);
+  const { rows } = await pool.query(
+    `SELECT c.id, c.bet_id AS "betId", c.ticket_no AS "ticketNo", c.user_id AS "userId", u.username AS "playerUsername", c.owner_admin_id AS "ownerAdminId",
+            c.actor_id AS "actorId", c.actor_username AS "actorUsername", c.actor_role AS "actorRole", c.stake, c.currency, c.status_before AS "statusBefore",
+            c.decided_legs AS "decidedLegs", c.balance_change AS "balanceChange", c.reason, c.created_at AS "createdAt", c.seen_at AS "seenAt"
+       FROM ticket_cancellations c LEFT JOIN users u ON u.id = c.user_id
+      ORDER BY c.created_at DESC LIMIT $1`, [limit]);
+  const { rows: un } = await pool.query('SELECT COUNT(*)::int AS n FROM ticket_cancellations WHERE seen_at IS NULL');
+  res.json({ unread: un[0].n, items: rows.map((r) => ({ ...r, ticketNo: r.ticketNo == null ? null : Number(r.ticketNo), stake: Number(r.stake), balanceChange: Number(r.balanceChange), createdAt: Number(r.createdAt), seenAt: r.seenAt == null ? null : Number(r.seenAt) })) });
+});
+router.get('/cancellations/unread', requireSuperAdmin, async (req, res) => {
+  const { rows } = await pool.query('SELECT COUNT(*)::int AS n FROM ticket_cancellations WHERE seen_at IS NULL');
+  res.json({ unread: rows[0].n });
+});
+router.post('/cancellations/seen', requireSuperAdmin, async (req, res) => {
+  await pool.query('UPDATE ticket_cancellations SET seen_at = $1 WHERE seen_at IS NULL', [Date.now()]);
   res.json({ ok: true });
 });
 

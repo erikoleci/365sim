@@ -620,7 +620,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
                                             )}
                                         </span>
                                         )}
-                                        {canDeleteTickets && bet.status === BetStatus.PENDING && (
+                                        {canDeleteTickets && (viewerIsSuper ? bet.status !== BetStatus.CANCELLED : (bet.status === BetStatus.PENDING && !bet.selections.some((l) => l.status !== BetStatus.PENDING))) && (
                                         <button 
                                             onClick={(e) => { e.stopPropagation(); onCancelBet(bet.id, 'ADMIN'); }}
                                             className="text-red-400 hover:text-white bg-red-900/30 hover:bg-red-900 px-2 py-1 rounded text-xs transition-colors"

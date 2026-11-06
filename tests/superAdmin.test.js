@@ -8,10 +8,11 @@ import jwt from 'jsonwebtoken';
 const mocks = vi.hoisted(() => {
   const users = new Map();
   const bets = new Map();
-  const calls = { transfers: [], queries: [], audit: [], report: [] };
+  const calls = { transfers: [], queries: [], audit: [], report: [], cancellations: [] };
+  const legs = new Map(); // bet id -> leg statuses
   const kv = new Map();
   function reset() {
-    users.clear(); bets.clear(); kv.clear(); calls.transfers = []; calls.queries = []; calls.audit = []; calls.report = [];
+    users.clear(); bets.clear(); kv.clear(); calls.transfers = []; calls.queries = []; calls.audit = []; calls.report = []; calls.cancellations = []; legs.clear();
     users.set('super-1', { id: 'super-1', username: 'boss', role: 'SUPER_ADMIN', is_active: true, balance: 0 });
     users.set('admin-1', { id: 'admin-1', username: 'admin1', role: 'ADMIN', is_active: true, balance: 100 });
     users.set('admin-2', { id: 'admin-2', username: 'admin2', role: 'ADMIN', is_active: true, balance: 100 });
@@ -70,6 +71,10 @@ const mocks = vi.hoisted(() => {
     if (s.startsWith('SELECT * FROM bets WHERE id = $1')) { const b = bets.get(params[0]); return { rows: b ? [b] : [] }; }
     if (s.startsWith("UPDATE bets SET status = 'CANCELLED' WHERE id = $1")) { bets.get(params[0]).status = 'CANCELLED'; return { rows: [] }; }
     if (s.startsWith('DELETE FROM bets WHERE id = $1')) { bets.delete(params[0]); return { rows: [] }; }
+    if (s.startsWith('SELECT status FROM bet_selections WHERE bet_id = $1')) return { rows: (legs.get(params[0]) || []).map((status) => ({ status })) };
+    if (s.startsWith('INSERT INTO ticket_cancellations')) { calls.cancellations.push({ bet_id: params[0], actor_id: params[4], actor_role: params[6], status_before: params[9], decided_legs: params[10], balance_change: params[11], reason: params[12], seen_at: params[14] }); return { rows: [] }; }
+    if (s.startsWith('SELECT COUNT(*)::int AS n FROM ticket_cancellations WHERE seen_at IS NULL')) return { rows: [{ n: calls.cancellations.filter((c) => c.seen_at == null).length }] };
+    if (s.startsWith('UPDATE ticket_cancellations SET seen_at')) { for (const c of calls.cancellations) if (c.seen_at == null) c.seen_at = params[0]; return { rows: [] }; }
     if (s.startsWith('SELECT * FROM users ORDER BY created_at')) return { rows: [...users.values()] };
     if (s.startsWith('SELECT COUNT(*)::int AS count FROM users')) return { rows: [{ count: users.size }] };
     if (s.startsWith('INSERT INTO audit_log')) { calls.audit.push({ actor_id: params[0], action: params[2] }); return { rows: [] }; }
@@ -79,7 +84,7 @@ const mocks = vi.hoisted(() => {
   }
   const client = { query, release() {} };
   const pool = { query, connect: async () => client };
-  return { users, bets, kv, calls, reset, pool };
+  return { users, bets, kv, calls, legs, reset, pool };
 });
 
 vi.mock('../server/db.js', () => ({ default: mocks.pool, pool: mocks.pool }));
@@ -165,7 +170,7 @@ describe('every admin owns his own agents and users', () => {
     expect((await call('POST', '/users/user-2/reset-password', ADMIN, { password: 'newpass1' })).status).toBe(404);
     expect((await call('DELETE', '/users/user-2', ADMIN)).status).toBe(404);
     mocks.bets.set('bet-other', { id: 'bet-other', user_id: 'user-2', stake: 5, potential_return: 10, status: 'PENDING' });
-    expect((await call('POST', '/bets/bet-other/cancel', ADMIN)).status).toBe(404);
+    expect((await call('POST', '/bets/bet-other/cancel', ADMIN, { reason: 'proves' })).status).toBe(404);
     expect(mocks.bets.has('bet-other')).toBe(true);
     expect((await call('POST', '/users/user-1/credit', ADMIN, { amount: 5 })).status).toBe(200); // his own
   });
@@ -352,11 +357,11 @@ describe('dashboard figures', () => {
 describe('ticket deletion switch', () => {
   it('on by default: an admin deletes a ticket (stake back), everybody reads the switch', async () => {
     expect((await (await call('GET', '/settings', ADMIN)).json()).ticketDeletionAllowed).toBe(true);
-    const res = await call('POST', '/bets/bet-pending/cancel', ADMIN);
+    const res = await call('POST', '/bets/bet-pending/cancel', ADMIN, { reason: 'gabim i lojtarit' });
     expect(res.status).toBe(200);
     expect(mocks.bets.has('bet-pending')).toBe(false);          // cancelled = refunded and removed from the list
     expect(mocks.users.get('user-1').balance).toBe(20);        // stake of 10 back
-    expect((await call('POST', '/bets/bet-pending/cancel', ADMIN)).status).toBe(404); // gone: cannot be refunded twice
+    expect((await call('POST', '/bets/bet-pending/cancel', ADMIN, { reason: 'gabim i lojtarit' })).status).toBe(404); // gone: cannot be refunded twice
     expect(mocks.users.get('user-1').balance).toBe(20);
   });
   it('only the super admin flips it, and then admins can no longer delete', async () => {
@@ -366,7 +371,7 @@ describe('ticket deletion switch', () => {
     expect(off.status).toBe(200);
     expect((await off.json()).ticketDeletionAllowed).toBe(false);
     expect((await (await call('GET', '/settings', ADMIN)).json()).ticketDeletionAllowed).toBe(false);
-    const blocked = await call('POST', '/bets/bet-pending/cancel', ADMIN);
+    const blocked = await call('POST', '/bets/bet-pending/cancel', ADMIN, { reason: 'gabim i lojtarit' });
     expect(blocked.status).toBe(403);
     expect((await blocked.json()).code).toBe('TICKET_DELETE_DISABLED');
     expect(mocks.bets.has('bet-pending')).toBe(true);
@@ -375,7 +380,7 @@ describe('ticket deletion switch', () => {
     expect((await call('DELETE', '/bets/bet-void', SUPER)).status).toBe(200);
     // and turning it back on gives the admins their button again
     await call('PUT', '/settings/ticket-deletion', SUPER, { allowed: true });
-    expect((await call('POST', '/bets/bet-pending/cancel', ADMIN)).status).toBe(200);
+    expect((await call('POST', '/bets/bet-pending/cancel', ADMIN, { reason: 'gabim i lojtarit' })).status).toBe(200);
   });
   it('the switch is logged; the log itself is the super admin\'s alone (an admin gets 403)', async () => {
     await call('PUT', '/settings/ticket-deletion', SUPER, { allowed: false });
@@ -384,16 +389,51 @@ describe('ticket deletion switch', () => {
     const forSuper = (await (await call('GET', '/audit-log', SUPER)).json()).entries;
     expect(forSuper.some((e) => e.action === 'SETTING_TICKET_DELETION')).toBe(true);
   });
-  it('only an open ticket can be cancelled: won, lost, refunded or already cancelled ones are final', async () => {
+  it('an admin cannot cancel a ticket that has a result: won, lost, void or with a decided leg is the super admin\'s alone', async () => {
     mocks.bets.set('bet-lost', { id: 'bet-lost', user_id: 'user-1', stake: 10, potential_return: 30, status: 'LOST' });
     for (const id of ['bet-won', 'bet-lost', 'bet-void']) {
-      const res = await call('POST', `/bets/${id}/cancel`, ADMIN);
-      expect(res.status).toBe(400);
-      expect((await res.json()).code).toBe('BET_NOT_PENDING');
-      expect(mocks.bets.get(id).status).not.toBe('CANCELLED');
+      const res = await call('POST', `/bets/${id}/cancel`, ADMIN, { reason: 'duhet anuluar' });
+      expect(res.status).toBe(403);
+      expect((await res.json()).code).toBe('ONLY_SUPER_ADMIN');
+      expect(mocks.bets.has(id)).toBe(true);
     }
+    // an open accumulator where one match already finished (leg won) is locked too
+    mocks.legs.set('bet-pending', ['WON', 'PENDING']);
+    const res = await call('POST', '/bets/bet-pending/cancel', ADMIN, { reason: 'duhet anuluar' });
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('ONLY_SUPER_ADMIN');
+    expect(mocks.bets.has('bet-pending')).toBe(true);
     expect(mocks.users.get('user-1').balance).toBe(10);        // nothing moved
-    expect((await call('POST', '/bets/nope/cancel', ADMIN)).status).toBe(404);
+    expect(mocks.calls.cancellations).toHaveLength(0);
+    expect((await call('POST', '/bets/nope/cancel', ADMIN, { reason: 'x y z' })).status).toBe(404);
+  });
+  it('the super admin can cancel a ticket that already has a result', async () => {
+    mocks.legs.set('bet-won', ['WON']);
+    const res = await call('POST', '/bets/bet-won/cancel', SUPER, { reason: 'gabim i rezultatit' });
+    expect(res.status).toBe(200);
+    expect(mocks.bets.has('bet-won')).toBe(false);
+    expect(mocks.calls.cancellations[0]).toMatchObject({ bet_id: 'bet-won', actor_role: 'SUPER_ADMIN', status_before: 'WON', decided_legs: 1 });
+    expect(mocks.calls.cancellations[0].seen_at).not.toBeNull(); // his own cancellation is not a notification for himself
+  });
+  it('an admin must write a reason; the cancellation is recorded unread for the super admin', async () => {
+    for (const body of [undefined, { reason: '' }, { reason: '  ab ' }]) {
+      const res = await call('POST', '/bets/bet-pending/cancel', ADMIN, body);
+      expect(res.status).toBe(400);
+      expect((await res.json()).code).toBe('REASON_REQUIRED');
+    }
+    expect(mocks.bets.has('bet-pending')).toBe(true);
+    expect((await call('POST', '/bets/bet-pending/cancel', ADMIN, { reason: 'Lojtari e vendosi gabim' })).status).toBe(200);
+    expect(mocks.calls.cancellations).toHaveLength(1);
+    expect(mocks.calls.cancellations[0]).toMatchObject({ bet_id: 'bet-pending', actor_id: 'admin-1', reason: 'Lojtari e vendosi gabim', seen_at: null });
+    expect(mocks.calls.audit.some((a) => a.action === 'BET_CANCEL')).toBe(true);
+  });
+  it('the notification: only the super admin reads the unread count and marks them read', async () => {
+    await call('POST', '/bets/bet-pending/cancel', ADMIN, { reason: 'arsye e vlefshme' });
+    expect((await call('GET', '/cancellations/unread', ADMIN)).status).toBe(403);
+    expect((await call('POST', '/cancellations/seen', ADMIN)).status).toBe(403);
+    expect((await (await call('GET', '/cancellations/unread', SUPER)).json()).unread).toBe(1);
+    expect((await call('POST', '/cancellations/seen', SUPER)).status).toBe(200);
+    expect((await (await call('GET', '/cancellations/unread', SUPER)).json()).unread).toBe(0);
   });
 });
 

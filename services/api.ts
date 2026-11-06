@@ -427,9 +427,17 @@ export async function adminSetLeg(legId: number, status: 'WON' | 'LOST') {
   return request<{ ok: true }>(`/admin/bet-selections/${legId}`, { method: 'PATCH', body: JSON.stringify({ status }) });
 }
 
-export async function adminCancelBet(betId: string) {
-  return request<{ ok: true }>(`/admin/bets/${betId}/cancel`, { method: 'POST' });
+export async function adminCancelBet(betId: string, reason?: string) {
+  return request<{ ok: true }>(`/admin/bets/${betId}/cancel`, { method: 'POST', body: JSON.stringify({ reason: reason ?? '' }) });
 }
+export interface TicketCancellation {
+  id: number; betId: string; ticketNo: number | null; userId: string; playerUsername: string | null; ownerAdminId: string | null;
+  actorId: string; actorUsername: string | null; actorRole: string | null; stake: number; currency: 'ALL' | 'EUR'; statusBefore: string | null;
+  decidedLegs: number; balanceChange: number; reason: string | null; createdAt: number; seenAt: number | null;
+}
+export async function adminFetchCancellations() { return request<{ unread: number; items: TicketCancellation[] }>('/admin/cancellations'); }
+export async function adminCancellationsUnread() { return request<{ unread: number }>('/admin/cancellations/unread'); }
+export async function adminMarkCancellationsSeen() { return request<{ ok: true }>('/admin/cancellations/seen', { method: 'POST' }); }
 
 export async function adminCreateAdmin(a: { name: string; username: string; password: string; balance: number }) {
   return request<{ admin: User }>('/admin/admins', { method: 'POST', body: JSON.stringify(a) });

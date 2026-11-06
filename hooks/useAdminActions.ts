@@ -160,17 +160,22 @@ export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reload
 
   const cancelBet = useCallback(async (betId: string, origin: 'USER' | 'ADMIN') => {
     if (origin === 'ADMIN') {
+      const isSuper = currentUser?.role === 'SUPER_ADMIN';
+      // An admin must say why (the super admin is told); for the super admin the reason is optional.
+      const reason = window.prompt(isSuper ? t('Arsyeja e anulimit (opsionale):') : t('Shkruaj arsyen e anulimit (e detyrueshme). Super admini do ta shohë:'));
+      if (reason === null) return;
+      if (!isSuper && reason.trim().length < 3) { alert(t('Arsyeja është e detyrueshme për anulimin e biletës.')); return; }
       if (!window.confirm(t('Ta anuloj këtë biletë dhe t\'i kthej paratë? Bileta hiqet nga lista.'))) return;
       try {
         // Cancel = refund + the ticket disappears from the list
-        await api.adminCancelBet(betId);
+        await api.adminCancelBet(betId, reason.trim());
         await loadAdminData();
       } catch (e: any) {
         alert(e.message || 'Failed to cancel bet');
       }
       return;
     }
-  }, [loadAdminData, t]);
+  }, [loadAdminData, t, currentUser?.role]);
 
   const settleMatch = useCallback(async (match: Match, homeScore: number, awayScore: number) => {
     if (simulatingMatchId) return;
