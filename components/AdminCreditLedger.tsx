@@ -2,9 +2,20 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import * as api from '../services/api';
 import { useI18n, getLocale } from '../i18n';
 
-const CACHE_KEY = 'cachedCreditLedger';
+const CACHE_KEY = 'cachedCreditLedger2'; // 2: the shape gained settled / owed / testGiven (an older cache would crash the page)
+const dual = (v: any): api.Dual => ({ ALL: Number(v?.ALL) || 0, EUR: Number(v?.EUR) || 0 });
+// Whatever is in the cache (or the server answers) is filled up with safe defaults before it is drawn.
+const normalize = (l: any): api.CreditLedger | null => {
+  if (!l || !Array.isArray(l.admins) || !l.totals) return null;
+  return {
+    ...l,
+    admins: l.admins.map((a: any) => ({ ...a, given: dual(a.given), takenBack: dual(a.takenBack), net: dual(a.net), cash: dual(a.cash), used: dual(a.used), remaining: dual(a.remaining), settled: dual(a.settled), owed: dual(a.owed), testGiven: dual(a.testGiven), leftPct: a.leftPct || { ALL: null, EUR: null } })),
+    totals: { given: dual(l.totals.given), takenBack: dual(l.totals.takenBack), net: dual(l.totals.net), cash: dual(l.totals.cash), remaining: dual(l.totals.remaining), settled: dual(l.totals.settled), owed: dual(l.totals.owed), testGiven: dual(l.totals.testGiven) },
+    history: Array.isArray(l.history) ? l.history : [],
+  };
+};
 const readCache = (): api.CreditLedger | null => {
-  try { return JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch { return null; }
+  try { localStorage.removeItem('cachedCreditLedger'); return normalize(JSON.parse(localStorage.getItem(CACHE_KEY) || 'null')); } catch { return null; }
 };
 
 const money = (n: number) => Number(n || 0).toLocaleString(getLocale(), { maximumFractionDigits: 2 });
@@ -33,9 +44,11 @@ const AdminCreditLedger: React.FC = () => {
   const load = useCallback(async () => {
     try {
       const data = await api.adminFetchCreditLedger();
-      setLedger(data);
+      const n = normalize(data);
+      if (!n) throw new Error('bad ledger');
+      setLedger(n);
       setError(false);
-      try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch { /* storage unavailable */ }
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(n)); } catch { /* storage unavailable */ }
     } catch (e) { console.error('Failed to load credit ledger', e); setError(true); }
   }, []);
   useEffect(() => { load(); }, [load]);

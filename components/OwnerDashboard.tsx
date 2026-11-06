@@ -10,6 +10,7 @@ import CommissionReport from './CommissionReport';
 import CasinoAdmin from './CasinoAdmin';
 import AdminCreditLedger from './AdminCreditLedger';
 import MyCredits from './MyCredits';
+import TabBoundary from './TabBoundary';
 import { useI18n, getLocale } from '../i18n';
 
 interface OwnerDashboardProps {
@@ -352,8 +353,8 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
           </div>
         )}
 
-        {tab === 'credit' && isSuper && <AdminCreditLedger />}
-        {tab === 'mycredit' && !isSuper && <MyCredits />}
+        {tab === 'credit' && isSuper && <TabBoundary><AdminCreditLedger /></TabBoundary>}
+        {tab === 'mycredit' && !isSuper && <TabBoundary><MyCredits /></TabBoundary>}
 
         {tab === 'admins' && isSuper && (
           <div className="bg-brand-panel border border-[#444] rounded p-4">
