@@ -32,7 +32,7 @@ const LIMITS = {
 
 const openBetsOf = (bets: Bet[]) => bets.filter((b) => b.status === BetStatus.PENDING).length;
 
-const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClearAll, onPlaceBet, userBalance, userBalanceEur = 0, myBets, hasLiveSelection = false, accountCurrency = 'BOTH' }) => {
+const BetSlip: React.FC<BetSlipProps> = ({ selections, onRemoveSelection, onClearAll, onPlaceBet, userBalance, userBalanceEur = 0, myBets, accountCurrency = 'BOTH' }) => {
   const { t, locale } = useI18n();
   const openBetsCount = openBetsOf(myBets);
   // A ticket is placed in ONE wallet: lek or euro.

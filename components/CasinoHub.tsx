@@ -26,7 +26,7 @@ import VideoPoker from './casino/VideoPoker';
 import Baccarat from './casino/Baccarat';
 import Dice from './casino/Dice';
 import SlotGames from './casino/SlotGames';
-import { WheelCover, KenoCover, ScratchCover, TumbleCover, PlainCover } from './casino/CasinoCovers';
+import { WheelCover, KenoCover, ScratchCover, TumbleCover } from './casino/CasinoCovers';
 import Wheel from './casino/Wheel';
 import GameLoader from './casino/GameLoader';
 import Keno from './casino/Keno';

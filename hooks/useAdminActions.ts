@@ -19,7 +19,7 @@ interface Options {
 export type NewUser = { name: string; username: string; password: string; balance: number; balanceEur?: number; currency?: 'ALL' | 'EUR' | 'BOTH'; role: 'USER' | 'AGENT' | 'ADMIN' };
 
 /** Everything the owner (ADMIN) does: users, credit, tickets, manual settlement. */
-export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reloadMatches, reloadMyBets, applyBalance }: Options) {
+export function useAdminActions({ currentUser, setCurrentUser, panelOpen, reloadMatches }: Options) {
   const { t } = useI18n();
   const [adminUsers, setAdminUsers] = useState<User[]>([]);
   const [adminAllBets, setAdminAllBets] = useState<any[]>([]);

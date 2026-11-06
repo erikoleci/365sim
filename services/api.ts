@@ -455,11 +455,6 @@ export async function adminEditCredit(id: number, patch: { isTest?: boolean; at?
 export interface MyCredits { credits: { id: number; at: number; currency: 'ALL' | 'EUR'; amount: number; isTest: boolean }[]; total: { ALL: number; EUR: number } }
 export async function adminFetchMyCredits() { return request<MyCredits>('/admin/my-credits'); }
 
-/** Super admin: erase any ticket (open, live or settled). adjust=false leaves all balances untouched. */
-export async function adminDeleteBet(betId: string, adjust = true) {
-  return request<{ ok: true; balanceChange: number }>(`/admin/bets/${betId}?adjust=${adjust ? '1' : '0'}`, { method: 'DELETE' });
-}
-
 export interface AdminPendingLeg {
   match_id: string; match_home: string; match_away: string; market_name: string; selection_name: string;
   legs: number; bets: number; start_time: string; match_status: string; result_home: number | null; result_away: number | null;

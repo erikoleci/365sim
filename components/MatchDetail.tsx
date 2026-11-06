@@ -6,10 +6,8 @@ import StadiumPitch from './StadiumPitch';
 import StatRings from './StatRings';
 import { useTickingClock, formatLiveClock } from './MatchCard';
 import { isHalftime, liveMinuteFallback, formatScore, pickClockSource, isLiveClockStale } from '../utils/liveStatus';
-import { LONDON365_EVENT_LABELS, LONDON365_STAT_LABELS } from '../utils/london365Labels';
 import { useI18n } from '../i18n';
 import TeamLogo from './TeamLogo';
-import { firstHalfDividerIndex, regularTimeDividerIndex } from '../utils/eventHalf';
 import MatchTimeline from './MatchTimeline';
 import MomentumChart, { AttackSample } from './MomentumChart';
 import EventBanner, { BannerInfo } from './EventBanner';
@@ -25,24 +23,6 @@ interface MatchDetailProps {
   // Opened from a ticket: live/finished matches show only statistics and events (no betting tabs).
   readOnly?: boolean;
 }
-
-// GOAL/YELLOW_CARD/RED_CARD are OUR internal match_events.type enum (set by
-// applyGameDetails on the backend) — kept as-is for consistency with
-// settlement/other code that reads this column. Only the DISPLAY text here
-// is aligned to the provider's own confirmed wording (LONDON365_EVENT_LABELS,
-// captured verbatim from a real socket payload — see utils/london365Labels.ts)
-// instead of an invented label. The rest of that dictionary (Pushim,
-// Ndeshja_Mbaroi, Sulm, Zoteron_topin, etc.) is included so it renders
-// correctly the moment a real feed for those event types is identified —
-// none of them are emitted by anything today, so they simply never appear.
-const EVENT_LABELS: Record<string, string> = {
-  GOAL: `⚽ ${LONDON365_EVENT_LABELS.Gol}`,
-  YELLOW_CARD: `🟨 ${LONDON365_EVENT_LABELS.Karton_i_verdhe}`,
-  RED_CARD: `🟥 ${LONDON365_EVENT_LABELS.Karton_i_kuq}`,
-  SUBSTITUTION: `🔄 ${LONDON365_EVENT_LABELS.Nderrim}`,
-  CORNER: `🚩 ${LONDON365_EVENT_LABELS.Korne}`,
-  VAR: `📺 ${LONDON365_EVENT_LABELS.VAR}`,
-};
 
 const StatBar: React.FC<{ label: string; home: number | null; away: number | null; suffix?: string }> = ({ label, home, away, suffix = '' }) => {
   const h = home ?? 0;
@@ -225,17 +205,6 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
       socket?.close();
     };
   }, [match.id, hasLiveData, match.status]);
-
-  // Index in the events list where "Fundi i pjesës së parë" goes: before the
-  // first event after minute 45, or at the end when the match has reached the
-  // second half / finished but nothing happened after the break yet. null
-  // while the first half is still being played.
-  const firstHalfDividerAt = useMemo(() => {
-    const minuteNow = Number(liveDetail?.statistics?.minute ?? String(match.currentMinute ?? '').match(/^\d+/)?.[0] ?? NaN);
-    return firstHalfDividerIndex(liveDetail?.events ?? [], { halftime: isHalftime(match), finished: isFinished, minuteNow, liveStatus: match.liveStatus });
-  }, [liveDetail, isFinished, match.currentMinute, match.liveStatus]);
-
-  const regularTimeDividerAt = useMemo(() => regularTimeDividerIndex(liveDetail?.events ?? []), [liveDetail]);
 
   const CATEGORY_LABELS: Record<string, string> = {
     All: t('Të Gjitha'),

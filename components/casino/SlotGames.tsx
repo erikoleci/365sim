@@ -116,7 +116,6 @@ const SlotGame: React.FC<{
 
   const wallet = demo ? demoBal : { ALL: balance, EUR: balanceEur };
   const bal = wallet[currency];
-  const pool = Object.keys(game.symbols);
 
   const switchCurrency = (c: 'ALL' | 'EUR') => { if (busy) return; setCurrency(c); setStake(stakes[c][3]); };
 

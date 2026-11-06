@@ -9,7 +9,6 @@ interface VideoPokerProps {
   onClose: () => void;
 }
 
-const getCardColor = (suit: string) => (suit === '♥' || suit === '♦' ? 'text-red-500' : 'text-black');
 
 const VideoPoker: React.FC<VideoPokerProps> = ({ onSetBalance, userBalance, onClose }) => {
   const [hand, setHand] = useState<PokerCard[]>([]);

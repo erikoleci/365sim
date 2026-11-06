@@ -22,7 +22,7 @@ interface AgentUsersPanelProps {
 // doesn't need to plug into App.tsx's big shared state tree -- lowest-risk
 // way to add Agent management on top of the existing sportsbook shell the
 // Agent already plays through unchanged.
-const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ currentUser, onBalanceChanged }) => {
+const AgentUsersPanel: React.FC<AgentUsersPanelProps> = ({ onBalanceChanged }) => {
   const { t } = useI18n();
   const [tab, setTab] = useState<'users' | 'tickets' | 'monthly' | 'commission'>('users');
   const [me, setMe] = useState<User | null>(null);

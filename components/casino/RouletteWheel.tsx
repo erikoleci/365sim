@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { WHEEL_ORDER, POCKETS, SLOT_DEG, pocketColor, pocketIndex, pocketCenterDeg, polar, landingBallAngle, easeOutCubic } from '../../utils/rouletteWheel';
+import { WHEEL_ORDER, SLOT_DEG, pocketColor, pocketIndex, pocketCenterDeg, polar, landingBallAngle, easeOutCubic } from '../../utils/rouletteWheel';
 
 // A European roulette wheel drawn in SVG. The wheel turns, the ball runs against it on the track,
 // slows down and drops into the pocket of the result. Everything that moves is updated straight on

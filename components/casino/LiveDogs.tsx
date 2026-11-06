@@ -10,7 +10,6 @@ import { raceSfx } from './raceAudio';
 import './casino.css';
 
 interface Props { onSetBalance: (balance: number) => void; userBalance: number; onClose: () => void }
-const ORDINAL = ['1st', '2nd', '3rd', '4th', '5th', '6th'];
 
 // LIVE DOG RACE: one shared race every 45 seconds (30 s to bet). Everybody at the table watches the same race.
 const LiveDogs: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
