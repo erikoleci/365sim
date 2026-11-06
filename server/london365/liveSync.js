@@ -45,18 +45,21 @@ export function hasRealLiveResult(row) {
 //   - frozen clock projected past full time: settle from it (needs score + clock);
 //   - 4 h+ after kickoff with no usable result at all: close it (leaves every LIVE list) WITHOUT settling; its tickets
 //     stay for the second-source / manual settlement and are never decided on an invented score.
-export const GHOST_LIVE_MS = 240 * 60 * 1000;
+export const GHOST_LIVE_MS = 150 * 60 * 1000; // no usable score at all, 2.5 h after kickoff
 export function isOverdueLive(row, now = Date.now()) {
   if (!row) return false;
   const kickoffMs = Date.parse(row.start_time);
   const sinceKickoff = Number.isFinite(kickoffMs) ? now - kickoffMs : 0;
   const lastMinute = parseInt(String(row.live_minute || ''), 10);
   const silentMs = now - Number(row.live_minute_updated_at || 0);
-  const stalledPastEnd = Number.isFinite(lastMinute) && Number(row.live_minute_updated_at) > 0 && silentMs >= 20 * 60000 && lastMinute + silentMs / 60000 >= 92;
-  if ((sinceKickoff >= 180 * 60000 || stalledPastEnd) && hasRealLiveResult(row)) return true;
-  if (sinceKickoff >= 180 * 60000 && canSettleFromLiveScore(row, now)) return true; // score without a clock
+  const stampKnown = Number(row.live_minute_updated_at) > 0;
+  const stalledPastEnd = Number.isFinite(lastMinute) && stampKnown && silentMs >= 20 * 60000 && lastMinute + silentMs / 60000 >= 92;
+  const clockDead = !stampKnown || silentMs >= 10 * 60000; // the clock is not moving any more
+  if (hasRealLiveResult(row) && (stalledPastEnd || sinceKickoff >= 180 * 60000 || (sinceKickoff >= 125 * 60000 && clockDead))) return true;
+  if (sinceKickoff >= 125 * 60000 && canSettleFromLiveScore(row, now)) return true; // score without a clock (trusted from 130 min)
   return sinceKickoff >= GHOST_LIVE_MS; // nothing usable and far too old to be playing
 }
+
 // "missing live data" is logged per game; with ~100 live games and a cycle every
 // 30s that is hundreds of lines a minute and buries everything else. Once per game
 // per 10 minutes is enough to see which games are affected.

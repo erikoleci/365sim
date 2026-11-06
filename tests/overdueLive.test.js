@@ -13,12 +13,12 @@ describe('isOverdueLive: a match the feed still lists as live but that must be o
     expect(isOverdueLive(row({ k: 185, h: 1, a: 0, m: '90', u: NOW - 60000 }), NOW)).toBe(true);
   });
   it('score without any clock (small league / youth game) 3 h after kickoff: overdue, so its tickets close', () => {
-    expect(isOverdueLive(row({ k: 185, h: 2, a: 1 }), NOW)).toBe(true);
-    expect(isOverdueLive(row({ k: 150, h: 2, a: 1 }), NOW)).toBe(false); // too early to trust
+    expect(isOverdueLive(row({ k: 135, h: 2, a: 1 }), NOW)).toBe(true);
+    expect(isOverdueLive(row({ k: 110, h: 2, a: 1 }), NOW)).toBe(false); // too early to trust
   });
   it('no usable result at all: only after 4 h, then it is closed without settling', () => {
-    expect(isOverdueLive(row({ k: 200 }), NOW)).toBe(false);
-    expect(isOverdueLive(row({ k: 245 }), NOW)).toBe(true);
+    expect(isOverdueLive(row({ k: 140 }), NOW)).toBe(false);
+    expect(isOverdueLive(row({ k: 155 }), NOW)).toBe(true);
   });
   it('a frozen clock projected past full time is overdue', () => {
     expect(isOverdueLive(row({ k: 120, h: 0, a: 0, m: '61', u: NOW - 35 * 60000 }), NOW)).toBe(true);

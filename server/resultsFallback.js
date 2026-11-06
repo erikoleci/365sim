@@ -67,7 +67,7 @@ export async function settleFromFallback({ now = Date.now(), fetchImpl = globalT
   let settledMatches = 0;
   for (const r of rows) {
     const start = Date.parse(r.start_time);
-    if (!Number.isFinite(start) || now - start < 150 * 60 * 1000) continue; // not plausibly over yet
+    if (!Number.isFinite(start) || now - start < 100 * 60 * 1000) continue; // ESPN only reports plain Full Time, so this is safe once the match could be over
     const finals = [...await finalsOn(ymd(start), fetchImpl), ...await finalsOn(ymd(start + 86400000), fetchImpl)];
     const f = findFinal(finals, { home: r.match_home, away: r.match_away, start });
     if (!f) continue;
