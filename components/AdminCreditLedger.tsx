@@ -5,12 +5,14 @@ import { useI18n, getLocale } from '../i18n';
 const CACHE_KEY = 'cachedCreditLedger2'; // 2: the shape gained settled / owed / testGiven (an older cache would crash the page)
 const dual = (v: any): api.Dual => ({ ALL: Number(v?.ALL) || 0, EUR: Number(v?.EUR) || 0 });
 // Whatever is in the cache (or the server answers) is filled up with safe defaults before it is drawn.
+const normPeriod = (p: any): api.CreditPeriod => ({ given: dual(p?.given), real: dual(p?.real), test: dual(p?.test), takenBack: dual(p?.takenBack), cash: dual(p?.cash), settled: dual(p?.settled), credits: Number(p?.credits) || 0 });
 const normalize = (l: any): api.CreditLedger | null => {
   if (!l || !Array.isArray(l.admins) || !l.totals) return null;
   return {
     ...l,
-    admins: l.admins.map((a: any) => ({ ...a, given: dual(a.given), takenBack: dual(a.takenBack), net: dual(a.net), cash: dual(a.cash), used: dual(a.used), remaining: dual(a.remaining), settled: dual(a.settled), owed: dual(a.owed), testGiven: dual(a.testGiven), leftPct: a.leftPct || { ALL: null, EUR: null } })),
+    admins: l.admins.map((a: any) => ({ ...a, period: a.period ? normPeriod(a.period) : undefined, given: dual(a.given), takenBack: dual(a.takenBack), net: dual(a.net), cash: dual(a.cash), used: dual(a.used), remaining: dual(a.remaining), settled: dual(a.settled), owed: dual(a.owed), testGiven: dual(a.testGiven), leftPct: a.leftPct || { ALL: null, EUR: null } })),
     totals: { given: dual(l.totals.given), takenBack: dual(l.totals.takenBack), net: dual(l.totals.net), cash: dual(l.totals.cash), remaining: dual(l.totals.remaining), settled: dual(l.totals.settled), owed: dual(l.totals.owed), testGiven: dual(l.totals.testGiven) },
+    periodTotals: l.periodTotals ? normPeriod(l.periodTotals) : undefined,
     history: Array.isArray(l.history) ? l.history : [],
   };
 };
@@ -41,18 +43,34 @@ const AdminCreditLedger: React.FC = () => {
   const [isTest, setIsTest] = useState(false);
   const [when_, setWhen] = useState('');
   const [recordOnly, setRecordOnly] = useState(false);
+  // "From this date to that date": local days (yyyy-mm-dd). Empty = all time.
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const rangeMs = useMemo(() => ({
+    from: from ? new Date(from + 'T00:00:00').getTime() : null,
+    to: to ? new Date(to + 'T23:59:59.999').getTime() : null,
+  }), [from, to]);
+  const hasRange = rangeMs.from != null || rangeMs.to != null;
+  const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const preset = (k: 'today' | '7d' | 'month' | 'all') => {
+    const now = new Date();
+    if (k === 'all') { setFrom(''); setTo(''); return; }
+    if (k === 'today') { setFrom(ymd(now)); setTo(ymd(now)); return; }
+    if (k === '7d') { const d = new Date(now); d.setDate(d.getDate() - 6); setFrom(ymd(d)); setTo(ymd(now)); return; }
+    setFrom(ymd(new Date(now.getFullYear(), now.getMonth(), 1))); setTo(ymd(now));
+  };
   const [pay, setPay] = useState<Record<string, { lek: string; eur: string }>>({});
 
   const load = useCallback(async () => {
     try {
-      const data = await api.adminFetchCreditLedger();
+      const data = await api.adminFetchCreditLedger(undefined, rangeMs);
       const n = normalize(data);
       if (!n) throw new Error('bad ledger');
       setLedger(n);
       setError(false);
-      try { localStorage.setItem(CACHE_KEY, JSON.stringify(n)); } catch { /* storage unavailable */ }
+      if (!rangeMs.from && !rangeMs.to) { try { localStorage.setItem(CACHE_KEY, JSON.stringify(n)); } catch { /* storage unavailable */ } }
     } catch (e) { console.error('Failed to load credit ledger', e); setError(true); }
-  }, []);
+  }, [rangeMs]);
   useEffect(() => { load(); }, [load]);
 
   const submit = async (e: React.FormEvent) => {
@@ -141,6 +159,28 @@ const AdminCreditLedger: React.FC = () => {
 
   return (
     <div className="space-y-5">
+      <div className="bg-brand-panel border border-[#444] rounded p-3 space-y-3">
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="text-[10px] text-brand-textMuted uppercase tracking-wide flex flex-col gap-1">{t('Nga data')}<input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className="input w-40" /></label>
+          <label className="text-[10px] text-brand-textMuted uppercase tracking-wide flex flex-col gap-1">{t('Deri ne daten')}<input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} className="input w-40" /></label>
+          {([['today', t('Sot')], ['7d', t('7 ditet e fundit')], ['month', t('Ky muaj')], ['all', t('Gjithe koha')]] as const).map(([k, label]) => (
+            <button key={k} type="button" onClick={() => preset(k)} className="px-2.5 py-1.5 rounded border border-[#555] text-xs text-brand-yellow hover:bg-white/5">{label}</button>
+          ))}
+        </div>
+        {hasRange && ledger.periodTotals && (
+          <div>
+            <div className="text-xs text-brand-textMuted mb-2">{t('Kredia e dhene ne periudhen e zgjedhur')}: <b className="text-white">{from ? new Date(from + 'T00:00:00').toLocaleDateString(getLocale()) : '…'} – {to ? new Date(to + 'T00:00:00').toLocaleDateString(getLocale()) : '…'}</b></div>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className="rounded border border-[#444] p-2"><div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">{t('Kredi reale')}</div><Pair v={ledger.periodTotals.real} className="text-green-400" /></div>
+              <div className="rounded border border-[#444] p-2"><div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">{t('Test / falas (nuk llogaritet)')}</div><Pair v={ledger.periodTotals.test} className="text-gray-300" /></div>
+              <div className="rounded border border-[#444] p-2"><div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">{t('Para dore ({rate}%)', { rate: String(feePct) })}</div><Pair v={ledger.periodTotals.cash} className="text-green-400" /></div>
+              <div className="rounded border border-[#444] p-2"><div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">{t('Marre mbrapsht')}</div><Pair v={ledger.periodTotals.takenBack} /></div>
+              <div className="rounded border border-[#444] p-2"><div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">{t('Shlyer')}</div><Pair v={ledger.periodTotals.settled} /></div>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="bg-brand-panel border border-[#444] rounded p-3"><div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">{t('Kredi e dhene')}</div><Pair v={ledger.totals.given} /></div>
         <div className="bg-brand-panel border border-[#444] rounded p-3"><div className="text-[10px] uppercase tracking-wider text-brand-textMuted mb-1">{t('Marre mbrapsht')}</div><Pair v={ledger.totals.takenBack} /></div>
@@ -189,6 +229,13 @@ const AdminCreditLedger: React.FC = () => {
                 <div><div className="text-[10px] uppercase text-brand-textMuted">{t('Perdorur')}</div><Pair v={a.used} /></div>
                 <div><div className="text-[10px] uppercase text-brand-textMuted">{t('Para dore')}</div><Pair v={a.cash} className="text-green-400" /></div>
               </div>
+              {hasRange && a.period && (
+                <div className="text-[11px] mt-2 pt-2 border-t border-[#333] text-brand-textMuted">
+                  {t('Ne periudhe')}: <b className="text-green-400">{money(a.period.real.ALL)} L · €{money(a.period.real.EUR)}</b>
+                  {(a.period.test.ALL > 0 || a.period.test.EUR > 0) && <> · {t('Test')}: {money(a.period.test.ALL)} L · €{money(a.period.test.EUR)}</>}
+                  {' '}· {t('Para dore')}: {money(a.period.cash.ALL)} L · €{money(a.period.cash.EUR)}
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-2 text-xs mt-2 pt-2 border-t border-[#333]">
                 <div><div className="text-[10px] uppercase text-brand-textMuted">{t('Shlyer')}</div><Pair v={a.settled} /></div>
                 <div><div className="text-[10px] uppercase text-brand-textMuted">{t('Per t\'u shlyer')}</div><Pair v={a.owed} className={a.owed.ALL > 0 || a.owed.EUR > 0 ? 'text-brand-yellow' : 'text-white'} /></div>

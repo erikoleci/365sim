@@ -72,3 +72,32 @@ describe('credit ledger', () => {
     expect(l.history[0]).toMatchObject({ kind: 'SETTLEMENT', settlementId: 7, currency: 'EUR', amount: 100 });
   });
 });
+
+describe('credit book: from date to date', () => {
+  const d = (x) => Date.parse(x);
+  const admins = [{ id: 'a', name: 'London', username: 'london', balance: 0, balance_eur: 0 }];
+  const rows = [
+    { id: 1, created_at: d('2026-10-29T20:50:00Z'), amount: 1000, currency: 'EUR', type: 'SUPER_TO_ADMIN', admin_id: 'a', fee_rate: 0.1 },
+    { id: 2, created_at: d('2026-10-29T20:50:00Z'), amount: 100000, currency: 'ALL', type: 'SUPER_TO_ADMIN', admin_id: 'a', fee_rate: 0.1 },
+    { id: 3, created_at: d('2026-11-03T17:49:00Z'), amount: 2000, currency: 'EUR', type: 'SUPER_TO_ADMIN', admin_id: 'a', fee_rate: 0.1 },
+    { id: 4, created_at: d('2026-11-03T09:38:00Z'), amount: 1000, currency: 'EUR', type: 'SUPER_TO_ADMIN', admin_id: 'a', is_test: true },
+  ];
+  it('counts only the credit inside the range, test separate and at 0%', () => {
+    const r = buildCreditLedger({ admins, rows, range: { from: d('2026-11-03T00:00:00Z'), to: d('2026-11-03T23:59:59Z') } });
+    expect(r.periodTotals.real).toEqual({ ALL: 0, EUR: 2000 });
+    expect(r.periodTotals.test).toEqual({ ALL: 0, EUR: 1000 });
+    expect(r.periodTotals.cash).toEqual({ ALL: 0, EUR: 200 });
+    expect(r.admins[0].period.given).toEqual({ ALL: 0, EUR: 3000 });
+    expect(r.history.map((h) => h.id).sort()).toEqual([3, 4]);
+    // the all-time numbers do not move
+    expect(r.totals.given).toEqual({ ALL: 100000, EUR: 4000 });
+  });
+  it('an open-ended range works and no range means everything', () => {
+    const since = buildCreditLedger({ admins, rows, range: { from: d('2026-11-01T00:00:00Z'), to: null } });
+    expect(since.periodTotals.real.EUR).toBe(2000);
+    const all = buildCreditLedger({ admins, rows });
+    expect(all.range).toBeNull();
+    expect(all.periodTotals.real).toEqual({ ALL: 100000, EUR: 3000 });
+    expect(all.periodTotals.cash).toEqual({ ALL: 10000, EUR: 300 });
+  });
+});

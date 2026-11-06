@@ -739,6 +739,7 @@ router.get('/credit-ledger', requireSuperAdmin, async (req, res) => {
     admins, rows, settlements, adminId,
     feeRate: feeRateFromEnv(process.env.OWNER_CREDIT_FEE_RATE),
     limit: Math.min(Number(req.query.limit) || 300, 1000),
+    range: { from: req.query.from === undefined || req.query.from === '' ? null : Number(req.query.from), to: req.query.to === undefined || req.query.to === '' ? null : Number(req.query.to) },
   }));
 });
 

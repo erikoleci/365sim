@@ -16,13 +16,22 @@ const cur = (c) => (c === 'EUR' ? 'EUR' : 'ALL');
  * admins: [{ id, name, username, balance, balance_eur }]
  * rows:   [{ id, created_at, amount, currency, type: 'SUPER_TO_ADMIN' | 'ADMIN_TO_SUPER', admin_id }]
  */
-export function buildCreditLedger({ admins, rows, settlements = [], feeRate = DEFAULT_FEE_RATE, adminId = null, limit = 300 }) {
+export function buildCreditLedger({ admins, rows, settlements = [], feeRate = DEFAULT_FEE_RATE, adminId = null, limit = 300, range = null }) {
+  // range { from, to } (ms, either may be missing): "from this date to that date, how much credit". The balances above stay as they
+  // are (all time); `period` per admin and `periodTotals` count only what happened inside the range, and the history is cut to it.
+  const bound = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v)); // null must stay "no limit" (Number(null) is 0)
+  const from = range ? bound(range.from) : null;
+  const to = range ? bound(range.to) : null;
+  const ranged = from != null || to != null;
+  const inRange = (at) => (from == null || at >= from) && (to == null || at <= to);
+  const newPeriod = () => ({ given: zero(), real: zero(), test: zero(), takenBack: zero(), cash: zero(), settled: zero(), credits: 0 });
   const per = new Map();
   for (const a of admins) {
     per.set(a.id, {
       id: a.id, name: a.name, username: a.username,
       remaining: { ALL: round2(a.balance), EUR: round2(a.balance_eur) },
       given: zero(), takenBack: zero(), cash: zero(), testGiven: zero(), settled: zero(), credits: 0, lastCreditAt: null,
+      period: newPeriod(),
     });
   }
   const history = [];
@@ -45,7 +54,13 @@ export function buildCreditLedger({ admins, rows, settlements = [], feeRate = DE
     } else {
       row.takenBack[c] += amount;
     }
-    if (!adminId || r.admin_id === adminId) {
+    if (inRange(at)) {
+      const pd = row.period;
+      if (credit) {
+        pd.given[c] += amount; (isTest ? pd.test : pd.real)[c] += amount; pd.cash[c] += amount * rate; pd.credits += 1;
+      } else pd.takenBack[c] += amount;
+    }
+    if ((!adminId || r.admin_id === adminId) && (!ranged || inRange(at))) {
       history.push({
         id: r.id, at, adminId: r.admin_id, adminName: row.name, adminUsername: row.username,
         kind: credit ? 'CREDIT' : 'TAKE_BACK', currency: c, amount: round2(amount),
@@ -60,7 +75,8 @@ export function buildCreditLedger({ admins, rows, settlements = [], feeRate = DE
     const c = cur(st.currency);
     const amount = Number(st.amount) || 0;
     row.settled[c] += amount;
-    if (!adminId || st.admin_id === adminId) {
+    if (inRange(Number(st.created_at) || 0)) row.period.settled[c] += amount;
+    if ((!adminId || st.admin_id === adminId) && (!ranged || inRange(Number(st.created_at) || 0))) {
       history.push({
         id: 's' + st.id, settlementId: Number(st.id), at: Number(st.created_at) || 0, adminId: st.admin_id, adminName: row.name,
         adminUsername: row.username, kind: 'SETTLEMENT', currency: c, amount: round2(amount), cash: 0, feeRate: null, isTest: false, note: st.note || null,
@@ -70,8 +86,9 @@ export function buildCreditLedger({ admins, rows, settlements = [], feeRate = DE
   history.sort((a, b) => b.at - a.at || String(b.id).localeCompare(String(a.id)));
 
   const totals = { given: zero(), takenBack: zero(), net: zero(), cash: zero(), remaining: zero(), settled: zero(), owed: zero(), testGiven: zero() };
+  const periodTotals = { given: zero(), real: zero(), test: zero(), takenBack: zero(), cash: zero(), settled: zero() };
   const list = [...per.values()].map((a) => {
-    const out = { ...a, net: zero(), cash: zero(), used: zero(), settled: zero(), owed: zero(), testGiven: zero(), leftPct: { ALL: null, EUR: null } };
+    const out = { ...a, period: { ...a.period, given: zero(), real: zero(), test: zero(), takenBack: zero(), cash: zero(), settled: zero() }, net: zero(), cash: zero(), used: zero(), settled: zero(), owed: zero(), testGiven: zero(), leftPct: { ALL: null, EUR: null } };
     for (const c of ['ALL', 'EUR']) {
       out.given[c] = round2(a.given[c]);
       out.takenBack[c] = round2(a.takenBack[c]);
@@ -90,10 +107,15 @@ export function buildCreditLedger({ admins, rows, settlements = [], feeRate = DE
       totals.settled[c] += out.settled[c];
       totals.owed[c] += out.owed[c];
       totals.testGiven[c] += out.testGiven[c];
+      for (const k of ['given', 'real', 'test', 'takenBack', 'cash', 'settled']) {
+        out.period[k][c] = round2(a.period[k][c]);
+        periodTotals[k][c] += out.period[k][c];
+      }
     }
     return out;
   }).sort((a, b) => (b.lastCreditAt || 0) - (a.lastCreditAt || 0) || String(a.name).localeCompare(String(b.name)));
   for (const k of Object.keys(totals)) for (const c of ['ALL', 'EUR']) totals[k][c] = round2(totals[k][c]);
+  for (const k of Object.keys(periodTotals)) for (const c of ['ALL', 'EUR']) periodTotals[k][c] = round2(periodTotals[k][c]);
 
-  return { feeRate, admins: list, totals, history: history.slice(0, limit) };
+  return { feeRate, admins: list, totals, periodTotals, range: ranged ? { from, to } : null, history: history.slice(0, limit) };
 }

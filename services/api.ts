@@ -630,15 +630,23 @@ export async function adminFetchAdminsReport(month?: string, opts: { from?: stri
 }
 // Super admin: the book of credit given to the admins (see server/creditLedger.js).
 export interface Dual { ALL: number; EUR: number }
+export interface CreditPeriod { given: Dual; real: Dual; test: Dual; takenBack: Dual; cash: Dual; settled: Dual; credits?: number }
 export interface CreditLedger {
+  periodTotals?: CreditPeriod; range?: { from: number | null; to: number | null } | null;
   feeRate: number;
-  admins: { id: string; name: string; username: string; remaining: Dual; given: Dual; takenBack: Dual; net: Dual; cash: Dual; used: Dual; leftPct: { ALL: number | null; EUR: number | null }; credits: number; lastCreditAt: number | null; settled: Dual; owed: Dual; testGiven: Dual }[];
+  admins: { id: string; name: string; username: string; remaining: Dual; given: Dual; takenBack: Dual; net: Dual; cash: Dual; used: Dual; leftPct: { ALL: number | null; EUR: number | null }; credits: number; lastCreditAt: number | null; settled: Dual; owed: Dual; testGiven: Dual; period?: CreditPeriod }[];
   totals: { given: Dual; takenBack: Dual; net: Dual; cash: Dual; remaining: Dual; settled: Dual; owed: Dual; testGiven: Dual };
   history: { id: number | string; settlementId?: number; at: number; adminId: string; adminName: string; adminUsername: string; kind: 'CREDIT' | 'TAKE_BACK' | 'SETTLEMENT'; currency: 'ALL' | 'EUR'; amount: number; cash: number; feeRate: number | null; isTest?: boolean; note?: string | null }[];
 }
-export async function adminFetchCreditLedger(adminId?: string) {
-  const q = adminId ? `?adminId=${encodeURIComponent(adminId)}` : '';
-  return request<CreditLedger>(`/admin/credit-ledger${q}`);
+/** range: from / to in ms (either may be left out) = only what happened between those two moments is counted in `period`. */
+export async function adminFetchCreditLedger(adminId?: string, range?: { from?: number | null; to?: number | null }) {
+  const q = new URLSearchParams();
+  if (adminId) q.set('adminId', adminId);
+  if (range?.from != null) q.set('from', String(range.from));
+  if (range?.to != null) q.set('to', String(range.to));
+  if (range && (range.from != null || range.to != null)) q.set('limit', '1000');
+  const qs = q.toString();
+  return request<CreditLedger>(`/admin/credit-ledger${qs ? '?' + qs : ''}`);
 }
 // Super admin: the tickets of ONE admin's agents and users, newest first.
 export async function adminFetchBetsOfAdmin(adminId: string, limit = 100) {
