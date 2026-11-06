@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Dog } from '../../services/api';
 import './casino.css';
 
@@ -18,54 +18,66 @@ export const Greyhound: React.FC<{ color: string; trap: number; coat?: string; r
 
 interface Props { dogs: Dog[]; progress: number[]; running: boolean; finishOrder?: number[] | null; selected?: number | null; onSelect?: (id: number) => void; children?: React.ReactNode }
 
-// The track picture is 2000x617 "design pixels". Dogs run in perspective from the traps (left) to the diagonal finish line
-// (right) and a TV-style camera follows the leader.
-const IW = 2000, IH = 617, ZOOM = 2.5, VIEW_W = IW / ZOOM, VIEW_H = VIEW_W * 0.5625;
-const interp = (pts: number[][], x: number) => {
-  if (x <= pts[0][0]) return pts[0][1];
-  for (let i = 1; i < pts.length; i += 1) if (x <= pts[i][0]) { const [x0, y0] = pts[i - 1], [x1, y1] = pts[i]; return y0 + ((y1 - y0) * (x - x0)) / (x1 - x0); }
-  return pts[pts.length - 1][1];
-};
-const FAR = [[300, 288], [1000, 318], [1550, 345], [1900, 405]];
-const NEAR = [[130, 337], [600, 390], [1000, 437], [1500, 500], [1900, 565]];
-const lane = (trap: number) => 1 - (Math.min(6, Math.max(1, trap)) - 0.5) / 6; // trap 1 = nearest lane
-const headX = (f: number, p: number) => { const xs = 430 - 290 * f, xe = 1900 - 430 * f; return xs + (xe - xs) * Math.min(1, Math.max(0, p)); };
-const place = (trap: number, p: number) => {
-  const f = lane(trap); const hx = headX(f, p);
-  const w = 95 + 100 * ((hx - 130) / 1770); // dogs grow as they run toward the camera
-  const cx = hx - w * 0.38; const fy = interp(FAR, cx); const y = fy + f * (interp(NEAR, cx) - fy);
-  return { x: cx, y, w };
-};
+// TV-style race view: a real track-side camera video (public/casino/dogs/track.mp4, 10 s, tracks to the right) plays while the
+// race runs, the greyhounds are laid over it in lanes. The camera follows the leader: he sits at ~62% of the screen and the others
+// are placed behind / ahead of him by their real progress. Geometry below is in the 1280x720 frame of the video.
+const VW = 1280, VH = 720, SPAN = 3.2, SCALE_NEAR = 0.27;
+const farY = (x: number) => 292 + 0.047 * x;      // far edge of the sand
+const nearY = (x: number) => 320 + 0.244 * x;    // the thick white line (nearest lane marking)
+const LANE_T = [0.1, 0.24, 0.39, 0.55, 0.75, 0.95]; // trap 6 .. trap 1: far -> near
+const smooth = (a: number, b: number, v: number) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 const DogTrack: React.FC<Props> = ({ dogs, progress, running, finishOrder, selected, children }) => {
+  const vid = useRef<HTMLVideoElement>(null);
+  const lead = progress.length ? Math.max(...progress) : 0;
+  const started = lead > 0;
+  const was = useRef(false);
+  useEffect(() => {
+    const v = vid.current; if (!v) return;
+    const active = running && started && lead < 1;
+    if (active && !was.current) { try { v.currentTime = Math.min(8.5, lead * 7); } catch { /* not ready */ } void v.play().catch(() => {}); }
+    if (!active) { v.pause(); if (!started) { try { v.currentTime = 0; } catch { /* not ready */ } } }
+    was.current = active;
+  }, [running, started, lead]);
+
+  const fx = 0.3 + 0.32 * smooth(0, 0.3, lead); // where the leader stands on the screen
+  const place = (trap: number, p: number) => {
+    const k = Math.min(6, Math.max(1, trap)) - 1;
+    const t = LANE_T[5 - k];
+    const x = fx + (p - lead) * SPAN - k * 0.012; // the traps are staggered a little
+    const px = Math.min(1.2, Math.max(-0.3, x)) * VW;
+    const fy = farY(px), ny = nearY(px);
+    const y = fy + (ny - fy) * t;
+    const s = 0.5 + 0.5 * t;
+    return { x, y, s, tilt: Math.atan((0.06 + 0.18 * t)) * 0.55 * (180 / Math.PI) };
+  };
   const pos = dogs.map((d, i) => ({ d, i, ...place(d.trap, progress[i] || 0) }));
-  const lead = pos.length ? Math.max(...pos.map((q) => q.x)) : 400;
-  const avg = pos.length ? pos.reduce((a, q) => a + q.x, 0) / pos.length : 400;
-  const focus = lead * 0.65 + avg * 0.35;
-  const camX = Math.min(IW - VIEW_W, Math.max(0, focus - VIEW_W * 0.62));
-  const midY = pos.length ? pos.reduce((a, q) => a + q.y, 0) / pos.length : 400;
-  const camY = Math.min(IH - VIEW_H, Math.max(0, midY - VIEW_H * 0.55));
-  const anyRun = running && progress.some((v) => v > 0 && v < 1);
+  const xFinish = fx + (1 - lead) * SPAN;
+  const anyRun = running && started && lead < 1;
   return (
     <div className="relative dog-hero rounded-2xl overflow-hidden border-2 border-amber-500/50 shadow-[0_0_30px_rgba(245,158,11,.25)] mb-3" style={{ aspectRatio: '16/9' }}>
-      <div className="absolute top-0 left-0" style={{ width: `${ZOOM * 100}%`, aspectRatio: `${IW}/${IH}`, transform: `translate(${(-camX / IW) * 100}%, ${(-camY / IH) * 100}%)`, transition: running ? 'transform .28s linear' : 'transform 1.4s cubic-bezier(.4,0,.2,1)', willChange: 'transform' }}>
-        <img src="/casino/dogs/track.png" alt="" draggable={false} className="absolute inset-0 w-full h-full select-none" />
-        {[...pos].sort((a, b) => a.y - b.y).map((q) => {
-          const done = (progress[q.i] || 0) >= 1; const mine = selected === q.d.id;
-          return (
-            <div key={q.d.id} className="absolute" style={{ left: `${(q.x / IW) * 100}%`, top: `${(q.y / IH) * 100}%`, width: `${(q.w / IW) * 100}%`, aspectRatio: '1.923', transform: 'translate(-50%,-100%)', zIndex: Math.round(q.y) }}>
-              <Greyhound color={q.d.color} trap={q.d.trap} running={running && !done} delay={q.i * 0.05} />
-              {mine && <div className="absolute left-1/2 -top-[34%] -translate-x-1/2 text-[10px] sm:text-xs font-black px-1.5 py-0.5 rounded bg-yellow-300 text-black whitespace-nowrap shadow">YOUR PICK ▼</div>}
-              {finishOrder && <div className="absolute left-1/2 -top-[34%] -translate-x-1/2 text-[10px] sm:text-xs font-black px-1.5 py-0.5 rounded bg-black/80 text-white whitespace-nowrap">{['1st', '2nd', '3rd', '4th', '5th', '6th'][finishOrder.indexOf(q.d.id)]}</div>}
-            </div>
-          );
-        })}
-      </div>
-      {anyRun && <div className="dog-speed absolute inset-0 pointer-events-none" />}
-      <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: 'inset 0 0 70px 10px rgba(0,0,0,.65)' }} />
+      <video ref={vid} className="absolute inset-0 w-full h-full object-cover" muted playsInline preload="auto" poster="/casino/dogs/track-poster.jpg" aria-hidden>
+        <source src="/casino/dogs/track.webm" type="video/webm" />
+        <source src="/casino/dogs/track.mp4" type="video/mp4" />
+      </video>
+      {xFinish < 1.1 && xFinish > -0.2 && (
+        <div className="absolute pointer-events-none" style={{ left: `${(xFinish - 0.04) * 100}%`, width: '8%', top: `${(farY(xFinish * VW) - 14) / VH * 100}%`, height: `${(nearY(xFinish * VW) - farY(xFinish * VW) + 40) / VH * 100}%`, clipPath: 'polygon(40% 0, 100% 0, 60% 100%, 0 100%)', background: 'repeating-conic-gradient(#fff 0 25%, #111 0 50%) 0 0 / 14px 14px', opacity: 0.92 }} />
+      )}
+      {[...pos].sort((a, b) => a.y - b.y).map((q) => {
+        if (q.x < -0.25 || q.x > 1.15) return null;
+        const done = (progress[q.i] || 0) >= 1; const w = SCALE_NEAR * q.s;
+        return (
+          <div key={q.d.id} className="absolute" style={{ left: `${q.x * 100}%`, top: `${(q.y / VH) * 100}%`, width: `${w * 100}%`, aspectRatio: '1.923', transform: `translate(-50%,-92%) rotate(${q.tilt}deg)`, transformOrigin: '50% 100%', zIndex: Math.round(q.y) }}>
+            <Greyhound color={q.d.color} trap={q.d.trap} running={running && !done} delay={q.i * 0.17} />
+            {selected === q.d.id && <div className="absolute left-1/2 -top-[26%] -translate-x-1/2 text-[10px] sm:text-xs font-black px-1.5 py-0.5 rounded bg-yellow-300 text-black whitespace-nowrap shadow" style={{ transform: `rotate(${-q.tilt}deg)` }}>YOUR PICK ▼</div>}
+            {finishOrder && selected !== q.d.id && <div className="absolute left-1/2 -top-[26%] -translate-x-1/2 text-[10px] sm:text-xs font-black px-1.5 py-0.5 rounded bg-black/80 text-white whitespace-nowrap">{['1st', '2nd', '3rd', '4th', '5th', '6th'][finishOrder.indexOf(q.d.id)]}</div>}
+          </div>
+        );
+      })}
+      <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: 'inset 0 0 70px 10px rgba(0,0,0,.55)' }} />
       {anyRun && (
         <div className="absolute top-1.5 right-1.5 flex flex-col gap-0.5 pointer-events-none">
-          {[...pos].sort((a, b) => b.x - a.x).map((q, r) => (
+          {[...pos].sort((a, b) => (progress[b.i] || 0) - (progress[a.i] || 0)).map((q, r) => (
             <div key={q.d.id} className="flex items-center gap-1 bg-black/60 rounded px-1 text-[10px] font-black text-white"><span className="opacity-70 w-3">{r + 1}</span><span className="w-3.5 h-3.5 rounded-sm flex items-center justify-center" style={{ background: q.d.color, color: q.d.color === '#f1f5f9' || q.d.color === '#eab308' ? '#111' : '#fff' }}>{q.d.trap}</span></div>
           ))}
         </div>
