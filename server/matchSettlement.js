@@ -1,7 +1,7 @@
 import { sameTeam } from './fixtureDedupe.js';
 import pool from './db.js';
 import { sameFixture } from './fixtureDedupe.js';
-import { pickLiveTwin as pickLiveTwinRow } from './liveTwin.js';
+import { pickLiveTwin as pickLiveTwinRow, eventSourceIdFor } from './liveTwin.js';
 import { minuteOf, splitPeriod, marketPeriod, PERIOD_BASE_ALIASES, EXTRA_TIME_STATUSES } from './marketPeriods.js';
 import { extraMarketOutcome } from './extraMarkets.js';
 import { asianHandicapOutcome, asianTotalOutcome } from './asianLines.js';
@@ -1952,6 +1952,29 @@ export async function rebindLegsToLiveRecord({ now = Date.now() } = {}) {
       movedLegs++;
       console.log('[settle] leg ' + leg.id + ' (' + leg.match_home + ' v ' + leg.match_away + ', "' + leg.market_name + '") moved from ' + leg.match_id + ' to the in-play record ' + twin.id);
     }
+  }
+  // Second pass, same rule as the ticket screen (eventSourceIdFor): a leg whose record has live data of its own but NO
+  // logged events while the same fixture's other record holds them (names written differently, a stray minute on the
+  // pre-match record) is moved onto the record that has the events, so it is settled from what the live page shows.
+  try {
+    const { rows: started } = await pool.query(
+      `SELECT DISTINCT m.* FROM bet_selections bs
+         JOIN bets b ON b.id = bs.bet_id AND b.status = 'PENDING'
+         JOIN matches_cache m ON m.id = bs.match_id
+        WHERE bs.status = 'PENDING' AND m.start_time::timestamptz <= to_timestamp($1 / 1000.0)`,
+      [now]
+    );
+    for (const m of started) {
+      const best = await eventSourceIdFor((sql, params) => pool.query(sql, params), m);
+      if (!best || best === m.id) continue;
+      const r = await pool.query(`UPDATE bet_selections SET match_id = $1 WHERE match_id = $2 AND status = 'PENDING'`, [best, m.id]);
+      if (r.rowCount) {
+        movedLegs += r.rowCount;
+        console.log('[settle] ' + r.rowCount + ' open leg(s) of ' + m.home_team + ' v ' + m.away_team + ' moved from ' + m.id + ' to ' + best + ' (the same fixture\'s record that holds the events)');
+      }
+    }
+  } catch (err) {
+    console.error('[settle] event-record rebind failed (retried next sweep):', err.message);
   }
   return { movedLegs };
 }
