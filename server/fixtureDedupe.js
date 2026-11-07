@@ -36,14 +36,16 @@ function openOutcomeCount(m) {
 export function normTeam(s) {
   return String(s || '')
     .toLowerCase()
+    .replace(/ø/g, 'o').replace(/æ/g, 'ae').replace(/ß/g, 'ss').replace(/ł/g, 'l').replace(/đ/g, 'd').replace(/ı/g, 'i') // letters NFD does not decompose
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\bpraha\b/g, 'prague') // the same city, written differently by the two providers
     .replace(/\b(fc|cf|sc|ac|afc|fk|if|bk|sk|cd|sd|ud|club)\b/g, ' ')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 }
 
 // Qualifier tokens that make two similar names DIFFERENT teams.
-const QUALIFIER_RE = /\b(u\s?\d{2}|women|womens|ladies|w|ii|iii|b|reserves?|youth|juniors?|jr)\b/g;
+const QUALIFIER_RE = /\b(u\s?\d{2}|women|womens|ladies|w|ii|iii|b|c|reserves?|youth|juniors?|jr)\b/g;
 export function teamQualifier(name) {
   const norm = normTeam(name).replace(/\bu\s(\d{2})\b/g, 'u$1');
   const found = norm.match(QUALIFIER_RE) || [];
