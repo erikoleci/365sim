@@ -332,9 +332,16 @@ const STATS_STALE_MS = 60000;
 router.get('/:id/live-detail', wrap(async (req, res) => {
   // A ticket points at the pre-match record; the events live under its in-play twin (same fixture, other provider id).
   const own = await queryWithRetry('SELECT * FROM matches_cache WHERE id = $1', [req.params.id]);
-  let sourceId = own.rows[0] ? await liveSourceIdFor(queryWithRetry, own.rows[0]) : req.params.id;
-  // ...and when that record still has no events, take the same-fixture record that does (names written differently).
-  if (own.rows[0] && sourceId === own.rows[0].id) sourceId = await eventSourceIdFor(queryWithRetry, own.rows[0]);
+  let sourceId = req.params.id;
+  if (own.rows[0]) {
+    // Both lookups at once (they used to run one after the other: two more database round trips before the page's
+    // data was even asked for). The in-play twin wins; otherwise the same-fixture record that holds the events.
+    const [twinId, eventId] = await Promise.all([
+      liveSourceIdFor(queryWithRetry, own.rows[0]),
+      eventSourceIdFor(queryWithRetry, own.rows[0]),
+    ]);
+    sourceId = twinId && twinId !== own.rows[0].id ? twinId : (eventId || own.rows[0].id);
+  }
   req.params.id = sourceId || req.params.id;
   const [{ rows: statsRows }, { rows: eventRows }, { rows: cacheRows }] = await Promise.all([
     queryWithRetry('SELECT * FROM live_statistics WHERE match_id = $1', [req.params.id]),

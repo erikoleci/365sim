@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import MatchupLabel from './MatchupLabel';
 import LegWhen from './LegWhen';
 import { useI18n } from '../i18n';
-import { fetchMatchLiveDetail, fetchMatchById, MatchEvent } from '../services/api';
+import { fetchMatchLiveDetail, fetchMatchById, prefetchLiveDetail, MatchEvent } from '../services/api';
 import { isHalftime } from '../utils/liveStatus';
 import { MatchStatus } from '../types';
 import MatchTimeline, { TimelineState } from './MatchTimeline';
@@ -74,20 +74,31 @@ const LegTimeline: React.FC<{ matchId: string; home: string; away: string; live:
   useEffect(() => {
     if (!open) return;
     let stop = false;
+    // The events are shown as soon as THEY arrive; the match row (score, half-time / full-time markers) is a second
+    // request that used to hold the whole timeline back until it was also done.
     const load = async () => {
+      const matchP = fetchMatchById(matchId).catch(() => null);
       try {
-        const [d, m] = await Promise.all([fetchMatchLiveDetail(matchId), fetchMatchById(matchId).catch(() => null)]);
+        const d = await fetchMatchLiveDetail(matchId);
         if (stop) return;
         setEvents(d.events || []);
-        setState({
-          halftime: m ? isHalftime(m) : false,
-          finished: m ? m.status === MatchStatus.FINISHED : false,
-          liveStatus: m?.liveStatus,
-          minuteNow: Number(d.statistics?.minute ?? String(m?.currentMinute ?? '').match(/^\d+/)?.[0] ?? NaN),
-          homeScore: m?.liveHomeScore ?? d.statistics?.home_score ?? null,
-          awayScore: m?.liveAwayScore ?? d.statistics?.away_score ?? null,
-        });
+        setState((prev) => ({
+          ...prev,
+          minuteNow: Number(d.statistics?.minute ?? NaN),
+          homeScore: prev.homeScore ?? d.statistics?.home_score ?? null,
+          awayScore: prev.awayScore ?? d.statistics?.away_score ?? null,
+        }));
         setFailed(false);
+        const m = await matchP;
+        if (stop || !m) return;
+        setState({
+          halftime: isHalftime(m),
+          finished: m.status === MatchStatus.FINISHED,
+          liveStatus: m.liveStatus,
+          minuteNow: Number(d.statistics?.minute ?? String(m.currentMinute ?? '').match(/^\d+/)?.[0] ?? NaN),
+          homeScore: m.liveHomeScore ?? d.statistics?.home_score ?? null,
+          awayScore: m.liveAwayScore ?? d.statistics?.away_score ?? null,
+        });
       } catch { if (!stop) setFailed(true); }
     };
     load();
@@ -119,6 +130,8 @@ const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => vo
   const { t, locale } = useI18n();
   const [matchOpen, setMatchOpen] = useState<string | null>(null);
   useEffect(() => { setMatchOpen(null); }, [ticket]);
+  // Start downloading every leg's events the moment the ticket opens, so the timeline is already there when it is tapped.
+  useEffect(() => { if (ticket) for (const leg of ticket.legs) if (leg.matchId) prefetchLiveDetail(leg.matchId); }, [ticket]);
   useEffect(() => {
     if (!ticket) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !matchOpen) onClose(); };
