@@ -320,7 +320,12 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
             </div>
             <div className="text-xl sm:text-2xl text-brand-yellow font-mono font-bold whitespace-nowrap px-1">
               {isFinished
-                ? `${match.score?.home} - ${match.score?.away}`
+                ? (match.score && match.score.home != null && match.score.away != null
+                    ? `${match.score.home} - ${match.score.away}`
+                    // closed without a stored final score: the last live score if there was one, never "undefined - undefined"
+                    : match.liveHomeScore != null && match.liveAwayScore != null
+                      ? `${formatScore(match.liveHomeScore)} - ${formatScore(match.liveAwayScore)}`
+                      : '– : –')
                 : isLive
                   ? `${formatScore(match.liveHomeScore)} - ${formatScore(match.liveAwayScore)}`
                   : 'v'}
@@ -337,7 +342,9 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
           )}
           {isFinished && (
             <div className="mt-2 text-xs text-brand-accent">
-              FT | HT: {match.score?.htHome}-{match.score?.htAway} | Corners: {match.score?.homeCorners}-{match.score?.awayCorners}
+              FT
+              {match.score?.htHome != null && match.score?.htAway != null ? ` | HT: ${match.score.htHome}-${match.score.htAway}` : ''}
+              {match.score?.homeCorners != null && match.score?.awayCorners != null ? ` | Corners: ${match.score.homeCorners}-${match.score.awayCorners}` : ''}
             </div>
           )}
         </div>
