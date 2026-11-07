@@ -2,6 +2,8 @@ import { sameTeam } from './fixtureDedupe.js';
 import pool from './db.js';
 import { sameFixture } from './fixtureDedupe.js';
 import { pickLiveTwin as pickLiveTwinRow, eventSourceIdFor } from './liveTwin.js';
+import { looseSameClub, strictSameFixture, LINK_START_TOLERANCE_MS } from './fixtureLink.js';
+export { strictSameFixture, LINK_START_TOLERANCE_MS };
 import { minuteOf, splitPeriod, marketPeriod, PERIOD_BASE_ALIASES, EXTRA_TIME_STATUSES } from './marketPeriods.js';
 import { extraMarketOutcome } from './extraMarkets.js';
 import { asianHandicapOutcome, asianTotalOutcome } from './asianLines.js';
@@ -1540,22 +1542,12 @@ export async function settleFirstHalfLegs() {
 // the normal sweep (with that twin's score and event log) settles them like any other leg.
 export const TWIN_KICKOFF_WINDOW_MS = 3 * 3600 * 1000;
 const TWIN_WAIT_AFTER_KICKOFF_MS = 130 * 60 * 1000;
+const TWIN_FINAL_MIN_AFTER_KICKOFF_MS = 100 * 60 * 1000;
 
 
 // Looser club-name test used ONLY when two records kick off at (almost) the same minute: the feed spells
 // one club several ways ("Stade Brest 29" / "Brest", "CA Osasuna" / "Osasuna", "RC Deportivo de A Coruna" /
 // "Deportivo La Coruna"). Drops generic words and digits, then one name must contain the other's key words.
-const GENERIC_CLUB_WORDS = new Set(['fc', 'cf', 'ca', 'rc', 'sc', 'ac', 'as', 'cd', 'sd', 'ud', 'afc', 'sk', 'fk', 'stade', 'de', 'la', 'le', 'el', 'a', 'da', 'do', 'of', 'club', 'calcio', 'ad', 'deportivo', 'deportes']);
-function clubKeyWords(name) {
-  return String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-    .replace(/[^a-z\s]/g, ' ').split(/\s+/).filter((t) => t.length > 1 && !GENERIC_CLUB_WORDS.has(t));
-}
-function looseSameClub(a, b) {
-  const ka = clubKeyWords(a), kb = clubKeyWords(b);
-  if (!ka.length || !kb.length) return false;
-  const [s, l] = ka.length <= kb.length ? [ka, kb] : [kb, ka];
-  return s.every((t) => l.some((u) => u === t || (t.length >= 4 && u.length >= 4 && (u.startsWith(t) || t.startsWith(u)))));
-}
 function looseSameFixture(wanted, c) {
   return (looseSameClub(wanted.homeTeam, c.homeTeam) && looseSameClub(wanted.awayTeam, c.awayTeam))
     || (looseSameClub(wanted.homeTeam, c.awayTeam) && looseSameClub(wanted.awayTeam, c.homeTeam));
@@ -1567,20 +1559,35 @@ export function pickLiveTwin(leg, candidates, now = Date.now()) {
   // Reference time of the fixture: its own kickoff, or (row gone) the moment the ticket was placed.
   const ref = Number.isFinite(own) ? own : placed;
   const window = Number.isFinite(own) ? TWIN_KICKOFF_WINDOW_MS : 36 * 3600 * 1000;
-  if (!Number.isFinite(ref) || now - ref < TWIN_WAIT_AFTER_KICKOFF_MS) return null;
+  if (!Number.isFinite(ref)) return null;
+  // A result the PROVIDER reported as final counts once 100 minutes have passed since kick-off (no match is over sooner);
+  // a score guessed from the live clock still waits the full TWIN_WAIT_AFTER_KICKOFF_MS.
+  const elapsed = now - ref;
+  const early = elapsed < TWIN_WAIT_AFTER_KICKOFF_MS;
+  if (elapsed < TWIN_FINAL_MIN_AFTER_KICKOFF_MS) return null;
   const wanted = { homeTeam: leg.match_home, awayTeam: leg.match_away };
+  const self = { league: leg.league, start_time: leg.start_time, home_team: leg.match_home, away_team: leg.match_away };
+  const strictHits = [];
   let best = null;
   for (const c of candidates) {
     if (c.id === leg.match_id) continue;
-    const ready = c.status === 'FINISHED' && ((c.result_home != null && c.result_away != null) || canSettleFromLiveScore(c, now));
-    if (!ready) continue;
+    const providerFinal = c.status === 'FINISHED' && c.result_home != null && c.result_away != null;
+    const ready = providerFinal || (c.status === 'FINISHED' && canSettleFromLiveScore(c, now));
+    if (!ready || (early && !providerFinal)) continue;
     const start = Date.parse(c.start_time);
     if (!Number.isFinite(start) || Math.abs(start - ref) > window) continue;
     const candTeams = { homeTeam: c.home_team, awayTeam: c.away_team };
     const sameKickoffMinute = Math.abs(start - ref) <= 10 * 60000;
-    if (!sameFixture(wanted, candTeams) && !(sameKickoffMinute && looseSameFixture(wanted, candTeams))) continue;
+    const strict = strictSameFixture(self, c);
+    if (strict) strictHits.push(c.id);
+    if (!strict && !sameFixture(wanted, candTeams) && !(sameKickoffMinute && looseSameFixture(wanted, candTeams))) continue;
     const gap = Math.abs(start - ref);
-    if (!best || gap < best.gap) best = { id: c.id, gap };
+    if (!best || gap < best.gap) best = { id: c.id, gap, strict };
+  }
+  // Two different records both passing the strict rule = we cannot tell which is the twin: link nothing.
+  if (strictHits.length > 1) {
+    console.warn('[link-missing] ' + leg.match_home + ' v ' + leg.match_away + ' (' + leg.match_id + '): ambiguous twins ' + strictHits.join(', ') + ' -- not linked');
+    return null;
   }
   return best ? best.id : null;
 }
@@ -1588,7 +1595,7 @@ export function pickLiveTwin(leg, candidates, now = Date.now()) {
 export async function rebindLegsToLiveTwin({ now = Date.now() } = {}) {
   const { rows: legs } = await pool.query(
     `SELECT bs.id, bs.bet_id, bs.match_id, bs.match_home, bs.match_away, bs.market_name,
-            m.start_time, m.status AS match_status, b.created_at AS bet_created_at
+            m.start_time, m.league, m.status AS match_status, b.created_at AS bet_created_at
        FROM bet_selections bs
        JOIN bets b ON b.id = bs.bet_id AND b.status IN ('PENDING', 'LOST')
        LEFT JOIN matches_cache m ON m.id = bs.match_id
@@ -1596,7 +1603,7 @@ export async function rebindLegsToLiveTwin({ now = Date.now() } = {}) {
   );
   if (legs.length === 0) return { reboundLegs: 0 };
   const { rows: candidates } = await pool.query(
-    `SELECT id, home_team, away_team, start_time, status, result_home, result_away,
+    `SELECT id, home_team, away_team, start_time, league, status, result_home, result_away,
             live_home_score, live_away_score, live_minute
        FROM matches_cache WHERE status = 'FINISHED'`
   );
@@ -1925,7 +1932,7 @@ export const isStatsMarketName = (name) => STATS_MARKET.test(norm(name));
 export async function rebindLegsToLiveRecord({ now = Date.now() } = {}) {
   const { rows: legs } = await pool.query(
     `SELECT bs.id, bs.match_id, bs.match_home, bs.match_away, bs.market_name,
-            m.home_team, m.away_team, m.start_time
+            m.home_team, m.away_team, m.start_time, m.league
        FROM bet_selections bs
        JOIN bets b ON b.id = bs.bet_id AND b.status = 'PENDING'
        JOIN matches_cache m ON m.id = bs.match_id
@@ -1944,7 +1951,7 @@ export async function rebindLegsToLiveRecord({ now = Date.now() } = {}) {
   let movedLegs = 0;
   const byMatch = new Map();
   for (const leg of legs) {
-    if (!byMatch.has(leg.match_id)) byMatch.set(leg.match_id, pickLiveTwinRow({ id: leg.match_id, home_team: leg.home_team, away_team: leg.away_team, start_time: leg.start_time }, live));
+    if (!byMatch.has(leg.match_id)) byMatch.set(leg.match_id, pickLiveTwinRow({ id: leg.match_id, home_team: leg.home_team, away_team: leg.away_team, start_time: leg.start_time, league: leg.league }, live));
     const twin = byMatch.get(leg.match_id);
     if (!twin) continue;
     const r = await pool.query(`UPDATE bet_selections SET match_id = $1 WHERE id = $2 AND status = 'PENDING' AND match_id = $3`, [twin.id, leg.id, leg.match_id]);

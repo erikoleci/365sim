@@ -3,6 +3,7 @@
 // pre-match record would show "~85'" with no score and an empty timeline although the match is being played.
 // This finds the record that carries the live data so the ticket can show it.
 import { sameFixture, sameTeam } from './fixtureDedupe.js';
+import { strictSameFixture } from './fixtureLink.js';
 
 const WINDOW_MS = 3 * 60 * 60 * 1000;
 // Same kick-off (a team never plays two matches at once) and ONE side is the same club is enough to call two records
@@ -23,7 +24,7 @@ export function pickLiveTwin(row, candidates) {
   const same = (candidates || []).filter((c) => c && c.id !== row.id && hasLiveData(c)
     && Math.abs(Date.parse(c.start_time) - t) <= WINDOW_MS
     && (sameFixture({ homeTeam: row.home_team, awayTeam: row.away_team }, { homeTeam: c.home_team, awayTeam: c.away_team })
-      || sameKickoffFixture(row, c, t)));
+      || sameKickoffFixture(row, c, t) || strictSameFixture(row, c)));
   if (!same.length) return null;
   same.sort((x, y) => Number(y.live_minute_updated_at || 0) - Number(x.live_minute_updated_at || 0));
   return same[0];
@@ -94,12 +95,12 @@ export async function eventSourceIdFor(query, row, { ttlMs = TTL_MS } = {}) {
     const t = Date.parse(row.start_time);
     if (!Number.isNaN(t)) {
       const { rows } = await query(
-        `SELECT id, home_team, away_team, start_time FROM matches_cache WHERE id <> $1
+        `SELECT id, home_team, away_team, start_time, league FROM matches_cache WHERE id <> $1
             AND start_time::timestamptz BETWEEN $2::timestamptz AND $3::timestamptz`,
         [row.id, new Date(t - WINDOW_MS).toISOString(), new Date(t + WINDOW_MS).toISOString()]
       );
       const same = (rows || []).filter((c) => sameFixture({ homeTeam: row.home_team, awayTeam: row.away_team }, { homeTeam: c.home_team, awayTeam: c.away_team })
-        || sameKickoffFixture(row, c, t));
+        || sameKickoffFixture(row, c, t) || strictSameFixture(row, c));
       if (same.length) {
         const ids = [row.id, ...same.map((c) => c.id)];
         const { rows: cnt } = await query('SELECT match_id, COUNT(*)::int AS n FROM match_events WHERE match_id = ANY($1::text[]) GROUP BY match_id', [ids]);

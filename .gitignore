@@ -33,3 +33,4 @@ pnpm-workspace.yaml
 local-data/
 diagnose-pending.txt
 diagnose-events.txt
+verify-links.txt
