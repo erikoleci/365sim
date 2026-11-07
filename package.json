@@ -13,6 +13,7 @@
     "super-admin": "node server/createSuperAdminCli.js",
     "db:check": "node server/checkDb.js",
     "diagnose:pending": "node server/diagnosePending.js",
+    "diagnose:events": "node server/diagnoseEvents.js",
     "audit:markets": "node server/marketCoverageCli.js",
     "credit:record": "node server/recordCreditCli.js",
     "credit:classify": "node server/creditClassifyCli.js",
