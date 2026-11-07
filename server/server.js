@@ -41,6 +41,7 @@ import { startFeedStatsLog } from './feedStats.js';
 import { hydrateBetMatchIds } from './oddsHistoryPolicy.js';
 import { settleStuckBets, recoverFinishedWithoutResult, settleNextEventLegs, settleFirstHalfLegs, settleLostLiveLegs, rebindLegsToLiveRecord, rebindLegsToLiveTwin, settleOpenLegsOfFinishedMatches } from './matchSettlement.js';
 import { settleFromFallback } from './resultsFallback.js';
+import { installCpuProfileSignal } from './cpuProfiler.js';
 import { startTicketedFixtureLoop } from './london365/ticketedFixtures.js';
 import { startApiFootballLoop } from './apiFootball.js';
 import { captureHalfTimeFromGoalLog } from './halfTime.js';
@@ -364,6 +365,7 @@ async function start() {
   startLondon365LiveLoop();
   startApiFootballLoop();
   startTicketedFixtureLoop();
+  installCpuProfileSignal();
   startLondon365Socket();
   startLondon365GameDetailsSocket();
   // Fix for the "purge*() orphans a LIVE gamedetails subscription -> fast
