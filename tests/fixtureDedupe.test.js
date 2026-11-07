@@ -136,3 +136,18 @@ describe('abbreviated club names are the same fixture (the duplicate Liverpool-M
     expect(sameFixture({ homeTeam: 'AC Milan', awayTeam: 'Roma' }, { homeTeam: 'Inter Milan', awayTeam: 'Roma' })).toBe(false);
   });
 });
+
+describe('dedupeMatches - the final score travels with the FINISHED status', () => {
+  it('a merged match that took FINISHED from the in-play twin also takes its final score', () => {
+    const cat = base({ id: 'l365-1', homeTeam: 'FC Alverca SAD', awayTeam: 'Casa Pia Lisbon', status: 'UPCOMING', markets: [{ options: opt(40) }] });
+    const twin = base({ id: 'l365-2', homeTeam: 'Alverca', awayTeam: 'Casa Pia', status: 'FINISHED', markets: [{ options: opt(3) }], score: { home: 1, away: 1 }, liveHomeScore: 1, liveAwayScore: 1 });
+    const [m] = dedupeMatches([cat, twin]);
+    expect(m.status).toBe('FINISHED');
+    expect(m.score).toMatchObject({ home: 1, away: 1 });
+  });
+  it('does not invent a score when no record has one', () => {
+    const cat = base({ id: 'l365-1', homeTeam: 'Chelsea', awayTeam: 'Bournemouth', status: 'UPCOMING', markets: [{ options: opt(40) }] });
+    const twin = base({ id: 'l365-2', homeTeam: 'Chelsea', awayTeam: 'Bournemouth', status: 'FINISHED', markets: [{ options: opt(3) }] });
+    expect(dedupeMatches([cat, twin])[0].score).toBeUndefined();
+  });
+});

@@ -198,6 +198,12 @@ export function dedupeMatches(list, onMerge) {
       best.status = c.status;
       best.isLive = c.isLive;
     }
+    // The merged record took FINISHED from the in-play twin; the final score sits on that same twin. Without it the
+    // match read FINISHED with no score ("undefined - undefined" on its page, and it never listed under Rezultate).
+    if (best.status === 'FINISHED' && !(best.score && best.score.home != null && best.score.away != null)) {
+      const withScore = g.candidates.find((c) => c.score && c.score.home != null && c.score.away != null);
+      if (withScore) best.score = withScore.score;
+    }
     if (g.candidates.length > 1) {
       // Live fields: taken together from the single duplicate with the most real
       // provider live data (so home/away score always come from the same record).
