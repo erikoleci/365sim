@@ -14,3 +14,12 @@ describe('team names written differently by the two feeds', () => {
     expect(sameTeam('Lyngby Bøldklub', 'Lyngby Boldklub')).toBe(true);
   });
 });
+
+describe('spelling and word order', () => {
+  it('matches the same club written differently', () => {
+    for (const [a, b] of [['HB Koege', 'HB Køge'], ['AGF Aarhus', 'Aarhus GF'], ['1. FC Koeln', 'FC Köln'], ['Aarhus GF', 'GF Aarhus'], ['Bayern Munich', 'Bayern Munchen']]) expect(sameTeam(a, b), a + ' / ' + b).toBe(true);
+  });
+  it('never merges two different clubs', () => {
+    for (const [a, b] of [['Sheffield Utd', 'Sheffield Wed'], ['Real Madrid', 'Real Betis'], ['Manchester City', 'Manchester United'], ['Inter', 'Inter Miami'], ['AC Milan', 'Inter Milan'], ['Bristol City', 'Bristol Rovers'], ['FK Pribram B', 'FK Pribram'], ['Borussia Dortmund', 'Borussia Monchengladbach'], ['Aarhus GF', 'Aalborg BK']]) expect(sameTeam(a, b), a + ' / ' + b).toBe(false);
+  });
+});

@@ -33,12 +33,15 @@ function openOutcomeCount(m) {
   return n;
 }
 
+// The same city written in the local language by one feed and in English by the other.
+const CITY_ALIAS = { praha: 'prague', muenchen: 'munich', munchen: 'munich', wien: 'vienna', kobenhavn: 'copenhagen', bruxelles: 'brussels', brussel: 'brussels', antwerpen: 'antwerp', lisboa: 'lisbon', cologne: 'koln' };
 export function normTeam(s) {
   return String(s || '')
     .toLowerCase()
     .replace(/ø/g, 'o').replace(/æ/g, 'ae').replace(/ß/g, 'ss').replace(/ł/g, 'l').replace(/đ/g, 'd').replace(/ı/g, 'i') // letters NFD does not decompose
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/\bpraha\b/g, 'prague') // the same city, written differently by the two providers
+    .replace(/^1\.?\s/, '') // "1. FC Koeln" / "FC Koeln"
+    .replace(/\b(praha|muenchen|munchen|wien|kobenhavn|bruxelles|brussel|antwerpen|lisboa|cologne)\b/g, (w) => CITY_ALIAS[w]) // the same city, written differently by the two providers
     .replace(/\b(fc|cf|sc|ac|afc|fk|if|bk|sk|cd|sd|ud|club)\b/g, ' ')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
@@ -113,12 +116,34 @@ function differsByOneUnrelatedWord(a, b) {
   return !(s.length >= 3 && l.startsWith(s));
 }
 
+// Spelling variants the feeds disagree on: "Koege"/"Koge" (ø), "Koeln"/"Koln" (ö), word order ("Aarhus GF"/"GF Aarhus"), and an
+// initialism glued to the city ("AGF Aarhus"/"Aarhus GF"). Only ever called AFTER the qualifier check, and a name that differs
+// by one unrelated word ("Sheffield Utd"/"Sheffield Wed") still never matches.
+const foldVowelE = (n) => n.replace(/([aou])e/g, '$1');
+function looseSameName(a, b) {
+  const fa = foldVowelE(a), fb = foldVowelE(b);
+  if (fa === fb || (fa.length >= 5 && teamSim(fa, fb) >= 0.85 && !differsByOneUnrelatedWord(fa, fb))) return true;
+  const ta = a.split(' ').filter(Boolean), tb = b.split(' ').filter(Boolean);
+  if (ta.length >= 2 && ta.length === tb.length && [...ta].sort().join(' ') === [...tb].sort().join(' ')) return true;
+  const common = ta.filter((t) => tb.includes(t) && t.length >= 4);
+  if (common.length === 1) {
+    const ra = ta.filter((t) => t !== common[0]), rb = tb.filter((t) => t !== common[0]);
+    if (ra.length === 1 && rb.length === 1) {
+      const [sh, lo] = ra[0].length <= rb[0].length ? [ra[0], rb[0]] : [rb[0], ra[0]];
+      const pre = lo.slice(0, lo.length - sh.length);
+      if (sh.length >= 2 && pre.length >= 1 && lo.endsWith(sh) && common[0].startsWith(pre)) return true; // agf = a + gf, city aarhus
+    }
+  }
+  return false;
+}
+
 export function sameTeam(x, y) {
   if (teamQualifier(x) !== teamQualifier(y)) return false;
   const nx = stripQualifier(normTeam(x));
   const ny = stripQualifier(normTeam(y));
+  if (nx.length >= 4 && foldVowelE(nx) === foldVowelE(ny)) return true; // spelling only (ø / ö written oe)
   if (differsByOneUnrelatedWord(nx, ny)) return false;
-  return teamSim(nx, ny) >= 0.8 || abbrevEqual(nx, ny);
+  return teamSim(nx, ny) >= 0.8 || abbrevEqual(nx, ny) || looseSameName(nx, ny);
 }
 
 export function sameFixture(a, b) {
