@@ -1,5 +1,6 @@
 // The prematch import: every league, game and market the provider carries.
 import { bump } from '../feedStats.js';
+import { sampleFeedKeys } from '../feedKeySampler.js';
 import pool, { setKV, getKV } from '../db.js';
 import { applyTrackerSnapshot } from '../liveTracker.js';
 import { hydrateBetMatchIds } from '../oddsHistoryPolicy.js';
@@ -226,6 +227,9 @@ export async function importLondon365(opts) {
         }
         games = games.filter((g) => !isYouthTeam(g.home_team) && !isYouthTeam(g.away_team)); // youth sides are never scored by the feed
         if (matchCap) games = games.slice(0, matchCap);
+        // Evidence only (no decisions): which raw fields the pre-match catalogue carries, e.g. api_id/stream_id,
+        // to see whether they match the in-play record of the same fixture.
+        for (const g of games.slice(0, 3)) sampleFeedKeys('rest.gamesByLeague.game', g);
 
         // Ground-truth cross-check: every game from /ajax/gamesByLeague
         // carries its own `country`/`country_id` fields directly, no join
