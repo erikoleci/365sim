@@ -86,6 +86,7 @@ function spend(n = 1, now = Date.now()) {
   return true;
 }
 export const __resetBudgetForTests = () => { day = ''; used = 0; };
+export const budgetUsed = () => used;
 
 async function get(path, fetchImpl) {
   const res = await fetchImpl(BASE + path, { headers: { 'x-apisports-key': process.env.API_FOOTBALL_KEY }, signal: AbortSignal.timeout(10000) });
@@ -109,6 +110,21 @@ async function logEvents(matchId, rows, now) {
   return added;
 }
 
+// Request saving: the fixtures call (1 per day-date, all matches in it) carries score + minute for every match, so the per-match
+// events call is made only when it can add something: the score changed (new goal), the match just ended, or 10 minutes have passed
+// (cards). Events are also the first thing dropped when 70% of the daily budget is used, so the last 30% is kept for fixtures and
+// for settling at full time.
+const lastScore = new Map(); // fixture id -> 'h-a' last seen
+export function shouldFetchEvents({ kind, h, a, prevScore, lastAt, now, used, max }) {
+  if (used >= max * 0.7 && kind !== 'FINISHED') return false;
+  if (kind === 'FINISHED') return h + a > 0;
+  if (kind !== 'LIVE') return false;
+  const score = h + '-' + a;
+  if (prevScore !== undefined ? prevScore !== score : h + a > 0) return true; // a goal since last time (or first sight of a score)
+  return h + a > 0 && now - (lastAt || 0) >= 10 * 60000; // quiet match: cards every 10 minutes
+}
+let lastCycleAt = 0;
+export const __resetPacingForTests = () => { lastCycleAt = 0; };
 const owned = new Set(); // matches this source has written to
 const lastEventsAt = new Map(); // fixture id -> ms: events are pulled at most every 2 minutes per match
 
@@ -125,6 +141,11 @@ export async function runApiFootball({ now = Date.now(), fetchImpl = globalThis.
   const need = rows.filter((r) => !hasRealLiveResult(r) || owned.has(r.id) || now - Number(r.live_minute_updated_at || 0) > 6 * 60000);
   if (!need.length) return { candidates: 0 };
   const days = [...new Set(need.map((r) => new Date(Date.parse(r.start_time)).toISOString().slice(0, 10)))];
+  // Pacing: spread ~80% of the daily budget over the 24 hours, so a small plan (free: 100/day) lasts the whole day
+  // instead of being gone by the afternoon. With a big budget (Pro) the gap is a few seconds and has no effect.
+  const gap = (86400000 * 0.8 / dailyMax()) * days.length;
+  if (now - lastCycleAt < gap) return { candidates: need.length, paced: true };
+  lastCycleAt = now;
   const fixtures = [];
   for (const d of days) {
     if (!spend(1, now)) return { candidates: need.length, budgetExhausted: true };
@@ -141,8 +162,10 @@ export async function runApiFootball({ now = Date.now(), fetchImpl = globalThis.
     const h = Number(f.homeScore), a = Number(f.awayScore);
     // events first (scorers, penalties, cards), so the timeline is there when the score appears; skipped when over budget / too soon
     const evKey = String(f.id);
-    if ((now - (lastEventsAt.get(evKey) || 0) >= 120000 || kind === 'FINISHED') && (h + a > 0 || kind === 'LIVE') && spend(1, now)) {
+    const scoreNow = h + '-' + a;
+    if (shouldFetchEvents({ kind, h, a, prevScore: lastScore.get(evKey), lastAt: lastEventsAt.get(evKey), now, used, max: dailyMax() }) && spend(1, now)) {
       lastEventsAt.set(evKey, now);
+      lastScore.set(evKey, scoreNow);
       try {
         const ev = await get('/fixtures/events?fixture=' + f.id, fetchImpl);
         const evRows = eventRows(ev.response, f, row.home_team, row.away_team);
@@ -150,6 +173,7 @@ export async function runApiFootball({ now = Date.now(), fetchImpl = globalThis.
         else console.warn('[api-football] events of ' + row.id + ' do not add up to the score ' + h + '-' + a + ' -- not logged');
       } catch (err) { console.error('[api-football] events failed:', err.message); }
     }
+    if (!lastScore.has(evKey)) lastScore.set(evKey, scoreNow); // remember the score even when events were skipped
     if (kind === 'LIVE') {
       const ht = f.status === 'HT';
       await pool.query(
@@ -167,12 +191,13 @@ export async function runApiFootball({ now = Date.now(), fetchImpl = globalThis.
       } catch (err) { console.error('[api-football] settle failed:', err.message); }
     }
   }
+  out.requestsToday = used;
   return out;
 }
 
 export function startApiFootballLoop() {
   if (!process.env.API_FOOTBALL_KEY) return;
-  const every = Math.max(30000, Number(process.env.API_FOOTBALL_INTERVAL_MS || 120000));
+  const every = Math.max(30000, Number(process.env.API_FOOTBALL_INTERVAL_MS || 180000));
   let busy = false;
   const tick = () => {
     if (busy) return;

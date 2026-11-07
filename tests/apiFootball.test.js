@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 vi.mock('../server/db.js', () => ({ pool: { query: async () => ({ rows: [] }) }, default: { query: async () => ({ rows: [] }) } }));
-const { statusKind, parseFixtures, findFixture, eventRows } = await import('../server/apiFootball.js');
+const { statusKind, parseFixtures, findFixture, eventRows, shouldFetchEvents } = await import('../server/apiFootball.js');
 
 const fx = (o = {}) => ({ id: 1, start: Date.parse('2026-11-07T10:00:00Z'), status: '2H', elapsed: 70, home: 'Slavia Praha C', away: 'Dynamo České Budějovice', homeScore: 2, awayScore: 1, ...o });
 const row = { home_team: 'SK Slavia Prague C', away_team: 'SK Dynamo Ceske Budejovice', start_time: '2026-11-07T10:00:00Z' };
@@ -47,5 +47,33 @@ describe('API-Football second source', () => {
   });
   it('returns null when the goals do not add up to the reported score (nothing is logged)', () => {
     expect(eventRows([ev('Goal', 'Normal Goal', 'Slavia Praha C', 'A', 10)], fx({ homeScore: 3, awayScore: 0 }), row.home_team, row.away_team)).toBeNull();
+  });
+});
+
+describe('request saving', () => {
+  const base = { kind: 'LIVE', h: 1, a: 0, prevScore: '1-0', lastAt: 0, now: 1e9, used: 10, max: 90 };
+  it('does not call events while nothing changed', () => {
+    expect(shouldFetchEvents({ ...base, lastAt: base.now - 60000 })).toBe(false);
+    expect(shouldFetchEvents({ ...base, h: 0, a: 0, prevScore: '0-0' })).toBe(false);
+  });
+  it('calls events on a new goal, at full time, and every 10 minutes for cards', () => {
+    expect(shouldFetchEvents({ ...base, h: 2, prevScore: '1-0', lastAt: base.now - 1000 })).toBe(true);
+    expect(shouldFetchEvents({ ...base, kind: 'FINISHED' })).toBe(true);
+    expect(shouldFetchEvents({ ...base, lastAt: base.now - 11 * 60000 })).toBe(true);
+    expect(shouldFetchEvents({ ...base, prevScore: undefined, h: 1, a: 0 })).toBe(true);
+    expect(shouldFetchEvents({ ...base, kind: 'FINISHED', h: 0, a: 0 })).toBe(false);
+  });
+  it('keeps the last 30% of the daily budget for fixtures and settling', () => {
+    expect(shouldFetchEvents({ ...base, h: 2, prevScore: '1-0', used: 64, max: 90 })).toBe(false);
+    expect(shouldFetchEvents({ ...base, kind: 'FINISHED', used: 85, max: 90 })).toBe(true);
+  });
+});
+
+describe('pacing', () => {
+  it('a 90/day budget spaces fixtures calls about 12 minutes apart, a 7000/day budget does not', async () => {
+    process.env.API_FOOTBALL_DAILY_MAX = '90';
+    const gap90 = 86400000 * 0.8 / 90;
+    expect(Math.round(gap90 / 60000)).toBe(13);
+    expect(Math.round(86400000 * 0.8 / 7000 / 1000)).toBe(10);
   });
 });
