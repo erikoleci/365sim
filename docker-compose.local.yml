@@ -48,6 +48,9 @@ services:
       PG_POOL_MAX: "40"
       # Only markets the system can settle by itself are offered (no ticket can be accepted that nobody can close).
       BET_REQUIRE_SETTLEMENT_RULE: "1"
+      # Second source of results (API-Football, api-sports.io): the key goes in .env.local, never in this file. Empty = off.
+      API_FOOTBALL_KEY: ${API_FOOTBALL_KEY:-}
+      API_FOOTBALL_DAILY_MAX: ${API_FOOTBALL_DAILY_MAX:-90}
     ports:
       - "127.0.0.1:3001:3001"   # http://localhost:3001 vetëm nga kjo PC
 
