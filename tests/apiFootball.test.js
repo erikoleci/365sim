@@ -77,3 +77,14 @@ describe('pacing', () => {
     expect(Math.round(86400000 * 0.8 / 7000 / 1000)).toBe(10);
   });
 });
+
+describe('per-minute limit (free plan: 10 per minute)', () => {
+  it('allows 8 calls inside a minute, then waits', async () => {
+    const { underMinuteLimit } = await import('../server/apiFootball.js');
+    const log = [];
+    const t0 = 1e9;
+    for (let i = 0; i < 8; i++) { expect(underMinuteLimit(t0 + i * 1000, 8, log)).toBe(true); log.push(t0 + i * 1000); }
+    expect(underMinuteLimit(t0 + 9000, 8, log)).toBe(false);
+    expect(underMinuteLimit(t0 + 61000, 8, log)).toBe(true); // the first call is more than a minute old
+  });
+});

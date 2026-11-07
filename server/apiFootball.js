@@ -76,16 +76,24 @@ export function eventRows(events, fixture, ourHome, ourAway) {
   return rows;
 }
 
+// The free plan allows 10 requests per MINUTE (the probe hit this at once); stay under it with a sliding window.
+const recent = [];
+const perMinute = () => Math.max(1, Number(process.env.API_FOOTBALL_PER_MIN || 8));
+export function underMinuteLimit(now, max = perMinute(), log = recent) {
+  while (log.length && now - log[0] >= 60000) log.shift();
+  return log.length < max;
+}
 let day = '', used = 0;
 const dailyMax = () => Math.max(1, Number(process.env.API_FOOTBALL_DAILY_MAX || 90));
 function spend(n = 1, now = Date.now()) {
   const d = new Date(now).toISOString().slice(0, 10);
   if (d !== day) { day = d; used = 0; }
-  if (used + n > dailyMax()) return false;
+  if (used + n > dailyMax() || !underMinuteLimit(now)) return false;
   used += n;
+  recent.push(now);
   return true;
 }
-export const __resetBudgetForTests = () => { day = ''; used = 0; };
+export const __resetBudgetForTests = () => { day = ''; used = 0; recent.length = 0; };
 export const budgetUsed = () => used;
 
 async function get(path, fetchImpl) {
@@ -130,10 +138,14 @@ const lastEventsAt = new Map(); // fixture id -> ms: events are pulled at most e
 
 export async function runApiFootball({ now = Date.now(), fetchImpl = globalThis.fetch } = {}) {
   if (!process.env.API_FOOTBALL_KEY || String(process.env.API_FOOTBALL ?? '1') === '0' || !fetchImpl) return { disabled: true };
+  // Only matches somebody has an open ticket on (that is what needs a result); API_FOOTBALL_ALL=1 also covers matches without tickets.
+  const hasTicket = "EXISTS (SELECT 1 FROM bet_selections bs WHERE bs.match_id = m.id AND bs.status = 'PENDING')";
+  const all = process.env.API_FOOTBALL_ALL === '1';
   const { rows } = await pool.query(
     `SELECT * FROM matches_cache m WHERE m.id LIKE 'l365-%' AND m.settled_at IS NULL AND m.result_home IS NULL
         AND m.start_time::timestamptz BETWEEN $1::timestamptz AND $2::timestamptz
-        AND (m.status IN ('LIVE', 'UPCOMING') OR (m.status = 'FINISHED' AND EXISTS (SELECT 1 FROM bet_selections bs WHERE bs.match_id = m.id AND bs.status = 'PENDING')))`,
+        AND m.status IN ('LIVE', 'UPCOMING', 'FINISHED')
+        AND (${all ? "m.status IN ('LIVE', 'UPCOMING') OR " : ''}${hasTicket})`,
     [new Date(now - 30 * 3600 * 1000).toISOString(), new Date(now - 3 * 60 * 1000).toISOString()]
   );
   // Matches the main feed has nothing usable for, plus the ones we already feed (their score/clock now look "real", but the
@@ -164,10 +176,10 @@ export async function runApiFootball({ now = Date.now(), fetchImpl = globalThis.
     const evKey = String(f.id);
     const scoreNow = h + '-' + a;
     if (shouldFetchEvents({ kind, h, a, prevScore: lastScore.get(evKey), lastAt: lastEventsAt.get(evKey), now, used, max: dailyMax() }) && spend(1, now)) {
-      lastEventsAt.set(evKey, now);
-      lastScore.set(evKey, scoreNow);
       try {
         const ev = await get('/fixtures/events?fixture=' + f.id, fetchImpl);
+        lastEventsAt.set(evKey, now); // remembered only after it worked, so a rate-limited call is retried next cycle
+        lastScore.set(evKey, scoreNow);
         const evRows = eventRows(ev.response, f, row.home_team, row.away_team);
         if (evRows) out.eventsAdded += await logEvents(row.id, evRows, now);
         else console.warn('[api-football] events of ' + row.id + ' do not add up to the score ' + h + '-' + a + ' -- not logged');
