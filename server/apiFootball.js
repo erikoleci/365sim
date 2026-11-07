@@ -4,7 +4,7 @@
 // Off unless API_FOOTBALL_KEY is set. Request budget: API_FOOTBALL_DAILY_MAX (default 90 = the free plan's 100/day; set
 // 7000 on the Pro plan). The key lives in the server environment only, never in the code.
 import { pool } from './db.js';
-import { sameTeam } from './fixtureDedupe.js';
+import { sameTeam, teamQualifier, normTeam } from './fixtureDedupe.js';
 import { settleMatch } from './matchSettlement.js';
 import { hasRealLiveResult } from './london365/liveSync.js';
 
@@ -30,13 +30,28 @@ export const parseFixtures = (json) => ((json && json.response) || []).map((f) =
   awayScore: f.goals ? f.goals.away : null,
 })).filter((f) => f.id != null && Number.isFinite(f.start) && f.home && f.away);
 
-// The API fixture that is OUR match: same clubs in the SAME home/away order (a swapped pair is never trusted with money),
-// kickoff within 3 h, and exactly one candidate.
+// Looser club test for the SECOND pass only (same kickoff minute, see findFixture): the two feeds may add or drop words
+// ("HB Koege" / "Koge", "AGF Aarhus" / "AGF"). One name's words must all be in the other's (after folding oe/ue/ae), same qualifiers.
+const words = (n) => normTeam(n).replace(/([aou])e/g, '$1').split(' ').filter((t) => t.length >= 2);
+export function looseTeam(a, b) {
+  if (teamQualifier(a) !== teamQualifier(b)) return false;
+  if (sameTeam(a, b)) return true;
+  const wa = words(a).filter((w) => !/^(u\d+|b|c|ii|iii)$/.test(w)), wb = words(b).filter((w) => !/^(u\d+|b|c|ii|iii)$/.test(w));
+  if (!wa.length || !wb.length) return false;
+  const [s, l] = wa.length <= wb.length ? [wa, wb] : [wb, wa];
+  return s.join('').length >= 3 && s.every((w) => l.includes(w));
+}
+
+// The API fixture that is OUR match, same home/away order (a swapped pair is never trusted with money), exactly one candidate.
+// Pass 1: both clubs match and the kickoff is within 3 h. Pass 2 (names differ by extra/missing words): the kickoff must be within
+// 10 minutes and both clubs must pass the looser word test -- a club cannot play two matches at the same time.
 export function findFixture(fixtures, row) {
   const t = Date.parse(row.start_time);
   if (!Number.isFinite(t)) return null;
-  const hits = fixtures.filter((f) => Math.abs(f.start - t) <= SAME_KICKOFF_MS && sameTeam(row.home_team, f.home) && sameTeam(row.away_team, f.away));
-  return hits.length === 1 ? hits[0] : null;
+  const strict = fixtures.filter((f) => Math.abs(f.start - t) <= SAME_KICKOFF_MS && sameTeam(row.home_team, f.home) && sameTeam(row.away_team, f.away));
+  if (strict.length) return strict.length === 1 ? strict[0] : null;
+  const loose = fixtures.filter((f) => Math.abs(f.start - t) <= 10 * 60000 && looseTeam(row.home_team, f.home) && looseTeam(row.away_team, f.away));
+  return loose.length === 1 ? loose[0] : null;
 }
 
 const minuteOf = (e) => (e && e.time && Number.isFinite(Number(e.time.elapsed)) ? Number(e.time.elapsed) : null);

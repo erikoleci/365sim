@@ -1453,6 +1453,18 @@ export function isPureFirstHalfMarket(marketName) {
   return !/\b(final|finale|fund|ft|2h|p2|pjesa e dyte|pjesen e dyte)\b/.test(n);
 }
 
+// True when `leg` is a plain HT/FT or 45/90 double whose first sign is not the half-time result (so it can no longer win).
+export function htftFirstSignMismatch(leg, htHome, htAway) {
+  if (!Number.isFinite(htHome) || !Number.isFinite(htAway)) return false;
+  const name = norm(leg.market_name);
+  if (!name || name.includes('&') || /\b(dhe)\b|\+/.test(String(leg.market_name))) return false; // combos need more than the first sign
+  if (!HTFT_NAMES.has(name) && !CLASSIC_HTFT_NAMES.has(name)) return false;
+  const m = String(leg.selection_name || leg.selection_id || '').trim().toLowerCase().match(/^([12x])\s*[\/-]\s*([12x])$/);
+  if (!m) return false;
+  const sign = htHome > htAway ? '1' : htAway > htHome ? '2' : 'x';
+  return sign !== m[1];
+}
+
 export async function settleFirstHalfLegs() {
   const client = await pool.connect();
   try {
@@ -1468,7 +1480,10 @@ export async function settleFirstHalfLegs() {
       ({ rows } = await client.query(legsSql('')));
     }
     const legs = rows.filter((l) => isPureFirstHalfMarket(l.market_name));
-    if (!legs.length) return { settledLegs: 0, recomputedBets: 0 };
+    // HT/FT doubles ("X-X", "1/2"): the FIRST sign is the half-time result, so a ticket whose first sign does not match the
+    // score at the break is lost already -- it must not wait for full time. Only ever LOST here, a win needs the final result.
+    const htftLost = rows.filter((l) => htftFirstSignMismatch(l, Number(l.ht_home), Number(l.ht_away)));
+    if (!legs.length && !htftLost.length) return { settledLegs: 0, recomputedBets: 0 };
 
     const htStatsByMatch = new Map();
     for (const leg of legs) {
@@ -1496,6 +1511,11 @@ export async function settleFirstHalfLegs() {
         });
         if (!outcome) continue;
         await client.query(`UPDATE bet_selections SET status = $1 WHERE id = $2 AND status = 'PENDING'`, [outcome, leg.id]);
+        affected.add(leg.bet_id);
+        settledLegs++;
+      }
+      for (const leg of htftLost) {
+        await client.query(`UPDATE bet_selections SET status = 'LOST' WHERE id = $1 AND status = 'PENDING'`, [leg.id]);
         affected.add(leg.bet_id);
         settledLegs++;
       }

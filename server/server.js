@@ -42,6 +42,7 @@ import { hydrateBetMatchIds } from './oddsHistoryPolicy.js';
 import { settleStuckBets, recoverFinishedWithoutResult, settleNextEventLegs, settleFirstHalfLegs, settleLostLiveLegs, rebindLegsToLiveRecord, rebindLegsToLiveTwin, settleOpenLegsOfFinishedMatches } from './matchSettlement.js';
 import { settleFromFallback } from './resultsFallback.js';
 import { startApiFootballLoop } from './apiFootball.js';
+import { captureHalfTimeFromGoalLog } from './halfTime.js';
 import { startClockWriteFlusher } from './clockWrites.js';
 
 let dbReady = false;
@@ -398,7 +399,8 @@ async function start() {
   setInterval(function () {
     if (firstHalfBusy) return;
     firstHalfBusy = true;
-    settleFirstHalfLegs()
+    captureHalfTimeFromGoalLog().catch(function (e) { console.error('[halftime] goal-log capture failed:', e.message); })
+      .then(function () { return settleFirstHalfLegs(); })
       .then(function (r) { if (r.settledLegs) console.log('[settle] first-half sweep: ' + JSON.stringify(r)); })
       .catch(function (e) { console.error('[settle] first-half sweep failed:', e.message); })
       .finally(function () { firstHalfBusy = false; });

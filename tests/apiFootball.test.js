@@ -88,3 +88,20 @@ describe('per-minute limit (free plan: 10 per minute)', () => {
     expect(underMinuteLimit(t0 + 61000, 8, log)).toBe(true); // the first call is more than a minute old
   });
 });
+
+describe('second pass for names that differ by extra or missing words', () => {
+  it('finds HB Koege v AGF Aarhus under Koge v AGF at the same kickoff', async () => {
+    const { findFixture } = await import('../server/apiFootball.js');
+    const k = { home_team: 'HB Koege', away_team: 'AGF Aarhus', start_time: '2026-11-07T11:00:00Z' };
+    const f = { id: 5, start: Date.parse('2026-11-07T11:00:00Z'), status: 'FT', home: 'Koge', away: 'AGF', homeScore: 1, awayScore: 0 };
+    expect(findFixture([f], k)).toMatchObject({ id: 5 });
+  });
+  it('does not accept it at a different kickoff, swapped, or when the C team is meant', async () => {
+    const { findFixture } = await import('../server/apiFootball.js');
+    const k = { home_team: 'HB Koege', away_team: 'AGF Aarhus', start_time: '2026-11-07T11:00:00Z' };
+    const base = { id: 5, status: 'FT', homeScore: 1, awayScore: 0 };
+    expect(findFixture([{ ...base, start: Date.parse('2026-11-07T12:00:00Z'), home: 'Koge', away: 'AGF' }], k)).toBeNull();
+    expect(findFixture([{ ...base, start: Date.parse('2026-11-07T11:00:00Z'), home: 'AGF', away: 'Koge' }], k)).toBeNull();
+    expect(findFixture([{ ...base, start: Date.parse('2026-11-07T11:00:00Z'), home: 'Koge II', away: 'AGF' }], k)).toBeNull();
+  });
+});
