@@ -3,7 +3,7 @@
 // on MUST keep receiving its live data and result, or its ticket can never close (HB Koege v AGF Aarhus, Danish women's
 // league: the prematch record existed from before the filter, its in-play record was dropped, the ticket hung).
 import pool from '../db.js';
-import { sameFixture, sameTeam } from '../fixtureDedupe.js';
+import { sameFixture, sameTeam, normTeam } from '../fixtureDedupe.js';
 
 let fixtures = [];
 
@@ -16,7 +16,7 @@ export async function refreshTicketedFixtures() {
         WHERE bs.status = 'PENDING'
           AND m.start_time::timestamptz BETWEEN now() - interval '10 hours' AND now() + interval '3 hours'`
     );
-    fixtures = rows.map((r) => ({ home: r.home_team, away: r.away_team }));
+    setFixtures(rows.map((r) => ({ home: r.home_team, away: r.away_team })));
   } catch { /* keep the last list; next refresh retries */ }
   return fixtures.length;
 }
@@ -30,15 +30,49 @@ export function startTicketedFixtureLoop(intervalMs = 60000) {
   return timer;
 }
 
-// g: a live / socket game payload (home_team, away_team).
-export function isTicketedFixture(g) {
-  if (!g || !g.home_team || !g.away_team) return false;
-  for (const f of fixtures) {
-    if (sameFixture({ homeTeam: f.home, awayTeam: f.away }, { homeTeam: g.home_team, awayTeam: g.away_team })) return true;
-    // one club is the same and the other is written differently (Koege / Køge, "(W)" suffix)
-    if (sameTeam(f.home, g.home_team) || sameTeam(f.away, g.away_team)) return true;
+// The check runs for EVERY live / socket game the league filter rejected (thousands per cycle), so it must be cheap:
+// a name is reduced once to folded words (Koege / Køge -> "kog"), and the expensive fuzzy comparison only runs when a
+// game shares a word with a ticketed fixture. Results are remembered per name pair.
+const wordsCache = new Map();
+function words(name) {
+  const key = String(name || '');
+  let w = wordsCache.get(key);
+  if (!w) {
+    w = new Set(normTeam(key).replace(/oe/g, 'o').replace(/ae/g, 'a').replace(/ue/g, 'u').split(' ').filter((x) => x.length >= 3));
+    if (wordsCache.size > 20000) wordsCache.clear();
+    wordsCache.set(key, w);
   }
-  return false;
+  return w;
+}
+let fixtureWords = []; // parallel to `fixtures`: one Set of words per fixture
+const verdicts = new Map(); // "home|away" -> boolean, dropped whenever the fixture list changes
+function setFixtures(list) {
+  const sig = list.map((f) => f.home + '|' + f.away).sort().join('#');
+  if (sig === setFixtures.sig) return;
+  setFixtures.sig = sig;
+  fixtures = list;
+  fixtureWords = list.map((f) => new Set([...words(f.home), ...words(f.away)]));
+  verdicts.clear();
 }
 
-export function __setTicketedFixturesForTests(list) { fixtures = list; }
+// g: a live / socket game payload (home_team, away_team).
+export function isTicketedFixture(g) {
+  if (!g || !g.home_team || !g.away_team || !fixtures.length) return false;
+  const key = g.home_team + '|' + g.away_team;
+  const known = verdicts.get(key);
+  if (known !== undefined) return known;
+  const gw = [...words(g.home_team), ...words(g.away_team)];
+  let hit = false;
+  for (let i = 0; i < fixtures.length && !hit; i++) {
+    if (!gw.some((x) => fixtureWords[i].has(x))) continue; // shares no word: cannot be the same fixture
+    const f = fixtures[i];
+    hit = sameFixture({ homeTeam: f.home, awayTeam: f.away }, { homeTeam: g.home_team, awayTeam: g.away_team })
+      // one club is the same and the other is written differently (Koege / Køge, "(W)" suffix)
+      || sameTeam(f.home, g.home_team) || sameTeam(f.away, g.away_team);
+  }
+  if (verdicts.size > 20000) verdicts.clear();
+  verdicts.set(key, hit);
+  return hit;
+}
+
+export function __setTicketedFixturesForTests(list) { setFixtures.sig = null; setFixtures(list); }
