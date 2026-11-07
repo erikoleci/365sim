@@ -31,3 +31,5 @@ server/data/*.db-*
 coverage
 pnpm-workspace.yaml
 local-data/
+diagnose-pending.txt
+diagnose-events.txt
