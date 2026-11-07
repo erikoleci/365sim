@@ -92,10 +92,13 @@ export function isSparseEvent(ev) {
 export async function fetchDetailRows(gameId) {
   const detail = await api('/ajax/prematchgame/' + gameId, { retries: 5 });
   const rows = [];
+  let sampled = false;
   if (Array.isArray(detail)) {
     for (const market of detail) {
       if (!Array.isArray(market)) continue;
       for (const m of market) {
+        // Evidence only: does a pre-match detail row carry game_api_id / api_id like the in-play rows do?
+        if (!sampled && m) { sampled = true; sampleFeedKeys('rest.prematchgame.row', m); }
         rememberMarketName(m.market_id, m.market);
         rows.push({
           coefId: String(m.id),
