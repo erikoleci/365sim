@@ -221,3 +221,17 @@ export function dedupeMatches(list, onMerge) {
     return best;
   });
 }
+
+// Folded words of a team name (Koege / Køge -> "kog"), used to skip the expensive fuzzy comparison for names that
+// share no word at all. Memoised: the same names come back thousands of times.
+const nameWordsCache = new Map();
+export function nameWords(name) {
+  const key = String(name || '');
+  let w = nameWordsCache.get(key);
+  if (!w) {
+    w = new Set(normTeam(key).replace(/oe/g, 'o').replace(/ae/g, 'a').replace(/ue/g, 'u').split(' ').filter((x) => x.length >= 3));
+    if (nameWordsCache.size > 20000) nameWordsCache.clear();
+    nameWordsCache.set(key, w);
+  }
+  return w;
+}

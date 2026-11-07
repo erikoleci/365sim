@@ -38,7 +38,7 @@
 
 import { halfSql } from './eventHalf.js';
 import { recordVcSample } from './vcSampler.js';
-import { buildTeamIndex, normTeam } from './teamIndex.js';
+import { buildTeamIndex, normTeam, resolveTeamsFuzzy } from './teamIndex.js';
 import pool from './db.js';
 import { pushCardEvent, pushLiveTick } from './ws.js';
 import { recordGoalIfChanged, eventMinuteFromClock } from './london365.js';
@@ -145,7 +145,8 @@ export function __resetLiveStateForTests() {
   __resetPenaltyLockForTests();
   unknownEidWarned.clear();
   lastTouched.clear();
-  teamIndex = { at: 0, map: new Map() };
+  teamIndex = { at: 0, map: new Map(), rows: [] };
+  fuzzyMemo.clear();
 }
 
 // MEMORY LEAK FIX: lastSeen/lastBroadcast/unknownEidWarned are module-level
@@ -241,7 +242,9 @@ const BLOCKED_EIDS = new Set(['58729560']);
 // teams match no single live match (or match two) is dropped.
 const TEAM_RESOLVED_EIDS = new Set(['52628036']);
 const TEAM_INDEX_TTL_MS = 10000;
-let teamIndex = { at: 0, map: new Map() };
+let teamIndex = { at: 0, map: new Map(), rows: [] };
+// Results of the fuzzy fallback, kept 60 s: the multiplexed feed repeats the same few team pairs many times a second.
+const fuzzyMemo = new Map(); // "h|a" -> { at, id }
 async function resolveGameIdByTeams(h, a) {
   const now = Date.now();
   if (now - teamIndex.at > TEAM_INDEX_TTL_MS) {
@@ -249,12 +252,20 @@ async function resolveGameIdByTeams(h, a) {
       const { rows } = await pool.query(
         "SELECT id AS game_id, home_team AS h, away_team AS a, live_minute, live_minute_updated_at, live_home_score, live_away_score FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
       );
-      teamIndex = { at: now, map: buildTeamIndex(rows) };
+      teamIndex = { at: now, map: buildTeamIndex(rows), rows };
     } catch (err) {
-      teamIndex = { at: now - TEAM_INDEX_TTL_MS + 2000, map: teamIndex.map }; // retry in ~2s, keep old index
+      teamIndex = { at: now - TEAM_INDEX_TTL_MS + 2000, map: teamIndex.map, rows: teamIndex.rows }; // retry in ~2s, keep old index
     }
   }
-  return teamIndex.map.get(normTeam(h) + '|' + normTeam(a)) || null;
+  const exact = teamIndex.map.get(normTeam(h) + '|' + normTeam(a));
+  if (exact !== undefined) return exact || null; // null = genuinely ambiguous: never guessed at
+  const key = h + '|' + a;
+  const memo = fuzzyMemo.get(key);
+  if (memo && now - memo.at < 60000) return memo.id;
+  const id = resolveTeamsFuzzy(teamIndex.rows || [], h, a);
+  if (fuzzyMemo.size > 5000) fuzzyMemo.clear();
+  fuzzyMemo.set(key, { at: now, id });
+  return id;
 }
 const TICK_LOG = process.env.LONDON365_GAMEDETAILS_TICK_LOG === '1';
 

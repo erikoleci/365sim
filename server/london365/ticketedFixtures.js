@@ -3,7 +3,7 @@
 // on MUST keep receiving its live data and result, or its ticket can never close (HB Koege v AGF Aarhus, Danish women's
 // league: the prematch record existed from before the filter, its in-play record was dropped, the ticket hung).
 import pool from '../db.js';
-import { sameFixture, sameTeam, normTeam } from '../fixtureDedupe.js';
+import { sameFixture, sameTeam, nameWords } from '../fixtureDedupe.js';
 
 let fixtures = [];
 
@@ -33,17 +33,7 @@ export function startTicketedFixtureLoop(intervalMs = 60000) {
 // The check runs for EVERY live / socket game the league filter rejected (thousands per cycle), so it must be cheap:
 // a name is reduced once to folded words (Koege / Køge -> "kog"), and the expensive fuzzy comparison only runs when a
 // game shares a word with a ticketed fixture. Results are remembered per name pair.
-const wordsCache = new Map();
-function words(name) {
-  const key = String(name || '');
-  let w = wordsCache.get(key);
-  if (!w) {
-    w = new Set(normTeam(key).replace(/oe/g, 'o').replace(/ae/g, 'a').replace(/ue/g, 'u').split(' ').filter((x) => x.length >= 3));
-    if (wordsCache.size > 20000) wordsCache.clear();
-    wordsCache.set(key, w);
-  }
-  return w;
-}
+const words = nameWords;
 let fixtureWords = []; // parallel to `fixtures`: one Set of words per fixture
 const verdicts = new Map(); // "home|away" -> boolean, dropped whenever the fixture list changes
 function setFixtures(list) {
