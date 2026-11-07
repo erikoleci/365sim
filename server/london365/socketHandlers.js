@@ -12,6 +12,7 @@ import { canSettleFromLiveScore, settleMatch, explainSettleBlock } from '../matc
 import { withDbLock, statusSampler, upsertMatch, recordGoalIfChanged } from './persist.js';
 import { leagueById, resolveLeagueByName } from './leagueRegistry.js';
 import { isAllowedByCountryFilter } from './leagueRules.js';
+import { isTicketedFixture } from './ticketedFixtures.js';
 import { ensureMarketNamesLoaded, hydrateRowNames, parseOddString, buildEvent } from './markets.js';
 import { isoFromWholeDate, parseScore, statusFromCommence } from './clock.js';
 import { leagueKeyFromCountry } from './leagueKeys.js';
@@ -77,7 +78,7 @@ export async function applySocketGame(g, status) {
   // allowed countries/competitions costs no parsing, no event building and
   // no DB work. The same gate used to run only after buildEvent().
   const resolvedLeague = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
-  if (!isAllowedByCountryFilter(g, resolvedLeague)) { bump('socketGame.dropped_filtered'); return false; }
+  if (!isAllowedByCountryFilter(g, resolvedLeague) && !isTicketedFixture(g)) { bump('socketGame.dropped_filtered'); return false; }
   await ensureMarketNamesLoaded();
   const odds = hydrateRowNames(parseOddString(g.odd).filter(function (o) { return o ? !Number.isNaN(o.coef) : false; }));
   if (!odds.length) return false;

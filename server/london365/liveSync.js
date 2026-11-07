@@ -14,6 +14,7 @@ import { ensureMarketNamesLoaded, fetchLiveRows, parseOddString, usableLiveOdds,
 import { resolveSports, api } from './api.js';
 import { leagueById, resolveLeagueByName } from './leagueRegistry.js';
 import { isAllowedByCountryFilter } from './leagueRules.js';
+import { isTicketedFixture } from './ticketedFixtures.js';
 import { isoFromWholeDate, parseScore, normalizeLiveMinute } from './clock.js';
 import { upsertMatch, recordGoalIfChanged } from './persist.js';
 import { leagueKeyFromCountry } from './leagueKeys.js';
@@ -214,7 +215,7 @@ export async function syncLondon365LiveOnce() {
       // re-deriving it from a second, differently-shaped copy of the same
       // information — a match can only reach isTrackedGame() by having
       // already cleared this same filter once.
-      if (!isTrackedGame('l365-' + g.id) && !isAllowedByCountryFilter(g, resolvedLeagueEarly)) return;
+      if (!isTrackedGame('l365-' + g.id) && !isAllowedByCountryFilter(g, resolvedLeagueEarly) && !isTicketedFixture(g)) return;
       liveIds.add('l365-' + g.id);
       liveSeen++;
       // Each game processed independently: one malformed/failing game must

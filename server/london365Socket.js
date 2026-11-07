@@ -12,6 +12,7 @@
 //   LONDON365_SOCKET           default https://ecco.socketi355.com:1440
 //   LONDON365_SOCKET_ENABLED   1 (default) or 0
 
+import { isTicketedFixture } from './london365/ticketedFixtures.js';
 import { recordSocketPacket } from './feedKeySampler.js';
 import pool from './db.js';
 import {
@@ -136,7 +137,7 @@ export async function startLondon365Socket() {
     // pass the country/competition filter are subscribed (a synchronous,
     // in-memory check); previously every live game worldwide was subscribed and
     // then dropped again by the 2-minute reconcile.
-    if (isLiveGameWanted(d)) subscribeGameDetails(d.id);
+    if (isLiveGameWanted(d) || isTicketedFixture(d)) subscribeGameDetails(d.id);
     applySocketGame(d, 'LIVE').catch(function (err) {
       console.error('[london365-socket] new-live-game failed:', err.message);
     });
