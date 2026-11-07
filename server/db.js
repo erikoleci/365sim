@@ -1,5 +1,4 @@
 import { ensureSuperAdmin } from './superAdmin.js';
-import { isMajorResultLeague } from './majorResults.js';
 import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import { resolveDbConnection } from './dbConfig.js';
@@ -637,13 +636,11 @@ export async function cleanupOldData() {
       results.match_results = (await pool.query('DELETE FROM match_results WHERE saved_at < $1', [now - 90 * day])).rowCount;
     } catch { /* archive not migrated yet */ }
 
-    // Results are kept only for the main competitions (Champions/Europa League, World Cup, Euros, the top flight of
-    // Italy/Germany/France/Spain/England/Portugal). Every other finished match goes once it is settled and a day old,
-    // unless a ticket still points at it (the admin ticket views join on it).
-    // Now opt-in: every finished match is kept (and listed in Rezultate) for the normal retention above. Set
-    // RETENTION_MINOR_FINISHED_HOURS to bring the old early clean-up of the minor leagues back.
-    if (Number(process.env.RETENTION_MINOR_FINISHED_HOURS) > 0) try {
-      const minorHours = Math.max(1, Number(process.env.RETENTION_MINOR_FINISHED_HOURS));
+    // Results are kept for 48 hours (what Rezultate lists), for EVERY competition: a finished match goes once it is
+    // settled and that old, unless a ticket still points at it (the admin ticket views join on it).
+    // RETENTION_RESULTS_HOURS changes the 48.
+    try {
+      const minorHours = Math.max(1, Number(process.env.RETENTION_RESULTS_HOURS) || 48);
       const { rows: finished } = await pool.query(
         `SELECT id, league FROM matches_cache
          WHERE status = 'FINISHED'
@@ -652,14 +649,14 @@ export async function cleanupOldData() {
            AND NOT EXISTS (SELECT 1 FROM bet_selections bs WHERE bs.match_id = matches_cache.id)`,
         [now - minorHours * 3600 * 1000]
       );
-      const minorRows = finished.filter((r) => !isMajorResultLeague(r.league));
+      const minorRows = finished;
       const minorIds = minorRows.map((r) => r.id);
       if (minorRows.length) {
         // So it can be checked in the logs that the right leagues are going (and no main league is among them).
         const byLeague = {};
         for (const r of minorRows) byLeague[r.league] = (byLeague[r.league] || 0) + 1;
         const top = Object.entries(byLeague).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([l, n]) => `${l}=${n}`).join(', ');
-        console.log(`[cleanupOldData] finished matches outside the main competitions removed: ${minorRows.length} (${top})`);
+        console.log(`[cleanupOldData] finished matches older than the results window removed: ${minorRows.length} (${top})`);
       }
       results.matches_cache_minor_finished = minorIds.length
         ? (await pool.query('DELETE FROM matches_cache WHERE id = ANY($1::text[])', [minorIds])).rowCount
