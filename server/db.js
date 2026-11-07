@@ -640,8 +640,10 @@ export async function cleanupOldData() {
     // Results are kept only for the main competitions (Champions/Europa League, World Cup, Euros, the top flight of
     // Italy/Germany/France/Spain/England/Portugal). Every other finished match goes once it is settled and a day old,
     // unless a ticket still points at it (the admin ticket views join on it).
-    try {
-      const minorHours = Math.max(1, Number(process.env.RETENTION_MINOR_FINISHED_HOURS) || 24);
+    // Now opt-in: every finished match is kept (and listed in Rezultate) for the normal retention above. Set
+    // RETENTION_MINOR_FINISHED_HOURS to bring the old early clean-up of the minor leagues back.
+    if (Number(process.env.RETENTION_MINOR_FINISHED_HOURS) > 0) try {
+      const minorHours = Math.max(1, Number(process.env.RETENTION_MINOR_FINISHED_HOURS));
       const { rows: finished } = await pool.query(
         `SELECT id, league FROM matches_cache
          WHERE status = 'FINISHED'

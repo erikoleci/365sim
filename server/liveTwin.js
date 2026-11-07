@@ -80,4 +80,36 @@ export async function withLiveTwin(query, row) {
     live_source_id: twin.id,
   };
 }
-export const __resetLiveTwinCache = () => cache.clear();
+// The record whose events and statistics a ticket / results screen should show: the one of the SAME fixture (the row
+// itself or any same-fixture record) that actually holds the most logged events. liveSourceIdFor only looks for a twin
+// when the row has no live data of its own, so a pre-match record that got a stray minute or score (or a twin whose
+// name differs) showed an empty timeline while the live page, on the other record, was full.
+const evCache = new Map(); // id -> { at, id }
+export async function eventSourceIdFor(query, row, { ttlMs = TTL_MS } = {}) {
+  if (!row) return null;
+  const hit = evCache.get(row.id);
+  if (hit && Date.now() - hit.at < ttlMs) return hit.id;
+  let best = row.id;
+  try {
+    const t = Date.parse(row.start_time);
+    if (!Number.isNaN(t)) {
+      const { rows } = await query(
+        `SELECT id, home_team, away_team, start_time FROM matches_cache WHERE id <> $1
+            AND start_time::timestamptz BETWEEN $2::timestamptz AND $3::timestamptz`,
+        [row.id, new Date(t - WINDOW_MS).toISOString(), new Date(t + WINDOW_MS).toISOString()]
+      );
+      const same = (rows || []).filter((c) => sameFixture({ homeTeam: row.home_team, awayTeam: row.away_team }, { homeTeam: c.home_team, awayTeam: c.away_team })
+        || sameKickoffFixture(row, c, t));
+      if (same.length) {
+        const ids = [row.id, ...same.map((c) => c.id)];
+        const { rows: cnt } = await query('SELECT match_id, COUNT(*)::int AS n FROM match_events WHERE match_id = ANY($1::text[]) GROUP BY match_id', [ids]);
+        const n = new Map((cnt || []).map((r) => [r.match_id, Number(r.n)]));
+        let top = n.get(row.id) || 0;
+        for (const id of ids) { if ((n.get(id) || 0) > top) { top = n.get(id); best = id; } }
+      }
+    }
+  } catch { best = row.id; }
+  evCache.set(row.id, { at: Date.now(), id: best });
+  return best;
+}
+export const __resetLiveTwinCache = () => { cache.clear(); evCache.clear(); };

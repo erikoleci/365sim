@@ -24,9 +24,9 @@ describe('recentResults - the "Rezultate" section (finished, last 48 hours)', ()
     const list = [m('settled', 2), m('noScore', 3, { score: undefined }), m('nullScore', 4, { score: { home: null, away: null } }), m('zero', 5, { score: { home: 0, away: 0 } })];
     expect(recentResults(list, '', NOW).map((x) => x.id)).toEqual(['settled', 'zero']); // a real 0-0 is kept
   });
-  it('only the main competitions are listed as results', () => {
+  it('every competition is listed as a result, not only the main ones', () => {
     const list = [m('major', 2), m('minor', 3, { league: 'l365_albania__superliga' }), m('second', 4, { league: 'l365_england__championship' })];
-    expect(recentResults(list, '', NOW).map((x) => x.id)).toEqual(['major']);
+    expect(recentResults(list, '', NOW).map((x) => x.id)).toEqual(['major', 'minor', 'second']);
   });
   it('a row with an unreadable date is never shown', () => {
     expect(recentResults([m('bad', 1, { startTime: 'nope' })], '', NOW)).toEqual([]);
