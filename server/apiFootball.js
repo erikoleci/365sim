@@ -112,7 +112,7 @@ export const __resetBudgetForTests = () => { day = ''; used = 0; recent.length =
 export const budgetUsed = () => used;
 
 async function get(path, fetchImpl) {
-  const res = await fetchImpl(BASE + path, { headers: { 'x-apisports-key': process.env.API_FOOTBALL_KEY }, signal: AbortSignal.timeout(10000) });
+  const res = await fetchImpl(BASE + path, { headers: { 'x-apisports-key': process.env.API_FOOTBALL_KEY }, signal: AbortSignal.timeout(Math.max(5000, Number(process.env.API_FOOTBALL_TIMEOUT_MS) || 30000)) });
   if (!res.ok) throw new Error('API-Football HTTP ' + res.status);
   const json = await res.json();
   if (json.errors && ((Array.isArray(json.errors) && json.errors.length) || (!Array.isArray(json.errors) && Object.keys(json.errors).length))) throw new Error('API-Football: ' + JSON.stringify(json.errors).slice(0, 200));
@@ -230,7 +230,7 @@ export function startApiFootballLoop() {
     if (busy) return;
     busy = true;
     runApiFootball().then((r) => { if (r && (r.updated || r.settled || r.eventsAdded || r.budgetExhausted)) console.log('[api-football] ' + JSON.stringify(r)); })
-      .catch((err) => console.error('[api-football] cycle failed:', err.message))
+      .catch((err) => console.error('[api-football] cycle failed:', err.message, err.cause ? '(' + (err.cause.code || err.cause.message) + ')' : ''))
       .finally(() => { busy = false; });
   };
   const t = setInterval(tick, every);
