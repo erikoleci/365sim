@@ -32,7 +32,7 @@ import { pool } from './db.js';
 import { mapDbError } from './dbErrors.js';
 import { recordRouteError } from './recentErrors.js';
 import { initWebSocket } from './ws.js';
-import { refreshLiveTracker, logLondon365FilterConfig, startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCrossCountryMisclassifiedLeagues, purgeCountriesNotInOnlyList, wipeLondon365Data, loadPersistedLeagueMap, startGameDetailsSubscriptionReconcileLoop, getLondon365MemoryDiagnostics } from './london365.js';
+import { refreshLiveTracker, logLondon365FilterConfig, startLondon365LiveLoop, ensureLondon365Import, repairSparseEvents, purgeExcludedCountries, purgeStaleLeagues, purgeLegacyLeagueKeyFormat, purgeCountryPrefixedDuplicateLeagues, purgeCrossCountryMisclassifiedLeagues, purgeCountriesNotInOnlyList, purgeYouthTeamMatches, wipeLondon365Data, loadPersistedLeagueMap, startGameDetailsSubscriptionReconcileLoop, getLondon365MemoryDiagnostics } from './london365.js';
 import { startLondon365Socket, startLondon365GameDetailsSocket, getSocketMemoryDiagnostics } from './london365Socket.js';
 import { getGameDetailsMemoryDiagnostics } from './london365GameDetails.js';
 import { getMatchesResponseCacheSize } from './routes/matches.js';
@@ -354,7 +354,8 @@ async function start() {
   bootPurges.push(
     purgeCountryPrefixedDuplicateLeagues().catch((err) => console.error('[server] purgeCountryPrefixedDuplicateLeagues failed:', err.message)),
     purgeCrossCountryMisclassifiedLeagues().catch((err) => console.error('[server] purgeCrossCountryMisclassifiedLeagues failed:', err.message)),
-    purgeCountriesNotInOnlyList().catch((err) => console.error('[server] purgeCountriesNotInOnlyList failed:', err.message))
+    purgeCountriesNotInOnlyList().catch((err) => console.error('[server] purgeCountriesNotInOnlyList failed:', err.message)),
+    purgeYouthTeamMatches().catch((err) => console.error('[server] purgeYouthTeamMatches failed:', err.message))
   );
   startFeedStatsLog();
   startLondon365LiveLoop();

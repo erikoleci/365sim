@@ -8,7 +8,7 @@ import { resetLiveTracker } from '../liveTracker.js';
 import { ENABLED, DETAIL_DELAY_MS, sleep, EXCLUDED_COUNTRIES, ONLY_COUNTRIES } from './config.js';
 import { ensureMarketNamesLoaded, isSparseEvent, fetchLiveRows, fetchDetailRows, hydrateRowNames, countOutcomes, buildEvent, marketNameById } from './markets.js';
 import { COUNTRY_NAMES_BY_LENGTH_DESC, COUNTRY_NAME_TO_TOKEN, slugDash, leagueCountryToken } from './leagueKeys.js';
-import { isAllowedInternationalCompetition, isMinorLeague, isSecondTierDomesticLeague } from './leagueRules.js';
+import { isAllowedInternationalCompetition, isMinorLeague, isSecondTierDomesticLeague, isYouthTeam } from './leagueRules.js';
 import { setLastImportAt } from './importState.js';
 import { leagueById, leagueNameIndex, countryMapCache } from './leagueRegistry.js';
 
@@ -354,5 +354,21 @@ export async function purgeLegacyLeagueKeyFormat() {
     if (rowCount) console.log(`[london365] purged ${rowCount} rows under the old pre-migration league-key format (dead duplicate leagues)`);
   } catch (err) {
     console.error('[london365] failed purging legacy league-key format:', err.message);
+  }
+}
+
+// Upcoming matches of youth / women's sides (the feed does not score them, so tickets on them never close) that were
+// imported before the team-name filter existed. Anything with a pending bet, or already live/finished, is left alone.
+export async function purgeYouthTeamMatches() {
+  try {
+    const { rows } = await pool.query(`SELECT id, home_team, away_team FROM matches_cache WHERE id LIKE 'l365-%' AND status NOT IN ('LIVE', 'FINISHED') ${NO_PENDING_BETS}`);
+    const ids = rows.filter((r) => isYouthTeam(r.home_team) || isYouthTeam(r.away_team)).map((r) => r.id);
+    if (!ids.length) return 0;
+    const { rowCount } = await pool.query('DELETE FROM matches_cache WHERE id = ANY($1::text[])', [ids]);
+    console.log('[london365] purged ' + rowCount + ' upcoming youth/women matches');
+    return rowCount;
+  } catch (err) {
+    console.error('[london365] failed purging youth/women matches:', err.message);
+    return 0;
   }
 }

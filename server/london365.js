@@ -69,5 +69,5 @@ export { refreshLiveTracker, importLondon365, ensureLondon365Import } from './lo
 export { setLondon365SocketConnected } from './london365/liveState.js';
 export { shouldSettleMissingLiveMatch, hasRealLiveResult, shouldLogMissingLive, liveConcurrencyFor, runPool, liveCycleDecision, syncLondon365Live, startLondon365LiveLoop } from './london365/liveSync.js';
 export { applySocketCoefs, applySocketGame, markLondon365GameEnded, removeSocketCoef } from './london365/socketHandlers.js';
-export { repairSparseEvents, purgeStaleLeagues, purgeCrossCountryMisclassifiedLeagues, reconcileGameDetailsSubscriptions, startGameDetailsSubscriptionReconcileLoop, purgeCountryPrefixedDuplicateLeagues, purgeExcludedCountries, purgeCountriesNotInOnlyList, wipeLondon365Data, purgeLegacyLeagueKeyFormat } from './london365/maintenance.js';
+export { repairSparseEvents, purgeStaleLeagues, purgeCrossCountryMisclassifiedLeagues, reconcileGameDetailsSubscriptions, startGameDetailsSubscriptionReconcileLoop, purgeCountryPrefixedDuplicateLeagues, purgeExcludedCountries, purgeCountriesNotInOnlyList, wipeLondon365Data, purgeLegacyLeagueKeyFormat, purgeYouthTeamMatches } from './london365/maintenance.js';
 export { getLondon365MemoryDiagnostics, getLondon365Status } from './london365/status.js';

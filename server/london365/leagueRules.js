@@ -146,9 +146,9 @@ export function logLondon365FilterConfig() {
   console.log('[london365] catalogue filter: ' + JSON.stringify(c));
   if (!c.whitelistActive) console.warn('[london365] WARNING: LONDON365_ONLY_COUNTRIES is disabled (\'*\') -> importing EVERY country worldwide');
 }
-// Youth sides are named in the team itself ("Jeugd Royal Francs Borains"): the provider lists them in an ordinary league,
-// takes bets, but never scores them (no result, no clock), so their tickets could never close. Not offered at all.
-export const YOUTH_TEAM_PATTERN = /\b(jeugd|jugend|jeunes?|juvenil(es)?|giovanili|primavera|youth|u-?1[0-9]|u-?2[0-3])\b/i;
+// Youth and women's sides are named in the team itself ("Jeugd Royal Francs Borains"): the provider lists them in an ordinary league,
+// takes bets, but usually never scores them (no result, no clock), so their tickets could never close. Not offered at all.
+export const YOUTH_TEAM_PATTERN = /\b(jeugd|jugend|jeunes?|juvenil(es)?|giovanili|primavera|youth|u-?1[0-9]|u-?2[0-3]|women'?s?|femenin\w*|feminin\w*|femmes|frauen|ladies)\b|\(w\)/i;
 export function isYouthTeam(name) { return YOUTH_TEAM_PATTERN.test(String(name || '')); }
 export function isAllowedByCountryFilter(g, resolvedLeague) {
   if (g && (isYouthTeam(g.home_team) || isYouthTeam(g.away_team))) return false;
