@@ -157,7 +157,9 @@ const apiLimiter = isProduction
   : (req, res, next) => next();
 
 app.use('/api', apiLimiter);
-app.use('/api/auth', authLimiter, authRouter);
+// Only the password check is rate limited: GET /api/auth/me runs on every page load and must not use up the 20 tries.
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth', authRouter);
 app.use('/api/matches', matchesRouter);
 app.use('/api/bets', betsRouter);
 app.use('/api/admin', adminRouter);

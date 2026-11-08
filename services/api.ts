@@ -33,11 +33,13 @@ function setToken(token: string | null) {
 export class ApiError extends Error {
   code?: string;
   body?: any;
-  constructor(message: string, code?: string, body?: any) {
+  status?: number;
+  constructor(message: string, code?: string, body?: any, status?: number) {
     super(message);
     this.name = 'ApiError';
     this.code = code;
     this.body = body;
+    this.status = status;
   }
 }
 
@@ -86,7 +88,7 @@ async function request<T>(path: string, options: RequestInit = {}, opts: { retry
     const body = contentType.includes('application/json') ? await resp.json() : null;
     if (!resp.ok) {
       const message = body?.error ? tr(String(body.error)) : `Request failed (${resp.status})`;
-      throw new ApiError(message, body?.code, body);
+      throw new ApiError(message, body?.code, body, resp.status);
     }
     return body as T;
   }
@@ -124,15 +126,24 @@ export async function login(username: string, password: string): Promise<User> {
 // signing themselves up. See server/routes/auth.js for the same note on
 // the backend side.
 
+// Only a token the server REJECTS (401 expired / invalid, 403 disabled account) logs the person out. A busy server
+// (500 / 503 / 429, a timeout) used to wipe the token here too, so a slow moment threw users back to the login screen.
+// Those are retried a few times and, if the server still does not answer, the signed-in user is kept as last known.
 export async function fetchCurrentUser(): Promise<User | null> {
   if (!getToken()) return null;
-  try {
-    const data = await request<{ user: User }>('/auth/me');
-    return data.user;
-  } catch {
-    setToken(null); // token expired/invalid
-    return null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const data = await request<{ user: User }>('/auth/me');
+      return data.user;
+    } catch (e) {
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        setToken(null); // token expired/invalid or account disabled
+        return null;
+      }
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+    }
   }
+  try { return JSON.parse(localStorage.getItem('cachedUser') || 'null'); } catch { return null; }
 }
 
 export function logout() {

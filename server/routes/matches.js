@@ -283,16 +283,34 @@ setInterval(() => {
 
 // Only the matches in play (a few dozen rows, 1X2 only): what the browser asks for FIRST when a tab is opened or
 // comes back, so minutes, scores and live odds are current in a fraction of a second instead of after the full list.
-router.get('/live', wrap(async (_req, res) => {
+// Not every row that ever had a live status: a finished match keeps live_status = 'ended', so "live_status IS NOT NULL"
+// alone returned every match of the last 48 hours (about a thousand rows, each with its raw JSON stripped in SQL) on every
+// call -- and this route is asked on every page load and from the login screen. A match that kicked off in the last 6 hours
+// still covers anything in play or just ended; the full list already carries the older finished ones.
+// The answer is kept 2 s and identical requests share one build.
+const LIVE_LIST_TTL_MS = 2000;
+let liveListCache = null; // { at, body }
+let liveListInflight = null;
+async function buildLiveList() {
   const { rows } = await queryWithRetry(
-    `SELECT ${MATCH_COLUMNS_LIST} FROM matches_cache WHERE status = 'LIVE' OR live_status IS NOT NULL`
+    `SELECT ${MATCH_COLUMNS_LIST} FROM matches_cache
+      WHERE status = 'LIVE' OR (live_status IS NOT NULL AND start_time_tz(start_time) > NOW() - interval '6 hours')`
   );
   const matches = [];
   for (const r0 of rows) {
     const r = overlayLiveTick(r0, getLatestLiveTick(r0.id));
     try { matches.push(mapEventToMatch(r)); } catch (err) { console.error(`[matches] skipped unreadable live row ${r0 && r0.id}: ${err && err.message}`); }
   }
-  res.json({ matches: dedupeMatches(matches, logMerge) });
+  return { matches: dedupeMatches(matches, logMerge) };
+}
+router.get('/live', wrap(async (_req, res) => {
+  if (liveListCache && Date.now() - liveListCache.at < LIVE_LIST_TTL_MS) return res.json(liveListCache.body);
+  if (!liveListInflight) {
+    liveListInflight = buildLiveList()
+      .then((body) => { liveListCache = { at: Date.now(), body }; return body; })
+      .finally(() => { liveListInflight = null; });
+  }
+  res.json(await liveListInflight);
 }));
 
 router.get('/live-health', wrap(async (_req, res) => {
