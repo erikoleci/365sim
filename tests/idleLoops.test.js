@@ -19,7 +19,7 @@ const { syncLondon365Live, getLondon365Status } = await import('../server/london
 const tracker = await import('../server/liveTracker.js');
 const stats = await import('../server/feedStats.js');
 
-const endDetectionQueries = () => mocks.queries.filter((q) => q.startsWith('SELECT id, live_home_score'));
+const endDetectionQueries = () => mocks.queries.filter((q) => q.startsWith('SELECT id, home_team, away_team, league, live_home_score'));
 
 beforeEach(() => {
   mocks.queries.length = 0; mocks.query.mockClear(); mocks.setKV.mockClear(); mocks.getKV.mockImplementation((k, d) => Promise.resolve(d));
