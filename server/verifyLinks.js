@@ -10,6 +10,7 @@ import { writeFileSync } from 'node:fs';
 import { pool } from './db.js';
 import { strictSameFixture } from './fixtureLink.js';
 import { pickLiveTwin } from './liveTwin.js';
+import { sameTeam } from './fixtureDedupe.js';
 
 const out = [];
 const say = (s = '') => { out.push(s); console.log(s); };
@@ -45,6 +46,17 @@ async function main() {
       problems.push({ c, twin, verdict, openLegs, strict, stranded, lost });
     }
   }
+  // Two finished records of one fixture must show the same final score (ticket #120: 2-4 on one, 4-4 on the other).
+  const mismatches = [];
+  for (const c of catalogue) {
+    if (c.status !== 'FINISHED' || c.result_home == null || c.result_away == null) continue;
+    for (const l of live.filter((x) => strictSameFixture(c, x) && x.status === 'FINISHED' && x.result_home != null && x.result_away != null)) {
+      const crossed = sameTeam(c.home_team, l.away_team) && sameTeam(c.away_team, l.home_team) && !(sameTeam(c.home_team, l.home_team) || sameTeam(c.away_team, l.away_team));
+      const lh = crossed ? l.result_away : l.result_home;
+      const la = crossed ? l.result_home : l.result_away;
+      if (Number(lh) !== Number(c.result_home) || Number(la) !== Number(c.result_away)) mismatches.push({ c, l, lh, la, openLegs: open.get(c.id) || 0 });
+    }
+  }
   say(`Rekorde katalogu të nisura (3 ditë): ${catalogue.length}   rekorde in-play: ${live.length}`);
   say(`LINKED=${tally.LINKED}   AMBIGUOUS=${tally.AMBIGUOUS}   NO TWIN=${tally['NO TWIN']}`);
   say('');
@@ -57,7 +69,10 @@ async function main() {
     if (p.lost) say('   [link-missing] asnjë rekord in-play i gjetur dhe bileta është e hapur: ndeshja nuk është në feed');
   }
   say('');
-  say('PËRFUNDIM: ' + (problems.length ? problems.length + ' rast(e) për t\'u parë' : 'në rregull'));
+  say(mismatches.length ? 'REZULTATE QË NUK PËRPUTHEN (' + mismatches.length + '):' : 'Rezultatet e çifteve të mbaruara përputhen.');
+  for (const m of mismatches) say(`   ${m.c.home_team} v ${m.c.away_team}  katalogu ${m.c.id}=${m.c.result_home}-${m.c.result_away}  in-play ${m.l.id}=${m.lh}-${m.la}  nisja=${m.c.start_time}`);
+  say('');
+  say('PËRFUNDIM: ' + (problems.length || mismatches.length ? (problems.length + mismatches.length) + ' rast(e) për t\'u parë' : 'në rregull'));
 }
 
 main()
