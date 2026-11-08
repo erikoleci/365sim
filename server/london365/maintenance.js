@@ -226,6 +226,11 @@ export async function purgeCountryPrefixedDuplicateLeagues() {
       const strippedSlug = leagueSlug.slice(countryToken.length + 1);
       const cleanKey = 'l365_' + countryToken + '__' + strippedSlug;
       if (cleanKey === key) continue; // nothing left after stripping — not actually a duplicate
+      // Only a REAL duplicate is purged: the clean-named league must exist too. A provider league that is genuinely
+      // called "Spain La Liga" lands under "l365_spain__spain_la_liga"; with no "l365_spain__la_liga" next to it that
+      // key is the real one, and deleting it wiped every in-play La Liga record (no ticket) after each import.
+      const twin = await pool.query("SELECT 1 FROM matches_cache WHERE id LIKE 'l365-%' AND league = $1 LIMIT 1", [cleanKey]);
+      if (!twin.rows || !twin.rows.length) continue;
       const { rowCount } = await pool.query(
         `DELETE FROM matches_cache WHERE id LIKE 'l365-%' AND league = $1 ${NO_PENDING_BETS}`,
         [key]

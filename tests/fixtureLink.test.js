@@ -22,9 +22,18 @@ describe('strictSameFixture - league + exact kick-off + one club', () => {
     expect(strictSameFixture(a, b)).toBe(true);
     expect(strictSameFixture(b, a)).toBe(true);
   });
-  it('never links different leagues, even with the same club and time', () => {
+  it('never links a club of another league at the same time when the opponent is different', () => {
     const [a, b] = PAIRS[1];
-    expect(strictSameFixture(a, { ...b, league: 'l365_portugal__u23_championship' })).toBe(false);
+    expect(strictSameFixture(a, { ...b, away_team: 'Braga', league: 'l365_portugal__u23_championship' })).toBe(false);
+  });
+  it('never links different countries', () => {
+    const [a, b] = PAIRS[1];
+    expect(strictSameFixture(a, { ...b, league: 'l365_spain__laliga' })).toBe(false);
+  });
+  it('links the same league written two ways when both clubs match (Real Sociedad - Rayo, 2026-11-08)', () => {
+    const cat = row('l365-5250306', 'Real Sociedad San Sebastian', 'Rayo Vallecano', { league: 'l365_spain__laliga', start_time: '2026-11-08T15:15:00.000Z' });
+    const live = row('l365-5294707', 'Real Sociedad', 'Rayo Vallecano', { league: 'l365_spain__spain_la_liga', start_time: '2026-11-08T15:15:00.000Z' });
+    expect(strictSameFixture(cat, live)).toBe(true);
   });
   it('never links kick-offs more than 2 minutes apart', () => {
     const [a, b] = PAIRS[1];

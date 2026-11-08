@@ -17,11 +17,18 @@ export function looseSameClub(a, b) {
 // club that matches. The provider writes the other club differently ("Reserves" / "II"), but league + minute never
 // differ for the same fixture, so this does not depend on how the names are spelled.
 export const LINK_START_TOLERANCE_MS = 2 * 60000;
+const leagueCountry = (key) => { const m = /^l365_([a-z0-9-]+)__/.exec(String(key || '')); return m ? m[1] : null; };
 export function strictSameFixture(a, b) {
-  if (!a || !b || !a.league || a.league !== b.league) return false;
+  if (!a || !b || !a.league || !b.league) return false;
   const ta = Date.parse(a.start_time), tb = Date.parse(b.start_time);
   if (!Number.isFinite(ta) || !Number.isFinite(tb) || Math.abs(ta - tb) > LINK_START_TOLERANCE_MS) return false;
-  return looseSameClub(a.home_team, b.home_team) || looseSameClub(a.away_team, b.away_team)
+  const oneClub = looseSameClub(a.home_team, b.home_team) || looseSameClub(a.away_team, b.away_team)
     || looseSameClub(a.home_team, b.away_team) || looseSameClub(a.away_team, b.home_team);
+  if (a.league === b.league) return oneClub;
+  // The provider names the same league differently on its two records ("laliga" / "spain_la_liga"): same COUNTRY and
+  // BOTH clubs matching is then required, so "Sporting CP" in another league of that country cannot be mistaken for it.
+  const ca = leagueCountry(a.league);
+  if (!ca || ca !== leagueCountry(b.league)) return false;
+  return (looseSameClub(a.home_team, b.home_team) && looseSameClub(a.away_team, b.away_team))
+    || (looseSameClub(a.home_team, b.away_team) && looseSameClub(a.away_team, b.home_team));
 }
-
