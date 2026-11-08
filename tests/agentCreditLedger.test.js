@@ -11,6 +11,7 @@ const rows = [
   { id: 2, created_at: D(2026, 11, 5), amount: 100, currency: 'EUR', type: 'OWNER_TO_AGENT', agent_id: 'a1' },
   { id: 3, created_at: D(2026, 11, 6), amount: 2000, currency: 'ALL', type: 'AGENT_TO_OWNER', agent_id: 'a1' },
   { id: 4, created_at: D(2026, 11, 7), amount: 500, currency: 'ALL', type: 'OWNER_TO_AGENT', agent_id: 'gone' },
+  { id: 5, created_at: D(2026, 10, 30), amount: 41000, currency: 'ALL', type: 'OWNER_CREATE_AGENT_FUND', agent_id: 'a2' },
 ];
 const pay = [
   { id: 10, created_at: D(2026, 11, 7), amount: -500, currency: 'EUR', type: 'ADMIN_PAYS_WIN', reference: 'b1', ticket_no: 120, username: 'Mbarsi1' },
@@ -29,12 +30,17 @@ describe('buildAgentLedger', () => {
     expect(a1.credits).toBe(2);
     expect(a1.lastCreditAt).toBe(D(2026, 11, 5));
   });
+  it('the credit an agent was CREATED with counts as credit given (it has its own ledger type)', () => {
+    const a2 = l.agents.find((a) => a.id === 'a2');
+    expect(a2.given).toEqual({ ALL: 41000, EUR: 0 });
+    expect(l.totals.given).toEqual({ ALL: 51000, EUR: 100 });
+    expect(l.history.some((h) => h.id === 5 && h.kind === 'GIVEN')).toBe(true);
+  });
   it('ignores rows of accounts that are not this admin\'s agents', () => {
-    expect(l.totals.given).toEqual({ ALL: 10000, EUR: 100 });
-    expect(l.history.every((h) => h.agentId === 'a1')).toBe(true);
+    expect(l.history.some((h) => h.agentId === 'gone')).toBe(false);
   });
   it('history is newest first, with date and kind', () => {
-    expect(l.history.map((h) => [h.id, h.kind])).toEqual([[3, 'TAKEN'], [2, 'GIVEN'], [1, 'GIVEN']]);
+    expect(l.history.map((h) => [h.id, h.kind])).toEqual([[3, 'TAKEN'], [2, 'GIVEN'], [1, 'GIVEN'], [5, 'GIVEN']]);
   });
   it('winnings paid: paid, reversed and the net', () => {
     expect(l.winPayouts.paid).toEqual({ ALL: 2000, EUR: 500 });
@@ -46,11 +52,11 @@ describe('buildAgentLedger', () => {
     const r = buildAgentLedger({ agents, rows, payRows: pay, range: { from: D(2026, 11, 5), to: D(2026, 11, 6) + 3600000 } });
     expect(r.history.map((h) => h.id)).toEqual([3, 2]);
     expect(r.periodTotals.given).toEqual({ ALL: 0, EUR: 100 });
-    expect(r.totals.given).toEqual({ ALL: 10000, EUR: 100 });
+    expect(r.totals.given).toEqual({ ALL: 51000, EUR: 100 });
     expect(r.winPayouts.history).toEqual([]);
   });
   it('one agent only', () => {
-    expect(buildAgentLedger({ agents, rows, agentId: 'a2' }).history).toEqual([]);
+    expect(buildAgentLedger({ agents, rows, agentId: 'a2' }).history.map((h) => h.id)).toEqual([5]);
   });
   it('works with nothing at all', () => {
     const e = buildAgentLedger({ agents: [], rows: [], payRows: [] });

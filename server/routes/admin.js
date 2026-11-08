@@ -807,9 +807,9 @@ router.get('/agent-credit', async (req, res) => {
   const ids = agents.map((a) => a.id);
   const [{ rows }, { rows: payRows }, { rows: me }] = await Promise.all([
     pool.query(
-      `SELECT id, created_at, amount, currency, type, CASE WHEN type = 'OWNER_TO_AGENT' THEN target_id ELSE source_id END AS agent_id
-         FROM transactions WHERE type IN ('OWNER_TO_AGENT', 'AGENT_TO_OWNER')
-          AND (CASE WHEN type = 'OWNER_TO_AGENT' THEN target_id ELSE source_id END) = ANY($1::text[])`, [ids]),
+      `SELECT id, created_at, amount, currency, type, CASE WHEN type = 'AGENT_TO_OWNER' THEN source_id ELSE target_id END AS agent_id
+         FROM transactions WHERE type IN ('OWNER_TO_AGENT', 'OWNER_CREATE_AGENT_FUND', 'AGENT_TO_OWNER')
+          AND (CASE WHEN type = 'AGENT_TO_OWNER' THEN source_id ELSE target_id END) = ANY($1::text[])`, [ids]),
     pool.query(
       `SELECT t.id, t.created_at, t.amount, t.currency, t.type, t.reference, b.ticket_no, u.username
          FROM transactions t LEFT JOIN bets b ON b.id::text = t.reference LEFT JOIN users u ON u.id = b.user_id
