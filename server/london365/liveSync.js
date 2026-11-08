@@ -18,8 +18,22 @@ import { isTicketedFixture } from './ticketedFixtures.js';
 import { isoFromWholeDate, parseScore, normalizeLiveMinute } from './clock.js';
 import { upsertMatch, recordGoalIfChanged } from './persist.js';
 import { leagueKeyFromCountry } from './leagueKeys.js';
+import { endTwinVerdict } from '../liveTwin.js';
 
 const resultListSample = { at: 0, len: 0, text: '' };
+// Twin check before a record is closed from its own score (see endTwinVerdict). Cannot tell -> wait, never settle on a guess.
+async function endTwinVerdictFor(row) {
+  try {
+    const t = Date.parse(row.start_time);
+    if (Number.isNaN(t)) return { action: 'own' };
+    const { rows } = await pool.query(
+      `SELECT id, home_team, away_team, start_time, league, status, result_home, result_away FROM matches_cache
+        WHERE id LIKE 'l365-%' AND id <> $1 AND (live_home_score IS NOT NULL OR live_minute IS NOT NULL OR result_home IS NOT NULL)
+          AND start_time::timestamptz BETWEEN $2::timestamptz AND $3::timestamptz`,
+      [row.id, new Date(t - 5 * 60000).toISOString(), new Date(t + 5 * 60000).toISOString()]);
+    return endTwinVerdict(row, rows);
+  } catch { return { action: 'wait' }; }
+}
 export const SKIP_END_DETECTION = Symbol('skip-end-detection');
 // Pure decision logic, exported for direct testing: should a match that's
 // marked LIVE in the DB but missing from the provider's current live list
@@ -333,7 +347,7 @@ export async function syncLondon365LiveOnce() {
     bump('endDetection.ran');
     const endQueryStartedAt = Date.now();
     const { rows } = await pool.query(
-      "SELECT id, live_home_score, live_away_score, live_minute, live_minute_updated_at, start_time, fetched_at FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
+      "SELECT id, home_team, away_team, league, live_home_score, live_away_score, live_minute, live_minute_updated_at, start_time, fetched_at FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
     );
     retainLiveKnown(rows.map((r) => r.id), endQueryStartedAt);
     for (const row of rows) {
@@ -350,7 +364,28 @@ export async function syncLondon365LiveOnce() {
         consecutiveMisses: misses, fetchedAt: row.fetched_at, startTime: row.start_time,
       });
       if (!shouldSettle) continue;
+      const tv = await endTwinVerdictFor(row);
+      if (tv.action === 'wait') {
+        bump('endDetection.deferred_twin');
+        if (shouldLogMissingLive('twin:' + row.id)) console.warn('[london365] ' + row.id + ' not closed: its in-play twin is still playing or has no final score yet');
+        continue;
+      }
       missedLiveCycles.delete(row.id);
+      if (tv.action === 'twin') {
+        await pool.query("UPDATE matches_cache SET live_status = 'ended', live_home_score = $2, live_away_score = $3 WHERE id = $1", [row.id, tv.home, tv.away]);
+        pushMatchEnded(row.id, { homeScore: tv.home, awayScore: tv.away });
+        forgetLiveState(row.id);
+        unsubscribeGameDetails(row.id);
+        try {
+          await settleMatch(row.id, tv.home, tv.away);
+          noteMatchStatus(row.id, 'FINISHED');
+          forgetLiveRow(row.id);
+          console.log('[london365] auto-settled ' + row.id + ' ' + tv.home + '-' + tv.away + ' from its twin ' + tv.twinId);
+        } catch (err) {
+          console.error('[london365] auto-settle ' + row.id + ' failed:', err.message);
+        }
+        continue;
+      }
       if (!hasRealLiveResult(row) && !canSettleFromLiveScore(row)) {
         // Never had a real score/clock: close it (it leaves every LIVE list) but do
         // NOT settle bets with an invented 0-0 -- they stay PENDING for the admin.

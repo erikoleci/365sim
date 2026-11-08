@@ -113,4 +113,20 @@ export async function eventSourceIdFor(query, row, { ttlMs = TTL_MS } = {}) {
   evCache.set(row.id, { at: Date.now(), id: best });
   return best;
 }
+// A record that is about to be closed from its OWN last score may have a twin that is still being fed (ticket #120: the
+// catalogue record froze at 2-4 in minute 76, the match ended 4-4 on the in-play record). candidates = rows with live data
+// of the same time window. -> { action: 'own' } no twin, close from its own score as before
+//                              { action: 'wait' } a twin is still playing / has no final score: do NOT settle yet
+//                              { action: 'twin', home, away, twinId } the twin finished: settle on ITS score (sides aligned)
+export function endTwinVerdict(row, candidates) {
+  const twins = (candidates || []).filter((c) => c && c.id !== row.id && strictSameFixture(row, c));
+  if (!twins.length) return { action: 'own' };
+  const done = twins.filter((c) => c.status === 'FINISHED' && c.result_home != null && c.result_away != null);
+  if (done.length !== 1 || twins.length !== done.length) return { action: 'wait' };
+  const c = done[0];
+  const straight = sameTeam(row.home_team, c.home_team) || sameTeam(row.away_team, c.away_team);
+  const crossed = sameTeam(row.home_team, c.away_team) && sameTeam(row.away_team, c.home_team);
+  if (straight === crossed) return { action: 'wait' }; // sides cannot be aligned with certainty
+  return { action: 'twin', twinId: c.id, home: Number(crossed ? c.result_away : c.result_home), away: Number(crossed ? c.result_home : c.result_away) };
+}
 export const __resetLiveTwinCache = () => { cache.clear(); evCache.clear(); };
