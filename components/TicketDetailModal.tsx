@@ -9,6 +9,13 @@ import MatchTimeline, { TimelineState } from './MatchTimeline';
 import MatchDetail from './MatchDetail';
 import type { Match } from '../types';
 
+// A ticket can be closed early (lost for sure) while its match is still being played: keep asking the server for the
+// live minute, score and events of such a leg until the match is surely over (3 h after kick-off).
+const isPlayingNow = (start?: string | null) => {
+  const t = start ? Date.parse(start) : NaN;
+  return Number.isFinite(t) && Date.now() >= t && Date.now() - t < 3 * 3600 * 1000;
+};
+
 // The match page opened ON TOP of the ticket (the ticket stays open underneath; back returns to it).
 // Read-only: statistics and events, no betting. Refreshes the match itself every 10 s while it is live.
 const MatchOverlay: React.FC<{ matchId: string; onClose: () => void }> = ({ matchId, onClose }) => {
@@ -168,7 +175,7 @@ const TicketDetailModal: React.FC<{ ticket: TicketView | null; onClose: () => vo
               <div className="min-w-0 flex-1">
                 <div className="text-xs text-brand-textMuted flex flex-wrap items-center gap-x-2 gap-y-0.5">{leg.matchId ? (
                     <button type="button" onClick={() => setMatchOpen(leg.matchId!)} className="text-left underline decoration-dotted underline-offset-2 hover:text-white" title={t('Hap faqen e ndeshjes')}><MatchupLabel home={leg.matchHome} away={leg.matchAway} size="xs" /></button>
-                  ) : <MatchupLabel home={leg.matchHome} away={leg.matchAway} size="xs" />}<LegWhen placedState={leg.placedState} matchStartTime={leg.matchStartTime} matchId={leg.matchId} watch={ticket.status === 'PENDING' && leg.status === 'PENDING'} className="text-[11px]" /></div>
+                  ) : <MatchupLabel home={leg.matchHome} away={leg.matchAway} size="xs" />}<LegWhen placedState={leg.placedState} matchStartTime={leg.matchStartTime} matchId={leg.matchId} watch={(ticket.status === 'PENDING' && leg.status === 'PENDING') || isPlayingNow(leg.matchStartTime)} className="text-[11px]" /></div>
                 <div className="text-xs text-brand-textMuted truncate">{leg.marketName}</div>
                 <div className="font-bold text-white">{leg.selectionName} <span className="text-brand-yellow font-normal tabular-nums">@{Number(leg.odds).toFixed(2)}</span></div>
                 {leg.matchId && <LegTimeline matchId={leg.matchId} home={leg.matchHome} away={leg.matchAway} live={ticket.status === 'PENDING'} />}
