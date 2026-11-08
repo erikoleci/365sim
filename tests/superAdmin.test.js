@@ -70,6 +70,7 @@ const mocks = vi.hoisted(() => {
     if (s.startsWith('SELECT COUNT(*)::int AS c FROM users')) return { rows: [{ c: users.size }] };
     if (s.startsWith('SELECT * FROM bets WHERE id = $1')) { const b = bets.get(params[0]); return { rows: b ? [b] : [] }; }
     if (s.startsWith("UPDATE bets SET status = 'CANCELLED' WHERE id = $1")) { bets.get(params[0]).status = 'CANCELLED'; return { rows: [] }; }
+    if (s.includes("type IN ('ADMIN_PAYS_WIN', 'ADMIN_WIN_REVERSAL')")) return { rows: [] }; // a win that cost no admin anything
     if (s.startsWith('DELETE FROM bets WHERE id = $1')) { bets.delete(params[0]); return { rows: [] }; }
     if (s.startsWith('SELECT status FROM bet_selections WHERE bet_id = $1')) return { rows: (legs.get(params[0]) || []).map((status) => ({ status })) };
     if (s.startsWith('INSERT INTO ticket_cancellations')) { calls.cancellations.push({ bet_id: params[0], actor_id: params[4], actor_role: params[6], status_before: params[9], decided_legs: params[10], balance_change: params[11], reason: params[12], seen_at: params[14] }); return { rows: [] }; }

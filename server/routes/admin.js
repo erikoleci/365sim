@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { readLiveCorners, readLiveCards } from '../matchSettlement.js';
-import { settleMatch, recomputeBetStatus, creditWithLedger, settleStuckBets, recoverFinishedWithoutResult, explainSettleBlock, wouldSettleNow } from '../matchSettlement.js';
+import { settleMatch, recomputeBetStatus, creditWithLedger, refundAdminForWin, settleStuckBets, recoverFinishedWithoutResult, explainSettleBlock, wouldSettleNow } from '../matchSettlement.js';
 import { missedLiveCycles } from '../london365/liveState.js';
 import { logAudit } from '../auditLog.js';
 import { computeMarketCoverage } from '../marketCoverageScan.js';
@@ -25,6 +25,7 @@ import { importLondon365, getLondon365Status, getLondon365CountryDebug } from '.
 import { monthRange } from './agent.js';
 import { userMetrics, buildCommissionReport, reportRange } from '../commission.js';
 import { buildCreditLedger, feeRateFromEnv } from '../creditLedger.js';
+import { buildAgentLedger } from '../agentCreditLedger.js';
 import { planManualResolve } from '../manualResolve.js';
 import { describeOpenLeg, refineOpenLeg } from '../legWhy.js';
 import { deleteUserIfUnused, deleteBlockedMessage, forceDeleteUser } from '../userDeletion.js';
@@ -796,6 +797,36 @@ router.delete('/credit-settlements/:id', requireSuperAdmin, async (req, res) => 
   res.json({ ok: true });
 });
 
+// The admin's book of the credit he gave to his agents (date, lek, euro, what came back, what each agent has left) and of the
+// winnings paid to players out of his credit. An admin sees his own agents; the super admin sees every admin's.
+router.get('/agent-credit', async (req, res) => {
+  const scope = scopeOf(req.user);
+  const agentId = req.query.agentId ? String(req.query.agentId) : null;
+  const { rows: agents } = await pool.query(
+    `SELECT id, name, username, balance, balance_eur FROM users WHERE role = 'AGENT' AND ($1::text IS NULL OR admin_id = $1)`, [scope]);
+  const ids = agents.map((a) => a.id);
+  const [{ rows }, { rows: payRows }, { rows: me }] = await Promise.all([
+    pool.query(
+      `SELECT id, created_at, amount, currency, type, CASE WHEN type = 'OWNER_TO_AGENT' THEN target_id ELSE source_id END AS agent_id
+         FROM transactions WHERE type IN ('OWNER_TO_AGENT', 'AGENT_TO_OWNER')
+          AND (CASE WHEN type = 'OWNER_TO_AGENT' THEN target_id ELSE source_id END) = ANY($1::text[])`, [ids]),
+    pool.query(
+      `SELECT t.id, t.created_at, t.amount, t.currency, t.type, t.reference, b.ticket_no, u.username
+         FROM transactions t LEFT JOIN bets b ON b.id::text = t.reference LEFT JOIN users u ON u.id = b.user_id
+        WHERE t.type IN ('ADMIN_PAYS_WIN', 'ADMIN_WIN_REVERSAL') AND ($1::text IS NULL OR t.target_id = $1)`, [scope]),
+    pool.query('SELECT balance, balance_eur FROM users WHERE id = $1', [req.user.id]),
+  ]);
+  res.json({
+    ...buildAgentLedger({
+      agents, rows, payRows, agentId,
+      limit: Math.min(Number(req.query.limit) || 300, 1000),
+      range: { from: req.query.from === undefined || req.query.from === '' ? null : Number(req.query.from), to: req.query.to === undefined || req.query.to === '' ? null : Number(req.query.to) },
+    }),
+    myBalance: me[0] ? { ALL: Number(me[0].balance) || 0, EUR: Number(me[0].balance_eur) || 0 } : { ALL: 0, EUR: 0 },
+    adminPaysWins: process.env.ADMIN_PAYS_WINS === '1',
+  });
+});
+
 // An admin's own page: the credit the super admin gave him, with the date and time. Nothing about the cash side.
 router.get('/my-credits', async (req, res) => {
   const { rows } = await pool.query(
@@ -924,6 +955,7 @@ router.delete('/bets/:id', requireSuperAdmin, async (req, res) => {
   try {
     await client.query('BEGIN');
     if (delta !== 0) await client.query(`UPDATE users SET ${walletColumn(bet.currency)} = ${walletColumn(bet.currency)} + $1 WHERE id = $2`, [delta, bet.user_id]);
+    if (adjust && bet.status === 'WON') await refundAdminForWin(client, bet);
     await client.query('DELETE FROM bet_selections WHERE bet_id = $1', [bet.id]);
     await client.query('DELETE FROM bets WHERE id = $1', [bet.id]);
     await client.query('COMMIT');
@@ -991,6 +1023,7 @@ router.post('/bets/:id/cancel', async (req, res) => {
     // are taken back; VOID: it was refunded already, nothing to give twice).
     delta = betBalanceReversal(bet);
     if (delta !== 0) await client.query(`UPDATE users SET ${walletColumn(bet.currency)} = ${walletColumn(bet.currency)} + $1 WHERE id = $2`, [delta, bet.user_id]);
+    if (bet.status === 'WON') await refundAdminForWin(client, bet);
     const now = Date.now();
     await client.query(
       `INSERT INTO ticket_cancellations (bet_id, ticket_no, user_id, owner_admin_id, actor_id, actor_username, actor_role, stake, currency, status_before, decided_legs, balance_change, reason, created_at, seen_at)
@@ -1073,7 +1106,10 @@ router.post('/bets/:id/resolve', async (req, res) => {
     if (plan.error) { await client.query('ROLLBACK'); return res.status(400).json({ error: plan.error.message, code: plan.error.code }); }
     if (plan.noop) { await client.query('ROLLBACK'); return res.json({ ok: true, unchanged: true, status: bet.status }); }
     for (const u of plan.legUpdates) await client.query('UPDATE bet_selections SET status = $1 WHERE id = $2', [u.status, u.id]);
-    if (plan.takeBack > 0) await creditWithLedger(client, bet.user_id, -plan.takeBack, bet.status === 'VOID' ? 'BET_VOID_REFUND_REVERSAL' : 'BET_WIN_REVERSAL', bet.id, bet.currency);
+    if (plan.takeBack > 0) {
+      await creditWithLedger(client, bet.user_id, -plan.takeBack, bet.status === 'VOID' ? 'BET_VOID_REFUND_REVERSAL' : 'BET_WIN_REVERSAL', bet.id, bet.currency);
+      if (bet.status === 'WON') await refundAdminForWin(client, bet); // the admin gets back what this win cost him
+    }
     await recomputeBetStatus(bet.id, client);
     await client.query('COMMIT');
   } catch (err) {

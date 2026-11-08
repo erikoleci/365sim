@@ -1055,6 +1055,35 @@ export async function creditWithLedger(client, userId, amount, type, betId, curr
   );
 }
 
+// ---- Winnings come out of the owner admin's credit (switch: ADMIN_PAYS_WINS=1, default OFF) ----
+// When a ticket is paid as WON the same amount is taken off the admin who owns the player (his own balance, in the
+// ticket's currency). The player is ALWAYS paid, even if the admin's credit is not enough: the admin's balance then goes
+// negative and the admin page shows it, so the money owed is visible and nobody is blocked. A player without an admin
+// (the super admin's own players) costs nobody: the super admin mints money. Every move is a `transactions` row:
+// ADMIN_PAYS_WIN (negative, reference = bet id) and ADMIN_WIN_REVERSAL (positive) when the win is taken back.
+export const adminPaysWins = () => process.env.ADMIN_PAYS_WINS === '1';
+export async function chargeAdminForWin(client, bet, amount) {
+  if (!adminPaysWins()) return;
+  const amt = Number(amount);
+  if (!Number.isFinite(amt) || amt <= 0) return;
+  const { rows } = await client.query(
+    `SELECT a.id FROM users u LEFT JOIN users ag ON ag.id = u.agent_id JOIN users a ON a.id = COALESCE(u.admin_id, ag.admin_id)
+      WHERE u.id = $1 AND a.role = 'ADMIN'`, [bet.user_id]);
+  if (!rows[0]) return;
+  await creditWithLedger(client, rows[0].id, -amt, 'ADMIN_PAYS_WIN', String(bet.id), bet.currency);
+}
+// Gives back to the admin what this ticket's win cost him (nothing when it never cost him: old tickets, switch off).
+// Works from the ledger rows, so it never gives back more than was taken and never twice. Not gated by the switch.
+export async function refundAdminForWin(client, bet) {
+  const { rows } = await client.query(
+    `SELECT target_id AS admin_id, COALESCE(SUM(amount), 0) AS net FROM transactions
+      WHERE reference = $1 AND type IN ('ADMIN_PAYS_WIN', 'ADMIN_WIN_REVERSAL') GROUP BY target_id`, [String(bet.id)]);
+  for (const r of rows) {
+    const owed = -Number(r.net);
+    if (owed > 0.004) await creditWithLedger(client, r.admin_id, Math.round(owed * 100) / 100, 'ADMIN_WIN_REVERSAL', String(bet.id), bet.currency);
+  }
+}
+
 // Recompute a bet's overall status from its legs, and pay out balance
 // exactly once, the moment it transitions into WON (or VOID = refund).
 //
@@ -1085,13 +1114,17 @@ export async function recomputeBetStatus(betId, client = pool) {
   if (nextStatus === 'WON' && outcome.payout != null) {
     // Some legs were refunded and/or half won / half lost: pay what the legs are really worth.
     await client.query('UPDATE bets SET status = $1, total_odds = $2, potential_return = $3 WHERE id = $4', [nextStatus, outcome.totalOdds, outcome.payout, betId]);
-    if (bet.status !== 'WON') await creditWithLedger(client, bet.user_id, outcome.payout, 'BET_WIN_PAYOUT', betId, bet.currency);
+    if (bet.status !== 'WON') {
+      await creditWithLedger(client, bet.user_id, outcome.payout, 'BET_WIN_PAYOUT', betId, bet.currency);
+      await chargeAdminForWin(client, bet, outcome.payout);
+    }
     return;
   }
 
   await client.query('UPDATE bets SET status = $1 WHERE id = $2', [nextStatus, betId]);
   if (nextStatus === 'WON' && bet.status !== 'WON') {
     await creditWithLedger(client, bet.user_id, bet.potential_return, 'BET_WIN_PAYOUT', betId, bet.currency);
+    await chargeAdminForWin(client, bet, bet.potential_return);
   }
   if (nextStatus === 'VOID' && bet.status !== 'VOID') {
     await creditWithLedger(client, bet.user_id, bet.stake, 'BET_VOID_REFUND', betId, bet.currency);

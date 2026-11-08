@@ -474,6 +474,26 @@ export async function adminEditCredit(id: number, patch: { isTest?: boolean; at?
 export interface MyCredits { credits: { id: number; at: number; currency: 'ALL' | 'EUR'; amount: number; isTest: boolean }[]; total: { ALL: number; EUR: number } }
 export async function adminFetchMyCredits() { return request<MyCredits>('/admin/my-credits'); }
 
+/** Admin: the credit he gave to his agents, and the winnings paid to players out of his credit. */
+export interface AgentCreditLedger {
+  agents: { id: string; name: string; username: string; remaining: Dual; given: Dual; takenBack: Dual; net: Dual; credits: number; lastCreditAt: number | null; period: { given: Dual; takenBack: Dual; credits: number } }[];
+  totals: { given: Dual; takenBack: Dual; net: Dual; remaining: Dual };
+  periodTotals?: { given: Dual; takenBack: Dual; credits: number };
+  history: { id: number; at: number; agentId: string; agentName: string; agentUsername: string; currency: 'ALL' | 'EUR'; amount: number; kind: 'GIVEN' | 'TAKEN' }[];
+  winPayouts: { paid: Dual; reversed: Dual; net: Dual; period?: { paid: Dual; reversed: Dual }; history: { id: number; at: number; currency: 'ALL' | 'EUR'; amount: number; kind: 'PAID' | 'REVERSED'; ticketNo: number | null; username: string | null }[] };
+  myBalance: Dual;
+  adminPaysWins: boolean;
+}
+export async function adminFetchAgentCredit(range?: { from?: number | null; to?: number | null }, agentId?: string) {
+  const q = new URLSearchParams();
+  if (agentId) q.set('agentId', agentId);
+  if (range?.from != null) q.set('from', String(range.from));
+  if (range?.to != null) q.set('to', String(range.to));
+  if (range && (range.from != null || range.to != null)) q.set('limit', '1000');
+  const qs = q.toString();
+  return request<AgentCreditLedger>(`/admin/agent-credit${qs ? '?' + qs : ''}`);
+}
+
 export interface AdminPendingLeg {
   match_id: string; match_home: string; match_away: string; market_name: string; selection_name: string;
   legs: number; bets: number; start_time: string; match_status: string; result_home: number | null; result_away: number | null;
