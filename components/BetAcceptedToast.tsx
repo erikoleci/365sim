@@ -11,7 +11,7 @@ const BetAcceptedToast: React.FC<{ show: boolean; onDismiss: () => void }> = ({ 
       onClick={onDismiss}
       className="fixed left-3 right-3 bottom-24 md:bottom-6 md:left-auto md:right-6 md:max-w-sm z-50 bg-emerald-600 text-white text-sm font-bold rounded-lg shadow-2xl px-4 py-3 cursor-pointer text-center"
     >
-      {t('Agjenti pranoi biletën tuaj')}
+      {t('Operatori pranoi biletën tuaj')}
     </div>
   );
 };

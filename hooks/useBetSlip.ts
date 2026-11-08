@@ -24,7 +24,7 @@ export function useBetSlip({ currentUser, setCurrentUser, onPlaced }: Options) {
 
   // Set when a pick is refused because it follows the same logic as a pick already on the slip.
   const [blockedNotice, setBlockedNotice] = useState<{ list: string } | null>(null);
-  // True for a few seconds after a ticket was booked ("Agjenti pranoi biletën tuaj").
+  // True for a few seconds after a ticket was booked ("Operatori pranoi biletën tuaj").
   const [betAccepted, setBetAccepted] = useState(false);
   useEffect(() => {
     if (!betAccepted) return;
@@ -95,7 +95,7 @@ export function useBetSlip({ currentUser, setCurrentUser, onPlaced }: Options) {
       const result = await api.placeBet(stake, type, selections, currency);
       setCurrentUser((prev) => (prev ? { ...prev, balance: result.balance, balanceEur: result.balanceEur } : prev));
       setSelections([]);
-      // The ticket is booked: tell the player the agent accepted it (see BetAcceptedToast).
+      // The ticket is booked: tell the player the operator accepted it (see BetAcceptedToast).
       setBetAccepted(true);
       // The ticket is booked: the confirmation must not wait for "my bets" to reload (that request
       // returns EVERY ticket of the player and grows with the account -- it added seconds). It runs
