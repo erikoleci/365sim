@@ -8,7 +8,7 @@ const fix = (d) => ({ ALL: round2(d.ALL), EUR: round2(d.EUR) });
 
 /**
  * agents:  [{ id, name, username, balance, balance_eur }]
- * rows:    [{ id, created_at, amount, currency, type: 'OWNER_TO_AGENT' | 'OWNER_CREATE_AGENT_FUND' (the credit an agent was created with) | 'AGENT_TO_OWNER', agent_id }]
+ * rows:    [{ id, created_at, amount, currency, type: 'OWNER_TO_AGENT' | 'OWNER_CREATE_AGENT_FUND' (credit at creation) | 'ADMIN_TO_USER' (generic credit button) | 'AGENT_TO_OWNER' | 'USER_TO_ADMIN', agent_id }]
  * payRows: [{ id, created_at, amount, currency, type: 'ADMIN_PAYS_WIN' | 'ADMIN_WIN_REVERSAL', reference, ticket_no, username }]
  *          ADMIN_PAYS_WIN rows carry a NEGATIVE amount (taken off the admin), ADMIN_WIN_REVERSAL a positive one.
  */
@@ -33,7 +33,9 @@ export function buildAgentLedger({ agents, rows, payRows = [], agentId = null, l
     const c = cur(r.currency);
     const amount = Number(r.amount) || 0;
     const at = Number(r.created_at) || 0;
-    const given = r.type === 'OWNER_TO_AGENT' || r.type === 'OWNER_CREATE_AGENT_FUND';
+    // Credit reaches an agent as OWNER_TO_AGENT (agents tab), OWNER_CREATE_AGENT_FUND (when he is created) or ADMIN_TO_USER (the
+    // generic credit button on any account); it goes back as AGENT_TO_OWNER or USER_TO_ADMIN. The query only sends rows of agents.
+    const given = r.type === 'OWNER_TO_AGENT' || r.type === 'OWNER_CREATE_AGENT_FUND' || r.type === 'ADMIN_TO_USER';
     if (given) { a.given[c] += amount; a.credits += 1; if (a.lastCreditAt == null || at > a.lastCreditAt) a.lastCreditAt = at; }
     else a.takenBack[c] += amount;
     if (inRange(at)) {
