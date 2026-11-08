@@ -114,6 +114,42 @@ const AgentCredit: React.FC<{ isSuper?: boolean }> = ({ isSuper }) => {
       </div>
 
       <div className="bg-brand-panel border border-[#444] rounded">
+        <div className="px-3 py-2 text-xs font-bold uppercase tracking-wider border-b border-[#444]">{t('Kredia e dhënë direkt userave')}</div>
+        {(data.directUsers?.list.length ?? 0) === 0 ? <div className="text-xs text-brand-textMuted p-4 text-center">{t('Asnje kredi e dhene direkt userave.')}</div> : (
+          <>
+            <div className="grid grid-cols-3 gap-3 p-3">
+              <Card title={t('Dhënë userave')} v={dual(data.directUsers.totals.given)} className="text-green-400" />
+              <Card title={t('Marrë mbrapsht')} v={dual(data.directUsers.totals.takenBack)} className="text-orange-300" />
+              <Card title={t('Neto')} v={dual(data.directUsers.totals.net)} />
+            </div>
+            <div className="overflow-x-auto"><table className="w-full text-xs">
+              <thead><tr className="text-left text-brand-textMuted"><th className="p-2">{t('Useri')}</th><th className="p-2 text-right">{t('Dhënë')}</th><th className="p-2 text-right">{t('Marrë mbrapsht')}</th><th className="p-2 text-right">{t('Ka tani')}</th><th className="p-2">{t('Kredia e fundit')}</th></tr></thead>
+              <tbody>{data.directUsers.list.map((u) => (
+                <tr key={u.id} className="border-t border-[#333]">
+                  <td className="p-2 whitespace-nowrap font-bold">{u.name} <span className="text-brand-textMuted font-normal">({u.username})</span></td>
+                  <td className="p-2 text-right whitespace-nowrap text-green-400">{money(u.given.ALL)} L<br />€{money(u.given.EUR)}</td>
+                  <td className="p-2 text-right whitespace-nowrap text-orange-300">{money(u.takenBack.ALL)} L<br />€{money(u.takenBack.EUR)}</td>
+                  <td className="p-2 text-right whitespace-nowrap font-bold">{money(u.remaining.ALL)} L<br />€{money(u.remaining.EUR)}</td>
+                  <td className="p-2 whitespace-nowrap">{u.lastCreditAt ? when(u.lastCreditAt) : '—'}</td>
+                </tr>
+              ))}</tbody>
+            </table></div>
+            <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-brand-textMuted border-t border-[#333]">{t('Historia')}</div>
+            <div className="overflow-x-auto"><table className="w-full text-xs">
+              <thead><tr className="text-left text-brand-textMuted"><th className="p-2">{t('Data')}</th><th className="p-2">{t('Useri')}</th><th className="p-2 text-right">{t('Shuma')}</th></tr></thead>
+              <tbody>{data.directUsers.history.map((h) => (
+                <tr key={h.id} className="border-t border-[#333]">
+                  <td className="p-2 whitespace-nowrap">{when(h.at)}</td>
+                  <td className="p-2 whitespace-nowrap">{h.userName} <span className="text-brand-textMuted">({h.username})</span></td>
+                  <td className={`p-2 text-right font-bold whitespace-nowrap ${h.kind === 'GIVEN' ? 'text-green-400' : 'text-orange-300'}`}>{h.kind === 'GIVEN' ? '+' : '−'}{amt(h.currency, h.amount)}</td>
+                </tr>
+              ))}</tbody>
+            </table></div>
+          </>
+        )}
+      </div>
+
+      <div className="bg-brand-panel border border-[#444] rounded">
         <div className="px-3 py-2 text-xs font-bold uppercase tracking-wider border-b border-[#444]">
           {t('Fitime të paguara userave (zbritur nga kredia e adminit)')}
           {!data.adminPaysWins && <span className="ml-2 normal-case font-normal text-brand-textMuted">{t('— zbritja është e fikur tani')}</span>}

@@ -86,3 +86,37 @@ export function buildAgentLedger({ agents, rows, payRows = [], agentId = null, l
     },
   };
 }
+
+/**
+ * Credit the admin gave DIRECTLY to players (the generic credit button): per player what he got, what came back, what he has.
+ * users:   [{ id, name, username, balance, balance_eur, agent_id }]
+ * rows:    [{ id, created_at, amount, currency, type: 'ADMIN_TO_USER' | 'USER_TO_ADMIN', user_id }]
+ */
+export function buildUserCredit({ users, rows, range = null, limit = 300 }) {
+  const from = range ? bound(range.from) : null;
+  const to = range ? bound(range.to) : null;
+  const inRange = (at) => (from == null || at >= from) && (to == null || at <= to);
+  const per = new Map();
+  for (const u of users || []) {
+    per.set(u.id, { id: u.id, name: u.name, username: u.username, viaAgent: u.agent_id != null, remaining: { ALL: round2(u.balance), EUR: round2(u.balance_eur) }, given: zero(), takenBack: zero(), credits: 0, lastCreditAt: null });
+  }
+  const history = [];
+  const totals = { given: zero(), takenBack: zero() };
+  for (const r of rows || []) {
+    const u = per.get(r.user_id);
+    if (!u) continue;
+    const c = cur(r.currency);
+    const amount = Number(r.amount) || 0;
+    const at = Number(r.created_at) || 0;
+    const given = r.type === 'ADMIN_TO_USER';
+    if (!inRange(at)) continue;
+    if (given) { u.given[c] += amount; u.credits += 1; if (u.lastCreditAt == null || at > u.lastCreditAt) u.lastCreditAt = at; totals.given[c] += amount; }
+    else { u.takenBack[c] += amount; totals.takenBack[c] += amount; }
+    history.push({ id: r.id, at, userId: u.id, userName: u.name, username: u.username, currency: c, amount: round2(amount), kind: given ? 'GIVEN' : 'TAKEN' });
+  }
+  const list = [...per.values()].filter((u) => u.credits > 0 || u.takenBack.ALL > 0 || u.takenBack.EUR > 0)
+    .map((u) => ({ ...u, given: fix(u.given), takenBack: fix(u.takenBack), net: fix({ ALL: u.given.ALL - u.takenBack.ALL, EUR: u.given.EUR - u.takenBack.EUR }) }))
+    .sort((x, y) => (y.lastCreditAt || 0) - (x.lastCreditAt || 0) || String(x.name).localeCompare(String(y.name)));
+  history.sort((x, y) => y.at - x.at || Number(y.id) - Number(x.id));
+  return { list, totals: { given: fix(totals.given), takenBack: fix(totals.takenBack), net: fix({ ALL: totals.given.ALL - totals.takenBack.ALL, EUR: totals.given.EUR - totals.takenBack.EUR }) }, history: history.slice(0, limit) };
+}

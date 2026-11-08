@@ -481,6 +481,11 @@ export interface AgentCreditLedger {
   periodTotals?: { given: Dual; takenBack: Dual; credits: number };
   history: { id: number; at: number; agentId: string; agentName: string; agentUsername: string; currency: 'ALL' | 'EUR'; amount: number; kind: 'GIVEN' | 'TAKEN' }[];
   winPayouts: { paid: Dual; reversed: Dual; net: Dual; period?: { paid: Dual; reversed: Dual }; history: { id: number; at: number; currency: 'ALL' | 'EUR'; amount: number; kind: 'PAID' | 'REVERSED'; ticketNo: number | null; username: string | null }[] };
+  directUsers: {
+    list: { id: string; name: string; username: string; viaAgent: boolean; remaining: Dual; given: Dual; takenBack: Dual; net: Dual; credits: number; lastCreditAt: number | null }[];
+    totals: { given: Dual; takenBack: Dual; net: Dual };
+    history: { id: number; at: number; userId: string; userName: string; username: string; currency: 'ALL' | 'EUR'; amount: number; kind: 'GIVEN' | 'TAKEN' }[];
+  };
   myBalance: Dual;
   adminPaysWins: boolean;
 }

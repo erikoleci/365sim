@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAgentLedger } from '../server/agentCreditLedger.js';
+import { buildAgentLedger, buildUserCredit } from '../server/agentCreditLedger.js';
 
 const D = (y, m, d) => Date.UTC(y, m - 1, d, 10);
 const agents = [
@@ -70,5 +70,35 @@ describe('buildAgentLedger', () => {
     const e = buildAgentLedger({ agents: [], rows: [], payRows: [] });
     expect(e.agents).toEqual([]);
     expect(e.winPayouts.net).toEqual({ ALL: 0, EUR: 0 });
+  });
+});
+
+describe('buildUserCredit (credit given directly to players)', () => {
+  const users = [
+    { id: 'u1', name: 'Visi', username: 'visi1', balance: 800, balance_eur: 0, agent_id: null },
+    { id: 'u2', name: 'Mbarsi', username: 'mbarsi1', balance: 0, balance_eur: 120, agent_id: 'a1' },
+    { id: 'u3', name: 'Asnje', username: 'asnje', balance: 5, balance_eur: 0, agent_id: null },
+  ];
+  const rows = [
+    { id: 1, created_at: D(2026, 11, 1), amount: 1000, currency: 'ALL', type: 'ADMIN_TO_USER', user_id: 'u1' },
+    { id: 2, created_at: D(2026, 11, 3), amount: 200, currency: 'ALL', type: 'USER_TO_ADMIN', user_id: 'u1' },
+    { id: 3, created_at: D(2026, 11, 4), amount: 100, currency: 'EUR', type: 'ADMIN_TO_USER', user_id: 'u2' },
+    { id: 4, created_at: D(2026, 11, 4), amount: 50, currency: 'ALL', type: 'ADMIN_TO_USER', user_id: 'someone-else' },
+  ];
+  const r = buildUserCredit({ users, rows });
+  it('per player: given, taken back, net, what he has; euro apart from lek', () => {
+    const u1 = r.list.find((u) => u.id === 'u1');
+    expect(u1).toMatchObject({ given: { ALL: 1000, EUR: 0 }, takenBack: { ALL: 200, EUR: 0 }, net: { ALL: 800, EUR: 0 }, remaining: { ALL: 800, EUR: 0 } });
+    expect(r.list.find((u) => u.id === 'u2').given).toEqual({ ALL: 0, EUR: 100 });
+  });
+  it('players who never got credit are not listed, nor are unknown accounts', () => {
+    expect(r.list.map((u) => u.id).sort()).toEqual(['u1', 'u2']);
+    expect(r.history.map((h) => h.id)).toEqual([3, 2, 1]);
+  });
+  it('totals and a date range', () => {
+    expect(r.totals.given).toEqual({ ALL: 1000, EUR: 100 });
+    const only = buildUserCredit({ users, rows, range: { from: D(2026, 11, 3), to: D(2026, 11, 4) + 3600000 } });
+    expect(only.history.map((h) => h.id)).toEqual([3, 2]);
+    expect(only.totals.given).toEqual({ ALL: 0, EUR: 100 });
   });
 });

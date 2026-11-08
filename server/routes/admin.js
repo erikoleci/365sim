@@ -25,7 +25,7 @@ import { importLondon365, getLondon365Status, getLondon365CountryDebug } from '.
 import { monthRange } from './agent.js';
 import { userMetrics, buildCommissionReport, reportRange } from '../commission.js';
 import { buildCreditLedger, feeRateFromEnv } from '../creditLedger.js';
-import { buildAgentLedger } from '../agentCreditLedger.js';
+import { buildAgentLedger, buildUserCredit } from '../agentCreditLedger.js';
 import { planManualResolve } from '../manualResolve.js';
 import { describeOpenLeg, refineOpenLeg } from '../legWhy.js';
 import { deleteUserIfUnused, deleteBlockedMessage, forceDeleteUser } from '../userDeletion.js';
@@ -805,6 +805,16 @@ router.get('/agent-credit', async (req, res) => {
   const { rows: agents } = await pool.query(
     `SELECT id, name, username, balance, balance_eur FROM users WHERE role = 'AGENT' AND ($1::text IS NULL OR admin_id = $1)`, [scope]);
   const ids = agents.map((a) => a.id);
+  // Credit the admin moved to / from players with the generic credit button (not through an agent's own wallet).
+  const { rows: userRows } = await pool.query(
+    `SELECT t.id, t.created_at, t.amount, t.currency, t.type, CASE WHEN t.type = 'USER_TO_ADMIN' THEN t.source_id ELSE t.target_id END AS user_id
+       FROM transactions t
+      WHERE t.type IN ('ADMIN_TO_USER', 'USER_TO_ADMIN')
+        AND ($1::text IS NULL OR (CASE WHEN t.type = 'USER_TO_ADMIN' THEN t.target_id ELSE t.source_id END) = $1)`, [scope]);
+  const userIds = [...new Set(userRows.map((r) => r.user_id))];
+  const { rows: players } = userIds.length
+    ? await pool.query(`SELECT id, name, username, balance, balance_eur, agent_id FROM users WHERE role = 'USER' AND id = ANY($1::text[])`, [userIds])
+    : { rows: [] };
   const [{ rows }, { rows: payRows }, { rows: me }] = await Promise.all([
     pool.query(
       `SELECT id, created_at, amount, currency, type, CASE WHEN type IN ('AGENT_TO_OWNER', 'USER_TO_ADMIN') THEN source_id ELSE target_id END AS agent_id
@@ -820,6 +830,10 @@ router.get('/agent-credit', async (req, res) => {
     ...buildAgentLedger({
       agents, rows, payRows, agentId,
       limit: Math.min(Number(req.query.limit) || 300, 1000),
+      range: { from: req.query.from === undefined || req.query.from === '' ? null : Number(req.query.from), to: req.query.to === undefined || req.query.to === '' ? null : Number(req.query.to) },
+    }),
+    directUsers: buildUserCredit({
+      users: players, rows: userRows, limit: Math.min(Number(req.query.limit) || 300, 1000),
       range: { from: req.query.from === undefined || req.query.from === '' ? null : Number(req.query.from), to: req.query.to === undefined || req.query.to === '' ? null : Number(req.query.to) },
     }),
     myBalance: me[0] ? { ALL: Number(me[0].balance) || 0, EUR: Number(me[0].balance_eur) || 0 } : { ALL: 0, EUR: 0 },
