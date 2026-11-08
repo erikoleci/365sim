@@ -79,7 +79,14 @@ export function providerOutcome(spec, sel, ctx) {
     }
     case 'goal_before': {
       const y = yesNo(sel);
-      if (y === null || !goalTimeline) return null;
+      if (y === null) return null;
+      if (!goalTimeline) {
+        // No trusted minute-by-minute log. The final score alone still decides one case: the k-th goal never happened
+        // (e.g. "3rd home goal before 60:00" when the home side finished on 2) -> it did not happen before any minute.
+        const total = spec.side === 'HOME' ? fh : spec.side === 'AWAY' ? fa : fh + fa;
+        if (Number.isFinite(total) && total < spec.k) return won(y === false);
+        return null;
+      }
       const goals = spec.side ? goalTimeline.filter((g) => g.side === spec.side) : goalTimeline;
       const happened = goals.length >= spec.k && goals[spec.k - 1].minute <= spec.minute;
       return won(happened === y);

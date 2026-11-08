@@ -128,3 +128,19 @@ describe('in play', () => {
     expect(describeMarket('x', 'Menyra e Golit te 2-te').autoSettles).toBe(false);
   });
 });
+
+describe('goal before minute N without a trusted goal log (ticket #120, Man Utd 2-4 Aston Villa)', () => {
+  const ctx = (fh, fa) => ({ homeScore: fh, awayScore: fa, htHome: 1, htAway: 1, goalTimeline: undefined });
+  const third = parseProviderMarket('goli i trete i pritesit perpara min. 60:00');
+  it('the 3rd home goal never happened when the home side finished on 2: "Po" loses, "Jo" wins', () => {
+    expect(providerOutcome(third, 'po', ctx(2, 4))).toBe('LOST');
+    expect(providerOutcome(third, 'jo', ctx(2, 4))).toBe('WON');
+  });
+  it('stays undecided when the goal exists but its minute is not trusted', () => {
+    expect(providerOutcome(third, 'po', ctx(3, 1))).toBe(null);
+  });
+  it('works for either-team goals and the away side', () => {
+    expect(providerOutcome(parseProviderMarket('goli i dyte shenohet perpara min. 60:00'), 'po', ctx(1, 0))).toBe('LOST');
+    expect(providerOutcome(parseProviderMarket('goli i pare i udhetuesit perpara min. 60:00'), 'po', ctx(3, 0))).toBe('LOST');
+  });
+});
