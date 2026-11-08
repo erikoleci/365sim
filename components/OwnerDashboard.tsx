@@ -534,6 +534,18 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
                         </td>
                       </tr>
                     ))}
+                    {monthly.agentsOwn && monthly.agentsOwn.tickets > 0 && (
+                      <tr className="border-b border-[#333]">
+                        <td className="py-1.5 pr-2 text-brand-textMuted">{t('Agjentët vetë (bileta të veta)')}</td>
+                        <td className="py-1.5 pr-2">{monthly.agentsOwn.total_users}</td>
+                        <td className="py-1.5 pr-2">{monthly.agentsOwn.tickets} <span className="text-brand-textMuted">({monthly.agentsOwn.won_tickets}/{monthly.agentsOwn.lost_tickets})</span></td>
+                        <td className="py-1.5 pr-2">{dual(monthly.agentsOwn.turnover, monthly.agentsOwn.turnover_eur)}</td>
+                        <td className="py-1.5 pr-2 text-green-400">{dual(monthly.agentsOwn.wins, monthly.agentsOwn.wins_eur)}</td>
+                        <td className="py-1.5 pr-2 text-red-400">{dual(monthly.agentsOwn.losses, monthly.agentsOwn.losses_eur)}</td>
+                        <td className="py-1.5 pr-2">{dual(monthly.agentsOwn.pending, monthly.agentsOwn.pending_eur)}</td>
+                        <td className="py-1.5 pr-2">-</td>
+                      </tr>
+                    )}
                     {monthly.direct && (monthly.direct.total_users > 0 || monthly.direct.tickets > 0) && (
                       <tr className="border-b border-[#333]">
                         <td className="py-1.5 pr-2 text-brand-textMuted">{t('Userat direkt (pa agjent)')}</td>

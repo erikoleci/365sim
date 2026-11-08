@@ -304,6 +304,17 @@ router.get('/reports/monthly', async (req, res) => {
     [rangeStart, rangeEnd, scope]
   );
 
+  // Tickets the agents placed with THEIR OWN account: they are inside the totals above (the totals count every account of the
+  // admin) but in no agent's row (those count only his players), so the rows did not add up to the totals. Display only.
+  const { rows: ownRows } = await pool.query(
+    `SELECT COUNT(DISTINCT u.id)::int AS total_users,
+            ${TICKET_SUMS}
+     FROM users u
+     JOIN bets b ON b.user_id = u.id AND b.status <> 'CANCELLED' AND b.created_at >= $1 AND b.created_at < $2
+     WHERE u.role = 'AGENT' AND ($3::text IS NULL OR u.admin_id = $3)`,
+    [rangeStart, rangeEnd, scope]
+  );
+
   const t = withNet(totalsRows[0]);
   const d = withNet(directRows[0]);
   res.json({
@@ -317,6 +328,8 @@ router.get('/reports/monthly', async (req, res) => {
     },
     // Users that belong to the admin directly (no agent in between).
     direct: d,
+    // The agents' own tickets (see the query above).
+    agentsOwn: withNet(ownRows[0]),
     // commissionOwed: the agent's share of the house's net result for the month, per currency (informational).
     agents: perAgent.map((raw) => {
       const a = withNet(raw);

@@ -642,6 +642,8 @@ export interface AdminMonthlyReport {
   totals: { totalAgents: number; totalUsers: number; totalTickets: number; turnover: number; wins: number; losses: number; pending: number; wonTickets: number; lostTickets: number; pendingTickets: number; netResult: number; turnoverEur: number; winsEur: number; lossesEur: number; pendingEur: number; netResultEur: number };
   // users that belong to the admin directly (no agent in between)
   direct: { total_users: number; tickets: number; won_tickets: number; lost_tickets: number; pending_tickets: number; turnover: number; wins: number; losses: number; pending: number; netResult: number; turnover_eur: number; wins_eur: number; losses_eur: number; pending_eur: number; netResultEur: number };
+  // tickets the agents placed with their own account (in the totals, in no agent's row)
+  agentsOwn?: { total_users: number; tickets: number; won_tickets: number; lost_tickets: number; pending_tickets: number; turnover: number; wins: number; losses: number; pending: number; netResult: number; turnover_eur: number; wins_eur: number; losses_eur: number; pending_eur: number; netResultEur: number };
   agents: { id: string; name: string; username: string; total_users: number; tickets: number; won_tickets: number; lost_tickets: number; pending_tickets: number; turnover: number; wins: number; losses: number; pending: number; commission_rate: number; netResult: number; commissionRate: number; commissionOwed: number; turnover_eur: number; wins_eur: number; losses_eur: number; pending_eur: number; netResultEur: number; commissionOwedEur: number }[];
 }
 // Super admin: what every admin did in the month (credit, agents, users, tickets, turnover, won / lost, net).
