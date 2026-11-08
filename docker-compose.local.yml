@@ -5,8 +5,17 @@
 # MOS përdor "docker compose down -v" (fshin volumin dhe me të të gjitha biletat).
 name: sim365
 
+# Docker keeps every line a container prints, with no limit by default: the app logs a lot, and the log file of a
+# long-running container grows until the disk is full. Keep at most 5 files of 20 MB per container.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   db:
+    logging: *logging
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -23,6 +32,7 @@ services:
     # Nuk botohet jashtë (vetëm aplikacioni e arrin brenda rrjetit të Docker).
 
   app:
+    logging: *logging
     build: .
     image: sim365-app:local
     restart: unless-stopped
@@ -56,6 +66,7 @@ services:
 
   # Ndërron fjalëkalimet e njohura admin/admin, root/root, user/user (vetëm nëse janë ende ato).
   secure:
+    logging: *logging
     image: sim365-app:local
     depends_on:
       app:
@@ -68,6 +79,7 @@ services:
     command: ["node", "local/secure-accounts.js"]
 
   tunnel:
+    logging: *logging
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
     depends_on:
@@ -76,6 +88,7 @@ services:
     command: ["tunnel", "--no-autoupdate", "--metrics", "0.0.0.0:2000", "--url", "http://app:3001"]
 
   notifier:
+    logging: *logging
     image: alpine:3.20
     restart: unless-stopped
     depends_on:

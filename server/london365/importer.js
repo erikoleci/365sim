@@ -14,6 +14,7 @@ import { isoFromWholeDate, statusFromCommence } from './clock.js';
 import { upsertMatch } from './persist.js';
 import { purgeCountryPrefixedDuplicateLeagues, purgeCountriesNotInOnlyList, reconcileGameDetailsSubscriptions } from './maintenance.js';
 import { setLastImportAt, lastImportMemo, getLastImportAt } from './importState.js';
+const loggedLeagueLines = new Map(); // league id -> last line printed
 
 export let importRunning = false;
 // Resume cursors are a crash-recovery aid, not data. Writing one per country
@@ -245,10 +246,15 @@ export async function importLondon365(opts) {
         }
 
         const leagueKeyResolved = leagueKeyFromCountry(effectiveCountryName, league.name);
-        console.log(
-          '[london365] league ' + league.id + ' -> ' + league.name + ' -> ' +
-          (effectiveCountryName || '(fallback: ' + leagueCountryToken(league.name) + ')')
-        );
+        // Said once per league (and again only if its country changes): it used to be one line per league on EVERY import,
+        // about 500 lines each time, which cost CPU (~9% in the profile) and filled the Docker log on disk.
+        const leagueLine = '[london365] league ' + league.id + ' -> ' + league.name + ' -> ' +
+          (effectiveCountryName || '(fallback: ' + leagueCountryToken(league.name) + ')');
+        if (loggedLeagueLines.get(String(league.id)) !== leagueLine) {
+          if (loggedLeagueLines.size > 5000) loggedLeagueLines.clear();
+          loggedLeagueLines.set(String(league.id), leagueLine);
+          console.log(leagueLine);
+        }
         leagueById.set(String(league.id), {
           key: leagueKeyResolved,
           name: league.name,

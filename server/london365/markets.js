@@ -33,13 +33,22 @@ export function usableLiveOdds(rows, packed) {
 }
 // Decode the HTML entities the provider embeds in market names. Built with
 // String.fromCharCode so no raw ampersand appears in this source file.
+// Called for every coefficient row of every import (hundreds of thousands) with only ~700 distinct names, so the answer is remembered.
+const decodedNames = new Map();
 export function decodeMarketName(s) {
-  const amp = String.fromCharCode(38);
-  return String(s || '')
-    .split(amp + 'amp;').join(amp)
-    .split(amp + 'quot;').join(String.fromCharCode(34))
-    .split(amp + '#039;').join(String.fromCharCode(39))
-    .split(amp + '#39;').join(String.fromCharCode(39));
+  const key = String(s || '');
+  let v = decodedNames.get(key);
+  if (v === undefined) {
+    const amp = String.fromCharCode(38);
+    v = key
+      .split(amp + 'amp;').join(amp)
+      .split(amp + 'quot;').join(String.fromCharCode(34))
+      .split(amp + '#039;').join(String.fromCharCode(39))
+      .split(amp + '#39;').join(String.fromCharCode(39));
+    if (decodedNames.size >= 20000) decodedNames.clear();
+    decodedNames.set(key, v);
+  }
+  return v;
 }
 // Canonical keys are reserved ONLY for the exact match-level main markets
 // whose settlement and Albanian translation logic we understand. Every other
