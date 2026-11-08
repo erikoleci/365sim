@@ -28,4 +28,11 @@ describe('purgeCountryPrefixedDuplicateLeagues', () => {
     expect(deletes()).toHaveLength(1);
     expect(n).toBe(3);
   });
+  it('every purge DELETE refuses matches with open tickets, LIVE matches and matches started in the last 6 hours', async () => {
+    await run(['l365_england__england_premier_league'], ['l365_england__premier_league']);
+    const sql = deletes()[0][0];
+    expect(sql).toMatch(/bet_selections/);
+    expect(sql).toMatch(/status <> 'LIVE'/);
+    expect(sql).toMatch(/interval '6 hours'/);
+  });
 });

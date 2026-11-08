@@ -85,7 +85,11 @@ export async function repairSparseEvents(opts) {
 // PENDING selection makes settleMatch() return null forever (match not found)
 // and strands the bet. Appended to each purge DELETE so rows with open bets
 // are always left alone (they are cleaned by normal settlement/retention).
-export const NO_PENDING_BETS = `AND NOT EXISTS (SELECT 1 FROM bet_selections bs WHERE bs.match_id = matches_cache.id AND bs.status = 'PENDING')`;
+// A match that is being played (LIVE, or kicked off within the last 6 hours) is NEVER purged either, whatever the league
+// rule says: a wrong league rule once wiped every in-play La Liga record after each import. Appended to every purge DELETE.
+export const NO_PENDING_BETS = `AND NOT EXISTS (SELECT 1 FROM bet_selections bs WHERE bs.match_id = matches_cache.id AND bs.status = 'PENDING')`
+  + ` AND matches_cache.status <> 'LIVE'`
+  + ` AND NOT (start_time_tz(matches_cache.start_time) BETWEEN NOW() - interval '6 hours' AND NOW())`;
 export const STALE_LEAGUE_KEYWORDS = [
   'brasileiro', 'brasileirao', 'amazonense', 'gaucho', 'carioca', 'paulista',
   'catarinense', 'mineiro', 'baiano', 'cearense', 'potiguar', 'goiano',
