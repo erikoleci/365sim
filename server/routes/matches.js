@@ -329,10 +329,15 @@ router.get('/:id/odds-history', wrap(async (req, res) => {
 // frontend/future debugging can verify freshness independent of this rule.
 const STATS_STALE_MS = 60000;
 
-router.get('/:id/live-detail', wrap(async (req, res) => {
+// The ticket screen asks for the timeline of every leg at once and again every few seconds, and each answer costs several
+// database queries (twin lookup, events, stats) on a busy server. Answers are kept for a few seconds and identical
+// requests that arrive while one is being built share it.
+const LIVE_DETAIL_TTL_MS = 4000;
+const liveDetailMemo = new Map(); // id -> { at, body } | { promise }
+async function buildLiveDetail(reqId) {
   // A ticket points at the pre-match record; the events live under its in-play twin (same fixture, other provider id).
-  const own = await queryWithRetry('SELECT * FROM matches_cache WHERE id = $1', [req.params.id]);
-  let sourceId = req.params.id;
+  const own = await queryWithRetry('SELECT * FROM matches_cache WHERE id = $1', [reqId]);
+  let sourceId = reqId;
   if (own.rows[0]) {
     // Both lookups at once (they used to run one after the other: two more database round trips before the page's
     // data was even asked for). The in-play twin wins; otherwise the same-fixture record that holds the events.
@@ -342,14 +347,14 @@ router.get('/:id/live-detail', wrap(async (req, res) => {
     ]);
     sourceId = twinId && twinId !== own.rows[0].id ? twinId : (eventId || own.rows[0].id);
   }
-  req.params.id = sourceId || req.params.id;
+  const mid = sourceId || reqId;
   const [{ rows: statsRows }, { rows: eventRows }, { rows: cacheRows }] = await Promise.all([
-    queryWithRetry('SELECT * FROM live_statistics WHERE match_id = $1', [req.params.id]),
+    queryWithRetry('SELECT * FROM live_statistics WHERE match_id = $1', [mid]),
     queryWithRetry(
       'SELECT minute, type, team, player, detail, created_at, half FROM match_events WHERE match_id = $1 ORDER BY created_at ASC',
-      [req.params.id]
+      [mid]
     ),
-    queryWithRetry('SELECT home_team, away_team, live_minute, live_home_score, live_away_score, status, live_minute_updated_at FROM matches_cache WHERE id = $1', [req.params.id]),
+    queryWithRetry('SELECT home_team, away_team, live_minute, live_home_score, live_away_score, status, live_minute_updated_at FROM matches_cache WHERE id = $1', [mid]),
   ]);
   const cache = cacheRows[0];
   const lastUpdated = statsRows[0] ? Number(statsRows[0].updated_at) : null;
@@ -372,7 +377,24 @@ router.get('/:id/live-detail', wrap(async (req, res) => {
         return e;
       })
     : shownEvents;
-  res.json({ statistics, events: sideEvents, last_updated: lastUpdated });
+  return { statistics, events: sideEvents, last_updated: lastUpdated };
+}
+router.get('/:id/live-detail', wrap(async (req, res) => {
+  const id = req.params.id;
+  const hit = liveDetailMemo.get(id);
+  if (hit && hit.body && Date.now() - hit.at < LIVE_DETAIL_TTL_MS) return res.json(hit.body);
+  if (hit && hit.promise) return res.json(await hit.promise);
+  const promise = buildLiveDetail(id);
+  liveDetailMemo.set(id, { promise });
+  try {
+    const out = await promise;
+    liveDetailMemo.set(id, { at: Date.now(), body: out });
+    if (liveDetailMemo.size > 300) liveDetailMemo.delete(liveDetailMemo.keys().next().value);
+    return res.json(out);
+  } catch (err) {
+    liveDetailMemo.delete(id);
+    throw err;
+  }
 }));
 
 router.get('/:id', wrap(async (req, res) => {

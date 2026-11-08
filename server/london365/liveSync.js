@@ -19,6 +19,7 @@ import { isoFromWholeDate, parseScore, normalizeLiveMinute } from './clock.js';
 import { upsertMatch, recordGoalIfChanged } from './persist.js';
 import { leagueKeyFromCountry } from './leagueKeys.js';
 
+const resultListSample = { at: 0, len: 0, text: '' };
 export const SKIP_END_DETECTION = Symbol('skip-end-detection');
 // Pure decision logic, exported for direct testing: should a match that's
 // marked LIVE in the DB but missing from the provider's current live list
@@ -188,6 +189,10 @@ export async function syncLondon365LiveOnce() {
     const processGame = async (g) => {
       if (!g || !g.id) return;
       sampleFeedKeys('rest.livegames.game', g);
+      // Evidence only: the provider's own event list for a live game ("result_list") is not read by anything yet; log one
+      // full value now and then (longest seen in the last 5 minutes) to learn its format and whether it holds 2nd-half events.
+      if (g.result_list && String(g.result_list).length > resultListSample.len) { resultListSample.len = String(g.result_list).length; resultListSample.text = '[result-list] ' + (g.name || g.id) + ' min=' + g.current_minute + ' score=' + g.result + ' :: ' + String(g.result_list).slice(0, 700); }
+      if (Date.now() - resultListSample.at > 5 * 60 * 1000 && resultListSample.text) { console.log(resultListSample.text); resultListSample.at = Date.now(); resultListSample.len = 0; resultListSample.text = ''; }
       const resolvedLeagueEarly = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
       // Same country allowlist as the prematch import — a live match from a
       // country outside LONDON365_ONLY_COUNTRIES shouldn't sneak into the
