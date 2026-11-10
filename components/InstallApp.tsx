@@ -8,6 +8,7 @@ type InstallEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{
 const isStandalone = (): boolean =>
   window.matchMedia?.('(display-mode: standalone)').matches || (navigator as any).standalone === true;
 const isIos = (): boolean => /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isAndroid = (): boolean => /android/i.test(navigator.userAgent);
 
 const InstallApp: React.FC = () => {
   const { t } = useI18n();
@@ -25,11 +26,12 @@ const InstallApp: React.FC = () => {
 
   if (installed || isStandalone()) return null;
   const ios = isIos();
-  if (!evt && !ios) return null;
+  const android = isAndroid();
+  if (!evt && !ios && !android) return null;
 
   return (
     <div className="mt-4 text-center">
-      <button
+      {(evt || ios) && <button
         onClick={async () => {
           if (evt) { try { await evt.prompt(); await evt.userChoice; } catch { /* ignore */ } setEvt(null); }
           else setShowHint((v) => !v);
@@ -38,7 +40,15 @@ const InstallApp: React.FC = () => {
       >
         <svg viewBox="0 0 20 20" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 3v9m0 0l-3.5-3.5M10 12l3.5-3.5M4 15h12" /></svg>
         {t('Instalo si app')}
-      </button>
+      </button>}
+      {android && (
+        <div className="mt-2.5">
+          <a href="/365sim.apk" download className="inline-flex items-center gap-1.5 text-[11px] font-bold text-white/80 hover:text-white underline underline-offset-2">
+            {evt ? t('Ose shkarko APK') : t('Shkarko aplikacionin (APK)')}
+          </a>
+          <p className="mt-1 text-[10px] text-brand-textMuted">{t('Pas shkarkimit, lejo "instalimin nga burime të panjohura" kur Android të pyet.')}</p>
+        </div>
+      )}
       {!evt && ios && showHint && (
         <div className="mt-2 text-[11px] text-brand-textMuted leading-relaxed space-y-2">
           <p>{t('Në iPhone: shtyp "Share" (katrori me shigjetë) në Safari, pastaj "Add to Home Screen".')}</p>
