@@ -138,7 +138,8 @@ const Login: React.FC<LoginProps> = ({ onAuthenticated }) => {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full bg-brand-yellow hover:bg-yellow-400 text-black font-bold py-3 rounded-lg transition-colors shadow-lg shadow-brand-yellow/10 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full text-black font-bold py-3 rounded-lg transition-opacity hover:opacity-90 shadow-lg shadow-brand-yellow/10 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ background: 'linear-gradient(90deg, #22c55e 0%, #22c55e 50%, #ffdf1b 50%, #ffdf1b 100%)' }}
             >
               {isSubmitting ? (slowConnect ? t('Duke u lidhur me serverin…') : t('Një moment…')) : t('Hyr')}
             </button>

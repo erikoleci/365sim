@@ -16,6 +16,19 @@
   <body>
     <div id="root"></div>
     <script>
+      // Installed as an app (home-screen icon, APK, iPhone profile): behave like one -- no zoom, no rubber-band scrolling,
+      // no text selection (see "app-standalone" in index.css). In a normal browser tab nothing changes.
+      (function () {
+        try {
+          var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches) || window.navigator.standalone === true;
+          if (!standalone) return;
+          document.documentElement.classList.add('app-standalone');
+          var vp = document.querySelector('meta[name=viewport]');
+          if (vp) vp.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover');
+        } catch (e) { /* plain page */ }
+      })();
+    </script>
+    <script>
       // Start downloading the matches NOW, while the app code is still loading (only for a returning, signed-in
       // visitor). services/api.ts picks these requests up instead of asking again.
       (function () {

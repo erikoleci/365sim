@@ -13,6 +13,28 @@ html, body {
     overflow-x: clip;
   }
 }
+/* Installed app: it must not feel like a web page. No pinch zoom, no zoom when typing (inputs are 16px, the size iOS
+   does not zoom on), no rubber-band bounce at the top/bottom, no accidental text selection or tap flash. Text fields
+   stay selectable. */
+html.app-standalone,
+html.app-standalone body {
+  overscroll-behavior: none;
+  touch-action: pan-x pan-y;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+html.app-standalone body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+html.app-standalone input,
+html.app-standalone textarea,
+html.app-standalone select {
+  font-size: 16px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 body {
   overflow-wrap: break-word;
   background-color: #282828;
