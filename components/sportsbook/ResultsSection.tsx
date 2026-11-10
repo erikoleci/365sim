@@ -32,7 +32,7 @@ const ResultsSection: React.FC<Props> = ({ sections, total, hasSearch, leagueTex
       ) : (
         sections.map(({ league, matches }) => (
           <div key={league}>
-            <LeagueSectionHeader country={leagueCountry(league)} leagueTitle={leagueText(league)} count={matches.length} badgeClass="bg-[#555] text-white" />
+            <LeagueSectionHeader country={leagueCountry(league)} leagueTitle={leagueText(league)} starred={actions.favoriteLeagues.has(league)} onToggleStar={() => actions.onToggleFavoriteLeague(league)} count={matches.length} badgeClass="bg-[#555] text-white" />
             <MatchRowList matches={matches} actions={actions} />
           </div>
         ))

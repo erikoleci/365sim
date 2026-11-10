@@ -32,7 +32,7 @@ const LiveSection: React.FC<Props> = ({ sections, total, leagueText, actions }) 
       ) : (
         sections.map(({ country, league, matches }) => (
           <div key={league}>
-            <LeagueSectionHeader country={country} leagueTitle={leagueText(league)} count={matches.length} badgeClass="bg-brand-accent text-black" />
+            <LeagueSectionHeader country={country} leagueTitle={leagueText(league)} starred={actions.favoriteLeagues.has(league)} onToggleStar={() => actions.onToggleFavoriteLeague(league)} count={matches.length} badgeClass="bg-brand-accent text-black" />
             <MatchRowList matches={matches} actions={actions} />
           </div>
         ))

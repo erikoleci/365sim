@@ -13,6 +13,7 @@ import {
 import { leaguePriority } from '../utils/leaguePriority';
 import { buildDateOptions } from '../utils/dateLabels';
 import { matchWeight } from '../utils/topClubs';
+import { favoriteLeaguesFirst, isFavoriteMatch } from '../utils/favoritesFirst';
 
 interface Inputs {
   matches: Match[];
@@ -23,12 +24,14 @@ interface Inputs {
   rowBudget: number;
   favoriteTeams: Set<string>;
   favoriteLeagues: Set<string>;
+  favoriteMatches: Set<string>;
   // Which screen the search belongs to: it only looks inside what that screen shows.
   showLiveOnly: boolean;
   showResults: boolean;
 }
 
 const FEATURED_LIMIT = 12;
+const FAVORITE_LIMIT = 15;
 const FEATURED_DAYS = 4; // headliners are picked from the next few days first
 const SUGGESTION_LIMIT = 5;
 const includes = (haystack: string, needle: string) => haystack.toLowerCase().includes(needle);
@@ -38,7 +41,7 @@ const includes = (haystack: string, needle: string) => haystack.toLowerCase().in
  * live / upcoming / today / featured / results, grouped country -> league -> day, the league menu
  * and the search suggestions. Pure derivation, no state of its own.
  */
-export function useSportsbookViews({ matches, leagueNames, searchQuery, currentLeague, selectedDate, rowBudget, favoriteTeams, favoriteLeagues, showLiveOnly, showResults }: Inputs) {
+export function useSportsbookViews({ matches, leagueNames, searchQuery, currentLeague, selectedDate, rowBudget, favoriteTeams, favoriteLeagues, favoriteMatches, showLiveOnly, showResults }: Inputs) {
   const { t, lang } = useI18n();
 
   // The Albanian internal label (used for ranking/sorting); only what is SHOWN goes through t().
@@ -68,12 +71,12 @@ export function useSportsbookViews({ matches, leagueNames, searchQuery, currentL
     .filter((m) => m.status === MatchStatus.UPCOMING || (includeLiveInScope && m.status === MatchStatus.LIVE))
     .filter((m) => {
       if (currentLeague === ALL_LEAGUES) return true;
-      if (currentLeague === FAVORITES) return favoriteTeams.has(m.homeTeam) || favoriteTeams.has(m.awayTeam) || favoriteLeagues.has(m.league);
+      if (currentLeague === FAVORITES) return favoriteMatches.has(m.id) || favoriteTeams.has(m.homeTeam) || favoriteTeams.has(m.awayTeam) || favoriteLeagues.has(m.league);
       if (isCountryFilter(currentLeague)) return leagueCountry(m.league) === countryFromFilter(currentLeague);
       return m.league === currentLeague;
     })
     .sort(liveFirstByKickoff),
-  [searchFiltered, currentLeague, favoriteTeams, favoriteLeagues, includeLiveInScope]);
+  [searchFiltered, currentLeague, favoriteTeams, favoriteLeagues, favoriteMatches, includeLiveInScope]);
 
   const dateScopedUpcoming = useMemo(
     () => scopedUpcoming.filter((m) => selectedDate === 'ALL' || albaniaDateKey(m.startTime) === selectedDate),
@@ -86,9 +89,10 @@ export function useSportsbookViews({ matches, leagueNames, searchQuery, currentL
   const upcomingMatches = dateFallbackActive ? scopedUpcoming : dateScopedUpcoming;
 
   const selectedCountry = isCountryFilter(currentLeague) ? countryFromFilter(currentLeague) : null;
+  // The user's favourite leagues (and the countries holding them) come first.
   const upcomingByCountry = useMemo(
-    () => groupByCountryAndLeague(upcomingMatches, leagueCountry, compareLeagues, selectedCountry),
-    [upcomingMatches, compareLeagues, selectedCountry],
+    () => favoriteLeaguesFirst(groupByCountryAndLeague(upcomingMatches, leagueCountry, compareLeagues, selectedCountry), favoriteLeagues),
+    [upcomingMatches, compareLeagues, selectedCountry, favoriteLeagues],
   );
   // The list is drawn in slices of rows so switching views never builds hundreds of rows at once.
   const { visibleGroups, hiddenRows } = useMemo(() => sliceByRowBudget(upcomingByCountry, rowBudget), [upcomingByCountry, rowBudget]);
@@ -97,9 +101,9 @@ export function useSportsbookViews({ matches, leagueNames, searchQuery, currentL
   const liveLeagueSections = useMemo(
     () => toLeagueSections(
       groupByCountryAndLeague(liveMatches, leagueCountry, compareLeagues),
-      (league, country) => leaguePriority(leagueLabel(league), country),
+      (league, country) => (favoriteLeagues.has(league) ? -1 : leaguePriority(leagueLabel(league), country)),
     ),
-    [liveMatches, compareLeagues, leagueLabel],
+    [liveMatches, compareLeagues, leagueLabel, favoriteLeagues],
   );
 
   // Same order everywhere: the big five and the UEFA cups first, then the rest, lower divisions last.
@@ -120,6 +124,16 @@ export function useSportsbookViews({ matches, leagueNames, searchQuery, currentL
     return picked.slice(0, FEATURED_LIMIT);
   }, [matches, priorityOf, byPriorityThenKickoff]);
 
+  // "★ Të preferuarat" on the home page: coming and live matches of the starred teams / matches, live first.
+  const favoriteList = useMemo(() => {
+    if (favoriteTeams.size === 0 && favoriteMatches.size === 0) return [] as Match[];
+    const sets = { teams: favoriteTeams, leagues: favoriteLeagues, matches: favoriteMatches };
+    return matches
+      .filter((m) => (m.status === MatchStatus.UPCOMING || m.status === MatchStatus.LIVE) && isFavoriteMatch(m, sets))
+      .sort(liveFirstByKickoff)
+      .slice(0, FAVORITE_LIMIT);
+  }, [matches, favoriteTeams, favoriteLeagues, favoriteMatches]);
+
   const todayMatches = useMemo(() => matches
     .filter((m) => (m.status === MatchStatus.UPCOMING || m.status === MatchStatus.LIVE) && isSameAlbaniaDay(m.startTime, albaniaTodayKey()))
     .sort((a, b) => (a.status === b.status ? 0 : a.status === MatchStatus.LIVE ? -1 : 1) || byPriorityThenKickoff(a, b)),
@@ -129,9 +143,12 @@ export function useSportsbookViews({ matches, leagueNames, searchQuery, currentL
   const resultsList = useMemo(() => recentResults(matches, searchQuery), [matches, searchQuery]);
   // The strongest competitions first (big five, UEFA cups), the rest after; inside a tier the most recent first.
   const resultsSections = useMemo(
-    () => groupResultsByLeague(resultsList).sort((a, b) =>
-      leaguePriority(leagueLabel(a.league), leagueCountry(a.league)) - leaguePriority(leagueLabel(b.league), leagueCountry(b.league))),
-    [resultsList, leagueLabel],
+    () => {
+      const rank = (league: string) => (favoriteLeagues.has(league) ? -1 : leaguePriority(leagueLabel(league), leagueCountry(league)));
+      return groupResultsByLeague(resultsList).sort((a, b) =>
+      rank(a.league) - rank(b.league));
+    },
+    [resultsList, leagueLabel, favoriteLeagues],
   );
 
   // The league menu: leagues grouped by country, flagship leagues first.
@@ -170,7 +187,7 @@ export function useSportsbookViews({ matches, leagueNames, searchQuery, currentL
   return {
     leagueLabel, leagueText, dateOptions,
     liveMatches, liveLeagueSections, upcomingByCountry, visibleGroups, hiddenRows, dateFallbackActive,
-    featuredMatches, todayMatches, resultsList, resultsSections,
+    featuredMatches, favoriteList, todayMatches, resultsList, resultsSections,
     leaguesByCountry, searchSuggestions, countryFlag, leagueCountry,
   };
 }

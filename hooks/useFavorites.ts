@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { User } from '../types';
 import * as api from '../services/api';
 
-/** Favourite teams and leagues of the signed-in user, with an optimistic toggle. */
+/** Favourite teams, leagues and matches of the signed-in user, with an optimistic toggle. */
 export function useFavorites(currentUser: User | null) {
   const [favorites, setFavorites] = useState<api.Favorite[]>([]);
   const userId = currentUser?.id ?? null;
@@ -22,9 +22,11 @@ export function useFavorites(currentUser: User | null) {
   const favoriteTeams = useMemo(() => new Set(favorites.filter((f) => f.type === 'TEAM').map((f) => f.value)), [favorites]);
   const favoriteLeagues = useMemo(() => new Set(favorites.filter((f) => f.type === 'LEAGUE').map((f) => f.value)), [favorites]);
 
+  const favoriteMatches = useMemo(() => new Set(favorites.filter((f) => f.type === 'MATCH').map((f) => f.value)), [favorites]);
+
   // Optimistic: the star flips on click, the server's answer reconciles it, and a failed request
   // rolls back to the exact previous state.
-  const toggleFavorite = useCallback(async (type: 'TEAM' | 'LEAGUE', value: string) => {
+  const toggleFavorite = useCallback(async (type: api.FavoriteType, value: string) => {
     let previous: api.Favorite[] = [];
     setFavorites((current) => {
       previous = current;
@@ -42,5 +44,5 @@ export function useFavorites(currentUser: User | null) {
     }
   }, []);
 
-  return { favoriteTeams, favoriteLeagues, toggleFavorite };
+  return { favoriteTeams, favoriteLeagues, favoriteMatches, toggleFavorite };
 }

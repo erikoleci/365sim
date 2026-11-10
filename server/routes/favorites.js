@@ -6,7 +6,8 @@ import { wrap } from '../asyncHandler.js';
 const router = express.Router();
 router.use(requireAuth);
 
-const VALID_TYPES = new Set(['TEAM', 'LEAGUE']);
+// A favourite is a TEAM (team name), a LEAGUE (league key) or a MATCH (match id), all plain strings the frontend already uses.
+const VALID_TYPES = new Set(['TEAM', 'LEAGUE', 'MATCH']);
 
 router.get('/', wrap(async (req, res) => {
   const { rows } = await pool.query(
@@ -21,8 +22,8 @@ router.get('/', wrap(async (req, res) => {
 // current state client-side beforehand.
 router.post('/toggle', wrap(async (req, res) => {
   const { type, value } = req.body || {};
-  if (!VALID_TYPES.has(type) || typeof value !== 'string' || !value.trim()) {
-    return res.status(400).json({ error: 'type must be TEAM or LEAGUE, and value is required' });
+  if (!VALID_TYPES.has(type) || typeof value !== 'string' || !value.trim() || value.length > 200) {
+    return res.status(400).json({ error: 'type must be TEAM, LEAGUE or MATCH, and value is required' });
   }
 
   const { rows: existing } = await pool.query(

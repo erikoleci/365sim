@@ -4,6 +4,7 @@ import * as api from '../services/api';
 import { formatMatchTime, formatMatchDayMonth, isSameAlbaniaDay, albaniaTodayKey } from '../utils/albaniaTime';
 import { isHalftime, liveMinuteFallback, isLiveClockStale, formatScore, serverToLocal } from '../utils/liveStatus';
 import { useI18n } from '../i18n';
+import StarButton from './StarButton';
 import TeamLogo from './TeamLogo';
 
 interface MatchRowProps {
@@ -15,6 +16,8 @@ interface MatchRowProps {
   isSimulating: boolean;
   selectedIds: string[];
   favoriteTeams: Set<string>;
+  favoriteMatches?: Set<string>;
+  onToggleFavoriteMatch?: (matchId: string) => void;
   onToggleFavoriteTeam: (team: string) => void;
 }
 
@@ -236,17 +239,6 @@ export function formatLiveClock(clock: { minute: number; second: number } | null
   return `${clock.minute}:${String(clock.second).padStart(2, '0')}`;
 }
 
-const StarButton: React.FC<{ active: boolean; onClick: (e: React.MouseEvent) => void }> = ({ active, onClick }) => {
-  const { t } = useI18n();
-  return (
-  <button onClick={onClick} className="shrink-0 mr-1.5 leading-none" title={active ? t('Hiq nga të preferuarat') : t('Shto te të preferuarat')}>
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" className={`w-3.5 h-3.5 ${active ? 'fill-brand-yellow' : 'fill-none stroke-brand-textMuted'}`} strokeWidth={1.5}>
-      <path d="M10 1.5l2.6 5.27 5.82.85-4.21 4.1.99 5.8L10 14.9l-5.2 2.62.99-5.8-4.21-4.1 5.82-.85L10 1.5z" />
-    </svg>
-  </button>
-  );
-};
-
 // Shared by MatchRow and the featured-matches carousel: the card/row shows
 // ONLY the 1X2 market (1 / X / 2) — never the extra outcomes some providers
 // pack into the same bucket (correct score, HTFT).
@@ -257,7 +249,7 @@ export function getMatchWinnerMarket(match: Match) {
     : undefined;
 }
 
-const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, isAdmin, onSettleMatch, isSimulating, selectedIds, favoriteTeams, onToggleFavoriteTeam }) => {
+const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, isAdmin, onSettleMatch, isSimulating, selectedIds, favoriteTeams, onToggleFavoriteTeam, favoriteMatches, onToggleFavoriteMatch }) => {
   const { t } = useI18n();
   const isFinished = match.status === MatchStatus.FINISHED;
   const isLive = match.status === MatchStatus.LIVE;
@@ -320,6 +312,9 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
                 </div>
                 {!isToday && <div className="text-[10px]">{formatMatchDayMonth(match.startTime)}</div>}
                </>
+           )}
+           {onToggleFavoriteMatch && !isFinished && (
+             <span className="mt-1"><StarButton active={!!favoriteMatches?.has(match.id)} onClick={(e) => { e.stopPropagation(); onToggleFavoriteMatch(match.id); }} /></span>
            )}
         </div>
         

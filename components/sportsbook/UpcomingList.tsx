@@ -3,6 +3,7 @@ import { useI18n } from '../../i18n';
 import { countryFlag } from '../../utils/leagueGrouping';
 import { dateKeyLabel } from '../../utils/dateLabels';
 import { CountryGroup, groupMatchesByDate } from '../../utils/matchGrouping';
+import StarButton from '../StarButton';
 import LoadMoreSentinel from '../LoadMoreSentinel';
 import MatchRowList from './MatchRowList';
 import { MatchRowActions } from './types';
@@ -32,6 +33,7 @@ const UpcomingList: React.FC<Props> = ({ groups, hiddenRows, onLoadMore, leagueT
               <div className="bg-[#383838] px-3 py-2 text-xs font-bold text-white flex items-center gap-2">
                 <span className="w-1 h-3 rounded-full bg-brand-yellow"></span>
                 <span>{leagueText(league)}</span>
+                <StarButton active={actions.favoriteLeagues.has(league)} onClick={(e) => { e.stopPropagation(); actions.onToggleFavoriteLeague(league); }} />
                 <span className="ml-auto text-[10px] text-brand-textMuted font-normal">{leagueMatches.length}</span>
               </div>
               {groupMatchesByDate(leagueMatches).map(([dateKey, dayMatches]) => (

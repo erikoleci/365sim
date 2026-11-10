@@ -246,14 +246,14 @@ export async function initDb() {
       fetched_at BIGINT NOT NULL
     );
 
-    -- Favorites: a user can favorite a TEAM (by team name, as it appears in
+    -- Favorites: a user can favorite a MATCH (by match id), a TEAM (by team name, as it appears in
     -- matches_cache) or a LEAGUE (by league key). No separate teams/leagues
     -- tables exist — those are dynamic, sourced from the odds API — so we
     -- just store the string value the frontend already uses to identify them.
     CREATE TABLE IF NOT EXISTS favorites (
       id SERIAL PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id),
-      type TEXT NOT NULL, -- 'TEAM' | 'LEAGUE'
+      type TEXT NOT NULL, -- 'TEAM' | 'LEAGUE' | 'MATCH'
       value TEXT NOT NULL,
       created_at BIGINT NOT NULL,
       UNIQUE(user_id, type, value)

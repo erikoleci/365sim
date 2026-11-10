@@ -10,6 +10,10 @@ export interface MatchRowActions {
   selectedIds: string[];
   favoriteTeams: Set<string>;
   onToggleFavoriteTeam: (team: string) => void;
+  favoriteMatches: Set<string>;
+  onToggleFavoriteMatch: (matchId: string) => void;
+  favoriteLeagues: Set<string>;
+  onToggleFavoriteLeague: (leagueKey: string) => void;
 }
 
 /** The screen changes the sportsbook components can ask for. */

@@ -59,7 +59,7 @@ const App: React.FC = () => {
   const { myBets, loadMyBets, reset: resetMyBets } = useMyBets(currentUser);
   useLiveSocket({ enabled: sportsEnabled, setMatches: feed.setMatches, setDetailMatchFull, reloadMatches: feed.loadMatches, reloadLive: feed.loadLive, matches: feed.matches, onMatchEnded: loadMyBets });
 
-  const { favoriteTeams, favoriteLeagues, toggleFavorite } = useFavorites(currentUser);
+  const { favoriteTeams, favoriteLeagues, favoriteMatches, toggleFavorite } = useFavorites(currentUser);
   // The staff panels are separate chunks (a player never downloads them). As soon as somebody signs in, fetch the one
   // they will open in the background, so it opens instantly instead of after a download.
   useEffect(() => {
@@ -105,6 +105,7 @@ const App: React.FC = () => {
     rowBudget,
     favoriteTeams,
     favoriteLeagues,
+    favoriteMatches,
     showLiveOnly: nav.showLiveOnly,
     showResults: nav.showResults,
   });
@@ -129,6 +130,8 @@ const App: React.FC = () => {
   };
 
   const onToggleFavoriteTeam = useCallback((team: string) => toggleFavorite('TEAM', team), [toggleFavorite]);
+  const onToggleFavoriteMatch = useCallback((id: string) => toggleFavorite('MATCH', id), [toggleFavorite]);
+  const onToggleFavoriteLeague = useCallback((league: string) => toggleFavorite('LEAGUE', league), [toggleFavorite]);
   const openMatchById = nav.openMatch;
   const rowActions: MatchRowActions = useMemo(() => ({
     onBetClick: slip.toggleSelection,
@@ -139,7 +142,11 @@ const App: React.FC = () => {
     selectedIds: slip.selectedIds,
     favoriteTeams,
     onToggleFavoriteTeam,
-  }), [slip.toggleSelection, slip.selectedIds, openMatchById, currentUser?.role, admin.settleMatch, admin.simulatingMatchId, favoriteTeams, onToggleFavoriteTeam]);
+    favoriteMatches,
+    onToggleFavoriteMatch,
+    favoriteLeagues,
+    onToggleFavoriteLeague,
+  }), [slip.toggleSelection, slip.selectedIds, openMatchById, currentUser?.role, admin.settleMatch, admin.simulatingMatchId, favoriteTeams, onToggleFavoriteTeam, favoriteMatches, onToggleFavoriteMatch, favoriteLeagues, onToggleFavoriteLeague]);
 
   // Any path on 365sim.uk (e.g. /koeficientet) behaves like the front door: sign-in first, and the address stays a clean 365sim.uk
   if (!currentUser && authChecked && window.location.pathname !== '/') { try { window.history.replaceState(null, '', '/'); } catch { /* ignore */ } }
@@ -252,6 +259,7 @@ const App: React.FC = () => {
               loadError={feed.loadError}
               onRetry={() => feed.loadMatches()}
               favoriteTeams={favoriteTeams}
+              favoriteList={views.favoriteList}
               leaguesByCountry={views.leaguesByCountry}
               liveMatches={views.liveMatches}
               liveLeagueSections={views.liveLeagueSections}

@@ -6,6 +6,7 @@ import { DateOption } from '../../utils/dateLabels';
 import { CountryGroup } from '../../utils/matchGrouping';
 import Breadcrumb from './Breadcrumb';
 import DateStrip from './DateStrip';
+import FavoritesSection from './FavoritesSection';
 import FeaturedStrip from './FeaturedStrip';
 import LiveSection from './LiveSection';
 import MobileChipStrip from './MobileChipStrip';
@@ -32,6 +33,7 @@ interface Props extends ScreenActions {
   loadError: string | null;
   onRetry: () => void;
   favoriteTeams: Set<string>;
+  favoriteList: Match[];
   leaguesByCountry: [string, string[]][];
   liveMatches: Match[];
   liveLeagueSections: { country: string; league: string; matches: Match[] }[];
@@ -97,6 +99,7 @@ const SportsbookHome: React.FC<Props> = (p) => {
           </div>
         )}
 
+        {isRoot && p.favoriteList.length > 0 && <FavoritesSection matches={p.favoriteList} actions={p.actions} />}
         {isRoot && p.featuredMatches.length > 0 && (
           <FeaturedStrip title={t('Ndeshjet Kryesore')} matches={p.featuredMatches} onBetClick={p.actions.onBetClick} onOpenDetail={openMatch} selectedIds={p.actions.selectedIds} />
         )}

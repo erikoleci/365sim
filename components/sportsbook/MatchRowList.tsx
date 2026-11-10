@@ -23,6 +23,8 @@ const MatchRowList: React.FC<Props> = ({ matches, actions }) => (
         selectedIds={actions.selectedIds}
         favoriteTeams={actions.favoriteTeams}
         onToggleFavoriteTeam={actions.onToggleFavoriteTeam}
+        favoriteMatches={actions.favoriteMatches}
+        onToggleFavoriteMatch={actions.onToggleFavoriteMatch}
       />
     ))}
   </div>
