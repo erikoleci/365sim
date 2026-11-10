@@ -297,7 +297,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
       {/* Match Header: compact. League + clock on one line, the score on ONE row (small crest + name each side), then the pitch.
           The old header stacked a big league label, a clock pill, a huge crest + 2xl name per team and a 3xl score above
           the pitch, which left little room for the markets on a phone. */}
-      <div className="bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] bg-brand-headerDark/30 px-2 py-2 sm:px-4 sm:py-3 relative border-b border-brand-divider">
+      <div className="bg-[radial-gradient(rgba(255,255,255,0.06)_1px,transparent_1.2px)] [background-size:6px_6px] bg-brand-headerDark/30 px-2 py-2 sm:px-4 sm:py-3 relative border-b border-brand-divider">
         <button onClick={onClose} className="hidden md:flex absolute top-3 left-4 text-brand-textMuted hover:text-white text-xs font-bold items-center gap-1">
           ‹ Soccer
         </button>

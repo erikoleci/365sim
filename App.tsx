@@ -27,6 +27,8 @@ import { useBetSlip } from './hooks/useBetSlip';
 import { useMyBets } from './hooks/useMyBets';
 import { useAdminActions } from './hooks/useAdminActions';
 import { useDismissOnOutsideClick } from './hooks/useDismissOnOutsideClick';
+import { useAppUpdate } from './hooks/useAppUpdate';
+import { useI18n } from './i18n';
 
 const ROW_SLICE = 60; // match rows drawn per step of the "load more" list
 
@@ -60,6 +62,8 @@ const App: React.FC = () => {
   useLiveSocket({ enabled: sportsEnabled, setMatches: feed.setMatches, setDetailMatchFull, reloadMatches: feed.loadMatches, reloadLive: feed.loadLive, matches: feed.matches, onMatchEnded: loadMyBets });
 
   const { favoriteTeams, favoriteLeagues, favoriteMatches, toggleFavorite } = useFavorites(currentUser);
+  const appUpdate = useAppUpdate();
+  const { t } = useI18n();
   // The staff panels are separate chunks (a player never downloads them). As soon as somebody signs in, fetch the one
   // they will open in the background, so it opens instantly instead of after a download.
   useEffect(() => {
@@ -189,6 +193,11 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-brand-bg text-brand-text flex flex-col font-sans selection:bg-brand-header selection:text-white pb-16 md:pb-0">
+      {appUpdate.updateReady && (
+        <button onClick={appUpdate.reload} className="fixed top-2 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 bg-brand-yellow text-black text-xs font-bold rounded-full px-4 py-2 shadow-2xl">
+          <span aria-hidden="true">⟳</span> {t('Version i ri — shtyp për ta përditësuar')}
+        </button>
+      )}
       <Navbar
         currentUser={currentUser}
         onLogout={handleLogout}

@@ -3,6 +3,7 @@ import { User } from '../types';
 import * as api from '../services/api';
 import { useI18n } from '../i18n';
 import LanguageSwitcher from './LanguageSwitcher';
+import InstallApp from './InstallApp';
 
 interface LoginProps {
   onAuthenticated: (user: User) => void;
@@ -57,9 +58,7 @@ const Login: React.FC<LoginProps> = ({ onAuthenticated }) => {
 
       <div className="relative w-full max-w-sm">
         <div className="text-center mb-6">
-          <div className="font-bold text-4xl tracking-tighter italic text-white mb-1">
-            bet<span className="text-brand-yellow">365</span>sim
-          </div>
+          <img src="/icon-192.png" alt="365sim" width={96} height={96} draggable={false} className="mx-auto mb-3 w-24 h-24 rounded-[22px] shadow-[0_10px_30px_rgba(0,0,0,0.5)]" />
           <p className="text-brand-textMuted text-sm">{t('Hyr në llogarinë tënde')}</p>
         </div>
 
@@ -149,6 +148,20 @@ const Login: React.FC<LoginProps> = ({ onAuthenticated }) => {
         <p className="text-center text-brand-textMuted text-xs mt-5">
           {t("S'ke llogari? Kontakto administratorin ose agjentin tënd për ta hapur.")}
         </p>
+        <InstallApp />
+
+        {/* Privacy: plain and true. What is kept, what is not done with it. */}
+        <details className="mt-6 text-[11px] text-brand-textMuted leading-relaxed group">
+          <summary className="cursor-pointer text-center font-bold uppercase tracking-wider text-brand-textMuted/80 hover:text-white list-none">
+            {t('Privatësia')} <span className="inline-block transition-transform group-open:rotate-180" aria-hidden="true">▾</span>
+          </summary>
+          <div className="mt-2 space-y-1.5 text-left bg-black/20 rounded-lg p-3 border border-brand-divider/60">
+            <p>{t('Ruajmë vetëm atë që duhet që faqja të funksionojë: llogarinë tënde, bastet dhe kreditin.')}</p>
+            <p>{t('Të dhënat nuk shiten dhe nuk ndahen me palë të treta, dhe faqja nuk përdor reklama apo gjurmues.')}</p>
+            <p>{t('Lidhja është e enkriptuar dhe fjalëkalimet ruhen të koduara, jo në tekst të lexueshëm.')}</p>
+            <p>{t('Për siguri mbahen kopje rezervë të brendshme, vetëm për rikthim në rast defekti.')}</p>
+          </div>
+        </details>
       </div>
     </div>
   );
