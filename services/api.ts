@@ -112,12 +112,14 @@ export function prefetchMatches(): void {
 }
 
 export async function login(username: string, password: string): Promise<User> {
-  prefetchMatches(); // downloads while the password is being checked
+  // The list download (about 1.4 MB) starts AFTER the answer, not before: sent together, it shares a slow phone connection
+  // with the login itself and made "Hyr" wait for seconds. The server keeps the list ready, so it still arrives at once.
   const data = await request<{ token: string; user: User }>('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ username, password }),
   }, { retry: true });
   setToken(data.token);
+  prefetchMatches(); // downloads while the app opens
   return data.user;
 }
 
