@@ -30,11 +30,10 @@ interface Props {
 const SECTION = 'px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-brand-textMuted';
 const ITEM = 'w-full text-left px-3 py-2 text-white hover:bg-[#444]';
 
-/** Search box with recent searches and instant suggestions (teams, leagues, matches). */
+/** Slim search bar with recent searches and instant suggestions (teams, leagues, matches). */
 const SearchBar: React.FC<Props> = ({ scope, query, onQueryChange, suggestions, favoriteTeams, leagueText, leagueLabel, onPickLeague, onPickMatch }) => {
   const { t } = useI18n();
   const [isFocused, setIsFocused] = useState(false);
-  const [open, setOpen] = useState(false);
   const [history, setHistory] = useState<string[]>(readHistory);
 
   const remember = useCallback((term: string) => {
@@ -54,26 +53,15 @@ const SearchBar: React.FC<Props> = ({ scope, query, onQueryChange, suggestions, 
   const hasSuggestions = teams.length + leagues.length + matches.length > 0;
   const showDropdown = isFocused && (searching ? hasSuggestions : history.length > 0);
 
-  // Closed it is just a small magnifier; it opens on tap (and stays open while there is text).
-  if (!open && !searching) {
-    return (
-      <div className="flex justify-end">
-        <button onClick={() => setOpen(true)} aria-label={t('Kërko')} className="w-9 h-9 rounded-full bg-brand-panel border border-brand-divider text-base leading-none flex items-center justify-center hover:bg-[#444]">
-          <span aria-hidden="true">🔍</span>
-        </button>
-      </div>
-    );
-  }
   const placeholder = scope === 'live' ? t('Kërko ndër ndeshjet live...') : scope === 'results' ? t('Kërko ndër rezultate...') : t('Kërko skuadra, liga...');
 
   return (
     <div className="relative">
-      <div className="bg-brand-panel px-3 py-2 rounded flex items-center gap-2 border border-brand-divider">
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-brand-textMuted shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+      <div className="bg-brand-panel px-3 py-1.5 rounded-full flex items-center gap-2 border border-brand-divider focus-within:border-brand-yellow/60 transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-brand-textMuted shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
         <input
           type="text"
           placeholder={placeholder}
-          autoFocus
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           onFocus={() => setIsFocused(true)}
@@ -81,7 +69,7 @@ const SearchBar: React.FC<Props> = ({ scope, query, onQueryChange, suggestions, 
           onKeyDown={(e) => { if (e.key === 'Enter') { remember(query); (e.target as HTMLInputElement).blur(); } }}
           className="bg-transparent text-white text-sm w-full outline-none placeholder-brand-textMuted"
         />
-        <button onClick={() => { onQueryChange(''); setOpen(false); setIsFocused(false); }} aria-label={t('Mbyll')} className="text-brand-textMuted hover:text-white shrink-0">✕</button>
+        {query && <button onClick={() => { onQueryChange(''); setIsFocused(false); }} aria-label={t('Mbyll')} className="text-brand-textMuted hover:text-white shrink-0 text-xs">✕</button>}
       </div>
 
       {showDropdown && (
