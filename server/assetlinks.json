@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "uk.app_365sim.twa",
+    "sha256_cert_fingerprints": ["6A:DF:A1:22:BA:1E:76:38:FE:3B:33:C3:D7:B3:44:8C:F0:B2:FE:A8:22:24:9C:D6:CA:55:84:B5:44:01:F9:C7"]
+  }
+}]

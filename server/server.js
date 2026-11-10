@@ -235,6 +235,12 @@ app.get('/api/london365-status', async (req, res) => {
 // Serve the built frontend (npm run build -> dist/) from the same origin/process
 // as the API. This avoids CORS and cross-domain /api URL issues in production.
 // If dist/ doesn't exist (e.g. pure API-only deploy), this is skipped silently.
+// Lets the Android app (the installable APK) open the site full-screen, without an address bar: Android checks this file
+// against the app's signing key. (express.static skips dot-folders, so it has its own route.)
+app.get('/.well-known/assetlinks.json', (req, res) => {
+  res.type('application/json').sendFile(path.join(__dirname, 'assetlinks.json'));
+});
+
 if (fs.existsSync(distPath)) {
   const indexHtmlPath = path.join(distPath, 'index.html');
   console.log(`[static] Serving frontend from ${distPath} (index.html present: ${fs.existsSync(indexHtmlPath)})`);
@@ -244,7 +250,12 @@ if (fs.existsSync(distPath)) {
   app.use('/assets', express.static(path.join(distPath, 'assets'), { maxAge: '1y', immutable: true }));
   app.use(express.static(distPath, {
     maxAge: '1d',
-    setHeaders(res, filePath) { if (filePath.endsWith('index.html')) res.setHeader('Cache-Control', 'no-cache'); },
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('index.html')) res.setHeader('Cache-Control', 'no-cache');
+      // The one-tap iPhone install profile and the Android package must be served with their real types, or the phones just show them as text.
+      if (filePath.endsWith('.mobileconfig')) res.setHeader('Content-Type', 'application/x-apple-aspen-config');
+      if (filePath.endsWith('.apk')) res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    },
   }));
   app.get(/^(?!\/api\/).*/, (req, res) => {
     if (!fs.existsSync(indexHtmlPath)) {

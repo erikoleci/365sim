@@ -11,6 +11,8 @@ export const enApp: Record<string, string> = {
   'Lidhja është e enkriptuar dhe fjalëkalimet ruhen të koduara, jo në tekst të lexueshëm.': 'The connection is encrypted and passwords are stored hashed, not as readable text.',
   'Për siguri mbahen kopje rezervë të brendshme, vetëm për rikthim në rast defekti.': 'Internal backups are kept for safety, only to restore after a failure.',
   'Version i ri — shtyp për ta përditësuar': 'New version — tap to update',
+  'Ose instalo me një prekje (profil)': 'Or install in one tap (profile)',
+  'Pas shkarkimit: Settings → "Profile Downloaded" → Install. Ikona shfaqet në ekran.': 'After downloading: Settings → "Profile Downloaded" → Install. The icon appears on your home screen.',
   'Kërko': 'Search',
   'Kërko ndër ndeshjet live...': 'Search live matches...',
   'Kërko ndër rezultate...': 'Search results...',

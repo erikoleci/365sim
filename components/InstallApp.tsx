@@ -40,7 +40,11 @@ const InstallApp: React.FC = () => {
         {t('Instalo si app')}
       </button>
       {!evt && ios && showHint && (
-        <p className="mt-2 text-[11px] text-brand-textMuted leading-relaxed">{t('Në iPhone: shtyp "Share" (katrori me shigjetë) në Safari, pastaj "Add to Home Screen".')}</p>
+        <div className="mt-2 text-[11px] text-brand-textMuted leading-relaxed space-y-2">
+          <p>{t('Në iPhone: shtyp "Share" (katrori me shigjetë) në Safari, pastaj "Add to Home Screen".')}</p>
+          <a href="/365sim.mobileconfig" className="inline-block font-bold text-brand-yellow underline">{t('Ose instalo me një prekje (profil)')}</a>
+          <p className="opacity-80">{t('Pas shkarkimit: Settings → "Profile Downloaded" → Install. Ikona shfaqet në ekran.')}</p>
+        </div>
       )}
     </div>
   );
