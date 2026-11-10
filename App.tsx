@@ -1,3 +1,5 @@
+import NotifyPrompt from './components/NotifyPrompt';
+import { disableNotifications } from './utils/pushClient';
 import { isAdminRole, isSuperAdminRole } from './utils/roles';
 import React, { useCallback, useEffect, useMemo, useRef, useState, startTransition } from 'react';
 import Navbar from './components/Navbar';
@@ -122,6 +124,7 @@ const App: React.FC = () => {
   useDismissOnOutsideClick(showAdmin, mainRef, useCallback(() => setShowAdmin(false), []), '[data-admin-toggle]');
 
   const handleLogout = () => {
+    void disableNotifications();
     api.logout();
     setCurrentUser(null);
     slip.reset();
@@ -198,6 +201,7 @@ const App: React.FC = () => {
           <span aria-hidden="true">⟳</span> {t('Version i ri — shtyp për ta përditësuar')}
         </button>
       )}
+      <NotifyPrompt />
       <Navbar
         currentUser={currentUser}
         onLogout={handleLogout}

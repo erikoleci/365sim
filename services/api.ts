@@ -1080,3 +1080,12 @@ export async function casinoLiveKenoState() { return request<LiveKenoState>('/ca
 export async function casinoLiveKenoBet(round: number, stake: number, picks: number[]) {
   return request<{ ok: boolean; balance: number }>('/casino/live-keno/bet', { method: 'POST', body: JSON.stringify({ round, stake, picks }) });
 }
+
+// ---- Push notifications (installed app only) ----
+export async function pushPublicKey() { return request<{ publicKey: string }>('/push/key'); }
+export async function pushSubscribe(sub: PushSubscriptionJSON) {
+  return request<{ ok: boolean }>('/push/subscribe', { method: 'POST', body: JSON.stringify(sub) });
+}
+export async function pushUnsubscribe(endpoint: string) {
+  return request<{ ok: boolean }>('/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint }) });
+}

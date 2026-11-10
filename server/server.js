@@ -25,6 +25,8 @@ import agentRouter from './routes/agent.js';
 import casinoRouter from './routes/casino.js';
 import scrapeRouter from './routes/scrape.js';
 import favoritesRouter from './routes/favorites.js';
+import pushRouter from './routes/push.js';
+import { runPushSweep } from './push.js';
 import supportRouter from './routes/support.js';
 import { initDb, cleanupOldData } from './db.js';
 import { runMigrations } from './migrate.js';
@@ -167,6 +169,7 @@ app.use('/api/agent', agentRouter);
 app.use('/api/casino', casinoRouter);
 app.use('/api/scrape', scrapeRouter);
 app.use('/api/favorites', favoritesRouter);
+app.use('/api/push', pushRouter);
 app.use('/api/support', supportRouter);
 
 // Catch-all error handler: any unhandled error thrown/rejected inside a route
@@ -251,7 +254,7 @@ if (fs.existsSync(distPath)) {
   app.use(express.static(distPath, {
     maxAge: '1d',
     setHeaders(res, filePath) {
-      if (filePath.endsWith('index.html')) res.setHeader('Cache-Control', 'no-cache');
+      if (filePath.endsWith('index.html') || filePath.endsWith('sw.js')) res.setHeader('Cache-Control', 'no-cache');
       // The one-tap iPhone install profile and the Android package must be served with their real types, or the phones just show them as text.
       if (filePath.endsWith('.mobileconfig')) res.setHeader('Content-Type', 'application/x-apple-aspen-config');
       if (filePath.endsWith('.apk')) res.setHeader('Content-Type', 'application/vnd.android.package-archive');
@@ -409,6 +412,9 @@ async function start() {
       .then(function (r) { if (r.settledLegs || r.recomputedBets || r.closedUnsettled) console.log('[settle] stuck-bet sweep: ' + JSON.stringify(r)); })
       .catch(function (err) { console.error('[settle] stuck-bet sweep failed:', err.message); });
   };
+  // Notifications for the installed app (cheap: returns at once when nobody enabled them).
+  setTimeout(function () { runPushSweep().catch(function () {}); }, 45 * 1000);
+  setInterval(function () { runPushSweep().catch(function () {}); }, 30 * 1000);
   setTimeout(runStuckBetSweep, 20 * 1000);
   setInterval(runStuckBetSweep, 2 * 60 * 1000);
   // First-half tickets are decided at the half-time whistle, not at the end of the match.
