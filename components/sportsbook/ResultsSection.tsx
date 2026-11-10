@@ -12,11 +12,10 @@ interface Props {
   hasSearch: boolean;
   leagueText: (key: string) => string;
   actions: MatchRowActions;
-  onClose: () => void;
 }
 
 /** "Rezultate": matches that finished in the last 48 hours, newest first, grouped by league. */
-const ResultsSection: React.FC<Props> = ({ sections, total, hasSearch, leagueText, actions, onClose }) => {
+const ResultsSection: React.FC<Props> = ({ sections, total, hasSearch, leagueText, actions }) => {
   const { t } = useI18n();
   return (
     <div id="results-section" className="bg-brand-panel rounded overflow-hidden shadow-sm border border-[#444] scroll-mt-4">
@@ -25,9 +24,6 @@ const ResultsSection: React.FC<Props> = ({ sections, total, hasSearch, leagueTex
           <span className="uppercase tracking-wider">{t('Rezultate · 48 orët e fundit')}</span>
           {total > 0 && <span className="text-[10px] bg-[#555] text-white px-1.5 rounded font-bold">{total}</span>}
         </div>
-        <button onClick={onClose} className="text-[10px] text-brand-textMuted hover:text-white uppercase tracking-wide">
-          {t('Kthehu te Kryefaqja ✕')}
-        </button>
       </div>
       {total === 0 ? (
         <div className="text-center text-brand-textMuted text-xs py-8 px-4">

@@ -105,6 +105,8 @@ const App: React.FC = () => {
     rowBudget,
     favoriteTeams,
     favoriteLeagues,
+    showLiveOnly: nav.showLiveOnly,
+    showResults: nav.showResults,
   });
 
   // A new filter starts the list from its first slice again.
@@ -237,8 +239,6 @@ const App: React.FC = () => {
               currentLeague={nav.currentLeague}
               showLiveOnly={nav.showLiveOnly}
               showResults={nav.showResults}
-              closeLive={() => { nav.setShowLiveOnly(false); nav.setShowResults(false); }}
-              closeResults={() => nav.setShowResults(false)}
               goToOdds={nav.goToOdds}
               goToLeague={nav.goToLeague}
               goToLive={nav.goToLive}
@@ -257,7 +257,6 @@ const App: React.FC = () => {
               liveLeagueSections={views.liveLeagueSections}
               resultsList={views.resultsList}
               resultsSections={views.resultsSections}
-              topLeagueMatches={views.topLeagueMatches}
               featuredMatches={views.featuredMatches}
               todayMatches={views.todayMatches}
               upcomingByCountry={views.upcomingByCountry}

@@ -10,11 +10,10 @@ interface Props {
   total: number;
   leagueText: (key: string) => string;
   actions: MatchRowActions;
-  onClose: () => void;
 }
 
 /** "Live Tani": every live match, grouped by league. Shown even when empty (that is the point). */
-const LiveSection: React.FC<Props> = ({ sections, total, leagueText, actions, onClose }) => {
+const LiveSection: React.FC<Props> = ({ sections, total, leagueText, actions }) => {
   const { t } = useI18n();
   return (
     <div id="live-section" className="bg-brand-panel rounded overflow-hidden shadow-sm border border-brand-accent/30 scroll-mt-4">
@@ -27,9 +26,6 @@ const LiveSection: React.FC<Props> = ({ sections, total, leagueText, actions, on
           <span className="text-brand-accent uppercase tracking-wider">{t('Live Tani')}</span>
           {total > 0 && <span className="text-[10px] bg-brand-accent text-black px-1.5 rounded font-bold">{total}</span>}
         </div>
-        <button onClick={onClose} className="text-[10px] text-brand-textMuted hover:text-white uppercase tracking-wide">
-          {t('Kthehu te Kryefaqja ✕')}
-        </button>
       </div>
       {total === 0 ? (
         <div className="text-center text-brand-textMuted text-xs py-8 px-4">{t('Nuk ka asnjë ndeshje live aktualisht.')}</div>

@@ -2,7 +2,6 @@ import React from 'react';
 import { Match } from '../../types';
 import { useI18n } from '../../i18n';
 import { ALL_LEAGUES, FAVORITES } from '../../utils/leagueFilters';
-import { leagueCountry } from '../../utils/leagueGrouping';
 import { DateOption } from '../../utils/dateLabels';
 import { CountryGroup } from '../../utils/matchGrouping';
 import Breadcrumb from './Breadcrumb';
@@ -22,8 +21,6 @@ interface Props extends ScreenActions {
   currentLeague: string;
   showLiveOnly: boolean;
   showResults: boolean;
-  closeLive: () => void;
-  closeResults: () => void;
   // filters
   searchQuery: string;
   onSearchChange: (query: string) => void;
@@ -40,7 +37,6 @@ interface Props extends ScreenActions {
   liveLeagueSections: { country: string; league: string; matches: Match[] }[];
   resultsList: Match[];
   resultsSections: { league: string; matches: Match[] }[];
-  topLeagueMatches: { key: string | null; list: Match[] };
   featuredMatches: Match[];
   todayMatches: Match[];
   upcomingByCountry: CountryGroup[];
@@ -86,10 +82,10 @@ const SportsbookHome: React.FC<Props> = (p) => {
     return (
       <>
         {p.showResults && (
-          <ResultsSection sections={p.resultsSections} total={p.resultsList.length} hasSearch={!!p.searchQuery} leagueText={p.leagueText} actions={p.actions} onClose={p.closeResults} />
+          <ResultsSection sections={p.resultsSections} total={p.resultsList.length} hasSearch={!!p.searchQuery} leagueText={p.leagueText} actions={p.actions} />
         )}
         {p.showLiveOnly && (
-          <LiveSection sections={p.liveLeagueSections} total={p.liveMatches.length} leagueText={p.leagueText} actions={p.actions} onClose={p.closeLive} />
+          <LiveSection sections={p.liveLeagueSections} total={p.liveMatches.length} leagueText={p.leagueText} actions={p.actions} />
         )}
 
         {!p.showLiveOnly && !p.showResults && p.dateFallbackActive && (
@@ -101,18 +97,6 @@ const SportsbookHome: React.FC<Props> = (p) => {
           </div>
         )}
 
-        {isRoot && p.topLeagueMatches.key && p.topLeagueMatches.list.length > 0 && (
-          <FeaturedStrip
-            matches={p.topLeagueMatches.list}
-            onBetClick={p.actions.onBetClick}
-            onOpenDetail={openMatch}
-            selectedIds={p.actions.selectedIds}
-            linkedTitle={{
-              label: `${t(leagueCountry(p.topLeagueMatches.key))} ${p.leagueText(p.topLeagueMatches.key)}`,
-              onClick: () => p.goToLeague(p.topLeagueMatches.key!),
-            }}
-          />
-        )}
         {isRoot && p.featuredMatches.length > 0 && (
           <FeaturedStrip title={t('Ndeshjet Kryesore')} matches={p.featuredMatches} onBetClick={p.actions.onBetClick} onOpenDetail={openMatch} selectedIds={p.actions.selectedIds} />
         )}
@@ -149,6 +133,7 @@ const SportsbookHome: React.FC<Props> = (p) => {
       />
       <DateStrip options={p.dateOptions} selected={p.selectedDate} onSelect={p.onSelectDate} />
       <SearchBar
+        scope={p.showLiveOnly ? 'live' : p.showResults ? 'results' : 'all'}
         query={p.searchQuery} onQueryChange={p.onSearchChange} suggestions={p.searchSuggestions}
         favoriteTeams={p.favoriteTeams} leagueText={p.leagueText} leagueLabel={p.leagueLabel}
         onPickLeague={p.goToLeague} onPickMatch={p.openMatchById}
