@@ -282,19 +282,17 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
 
   return (
     <div className="bg-brand-bg text-brand-text h-full flex flex-col">
-      {/* Phone: a clear back bar (the small "‹ Soccer" link below is hidden under the FUTBOLL menu
-          button on narrow screens) plus a floating pill that stays visible while scrolling markets.
-          Both go back through the browser history, same as the phone's own back button; the bet
-          slip selections stay as they were. */}
+      {/* Phone: a small floating back pill that stays visible while scrolling markets (the small "‹ Soccer" link
+          below is hidden under the FUTBOLL menu button on narrow screens). It goes back through the browser
+          history, same as the phone's own back button; the bet slip selections stay as they were. */}
       <EventBanner banner={banner} />
-      <div className="md:hidden flex items-center gap-2 bg-[#1f1f1f] border-b border-brand-divider px-3 py-2">
-        <button onClick={onClose} className="flex items-center gap-1 bg-brand-yellow text-black font-bold text-sm px-4 min-h-[44px] rounded">
-          <span aria-hidden="true">←</span> {t('Kthehu')}
-        </button>
-        <span className="text-xs text-brand-textMuted truncate">{match.homeTeam} v {match.awayTeam}</span>
-      </div>
-      <button onClick={onClose} aria-label={t('Kthehu')} className="md:hidden fixed bottom-4 left-4 z-40 flex items-center gap-1 bg-brand-yellow text-black font-bold text-sm px-4 min-h-[48px] rounded-full shadow-2xl border-2 border-white">
-        <span aria-hidden="true">←</span> {t('Kthehu')}
+      <button
+        onClick={onClose}
+        aria-label={t('Kthehu')}
+        className="md:hidden fixed bottom-4 left-3 z-40 flex items-center gap-1.5 h-10 pl-3 pr-3.5 rounded-full text-xs font-bold text-white bg-black/75 backdrop-blur-md border border-white/20 shadow-[0_6px_18px_rgba(0,0,0,0.55)] active:scale-95 transition-transform"
+      >
+        <svg viewBox="0 0 20 20" className="w-4 h-4 text-brand-yellow" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 4l-6 6 6 6" /></svg>
+        {t('Kthehu')}
       </button>
       {/* Match Header: compact. League + clock on one line, the score on ONE row (small crest + name each side), then the pitch.
           The old header stacked a big league label, a clock pill, a huge crest + 2xl name per team and a 3xl score above
