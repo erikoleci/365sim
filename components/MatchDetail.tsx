@@ -407,10 +407,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
             </div>
           ) : (
             <div>
-              <div className="text-[10px] text-brand-textMuted uppercase text-center mb-4">
-                {t('Statistika nga burimi i të dhënave — jo verifikim zyrtar')}
-              </div>
-              <StatRings stats={liveDetail.statistics} />
+              <StatRings stats={liveDetail.statistics} homeName={match.homeTeam} awayName={match.awayTeam} />
               {liveDetail.statistics.attacks_home != null && liveDetail.statistics.attacks_away != null && (
                 <div className="mt-3"><MomentumChart samples={attackSamples} home={match.homeTeam} away={match.awayTeam} /></div>
               )}

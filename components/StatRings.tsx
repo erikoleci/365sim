@@ -13,22 +13,26 @@ const Ring: React.FC<{ home: number | null | undefined; away: number | null | un
   if (home == null && away == null) return null;
   const h = Number(home ?? 0), a = Number(away ?? 0);
   const total = h + a;
-  const R = 22, C = 2 * Math.PI * R;
+  const R = 26, C = 2 * Math.PI * R;
   const homeLen = total > 0 ? (h / total) * C : 0;
+  const fmt = (v: number | null | undefined) => (v == null ? '–' : `${v}${suffix}`);
+  // One column per stat: the name, the ring, and under it the two numbers (yellow = home = the yellow arc), so nothing
+  // sits side by side and collides on a narrow phone.
   return (
     <div className="flex flex-col items-center min-w-0">
-      <div className="text-[11px] text-white/80 mb-1 text-center leading-tight">{label}</div>
-      <div className="flex items-center gap-1.5">
-        <span className="text-white font-extrabold text-lg tabular-nums w-8 text-right">{home ?? '–'}{suffix && home != null ? <span className="text-[10px] font-bold">{suffix}</span> : null}</span>
-        <svg width="58" height="58" viewBox="0 0 58 58" className="flex-shrink-0">
-          <circle cx="29" cy="29" r={R} fill="none" stroke={TRACK} strokeWidth="5" />
-          {homeLen > 0 && <circle cx="29" cy="29" r={R} fill="none" stroke={YELLOW} strokeWidth="5" strokeLinecap="butt" strokeDasharray={`${homeLen} ${C - homeLen}`} transform="rotate(-90 29 29)" />}
-          <circle cx="29" cy="29" r="14" fill="rgba(0,0,0,0.35)" />
-          {glyph === 'chevron' && <path d="M26 22l8 7-8 7" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />}
-          {glyph === 'chevrons' && <><path d="M23 22l7 7-7 7" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /><path d="M30 22l7 7-7 7" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></>}
-          {glyph === 'percent' && <text x="29" y="34" textAnchor="middle" fontSize="15" fontWeight="800" fill="#fff">%</text>}
-        </svg>
-        <span className="text-white font-extrabold text-lg tabular-nums w-8 text-left">{away ?? '–'}{suffix && away != null ? <span className="text-[10px] font-bold">{suffix}</span> : null}</span>
+      <div className="text-[11px] leading-tight text-white/80 text-center h-7 flex items-center">{label}</div>
+      <svg width="68" height="68" viewBox="0 0 68 68" className="flex-shrink-0 my-1">
+        <circle cx="34" cy="34" r={R} fill="none" stroke={TRACK} strokeWidth="6" />
+        {homeLen > 0 && <circle cx="34" cy="34" r={R} fill="none" stroke={YELLOW} strokeWidth="6" strokeLinecap="butt" strokeDasharray={`${homeLen} ${C - homeLen}`} transform="rotate(-90 34 34)" />}
+        <circle cx="34" cy="34" r="17" fill="rgba(0,0,0,0.38)" />
+        {glyph === 'chevron' && <path d="M31 26l9 8-9 8" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />}
+        {glyph === 'chevrons' && <><path d="M27 26l8 8-8 8" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" /><path d="M35 26l8 8-8 8" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" /></>}
+        {glyph === 'percent' && <text x="34" y="40" textAnchor="middle" fontSize="17" fontWeight="800" fill="#fff">%</text>}
+      </svg>
+      <div className="flex items-baseline justify-center gap-1.5 tabular-nums font-extrabold text-base leading-none">
+        <span style={{ color: YELLOW }}>{fmt(home)}</span>
+        <span className="text-white/30 text-xs font-bold">:</span>
+        <span className="text-white">{fmt(away)}</span>
       </div>
     </div>
   );
@@ -46,7 +50,7 @@ const Mini: React.FC<{ icon: React.ReactNode; value: number | null | undefined }
   </div>
 );
 
-const StatRings: React.FC<{ stats: LiveStatistics }> = ({ stats }) => {
+const StatRings: React.FC<{ stats: LiveStatistics; homeName?: string; awayName?: string }> = ({ stats, homeName, awayName }) => {
   const { t } = useI18n();
   const s = stats;
   const hasShots = s.shots_home != null || s.shots_away != null || s.shots_on_target_home != null || s.shots_on_target_away != null;
@@ -57,6 +61,12 @@ const StatRings: React.FC<{ stats: LiveStatistics }> = ({ stats }) => {
   const yh = s.yellow_home ?? s.cards_home, ya = s.yellow_away ?? s.cards_away;
   return (
     <div className="rounded-xl bg-black/30 p-3">
+      {(homeName || awayName) && (
+        <div className="flex items-center justify-between gap-2 mb-2 text-[11px] font-bold">
+          <span className="flex items-center gap-1.5 min-w-0"><span className="w-2 h-2 rounded-full shrink-0" style={{ background: YELLOW }} /><span className="truncate text-white">{homeName}</span></span>
+          <span className="flex items-center gap-1.5 min-w-0"><span className="truncate text-white">{awayName}</span><span className="w-2 h-2 rounded-full shrink-0 bg-white/45" /></span>
+        </div>
+      )}
       <div className="grid grid-cols-3 gap-1">
         <Ring home={s.attacks_home} away={s.attacks_away} glyph="chevron" label={t('Sulme')} />
         <Ring home={s.dangerous_attacks_home} away={s.dangerous_attacks_away} glyph="chevrons" label={t('Sulme të rrezikshme')} />
