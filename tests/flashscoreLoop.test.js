@@ -20,7 +20,7 @@ const fetchImpl = async (url) => ({ ok: true, json: async () => (url.includes('/
 
 describe('Flashscore enrichment loop', () => {
   beforeEach(() => { db.events = []; db.extra = null; __resetForTests(); delete process.env.FLASHSCORE_URL; });
-  it('is off without FLASHSCORE_URL', async () => { expect(await runFlashscore({ fetchImpl })).toEqual({ disabled: true }); });
+  it('is idle when there is no scraper available (no Python / no URL)', async () => { expect(await runFlashscore({ fetchImpl })).toEqual({ disabled: true }); });
   it('adds scorer + penalty + extras, and fills in a missing scorer name without duplicating', async () => {
     process.env.FLASHSCORE_URL = 'http://fs:8000';
     db.events.push({ id: 1, type: 'GOAL', team: 'Bayern', player: null, detail: '1-0' }); // another source logged the goal without a name

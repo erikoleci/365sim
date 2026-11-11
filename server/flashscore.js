@@ -1,13 +1,14 @@
-// Flashscore enrichment (OPTIONAL, off unless FLASHSCORE_URL is set): scorers' names, penalties, cards and
+// Flashscore enrichment (starts the bundled scraper by itself, see flashscoreProc.js; FLASHSCORE=0 turns it off): scorers' names, penalties, cards and
 // big chances, read from the self-hosted flashscore-service (flashscore-service/, MIT). It only ADDS facts:
 // it never writes scores, never settles tickets and never touches odds. A failing/slow service is skipped silently.
-// FLASHSCORE_URL  e.g. http://flashscore:8000    FLASHSCORE_INTERVAL_MS (default 90000, min 30000)
+// Optional: FLASHSCORE_URL (use an external service instead)   FLASHSCORE_INTERVAL_MS (default 90000, min 30000)
 import { pool } from './db.js';
+import { serviceBase, enabled } from './flashscoreProc.js';
 import { parseMatchList, incidentRows, bigChances, otherStats, findFlashscoreMatch } from './flashscoreMap.js';
 
 const timeout = () => Math.max(5000, Number(process.env.FLASHSCORE_TIMEOUT_MS) || 20000);
-async function get(path, fetchImpl) {
-  const res = await fetchImpl(String(process.env.FLASHSCORE_URL).replace(/\/+$/, '') + path, { signal: AbortSignal.timeout(timeout()) });
+async function get(path, fetchImpl, base) {
+  const res = await fetchImpl(base + path, { signal: AbortSignal.timeout(timeout()) });
   if (!res.ok) throw new Error('flashscore HTTP ' + res.status);
   return res.json();
 }
@@ -31,7 +32,7 @@ const lastDetailAt = new Map(); // match id -> ms of the last details pull (a li
 const doneFinished = new Set();
 
 export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.fetch } = {}) {
-  if (!process.env.FLASHSCORE_URL || !fetchImpl) return { disabled: true };
+  if (!fetchImpl || !enabled()) return { disabled: true };
   // Football matches that are live, or ended in the last 3 hours (so the final scorers/stats are captured once).
   const { rows } = await pool.query(
     `SELECT id, home_team, away_team, start_time, status FROM matches_cache
@@ -40,9 +41,11 @@ export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.f
   );
   const todo = rows.filter((r) => !doneFinished.has(r.id));
   if (!todo.length) return { candidates: 0 };
+  const base = serviceBase({ now }); // starts the bundled scraper on the first cycle that has something to enrich
+  if (!base) return { disabled: true };
   const list = [];
   for (const day of [0, -1]) {
-    try { list.push(...parseMatchList(await get(`/matches?sport=football&day=${day}`, fetchImpl))); } catch (e) { if (day === 0) throw e; }
+    try { list.push(...parseMatchList(await get(`/matches?sport=football&day=${day}`, fetchImpl, base))); } catch (e) { if (day === 0) throw e; }
   }
   const seen = new Set();
   for (let i = list.length - 1; i >= 0; i--) { if (seen.has(list[i].id)) list.splice(i, 1); else seen.add(list[i].id); } // the same match must never be listed twice (that would look ambiguous)
@@ -54,8 +57,8 @@ export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.f
     try {
       const q = encodeURIComponent(f.id);
       const [summary, stats] = await Promise.all([
-        get(`/matches/summary?match=${q}`, fetchImpl),
-        get(`/matches/statistics?match=${q}`, fetchImpl).catch(() => null),
+        get(`/matches/summary?match=${q}`, fetchImpl, base),
+        get(`/matches/statistics?match=${q}`, fetchImpl, base).catch(() => null),
       ]);
       const ev = incidentRows(summary, f, row.home_team, row.away_team);
       if (ev) out.eventsAdded += await logEvents(row.id, ev, now);
@@ -81,7 +84,7 @@ export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.f
 export const __resetForTests = () => { lastDetailAt.clear(); doneFinished.clear(); };
 
 export function startFlashscoreLoop() {
-  if (!process.env.FLASHSCORE_URL) return;
+  if (!enabled()) return;
   const every = Math.max(30000, Number(process.env.FLASHSCORE_INTERVAL_MS || 90000));
   let busy = false;
   const tick = () => {

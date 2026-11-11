@@ -16,7 +16,9 @@ def main():
     app = bottle.default_app()
     print(f"Flashscore Scraper listening on http://localhost:{config.PORT}/")
     print(f"Try:  curl \"http://localhost:{config.PORT}/matches?sport=football\"")
-    server = wsgi.Server(("0.0.0.0", config.PORT), app,
+    import os
+    host = os.environ.get("HOST", "0.0.0.0")  # 365SIM patch: the app starts it with HOST=127.0.0.1 (no outside access)
+    server = wsgi.Server((host, config.PORT), app,
                          server_name="flashscore-scraper", numthreads=16)
     try:
         server.start()

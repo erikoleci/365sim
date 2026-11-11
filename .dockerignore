@@ -4,4 +4,3 @@ dist
 .env.local
 server/data
 .git
-flashscore-service

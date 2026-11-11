@@ -5,6 +5,11 @@ WORKDIR /app
 # Repo is managed with pnpm (pnpm-lock.yaml); enable it via corepack bundled with Node 22.
 RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
 
+# Flashscore scraper (small Python service, started by the app itself on 127.0.0.1 only; see server/flashscoreProc.js).
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv && rm -rf /var/lib/apt/lists/*
+COPY flashscore-service/requirements.txt /tmp/fs-requirements.txt
+RUN python3 -m venv /opt/fsvenv && /opt/fsvenv/bin/pip install --no-cache-dir -r /tmp/fs-requirements.txt
+
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
