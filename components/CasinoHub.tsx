@@ -130,7 +130,8 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
       {musicBtn}
       {loadingTile && <GameLoader name={loadingTile.name} img={loadingTile.img} art={loadingTile.art} onDone={() => { setActiveGame(loadingTile.game); setLoadingTile(null); }} />}
       <h1 className="text-3xl sm:text-4xl font-bold italic mb-1">Casino <span className="text-brand-yellow">Classics</span></h1>
-      <p className="text-sm opacity-70 mb-6">Slots and table games. Instant wins, no waiting.</p>
+      <p className="text-sm opacity-70 mb-2">Slots and table games. Instant wins, no waiting.</p>
+      <p className="text-xs mb-6 inline-block rounded-full border border-brand-yellow/40 bg-black/30 px-3 py-1 text-brand-yellow">DEMO · ~30%</p>
 
       <div className="flex gap-2 mb-6 overflow-x-auto" role="tablist">
         {([['slots', 'Slots'], ['live', 'Live Casino'], ['games', 'Games']] as const).map(([k, label]) => (

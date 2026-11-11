@@ -181,6 +181,7 @@ router.post('/slot-games/:id/spin', async (req, res) => {
   const acct = await accountCurrencyOf(req.user.id);
   const currency = req.body?.currency === undefined && acct === 'EUR' ? 'EUR' : normalizeCurrency(req.body?.currency);
   if (!allowsCurrency(acct, currency)) return res.status(400).json({ error: accountCurrencyError(acct) });
+  if (currency === 'EUR') return res.status(400).json({ error: 'Casino luan vetëm me kredite demo (pa euro)' });
   const stake = req.body?.stake;
   if (!validSlotStake(currency, stake)) return res.status(400).json({ error: 'Invalid stake' });
 
@@ -759,6 +760,7 @@ router.post('/tumble/spin', async (req, res) => {
   const acct = await accountCurrencyOf(req.user.id);
   const currency = req.body?.currency === undefined && acct === 'EUR' ? 'EUR' : normalizeCurrency(req.body?.currency);
   if (!allowsCurrency(acct, currency)) return res.status(400).json({ error: accountCurrencyError(acct) });
+  if (currency === 'EUR') return res.status(400).json({ error: 'Casino luan vetëm me kredite demo (pa euro)' });
   const stake = req.body?.stake;
   if (!validSlotStake(currency, stake)) return res.status(400).json({ error: 'Invalid stake' });
   const gate = await getWinGate();

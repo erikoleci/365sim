@@ -1,16 +1,14 @@
 import pool from './db.js';
-import { getCasinoAccess } from './casinoAccess.js';
 
-// Demo difficulty. While the casino is open only to the super admin ('super'), a round that would win is kept with
-// chance `gate` percent and otherwise replaced by a genuinely drawn losing round, so wins are rare. The round that is
-// shown (reels, wheel, grid) is the one that is paid: when a win does come, the full amount is paid. The moment the
-// casino is opened to players ('all') the gate is 100 = off, so players never play a gated game.
+// Demo return. The casino plays with demo credits only (no euro). A round that would win is kept with chance `gate`
+// percent and otherwise replaced by a genuinely drawn losing round. The round that is shown (reels, wheel, grid) is the
+// one that is paid: when a win comes, the full amount is paid. The return to the player is about gate% of the natural
+// ~95%, so gate 30 = about 30%, which is the number the casino banner shows. Keep the banner and DEFAULT_GATE in step.
 const KEY = 'casino_win_gate';
 export const DEFAULT_GATE = 30;
 
 export async function getWinGate() {
   try {
-    if ((await getCasinoAccess()) === 'all') return 100;
     const { rows } = await pool.query('SELECT value FROM kv_store WHERE key = $1', [KEY]);
     const n = rows[0] ? Number(rows[0].value) : DEFAULT_GATE;
     return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : DEFAULT_GATE;
