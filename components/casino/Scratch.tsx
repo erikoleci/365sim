@@ -72,7 +72,7 @@ const Scratch: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
         {card && !done && <button onClick={revealAll} className="px-4 rounded-xl border border-white/25 text-gray-100">Reveal all</button>}
         <button onClick={buy} disabled={busy || (!!card && !done) || userBalance < stake} className="flex-1 py-3 rounded-xl font-extrabold text-lg bg-gradient-to-b from-green-500 to-green-700 text-white disabled:opacity-50 shadow-lg">{busy ? '...' : `BUY CARD · ${stake} L`}</button>
       </div>
-      <div className="text-[11px] text-gray-400 mt-2">Balance: <b className="tabular-nums text-white">{userBalance.toFixed(2)} L</b> · RTP 94% · deri 50x</div>
+      <div className="text-[11px] text-gray-400 mt-2">Balance: <b className="tabular-nums text-white">{userBalance.toFixed(2)} L</b> · deri 50x</div>
     </div>
   );
 };

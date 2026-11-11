@@ -86,7 +86,7 @@ const Wheel: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       </div>
       <div className="mb-3"><StakeInput value={stake} onChange={setStake} min={1} max={5000} presets={STAKES} unit="L" balance={userBalance} disabled={spinning} /></div>
       <button onClick={spin} disabled={spinning || userBalance < stake} className="w-full max-w-sm py-3 rounded-xl font-extrabold text-lg bg-gradient-to-b from-green-500 to-green-700 hover:from-green-400 text-white disabled:opacity-50 shadow-lg">{spinning ? '...' : `SPIN · ${stake} L`}</button>
-      <div className="text-[11px] text-gray-400 mt-2">Balance: <b className="tabular-nums text-white">{userBalance.toFixed(2)} L</b> · RTP 94% · every segment has the same chance</div>
+      <div className="text-[11px] text-gray-400 mt-2">Balance: <b className="tabular-nums text-white">{userBalance.toFixed(2)} L</b> · every segment has the same chance</div>
     </div>
   );
 };

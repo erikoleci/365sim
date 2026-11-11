@@ -1,4 +1,5 @@
 // DOG RACE: six greyhounds in traps 1-6. The finishing order is drawn on the server (same Plackett-Luce method as the horses).
+import { varyRunners, drawOrderFor } from './raceOdds.js';
 export const DOG_RTP = 0.95;
 export const DOGS = [
   { id: 0, name: 'Red Rocket', trap: 1, p: 0.28, color: '#ef4444' },
@@ -9,15 +10,7 @@ export const DOGS = [
   { id: 5, name: 'Purple Comet', trap: 6, p: 0.08, color: '#a855f7' },
 ].map((d) => ({ ...d, odds: Math.floor((DOG_RTP / d.p) * 100) / 100 }));
 
-export function drawOrder(randInt) {
-  const left = DOGS.map((d) => ({ id: d.id, w: Math.round(d.p * 10000) }));
-  const order = [];
-  while (left.length) {
-    const total = left.reduce((a, d) => a + d.w, 0);
-    let r = randInt(total); let idx = 0;
-    for (; idx < left.length; idx += 1) { if ((r -= left[idx].w) < 0) break; }
-    order.push(left.splice(Math.min(idx, left.length - 1), 1)[0].id);
-  }
-  return order;
-}
-export const dogPayout = (stake, id, order) => (order[0] === id ? Math.round(stake * DOGS[id].odds * 100) / 100 : 0);
+/** The dogs for one particular race: same names and traps, new chances and odds. */
+export const dogsFor = (seed) => varyRunners(DOGS, seed, DOG_RTP);
+export function drawOrder(randInt, dogs = DOGS) { return drawOrderFor(dogs, randInt); }
+export const dogPayout = (stake, id, order, dogs = DOGS) => (order[0] === id ? Math.round(stake * dogs[id].odds * 100) / 100 : 0);

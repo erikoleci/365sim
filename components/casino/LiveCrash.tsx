@@ -132,7 +132,7 @@ const LiveCrash: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       {hasBet && betting && <div className="mt-4 text-center font-bold text-emerald-300">Bet placed: {st?.my?.stake} L{st?.my?.auto ? ` · auto ${st.my.auto}x` : ''} — waiting for takeoff…</div>}
       {myActive && flying && <button onClick={cashout} className="mt-4 w-full py-4 rounded-xl font-black text-xl bg-gradient-to-b from-amber-300 to-orange-600 text-black shadow-lg active:scale-[.98]">CASH OUT · {((st?.my?.stake ?? 0) * mult).toFixed(2)} L</button>}
       {!betting && !myActive && <div className="mt-4 text-center text-sm text-gray-400">{flying ? 'Watching this flight — bet on the next one!' : 'Round over — the next flight starts soon.'}</div>}
-      <div className="text-[11px] text-gray-400 mt-3 text-center">Balance: <b className="tabular-nums text-white">{userBalance.toFixed(2)} L</b> · RTP ~96% · max 150x · one bet per flight · credit only{st?.simulatedPlayers ? ' · includes simulated players' : ''}</div>
+      <div className="text-[11px] text-gray-400 mt-3 text-center">Balance: <b className="tabular-nums text-white">{userBalance.toFixed(2)} L</b> · max 150x · one bet per flight · credit only{st?.simulatedPlayers ? ' · includes simulated players' : ''}</div>
     </div>
   );
 };

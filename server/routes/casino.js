@@ -1,7 +1,10 @@
 import express from 'express';
 import { randomUUID, randomInt } from 'crypto';
 import pool from '../db.js';
-import { requireAuth } from './auth.js';
+import { requireAuth, JWT_SECRET } from './auth.js';
+import { getWinGate, gatedDraw } from '../casinoGate.js';
+const RI = (n) => randomInt(n);
+import { makeRaceToken, readRaceToken } from '../raceOdds.js';
 import { getCasinoAccess, canOpenCasino, getDisabledGames, gameKeyForPath } from '../casinoAccess.js';
 import { PLINKO_ROWS, PLINKO_RISKS, plinkoMultipliers, minesMultiplier, MINES_TILES, dragonTigerPayout, DT_PAYOUT } from '../casinoMath.js';
 import { isSuperAdmin } from '../roles.js';
@@ -181,8 +184,9 @@ router.post('/slot-games/:id/spin', async (req, res) => {
   const stake = req.body?.stake;
   if (!validSlotStake(currency, stake)) return res.status(400).json({ error: 'Invalid stake' });
 
+  const gate = await getWinGate();
   const draw = () => {
-    const r = playRound(game, (n) => randomInt(n));
+    const r = gatedDraw(() => playRound(game, (n) => randomInt(n)), (x) => x.totalMultiplier > 0, gate, (n) => randomInt(n));
     const multiplier = Math.min(r.totalMultiplier, MAX_WIN_MULTIPLIER);
     return {
       spins: r.spins.map((sp) => ({ grid: sp.grid, wins: sp.wins, scatters: sp.scatters, free: sp.free, win: round2(sp.win * stake) })),
@@ -210,8 +214,8 @@ router.post('/slots/spin', async (req, res) => {
   const game = getSlotGame(gameId);
   if (!game) return res.status(400).json({ error: 'Unknown slot game' });
 
-  const reels = spinSlotReels(game);
-  const multiplier = slotMultiplier(game, reels);
+  const gate = await getWinGate();
+  const { reels, multiplier } = gatedDraw(() => { const rl = spinSlotReels(game); return { reels: rl, multiplier: slotMultiplier(game, rl) }; }, (x) => x.multiplier > 0, gate, RI);
   const payout = slotPayout(stake, multiplier);
 
   const client = await pool.connect();
@@ -587,8 +591,8 @@ router.post('/dice/roll', async (req, res) => {
   const ok = await deductStake(req.user.id, stake);
   if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
 
-  const dice = [rollDie(), rollDie()];
-  const result = diceOutcome(dice[0], dice[1]);
+  const gate = await getWinGate();
+  const { dice, result } = gatedDraw(() => { const d = [rollDie(), rollDie()]; return { dice: d, result: diceOutcome(d[0], d[1]) }; }, (x) => x.result === selectedBet, gate, RI);
   const payout = result === selectedBet ? roundMoney(stake * PAYOUT.DICE[selectedBet]) : 0;
   await creditPayout(req.user.id, payout);
   const balance = await getBalance(req.user.id);
@@ -622,9 +626,13 @@ router.post('/plinko/drop', async (req, res) => {
   const ok = await deductStake(req.user.id, stake);
   if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
 
-  const path = Array.from({ length: rows }, () => randomInt(0, 2)); // 1 = right
-  const bucket = path.reduce((a, b) => a + b, 0);
-  const multiplier = plinkoMultipliers(rows, risk)[bucket];
+  const gate = await getWinGate();
+  const mults = plinkoMultipliers(rows, risk);
+  const { path, bucket, multiplier } = gatedDraw(() => {
+    const pth = Array.from({ length: rows }, () => randomInt(0, 2)); // 1 = right
+    const bk = pth.reduce((a, b) => a + b, 0);
+    return { path: pth, bucket: bk, multiplier: mults[bk] };
+  }, (x) => x.multiplier > 1, gate, RI);
   const payout = roundMoney(stake * multiplier);
   await creditPayout(req.user.id, payout);
   await logRound(req.user.id, 'plinko', stake, payout, { rows, risk, bucket, multiplier });
@@ -715,9 +723,12 @@ router.post('/dragon-tiger/deal', async (req, res) => {
 
   const deck = [];
   for (const suit of CARD_SUITS) for (const v of BJ_VALUES) deck.push({ suit, value: v });
-  const a = randomInt(0, 52); let b = randomInt(0, 51); if (b >= a) b += 1; // two different cards
-  const dragon = deck[a], tiger = deck[b];
   const rank = (c) => { const v = c.value; return v === 'A' ? 1 : v === 'J' ? 11 : v === 'Q' ? 12 : v === 'K' ? 13 : parseInt(v, 10); };
+  const gate = await getWinGate();
+  const { dragon, tiger } = gatedDraw(() => {
+    const a = randomInt(0, 52); let b = randomInt(0, 51); if (b >= a) b += 1; // two different cards
+    return { dragon: deck[a], tiger: deck[b] };
+  }, (x) => dragonTigerPayout(bet, rank(x.dragon), rank(x.tiger), stake).payout > stake, gate, RI);
   const { result, payout } = dragonTigerPayout(bet, rank(dragon), rank(tiger), stake);
   await creditPayout(req.user.id, payout);
   await logRound(req.user.id, 'dragontiger', stake, payout, { bet, result });
@@ -731,7 +742,8 @@ router.post('/wheel/spin', async (req, res) => {
   if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
   const ok = await deductStake(req.user.id, stake);
   if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
-  const { index, multiplier } = wheelSpin((n) => randomInt(0, n));
+  const gate = await getWinGate();
+  const { index, multiplier } = gatedDraw(() => wheelSpin((n) => randomInt(0, n)), (x) => x.multiplier > 0, gate, (n) => randomInt(n));
   const payout = roundMoney(stake * multiplier);
   await creditPayout(req.user.id, payout);
   await logRound(req.user.id, 'wheel', stake, payout, { index, multiplier });
@@ -749,8 +761,9 @@ router.post('/tumble/spin', async (req, res) => {
   if (!allowsCurrency(acct, currency)) return res.status(400).json({ error: accountCurrencyError(acct) });
   const stake = req.body?.stake;
   if (!validSlotStake(currency, stake)) return res.status(400).json({ error: 'Invalid stake' });
+  const gate = await getWinGate();
   const draw = () => {
-    const r = tumbleEngine.playRound((n) => randomInt(n));
+    const r = gatedDraw(() => tumbleEngine.playRound((n) => randomInt(n)), (x) => x.totalMultiplier > 0, gate, (n) => randomInt(n));
     return {
       spins: r.spins.map((sp) => ({
         first: sp.first, free: sp.free, scatters: sp.scatters, scatterWin: round2(sp.scatterWin * stake), win: round2(sp.win * stake),
@@ -773,8 +786,8 @@ router.post('/keno/play', async (req, res) => {
   if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
   const paid = await deductStake(req.user.id, stake);
   if (!paid) return res.status(400).json({ error: 'Insufficient balance' });
-  const drawn = drawKeno((n) => randomInt(0, n));
-  const { hits, multiplier } = kenoResult(picks, drawn);
+  const gate = await getWinGate();
+  const { drawn, hits, multiplier } = gatedDraw(() => { const dr = drawKeno((n) => randomInt(0, n)); return { drawn: dr, ...kenoResult(picks, dr) }; }, (x) => x.multiplier > 0, gate, RI);
   const payout = roundMoney(stake * multiplier);
   await creditPayout(req.user.id, payout);
   await logRound(req.user.id, 'keno', stake, payout, { picks, drawn, hits });
@@ -787,7 +800,8 @@ router.post('/scratch/play', async (req, res) => {
   if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
   const paid = await deductStake(req.user.id, stake);
   if (!paid) return res.status(400).json({ error: 'Insufficient balance' });
-  const { cells, multiplier } = scratchCard((n) => randomInt(0, n));
+  const gate = await getWinGate();
+  const { cells, multiplier } = gatedDraw(() => scratchCard((n) => randomInt(0, n)), (x) => x.multiplier > 0, gate, RI);
   const payout = roundMoney(stake * multiplier);
   await creditPayout(req.user.id, payout);
   await logRound(req.user.id, 'scratch', stake, payout, { cells, multiplier });
@@ -947,7 +961,8 @@ router.post('/holdwin/play', async (req, res) => {
   if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
   const ok = await deductStake(req.user.id, stake);
   if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
-  const round = holdWinEngine.playRound((n) => randomInt(n));
+  const gate = await getWinGate();
+  const round = gatedDraw(() => holdWinEngine.playRound((n) => randomInt(n)), (x) => x.multiplier > 0, gate, RI);
   const payout = roundMoney(stake * round.multiplier);
   await creditPayout(req.user.id, payout);
   await logRound(req.user.id, 'holdwin', stake, payout, { coins: round.start.length, full: round.full, multiplier: round.multiplier });
@@ -1018,18 +1033,28 @@ router.get('/tower/levels', (req, res) => res.json({ levels: Object.fromEntries(
 // =====================================================================
 // HORSE RACE
 // =====================================================================
-router.get('/horses/info', (req, res) => res.json({ horses: horseEngine.HORSES }));
+router.get('/horses/info', (req, res) => {
+  const { seed, token } = makeRaceToken(JWT_SECRET);
+  res.json({ horses: horseEngine.horsesFor(seed), token });
+});
 router.post('/horses/race', async (req, res) => {
-  const { stake, horse } = req.body || {};
+  const { stake, horse, token } = req.body || {};
   if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
   if (!Number.isInteger(horse) || horse < 0 || horse >= horseEngine.HORSES.length) return res.status(400).json({ error: 'Pick a horse' });
+  let horses = horseEngine.HORSES;
+  if (token !== undefined) {
+    const horseSeed = readRaceToken(token, JWT_SECRET);
+    if (horseSeed === null) return res.status(400).json({ error: 'The odds expired, reload the race' });
+    horses = horseEngine.horsesFor(horseSeed);
+  }
   const ok = await deductStake(req.user.id, stake);
   if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
-  const order = horseEngine.drawOrder((n) => randomInt(n));
-  const payout = horseEngine.horsePayout(stake, horse, order);
+  const gate = await getWinGate();
+  const order = gatedDraw(() => horseEngine.drawOrder((n) => randomInt(n), horses), (o) => o[0] === horse, gate, RI);
+  const payout = horseEngine.horsePayout(stake, horse, order, horses);
   await creditPayout(req.user.id, payout);
-  await logRound(req.user.id, 'horses', stake, payout, { horse, order });
-  res.json({ order, payout, odds: horseEngine.HORSES[horse].odds, balance: await getBalance(req.user.id) });
+  await logRound(req.user.id, 'horses', stake, payout, { horse, order, odds: horses[horse].odds });
+  res.json({ order, payout, odds: horses[horse].odds, balance: await getBalance(req.user.id) });
 });
 
 // =====================================================================
@@ -1041,7 +1066,8 @@ router.post('/cups/play', async (req, res) => {
   if (!Number.isInteger(cup) || cup < 0 || cup > 2) return res.status(400).json({ error: 'Pick a cup' });
   const ok = await deductStake(req.user.id, stake);
   if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
-  const shuffle = cupsEngine.drawShuffle((n) => randomInt(n));
+  const gate = await getWinGate();
+  const shuffle = gatedDraw(() => cupsEngine.drawShuffle((n) => randomInt(n)), (x) => x.final === cup, gate, RI);
   const won = shuffle.final === cup;
   const payout = won ? roundMoney(stake * cupsEngine.CUPS_PAYOUT) : 0;
   await creditPayout(req.user.id, payout);
@@ -1148,7 +1174,7 @@ router.post('/live-roulette/bet', async (req, res) => {
 // =====================================================================
 async function liveHorsesResult(round) {
   const key = `livehorses_${round}`;
-  await pool.query('INSERT INTO kv_store (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING', [key, liveHorses.draw((n) => randomInt(n)).join(',')]);
+  await pool.query('INSERT INTO kv_store (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING', [key, liveHorses.draw((n) => randomInt(n), round).join(',')]);
   const { rows } = await pool.query('SELECT value FROM kv_store WHERE key = $1', [key]);
   return rows[0].value.split(',').map(Number);
 }
@@ -1160,7 +1186,7 @@ async function settleLiveHorses(userId) {
     const st = JSON.parse(row.state);
     if (!(st.round < cur || (st.round === cur && phase !== 'betting'))) continue;
     const order = await liveHorsesResult(st.round);
-    const payout = liveHorses.settle(st.bets, order);
+    const payout = liveHorses.settle(st.bets, order, st.round);
     const upd = await pool.query(`UPDATE casino_rounds SET status='FINISHED', payout=$1, result=$2, resolved_at=$3 WHERE id=$4 AND status='PLAYING'`,
       [payout, JSON.stringify({ round: st.round, order }), Date.now(), row.id]);
     if (upd.rowCount === 0) continue;
@@ -1179,7 +1205,7 @@ router.get('/live-horses/state', async (req, res) => {
   const prev = []; for (let i = 1; i <= 8; i += 1) { const { rows } = await pool.query('SELECT value FROM kv_store WHERE key = $1', [`livehorses_${round - i}`]); if (rows[0]) prev.push(Number(rows[0].value.split(',')[0])); }
   const sim = process.env.LIVE_SIM_ENABLED !== '0';
   res.json({ serverNow: now, round, phase, msLeft, cycleMs: liveHorses.CYCLE_MS, betMs: liveHorses.BET_MS, order, winners: prev, myBets, settled, balance: await getBalance(req.user.id),
-    tablePlayers: sim ? 11 + ((round * 5) % 23) : undefined, simulatedPlayers: sim, horses: horseEngine.HORSES });
+    tablePlayers: sim ? 11 + ((round * 5) % 23) : undefined, simulatedPlayers: sim, horses: liveHorses.horsesForRound(round) });
 });
 router.post('/live-horses/bet', async (req, res) => {
   const { bets, round } = req.body || {};
@@ -1206,25 +1232,36 @@ router.post('/live-horses/bet', async (req, res) => {
 // =====================================================================
 // DOG RACE (single) and LIVE DOG RACE (shared, every 40 s)
 // =====================================================================
-router.get('/dogs/info', (req, res) => res.json({ dogs: dogEngine.DOGS }));
+router.get('/dogs/info', (req, res) => {
+  const { seed, token } = makeRaceToken(JWT_SECRET);
+  res.json({ dogs: dogEngine.dogsFor(seed), token });
+});
 router.post('/dogs/race', async (req, res) => {
-  const { stake, dog } = req.body || {};
+  const { stake, dog, token } = req.body || {};
   if (!validateStake(stake)) return res.status(400).json({ error: `Stake must be between ${MIN_STAKE} and ${MAX_STAKE}` });
   if (!Number.isInteger(dog) || dog < 0 || dog >= dogEngine.DOGS.length) return res.status(400).json({ error: 'Pick a dog' });
+  // An app that was opened before this change sends no token and keeps the old fixed odds it shows.
+  let dogs = dogEngine.DOGS;
+  if (token !== undefined) {
+    const dogSeed = readRaceToken(token, JWT_SECRET);
+    if (dogSeed === null) return res.status(400).json({ error: 'The odds expired, reload the race' });
+    dogs = dogEngine.dogsFor(dogSeed);
+  }
   const ok = await deductStake(req.user.id, stake);
   if (!ok) return res.status(400).json({ error: 'Insufficient balance' });
-  const order = dogEngine.drawOrder((n) => randomInt(n));
-  const payout = dogEngine.dogPayout(stake, dog, order);
+  const gate = await getWinGate();
+  const order = gatedDraw(() => dogEngine.drawOrder((n) => randomInt(n), dogs), (o) => o[0] === dog, gate, RI);
+  const payout = dogEngine.dogPayout(stake, dog, order, dogs);
   await creditPayout(req.user.id, payout);
-  await logRound(req.user.id, 'dogs', stake, payout, { dog, order });
-  res.json({ order, payout, odds: dogEngine.DOGS[dog].odds, balance: await getBalance(req.user.id) });
+  await logRound(req.user.id, 'dogs', stake, payout, { dog, order, odds: dogs[dog].odds });
+  res.json({ order, payout, odds: dogs[dog].odds, balance: await getBalance(req.user.id) });
 });
 
 // Shared "bet, then race" table, parameterised so every live race game uses the same code path.
 function registerLiveRace({ path, game, engine }) {
   async function resultOf(round) {
     const key = `${game}_${round}`;
-    await pool.query('INSERT INTO kv_store (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING', [key, engine.draw((n) => randomInt(n)).join(',')]);
+    await pool.query('INSERT INTO kv_store (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING', [key, engine.draw((n) => randomInt(n), round).join(',')]);
     const { rows } = await pool.query('SELECT value FROM kv_store WHERE key = $1', [key]);
     return rows[0].value.split(',').map(Number);
   }
@@ -1236,7 +1273,7 @@ function registerLiveRace({ path, game, engine }) {
       const st = JSON.parse(row.state);
       if (!(st.round < cur || (st.round === cur && phase !== 'betting'))) continue;
       const order = await resultOf(st.round);
-      const payout = engine.settle(st.bets, order);
+      const payout = engine.settle(st.bets, order, st.round);
       const upd = await pool.query(`UPDATE casino_rounds SET status='FINISHED', payout=$1, result=$2, resolved_at=$3 WHERE id=$4 AND status='PLAYING'`,
         [payout, JSON.stringify({ round: st.round, order }), Date.now(), row.id]);
       if (upd.rowCount === 0) continue;
@@ -1258,7 +1295,7 @@ function registerLiveRace({ path, game, engine }) {
     const winners = keys.map((k) => pm.get(k)).filter((v) => v !== undefined);
     const sim = process.env.LIVE_SIM_ENABLED !== '0';
     res.json({ serverNow: now, round, phase, msLeft, cycleMs: engine.CYCLE_MS, betMs: engine.BET_MS, order, winners, myBets, settled, balance: await getBalance(req.user.id),
-      tablePlayers: sim ? 12 + ((round * 5) % 27) : undefined, simulatedPlayers: sim, runners: engine.RUNNERS, ...(engine.FORECAST ? { forecast: engine.FORECAST } : {}) });
+      tablePlayers: sim ? 12 + ((round * 5) % 27) : undefined, simulatedPlayers: sim, runners: engine.runnersFor ? engine.runnersFor(round) : engine.RUNNERS, ...(engine.FORECAST ? { forecast: engine.forecastFor(engine.runnersFor(round)) } : {}) });
   });
   router.post(`/${path}/bet`, async (req, res) => {
     const { bets, round } = req.body || {};

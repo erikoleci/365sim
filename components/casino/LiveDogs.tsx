@@ -151,7 +151,7 @@ const LiveDogs: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
         <button disabled={!betting || draftTotal === 0} onClick={() => setDraft({})} className="px-4 rounded-xl border border-white/20 text-gray-200 disabled:opacity-40">Clear</button>
         <button onClick={place} disabled={!betting || draftTotal === 0 || draftTotal > userBalance} className="flex-1 py-3.5 rounded-xl font-black text-lg bg-gradient-to-b from-green-400 to-green-700 text-white shadow-lg disabled:opacity-50">{draftTotal ? `PLACE BETS · ${draftTotal.toFixed(2)} L` : tab === 'fc' ? 'TAP A COMBINATION TO BET' : 'TAP A HORSE TO BET'}</button>
       </div>
-      <div className="text-[11px] text-gray-400 mt-2 text-center">Balance: <b className="tabular-nums text-white">{userBalance.toFixed(2)} L</b> · RTP 95% · max 5000 L per race · credit only{st?.simulatedPlayers ? ' · table includes simulated players' : ''}</div>
+      <div className="text-[11px] text-gray-400 mt-2 text-center">Balance: <b className="tabular-nums text-white">{userBalance.toFixed(2)} L</b> · max 5000 L per race · credit only{st?.simulatedPlayers ? ' · table includes simulated players' : ''}</div>
     </div>
   );
 };

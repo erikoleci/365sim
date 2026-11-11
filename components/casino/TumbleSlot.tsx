@@ -88,7 +88,7 @@ const TumbleSlot: React.FC<Props> = ({ balance = 0, balanceEur = 0, accountCurre
       {bigWin && <BigWin tier={bigWin.tier} amount={bigWin.amount} format={(v) => fmt(v, currency)} onDone={() => setBigWin(null)} />}
       <div className="flex items-center justify-between px-4 py-3 bg-black/40">
         <button onClick={onClose} disabled={busy} className="text-sm text-gray-200 hover:text-white disabled:opacity-40">‹ Lobby</button>
-        <div className="text-center"><div className="font-extrabold text-lg text-pink-200">Sugar Cascade</div><div className="text-[10px] text-brand-yellow">RTP ~94% · 8+ symbols pay anywhere · up to {info.maxWin}x</div></div>
+        <div className="text-center"><div className="font-extrabold text-lg text-pink-200">Sugar Cascade</div><div className="text-[10px] text-brand-yellow">8+ symbols pay anywhere · up to {info.maxWin}x</div></div>
         <div className="flex gap-1.5">
           <button onClick={() => { setSound(!snd); setSnd(!snd); }} className="text-sm px-2 py-1 rounded bg-white/10">{snd ? '🔊' : '🔇'}</button>
           <button onClick={() => setShowPay(true)} className="text-xs px-2 py-1 rounded bg-white/10">Paytable</button>

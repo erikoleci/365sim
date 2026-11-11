@@ -15,6 +15,9 @@ const ORDINAL = ['1st', '2nd', '3rd', '4th', '5th', '6th'];
 // HORSE RACE: back a horse; the server draws the whole finishing order, the track plays it back with a photo finish.
 const Horses: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
   const [horses, setHorses] = useState<Horse[]>([]);
+  const tokenRef = useRef<string | undefined>(undefined);
+  // New odds for every race: the server signs the odds on screen, the bet is paid at exactly those odds.
+  const loadOdds = () => casinoHorsesInfo().then((r) => { setHorses(r.horses); tokenRef.current = r.token; }).catch(() => {});
   const [pick, setPick] = useState<number | null>(null);
   const [stake, setStake] = useState(100);
   const store = useRef(makeProgressStore()).current;
@@ -26,7 +29,7 @@ const Horses: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
   const [bigWin, setBigWin] = useState<{ tier: 1 | 2 | 3; amount: number } | null>(null);
   const [snd, setSnd] = useState(soundOn());
   const alive = useRef(true); const raf = useRef(0);
-  useEffect(() => { casinoHorsesInfo().then((r) => setHorses(r.horses)).catch(() => {}); return () => { alive.current = false; cancelAnimationFrame(raf.current); }; }, []);
+  useEffect(() => { loadOdds(); return () => { alive.current = false; cancelAnimationFrame(raf.current); }; }, []);
 
   const run = (ord: number[]) => new Promise<void>((resolve) => {
     // finish time by place (winner first), with a little wobble in the middle of the race
@@ -50,14 +53,14 @@ const Horses: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
     if (userBalance < stake) { setMsg('Insufficient balance'); return; }
     setRacing(true); setOrder(null); setWinAmt(0); store.set([0, 0, 0, 0, 0, 0]); setMsg('And they\'re off!'); sfx.spin();
     try {
-      const r = await casinoHorsesRace(stake, pick);
+      const r = await casinoHorsesRace(stake, pick, tokenRef.current);
       await run(r.order);
       if (!alive.current) return;
       setOrder(r.order); onSetBalance(r.balance);
       const place = r.order.indexOf(pick);
       if (r.payout > 0) { setWinAmt(r.payout); setBurst((b) => b + 1); sfx.win(true); setMsg(`${horses[pick].name} wins!`); const t = winTier(r.payout, stake); if (t > 0) setBigWin({ tier: t as 1 | 2 | 3, amount: r.payout }); }
       else { setMsg(`${horses[pick].name} finished ${ORDINAL[place]}`); sfx.stop(); }
-    } catch (e: any) { setMsg(e?.message || 'Error'); } finally { if (alive.current) setRacing(false); }
+    } catch (e: any) { setMsg(e?.message || 'Error'); } finally { if (alive.current) { setRacing(false); void loadOdds(); } }
   };
 
   return (
@@ -93,7 +96,7 @@ const Horses: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       <div className="text-center font-bold mt-3 min-h-[28px]">{winAmt > 0 ? <span className="text-brand-yellow win-pop inline-block text-lg">You won <CountUp value={winAmt} format={(v) => `${v.toFixed(2)} L`} /></span> : msg}</div>
       <div className="mt-2"><StakeInput value={stake} onChange={setStake} min={1} max={5000} presets={[10, 50, 100, 500, 1000]} unit="L" balance={userBalance} disabled={racing} /></div>
       <button onClick={race} disabled={racing || userBalance < stake} className="mt-3 w-full py-4 rounded-xl font-black text-xl bg-gradient-to-b from-green-400 to-green-700 text-white shadow-lg disabled:opacity-50">{racing ? 'RACING…' : `START RACE · ${stake} L`}</button>
-      <div className="text-[11px] text-gray-400 mt-2 text-center">Balance: <b className="tabular-nums text-white">{userBalance.toFixed(2)} L</b> · the finishing order is drawn by the server · RTP 95%</div>
+      <div className="text-[11px] text-gray-400 mt-2 text-center">Balance: <b className="tabular-nums text-white">{userBalance.toFixed(2)} L</b> · the finishing order is drawn by the server</div>
     </div>
   );
 };

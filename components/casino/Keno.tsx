@@ -77,7 +77,7 @@ const Keno: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
         <button onClick={() => { setPicks([]); setShown([]); setWin(0); setMsg('Pick 1 to 8 numbers'); }} disabled={busy} className="px-4 rounded-xl border border-white/20 text-gray-200 disabled:opacity-50">Clear</button>
         <button onClick={play} disabled={busy || picks.length === 0 || userBalance < stake} className="flex-1 py-3 rounded-xl font-extrabold text-lg bg-gradient-to-b from-green-500 to-green-700 text-white disabled:opacity-50 shadow-lg">{busy ? '...' : `LUAJ · ${stake} L`}</button>
       </div>
-      <div className="text-[11px] text-gray-400 text-center mt-2">Balance: <b className="tabular-nums text-white">{userBalance.toFixed(2)} L</b> · RTP ~94% · fitimi maksimal 1000x</div>
+      <div className="text-[11px] text-gray-400 text-center mt-2">Balance: <b className="tabular-nums text-white">{userBalance.toFixed(2)} L</b> · fitimi maksimal 1000x</div>
     </div>
   );
 };

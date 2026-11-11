@@ -126,7 +126,6 @@ const SlotMachine: React.FC<SlotMachineProps> = ({ onSetBalance, userBalance, on
             ))}
           </div>
           <div className="text-center mt-3">🍒🍒 (reels 1-2) <span className="text-yellow-500">x{info.twoCherries}</span></div>
-          <div className="text-center mt-2 text-gray-500">RTP {info.rtp}% · win on {info.hitFrequency}% of spins</div>
         </div>
       )}
     </div>

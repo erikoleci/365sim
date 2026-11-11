@@ -1011,9 +1011,9 @@ export async function casinoTowerLevels() {
   return request<{ levels: Record<string, ChainCfg & { step: number }> }>('/casino/tower/levels');
 }
 export type Horse = { id: number; name: string; p: number; color: string; odds: number };
-export async function casinoHorsesInfo() { return request<{ horses: Horse[] }>('/casino/horses/info'); }
-export async function casinoHorsesRace(stake: number, horse: number) {
-  return request<{ order: number[]; payout: number; odds: number; balance: number }>('/casino/horses/race', { method: 'POST', body: JSON.stringify({ stake, horse }) });
+export async function casinoHorsesInfo() { return request<{ horses: Horse[]; token?: string }>('/casino/horses/info'); }
+export async function casinoHorsesRace(stake: number, horse: number, token?: string) {
+  return request<{ order: number[]; payout: number; odds: number; balance: number }>('/casino/horses/race', { method: 'POST', body: JSON.stringify({ stake, horse, token }) });
 }
 export async function casinoCupsPlay(stake: number, cup: number) {
   return request<{ start: number; swaps: [number, number][]; final: number; won: boolean; payout: number; multiplier: number; balance: number }>('/casino/cups/play', { method: 'POST', body: JSON.stringify({ stake, cup }) });
@@ -1046,9 +1046,9 @@ export async function casinoLiveHorsesBet(round: number, bets: Record<string, nu
 
 // ---- Dog Race (single + live) ----
 export type Dog = { id: number; name: string; trap: number; p: number; color: string; odds: number };
-export async function casinoDogsInfo() { return request<{ dogs: Dog[] }>('/casino/dogs/info'); }
-export async function casinoDogsRace(stake: number, dog: number) {
-  return request<{ order: number[]; payout: number; odds: number; balance: number }>('/casino/dogs/race', { method: 'POST', body: JSON.stringify({ stake, dog }) });
+export async function casinoDogsInfo() { return request<{ dogs: Dog[]; token?: string }>('/casino/dogs/info'); }
+export async function casinoDogsRace(stake: number, dog: number, token?: string) {
+  return request<{ order: number[]; payout: number; odds: number; balance: number }>('/casino/dogs/race', { method: 'POST', body: JSON.stringify({ stake, dog, token }) });
 }
 export type LiveDogsState = {
   serverNow: number; round: number; phase: 'betting' | 'race'; msLeft: number; cycleMs: number; betMs: number; order: number[] | null; winners: number[];

@@ -83,7 +83,7 @@ const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, accountCurren
             <div className="px-3 pb-3 bg-black/40 pt-2">
               <div className="font-bold text-white">{g.name}</div>
               <div className="text-[11px] text-gray-300 min-h-[30px]">{g.tagline}</div>
-              <div className="flex justify-between text-[10px] mt-1 text-brand-yellow"><span>RTP {g.rtp.toFixed(2)}%</span><span>{g.volatility}</span></div>
+              <div className="flex justify-between text-[10px] mt-1 text-brand-yellow"><span>{g.volatility}</span></div>
             </div>
           </button>
         ))}
@@ -185,7 +185,7 @@ const SlotGame: React.FC<{
       {bigWin && <BigWin tier={bigWin.tier} amount={bigWin.amount} format={(v) => fmt(v, currency)} onDone={() => setBigWin(null)} />}
       <div className="flex items-center justify-between px-4 py-3 bg-black/40">
         <button onClick={onBack} disabled={busy} className="text-sm text-gray-300 hover:text-white disabled:opacity-40">← Slots</button>
-        <div className="text-center"><div className="font-bold text-white">{game.name}</div><div className="text-[10px] text-brand-yellow">RTP {game.rtp.toFixed(2)}% · {game.volatility} · {game.lines} lines</div></div>
+        <div className="text-center"><div className="font-bold text-white">{game.name}</div><div className="text-[10px] text-brand-yellow">{game.volatility} · {game.lines} lines</div></div>
         <div className="flex gap-1.5">
           <button onClick={() => { setSound(!snd); setSnd(!snd); }} aria-label="Sound" className="text-sm px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white">{snd ? '🔊' : '🔇'}</button>
           <button onClick={() => setShowPay(true)} className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white">Paytable</button>
@@ -236,7 +236,7 @@ const SlotGame: React.FC<{
         <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4" onClick={() => setShowPay(false)}>
           <div className="bg-brand-panel rounded-xl max-w-md w-full max-h-[85vh] overflow-y-auto p-4 text-white" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-2"><b>{game.name} · Tabela e pagesave</b><button onClick={() => setShowPay(false)}>✕</button></div>
-            <div className="text-[11px] text-gray-400 mb-3">Payouts are multiples of the bet per line (stake ÷ {game.lines}). Theoretical RTP: {game.rtp.toFixed(2)}%. Symbols: Twemoji (CC-BY 4.0).</div>
+            <div className="text-[11px] text-gray-400 mb-3">Payouts are multiples of the bet per line (stake ÷ {game.lines}). Symbols: Twemoji (CC-BY 4.0).</div>
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr className="text-gray-400 text-xs"><th className="text-left">Simboli</th><th>x3</th><th>x4</th><th>x5</th></tr></thead>
               <tbody>
