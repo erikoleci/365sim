@@ -80,17 +80,6 @@ export function bigChances(stats) {
   return null;
 }
 
-// First / second leg and aggregate, from the texts Flashscore prints on the match row ("note", "round").
-// Nothing is invented: when no leg wording is present the result is null.
-export function legInfo(fixture) {
-  const text = [fixture && fixture.note, fixture && fixture.round].filter(Boolean).join(' | ');
-  if (!text) return null;
-  const leg = has(text, /\b(1st|first)\s+leg\b/i) ? 1 : has(text, /\b(2nd|second)\s+leg\b/i) ? 2 : null;
-  const agg = /aggregate[^\d]{0,12}(\d+)\s*[:\-]\s*(\d+)/i.exec(text) || /\bagg\.?[^\d]{0,6}(\d+)\s*[:\-]\s*(\d+)/i.exec(text);
-  if (leg == null && !agg) return null;
-  return { leg, aggregate: agg ? `${agg[1]}-${agg[2]}` : null, text: text.slice(0, 160) };
-}
-
 // The Flashscore match that is OUR match: same home/away order, kickoff within 3 hours, exactly one candidate.
 export function findFlashscoreMatch(list, row) {
   const t = Date.parse(row.start_time);

@@ -6,7 +6,7 @@ vi.mock('../server/db.js', () => {
     if (/SELECT id, player FROM match_events/.test(sql)) { const e = db.events.find((x) => x.type === p[1] && x.team === p[2] && x.detail === p[3]); return { rows: e ? [e] : [] }; }
     if (/UPDATE match_events SET player/.test(sql)) { db.events.find((x) => x.id === p[0]).player = p[1]; return { rows: [] }; }
     if (/INSERT INTO match_events/.test(sql)) { db.events.push({ id: db.events.length + 1, type: p[2], team: p[3], player: p[4], detail: p[5] }); return { rows: [] }; }
-    if (/INSERT INTO match_extra/.test(sql)) { db.extra = { bch: p[1], bca: p[2], leg: p[3], agg: p[4] }; return { rows: [] }; }
+    if (/INSERT INTO match_extra/.test(sql)) { db.extra = { bch: p[1], bca: p[2] }; return { rows: [] }; }
     return { rows: [] };
   };
   return { pool: { query }, default: { query } };
@@ -28,7 +28,7 @@ describe('Flashscore enrichment loop', () => {
     expect(r).toMatchObject({ matched: 1, extras: 1, eventsAdded: 1 }); // only the PENALTY row is new
     expect(db.events.find((e) => e.type === 'GOAL')).toMatchObject({ player: 'Kane H.' });
     expect(db.events.filter((e) => e.type === 'GOAL')).toHaveLength(1);
-    expect(db.extra).toEqual({ bch: 2, bca: 1, leg: 1, agg: null });
+    expect(db.extra).toEqual({ bch: 2, bca: 1 });
   });
   it('a failing service is an error for the cycle, not a crash or a write', async () => {
     process.env.FLASHSCORE_URL = 'http://fs:8000';

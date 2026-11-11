@@ -1,3 +1,4 @@
+import { loadTieInfo } from '../tieLeg.js';
 import { reconcileEvents } from '../eventReconcile.js';
 import express from 'express';
 import { gzip as gzipCb } from 'zlib';
@@ -395,12 +396,22 @@ async function buildLiveDetail(reqId) {
         return e;
       })
     : shownEvents;
-  // Optional extras from the Flashscore service (big chances, first/second leg + aggregate); null when none were collected.
+  // Extras: big chances (optional Flashscore service) + first/second leg from OUR coupon ("To qualify" market) and our stored results.
   let extra = null;
   try {
-    const { rows: ex } = await queryWithRetry('SELECT big_chances_home, big_chances_away, leg, aggregate, leg_text FROM match_extra WHERE match_id = $1', [mid]);
-    if (ex[0]) extra = { bigChancesHome: ex[0].big_chances_home, bigChancesAway: ex[0].big_chances_away, leg: ex[0].leg, aggregate: ex[0].aggregate, legText: ex[0].leg_text };
-  } catch { /* table not there yet: no extras */ }
+    const { rows: ex } = await queryWithRetry('SELECT big_chances_home, big_chances_away FROM match_extra WHERE match_id = $1', [mid]);
+    if (ex[0]) extra = { bigChancesHome: ex[0].big_chances_home, bigChancesAway: ex[0].big_chances_away, leg: null, aggregate: null, legText: null };
+  } catch { /* table not there yet: no big chances */ }
+  try {
+    // the pre-match record (the one with the coupon) is reqId's own row; the twin only holds the live score
+    const { rows: [coupon] } = await queryWithRetry('SELECT * FROM matches_cache WHERE id = $1', [reqId]);
+    if (coupon) {
+      const sc = cache && cache.live_home_score != null && cache.live_away_score != null ? { home: Number(cache.live_home_score), away: Number(cache.live_away_score) }
+        : coupon.result_home != null && coupon.result_away != null ? { home: Number(coupon.result_home), away: Number(coupon.result_away) } : null;
+      const tie = await loadTieInfo(queryWithRetry, coupon, sc);
+      if (tie) extra = { bigChancesHome: null, bigChancesAway: null, ...(extra || {}), leg: tie.leg, aggregate: tie.aggregate, legText: tie.legText };
+    }
+  } catch { /* no tie info */ }
   return { statistics, events: sideEvents, extra, last_updated: lastUpdated };
 }
 router.get('/:id/live-detail', wrap(async (req, res) => {

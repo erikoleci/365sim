@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMatchList, incidentRows, bigChances, legInfo, findFlashscoreMatch } from '../server/flashscoreMap.js';
+import { parseMatchList, incidentRows, bigChances, findFlashscoreMatch } from '../server/flashscoreMap.js';
 
 const inc = (team, minute, type, name, extra = {}) => ({ team, minute: `${minute}'`, minute_number: minute, type, player: name ? { name } : null, reason: null, description: '', ...extra });
 const summary = (...incidents) => ({ periods: [{ period: '1st Half', incidents: incidents.slice(0, 2) }, { period: '2nd Half', incidents: incidents.slice(2) }] });
@@ -34,16 +34,11 @@ describe('flashscore incidents -> match_events rows', () => {
   });
 });
 
-describe('big chances, legs, matching', () => {
+describe('big chances, matching', () => {
   it('reads Big chances from the whole-match period', () => {
     const stats = { periods: [{ period: 'Match', groups: [{ statistics: [{ name: 'Big chances', home_value: 3, away_value: 1 }] }] }, { period: '1st Half', groups: [{ statistics: [{ name: 'Big chances', home_value: 2, away_value: 0 }] }] }] };
     expect(bigChances(stats)).toEqual({ home: 3, away: 1 });
     expect(bigChances({ periods: [] })).toBeNull();
-  });
-  it('parses leg and aggregate wording and invents nothing', () => {
-    expect(legInfo({ note: '2nd leg · Aggregate 3:2', round: 'Round of 16' })).toMatchObject({ leg: 2, aggregate: '3-2' });
-    expect(legInfo({ note: '1st leg', round: null })).toMatchObject({ leg: 1, aggregate: null });
-    expect(legInfo({ note: null, round: 'Round 12' })).toBeNull();
   });
   it('parses the list and matches only an unambiguous same-order fixture', () => {
     const list = parseMatchList({ competitions: [{ competition: { name: 'UCL' }, matches: [{ id: 'abc', start_time: '2026-11-11T20:00:00Z', home: { name: 'Bayern' }, away: { name: 'PSG' }, home_score: 1, away_score: 0, round: 'Round of 16', note: '1st leg' }] }] });

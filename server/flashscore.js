@@ -1,9 +1,9 @@
-// Flashscore enrichment (OPTIONAL, off unless FLASHSCORE_URL is set): scorers' names, penalties, cards, big chances and
-// first/second leg + aggregate, read from the self-hosted flashscore-service (flashscore-service/, MIT). It only ADDS facts:
+// Flashscore enrichment (OPTIONAL, off unless FLASHSCORE_URL is set): scorers' names, penalties, cards and
+// big chances, read from the self-hosted flashscore-service (flashscore-service/, MIT). It only ADDS facts:
 // it never writes scores, never settles tickets and never touches odds. A failing/slow service is skipped silently.
 // FLASHSCORE_URL  e.g. http://flashscore:8000    FLASHSCORE_INTERVAL_MS (default 90000, min 30000)
 import { pool } from './db.js';
-import { parseMatchList, incidentRows, bigChances, legInfo, findFlashscoreMatch } from './flashscoreMap.js';
+import { parseMatchList, incidentRows, bigChances, findFlashscoreMatch } from './flashscoreMap.js';
 
 const timeout = () => Math.max(5000, Number(process.env.FLASHSCORE_TIMEOUT_MS) || 20000);
 async function get(path, fetchImpl) {
@@ -61,14 +61,12 @@ export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.f
       if (ev) out.eventsAdded += await logEvents(row.id, ev, now);
       else console.warn('[flashscore] incidents of ' + row.id + ' do not add up to the score ' + f.homeScore + '-' + f.awayScore + ' -- not logged');
       const bc = stats ? bigChances(stats) : null;
-      const leg = legInfo(f);
-      if (bc || leg) {
+      if (bc) {
         await pool.query(
-          `INSERT INTO match_extra (match_id, big_chances_home, big_chances_away, leg, aggregate, leg_text, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7)
+          `INSERT INTO match_extra (match_id, big_chances_home, big_chances_away, updated_at) VALUES ($1,$2,$3,$4)
            ON CONFLICT (match_id) DO UPDATE SET big_chances_home = COALESCE(EXCLUDED.big_chances_home, match_extra.big_chances_home),
-             big_chances_away = COALESCE(EXCLUDED.big_chances_away, match_extra.big_chances_away), leg = COALESCE(EXCLUDED.leg, match_extra.leg),
-             aggregate = COALESCE(EXCLUDED.aggregate, match_extra.aggregate), leg_text = COALESCE(EXCLUDED.leg_text, match_extra.leg_text), updated_at = EXCLUDED.updated_at`,
-          [row.id, bc ? bc.home : null, bc ? bc.away : null, leg ? leg.leg : null, leg ? leg.aggregate : null, leg ? leg.text : null, now]
+             big_chances_away = COALESCE(EXCLUDED.big_chances_away, match_extra.big_chances_away), updated_at = EXCLUDED.updated_at`,
+          [row.id, bc.home, bc.away, now]
         );
         out.extras++;
       }
