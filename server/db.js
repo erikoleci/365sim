@@ -211,6 +211,17 @@ export async function initDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_match_events_match ON match_events (match_id, created_at);
 
+    -- Extra match facts from the Flashscore service: big chances and first/second leg + aggregate (one row per match).
+    CREATE TABLE IF NOT EXISTS match_extra (
+      match_id TEXT PRIMARY KEY,
+      big_chances_home INTEGER,
+      big_chances_away INTEGER,
+      leg INTEGER,
+      aggregate TEXT,
+      leg_text TEXT,
+      updated_at BIGINT NOT NULL
+    );
+
     -- Live in-play stats snapshot per match (one row per match, overwritten
     -- on each poll) — possession/shots/corners/xG for the live stats panel.
     CREATE TABLE IF NOT EXISTS live_statistics (

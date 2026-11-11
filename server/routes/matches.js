@@ -395,7 +395,13 @@ async function buildLiveDetail(reqId) {
         return e;
       })
     : shownEvents;
-  return { statistics, events: sideEvents, last_updated: lastUpdated };
+  // Optional extras from the Flashscore service (big chances, first/second leg + aggregate); null when none were collected.
+  let extra = null;
+  try {
+    const { rows: ex } = await queryWithRetry('SELECT big_chances_home, big_chances_away, leg, aggregate, leg_text FROM match_extra WHERE match_id = $1', [mid]);
+    if (ex[0]) extra = { bigChancesHome: ex[0].big_chances_home, bigChancesAway: ex[0].big_chances_away, leg: ex[0].leg, aggregate: ex[0].aggregate, legText: ex[0].leg_text };
+  } catch { /* table not there yet: no extras */ }
+  return { statistics, events: sideEvents, extra, last_updated: lastUpdated };
 }
 router.get('/:id/live-detail', wrap(async (req, res) => {
   const id = req.params.id;
