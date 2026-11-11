@@ -11,6 +11,6 @@ export const DOGS = [
 ].map((d) => ({ ...d, odds: Math.floor((DOG_RTP / d.p) * 100) / 100 }));
 
 /** The dogs for one particular race: same names and traps, new chances and odds. */
-export const dogsFor = (seed) => varyRunners(DOGS, seed, DOG_RTP);
+export const dogsFor = (seed, rtp = DOG_RTP) => varyRunners(DOGS, seed, rtp);
 export function drawOrder(randInt, dogs = DOGS) { return drawOrderFor(dogs, randInt); }
 export const dogPayout = (stake, id, order, dogs = DOGS) => (order[0] === id ? Math.round(stake * dogs[id].odds * 100) / 100 : 0);

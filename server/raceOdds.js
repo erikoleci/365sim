@@ -42,20 +42,22 @@ export function drawOrderFor(runners, randInt) {
 }
 
 // ---- single-player races: the odds on screen are locked by a signed, short-lived token --------------------------
+// The token carries the seed of the race AND the return (rtp) the odds were made with, so the bet is paid at exactly the
+// odds that were on screen even if the admin changes the game's profile in between.
 import crypto from 'node:crypto';
 const TOKEN_TTL_MS = 15 * 60 * 1000;
 const sign = (payload, secret) => crypto.createHmac('sha256', secret).update(payload).digest('hex').slice(0, 24);
-export function makeRaceToken(secret, now = Date.now(), seed = crypto.randomInt(1, 2 ** 31)) {
-  const payload = `${seed}.${now + TOKEN_TTL_MS}`;
-  return { seed, token: `${payload}.${sign(payload, secret)}` };
+export function makeRaceToken(secret, now = Date.now(), seed = crypto.randomInt(1, 2 ** 31), rtp = 0.95) {
+  const payload = `${seed}.${now + TOKEN_TTL_MS}.${Math.round(rtp * 1000)}`;
+  return { seed, rtp, token: `${payload}.${sign(payload, secret)}` };
 }
-/** Returns the seed when the token is genuine and not expired, otherwise null. */
+/** Returns { seed, rtp } when the token is genuine and not expired, otherwise null. */
 export function readRaceToken(token, secret, now = Date.now()) {
   if (typeof token !== 'string') return null;
-  const m = /^(\d{1,10})\.(\d{1,14})\.([0-9a-f]{24})$/.exec(token);
+  const m = /^(\d{1,10})\.(\d{1,14})\.(\d{1,4})\.([0-9a-f]{24})$/.exec(token);
   if (!m) return null;
-  const payload = `${m[1]}.${m[2]}`;
-  const ok = crypto.timingSafeEqual(Buffer.from(sign(payload, secret)), Buffer.from(m[3]));
+  const payload = `${m[1]}.${m[2]}.${m[3]}`;
+  const ok = crypto.timingSafeEqual(Buffer.from(sign(payload, secret)), Buffer.from(m[4]));
   if (!ok || Number(m[2]) < now) return null;
-  return Number(m[1]);
+  return { seed: Number(m[1]), rtp: Number(m[3]) / 1000 };
 }

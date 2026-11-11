@@ -3,7 +3,7 @@
 // ---- Plinko ---------------------------------------------------------------------------------
 // The ball makes `rows` left/right choices (50/50, crypto RNG on the server) and lands in bucket k = number of
 // rights, which has probability C(rows,k)/2^rows. m_k = floor + s * d^p (d = distance from the centre, 0..1);
-// s is solved so that the return to player is exactly PLINKO_RTP.
+// s is solved so that the return to player is exactly the game's rtp (PLINKO_RTP by default, the admin profile otherwise).
 export const PLINKO_RTP = 0.97;
 export const PLINKO_ROWS = [8, 12, 16];
 const RISK = { LOW: { floor: 0.5, p: 2 }, MEDIUM: { floor: 0.2, p: 3 }, HIGH: { floor: 0.1, p: 4 } };
@@ -15,14 +15,15 @@ export function plinkoProbabilities(rows) {
   return Array.from({ length: rows + 1 }, (_, k) => binom(rows, k) / 2 ** rows);
 }
 
-export function plinkoMultipliers(rows, risk) {
+export function plinkoMultipliers(rows, risk, rtp = PLINKO_RTP) {
   const cfg = RISK[risk];
   if (!cfg || !PLINKO_ROWS.includes(rows)) throw new Error('invalid plinko config');
   const probs = plinkoProbabilities(rows);
   const d = (k) => Math.abs(k - rows / 2) / (rows / 2);
   const expectedD = probs.reduce((a, pr, k) => a + pr * d(k) ** cfg.p, 0);
-  const s = (PLINKO_RTP - cfg.floor) / expectedD;
-  return probs.map((_, k) => Number((cfg.floor + s * d(k) ** cfg.p).toFixed(2)));
+  const floor = Math.min(cfg.floor, rtp * 0.5); // a low return needs a lower floor too
+  const s = (rtp - floor) / expectedD;
+  return probs.map((_, k) => Number((floor + s * d(k) ** cfg.p).toFixed(2)));
 }
 
 export const plinkoRtp = (rows, risk) => {

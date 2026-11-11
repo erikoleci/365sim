@@ -12,6 +12,6 @@ export const HORSES = [
 ].map((h) => ({ ...h, odds: Math.floor((HORSE_RTP / h.p) * 100) / 100 }));
 
 /** The horses for one particular race: same names, new chances and odds. */
-export const horsesFor = (seed) => varyRunners(HORSES, seed, HORSE_RTP);
+export const horsesFor = (seed, rtp = HORSE_RTP) => varyRunners(HORSES, seed, rtp);
 export function drawOrder(randInt, horses = HORSES) { return drawOrderFor(horses, randInt); }
 export const horsePayout = (stake, horseId, order, horses = HORSES) => (order[0] === horseId ? Math.round(stake * horses[horseId].odds * 100) / 100 : 0);

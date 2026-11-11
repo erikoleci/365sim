@@ -1080,3 +1080,25 @@ export async function casinoLiveKenoState() { return request<LiveKenoState>('/ca
 export async function casinoLiveKenoBet(round: number, stake: number, picks: number[]) {
   return request<{ ok: boolean; balance: number }>('/casino/live-keno/bet', { method: 'POST', body: JSON.stringify({ round, stake, picks }) });
 }
+
+// ---- Casino math profiles (super admin) ----
+export interface CasinoCalibration { rounds: number; pWin: number; meanWin: number; rtpNat: number; sd: number; max: number; method: string }
+export interface CasinoProfileValues { hitFrequency?: number; rtp?: number; volatility?: number; minBet: number; maxBet: number; maxWinMultiplier?: number }
+export interface CasinoProfile {
+  key: string; label: string; kind: 'outcome' | 'rtp' | 'bets'; group: string | null;
+  defaults: CasinoProfileValues; values: CasinoProfileValues; calibration: CasinoCalibration | null; customised: boolean;
+  rules: string | null;
+  preview: { hitFrequency: number; rtp: number; houseEdge: number; netWinFrequency: number; volatilitySd: number; maxPayout: number; scale: number; capReached: boolean; buckets: [string, number][] } | null;
+  measured: { rounds: number; hits: number; net: number; x5: number; x20: number; x100: number; staked: number; paid: number } | null;
+}
+export async function adminCasinoProfiles() { return request<{ profiles: CasinoProfile[] }>('/admin/casino/profiles'); }
+export async function adminSaveCasinoProfile(key: string, values: Partial<CasinoProfileValues>) {
+  return request<{ profiles: CasinoProfile[] }>(`/admin/casino/profiles/${encodeURIComponent(key)}`, { method: 'PUT', body: JSON.stringify(values) });
+}
+export async function adminResetCasinoProfile(key: string) {
+  return request<{ profiles: CasinoProfile[] }>(`/admin/casino/profiles/${encodeURIComponent(key)}/reset`, { method: 'POST' });
+}
+export async function adminCasinoProfilesAudit() {
+  return request<{ entries: { actor_username: string; action: string; target: string | null; details: string | null; created_at: number }[] }>('/admin/casino/profiles-audit');
+}
+export async function adminResetCasinoTestStats() { return request<{ removed: number }>('/admin/casino/reset-test-stats', { method: 'POST' }); }

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import * as api from '../services/api';
 import CasinoHub from './CasinoHub';
+import CasinoProfilesPanel from './CasinoProfilesPanel';
 
 const MODES: { value: api.CasinoMode; label: string; hint: string }[] = [
   { value: 'off', label: 'Hidden', hint: 'Nobody can see the casino' },
@@ -65,6 +66,8 @@ const CasinoAdmin: React.FC<CasinoAdminProps> = ({ userBalance, userBalanceEur =
           ))}
         </div>
       </div>
+
+      <CasinoProfilesPanel />
 
       <div className="bg-brand-panel border border-[#444] rounded p-4">
         <div className="flex justify-between items-center mb-2"><div className="text-sm font-bold">What has been played</div><button className="text-xs text-brand-textMuted hover:text-white" onClick={load}>↻</button></div>

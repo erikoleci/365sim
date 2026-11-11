@@ -28,8 +28,8 @@ describe('odds that change every race', () => {
     expect(Math.abs(wins / n - runners[0].p)).toBeLessThan(0.02);
   });
   it('race tokens: genuine and fresh only', () => {
-    const { seed, token } = makeRaceToken('secret', 1000);
-    expect(readRaceToken(token, 'secret', 2000)).toBe(seed);
+    const { seed, token } = makeRaceToken('secret', 1000, undefined, 0.6);
+    expect(readRaceToken(token, 'secret', 2000)).toEqual({ seed, rtp: 0.6 });
     expect(readRaceToken(token, 'other', 2000)).toBeNull();
     expect(readRaceToken(token, 'secret', 1000 + 16 * 60 * 1000)).toBeNull();
     expect(readRaceToken('1.2.3', 'secret')).toBeNull();

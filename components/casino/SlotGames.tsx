@@ -1,4 +1,5 @@
 import BigWin, { winTier } from './BigWin';
+import './lobby/lobby.css';
 import SlotLever from './SlotLever';
 import StakeInput from './StakeInput';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -56,34 +57,27 @@ const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, accountCurren
   return (
     <div>
       {loadingGame && <GameLoader name={loadingGame.name} img={`/slots/${loadingGame.id}.jpg`} onDone={() => { setGame(loadingGame); setLoadingGame(null); }} />}
-      <div className="flex gap-3 overflow-x-auto pb-3 mb-3 snap-x [scrollbar-width:none]">
-        {data.games.slice(0, 10).map((g) => (
-          <button key={g.id} onClick={() => setLoadingGame(g)} className="snap-start shrink-0 w-36 sm:w-44 text-center group">
-            <img src={`/slots/${g.id}.jpg`} alt={g.name} loading="lazy" draggable={false} className="w-full aspect-[250/257] object-cover rounded-xl border border-white/10 group-hover:border-brand-yellow/70 group-hover:-translate-y-0.5 transition shadow-lg" />
-            <div className="mt-1 text-xs font-semibold text-cyan-300 truncate">{g.name}</div>
-          </button>
-        ))}
-      </div>
-      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search games…" className="w-full mb-3 rounded-lg border border-white/15 bg-black/40 text-white placeholder:text-gray-400 px-3 py-2 text-sm outline-none focus:border-brand-yellow" />
+      <h3 className="lb-sec"><span className="lb-serif lb-foil text-2xl font-black">Slot machines</span><span className="text-xs text-slate-400">{data.games.length} games</span></h3>
+      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search games…" className="lb-search mb-3" aria-label="Search slots" />
       <div className="flex gap-2 overflow-x-auto pb-3 mb-1">
         {['All', '♥ Favourites', ...Array.from(new Set(data.games.map((g) => g.category || 'Classic')))].map((c) => (
-          <button key={c} onClick={() => setCat(c)} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors ${cat === c ? 'bg-brand-yellow text-black border-brand-yellow' : 'bg-white/5 text-gray-200 border-white/15 hover:bg-white/10'}`}>{c}</button>
+          <button key={c} onClick={() => setCat(c)} role="tab" aria-selected={cat === c} className="lb-chip lb-glass">{c}</button>
         ))}
       </div>
       {data.simulatedPlayers && <div className="text-[10px] text-gray-500 mb-2">Credit only · player counts include simulated players</div>}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
         {data.games.filter((g) => (cat === 'All' || (cat === '♥ Favourites' ? favs.includes(g.id) : (g.category || 'Classic') === cat)) && (!query.trim() || g.name.toLowerCase().includes(query.trim().toLowerCase()))).map((g) => (
-          <button key={g.id} onClick={() => setLoadingGame(g)} className="lobby-card lobby-shine relative text-left rounded-xl overflow-hidden border border-white/10 hover:border-brand-yellow/60 shadow-lg"
-            style={{ background: `linear-gradient(145deg, ${g.color[0]}, ${g.color[1]})` }}>
+          <button key={g.id} onClick={() => setLoadingGame(g)} className="lb-card relative"
+            style={{ background: `linear-gradient(145deg, ${g.color[0]}, ${g.color[1]})`, ['--acc' as string]: g.color[0] } as React.CSSProperties}>
             <CoverImg id={g.id} name={g.name}>
             <div className="flex justify-center gap-1 text-3xl pt-5 pb-3">{['WILD', Object.keys(g.paytable).find((k) => k !== 'WILD' && g.paytable[k][5] === Math.max(...Object.keys(g.paytable).filter((x) => x !== 'WILD').map((x) => g.paytable[x][5])))!, 'SCATTER'].map((k, i) => <span key={i} className="w-9 h-9 inline-block"><SymbolIcon symbol={g.symbols[k]} className="w-full h-full" /></span>)}</div>
             </CoverImg>
             {data.playing?.[g.id] ? <span className="absolute top-2 left-2 z-10 flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/65 text-[10px] font-bold text-green-300"><span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />{data.playing[g.id]} playing</span> : null}
             <span role="button" aria-label="Favourites" onClick={(e) => { e.stopPropagation(); toggleFav(g.id); }} className="absolute top-2 right-2 z-10 w-8 h-8 rounded-full bg-black/55 flex items-center justify-center text-lg">{favs.includes(g.id) ? <span className="text-red-500">♥</span> : <span className="text-white/80">♡</span>}</span>
-            <div className="px-3 pb-3 bg-black/40 pt-2">
-              <div className="font-bold text-white">{g.name}</div>
-              <div className="text-[11px] text-gray-300 min-h-[30px]">{g.tagline}</div>
-              <div className="flex justify-between text-[10px] mt-1 text-brand-yellow"><span>{g.volatility}</span></div>
+            <div className="lb-info" style={{ background: 'linear-gradient(180deg, rgba(8,12,18,.92), #0a1016)' }}>
+              <b>{g.name}</b>
+              <span>{g.tagline}</span>
+              <div className="text-[10px] mt-1 font-bold" style={{ color: '#f3cf6a' }}>{g.volatility}</div>
             </div>
           </button>
         ))}

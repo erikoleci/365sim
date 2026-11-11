@@ -62,29 +62,41 @@ const TUNE = {
   'aztec-sun': { scale: 1.3225, rtp: 94.89 },
   'blazing-sevens': { scale: 2.5119, rtp: 94.74 },
   'fire-fruits-40': { scale: 1.0083, rtp: 94.96 },
-  'mega-hot-100': { scale: 2.5119, rtp: 94.74 },
+  'mega-hot-100': { scale: 2.5302, rtp: 94.96 },
   'fruit-carnival': { scale: 2.7901, rtp: 95.22 },
   'money-rush': { scale: 2.781, rtp: 95.01 },
   'merlin-spell': { scale: 1.0238, rtp: 94.99 },
-  'ocean-pearls': { scale: 2.7901, rtp: 95.22 },
+  'ocean-pearls': { scale: 2.6363, rtp: 95.01 },
   'desert-explorer': { scale: 1.3876, rtp: 95.05 },
   'golden-lady': { scale: 1.9588, rtp: 95.10 },
   'emerald-clover': { scale: 0.8514, rtp: 94.97 },
-  'royal-gems': { scale: 2.7901, rtp: 95.22 },
-  'jester-jackpot': { scale: 2.781, rtp: 95.01 },
+  'royal-gems': { scale: 2.9427, rtp: 95.00 },
+  'jester-jackpot': { scale: 2.7659, rtp: 95.02 },
   'pirate-treasure': { scale: 1.1214, rtp: 94.98 },
-  'arctic-fortune': { scale: 2.5119, rtp: 94.74 },
+  'arctic-fortune': { scale: 2.515, rtp: 95.04 },
   'jungle-safari': { scale: 1.3401, rtp: 94.91 },
-  'samurai-blade': { scale: 2.781, rtp: 95.01 },
+  'samurai-blade': { scale: 2.7094, rtp: 94.86 },
   'football-fever': { scale: 1.0806, rtp: 94.98 },
   'gold-miner': { scale: 0.8585, rtp: 95.03 },
-  'lucky-seven-wheel': { scale: 2.5119, rtp: 94.74 },
-  'night-racer': { scale: 2.781, rtp: 95.01 },
+  'lucky-seven-wheel': { scale: 2.3819, rtp: 95.00 },
+  'night-racer': { scale: 2.7869, rtp: 94.98 },
 };
+
+// Games that would otherwise share a pay shape with another game get their own: every pay is nudged by a fixed pseudo-random
+// factor (seeded by `variant`, counts stay in non-decreasing order), then the scale is re-tuned so the game's RTP stays ~95%.
+function perturb(shape, variant) {
+  const rnd = mulberry32(variant * 7919);
+  return Object.fromEntries(Object.entries(shape).map(([sym, p]) => {
+    const out = []; let prev = 0;
+    p.forEach((v) => { const x = Math.max(prev, Math.round(v * (0.75 + rnd() * 0.5) * 10) / 10); out.push(x); prev = x; });
+    return [sym, out];
+  }));
+}
 
 const def = (id, o) => {
   const { scale, rtp } = TUNE[id];
-  const { symbolIds, shape, ...rest } = o;
+  const { symbolIds, shape: baseShape, variant, ...rest } = o;
+  const shape = variant ? perturb(baseShape, variant) : baseShape;
   return {
     id, ...rest,
     lines: 10,
@@ -188,7 +200,7 @@ export const SLOT_GAMES = [
     symbols: { S1: "🍒", S2: "🍋", S3: "🍊", S4: "🍇", S5: "🍉", S6: "🍀", S7: "7️⃣", WILD: "🔥", SCATTER: "🌟" },
     scatterName: "Golden star", wildName: "Fire (expanding)",
   }),
-  def('mega-hot-100', {
+  def('mega-hot-100', { variant: 1,
     name: "Mega Hot 100", tagline: "The super classic, frequent payouts", volatility: "Low", color: ["#7f1d1d", "#0f0f1a"], seed: 103, category: "Classic",
     symbolIds: ["S1", "S2", "S3", "S4", "S5", "S6", "S7"], shape: shapeOf(["S1", "S2", "S3", "S4", "S5", "S6", "S7"], CLASSIC), freeSpinMultiplier: 2, wildExpand: false,
     symbols: { S1: "🍒", S2: "🍋", S3: "🍊", S4: "🍇", S5: "🍉", S6: "⭐", S7: "7️⃣", WILD: "🃏", SCATTER: "💎" },
@@ -212,7 +224,7 @@ export const SLOT_GAMES = [
     symbols: { S1: "🧪", S2: "📜", S3: "🕯️", S4: "🔮", S5: "🐉", S6: "🏰", S7: "🧙", WILD: "✨", SCATTER: "⭐" },
     scatterName: "Ylli magjik", wildName: "Magjia (zgjerohet)",
   }),
-  def('ocean-pearls', {
+  def('ocean-pearls', { variant: 4,
     name: "Ocean Pearls", tagline: "Dolphins, shells and deep pearls", volatility: "Medium", color: ["#075985", "#082f49"], seed: 127, category: "Adventure",
     symbolIds: ["S1", "S2", "S3", "S4", "S5", "S6", "S7"], shape: shapeOf(["S1", "S2", "S3", "S4", "S5", "S6", "S7"], STEADY), freeSpinMultiplier: 2, wildExpand: false,
     symbols: { S1: "🐚", S2: "🦀", S3: "🐠", S4: "🐙", S5: "🐢", S6: "🐬", S7: "🦪", WILD: "🌊", SCATTER: "🫧" },
@@ -236,13 +248,13 @@ export const SLOT_GAMES = [
     symbols: { S1: "🍀", S2: "🍺", S3: "🎩", S4: "🌈", S5: "🪙", S6: "🧚", S7: "☘️", WILD: "🌈", SCATTER: "🏺" },
     scatterName: "Ena e arit", wildName: "Ylberi (zgjerohet)",
   }),
-  def('royal-gems', {
+  def('royal-gems', { variant: 5,
     name: "Royal Gems", tagline: "Royal gems", volatility: "Medium", color: ["#4c1d95", "#1e1b4b"], seed: 149, category: "Classic",
     symbolIds: ["S1", "S2", "S3", "S4", "S5", "S6", "S7"], shape: shapeOf(["S1", "S2", "S3", "S4", "S5", "S6", "S7"], STEADY), freeSpinMultiplier: 2, wildExpand: false,
     symbols: { S1: "🟥", S2: "🟦", S3: "🟩", S4: "🟨", S5: "💎", S6: "👑", S7: "🏆", WILD: "💜", SCATTER: "✨" },
     scatterName: "Spark", wildName: "Amethyst",
   }),
-  def('jester-jackpot', {
+  def('jester-jackpot', { variant: 6,
     name: "Jester Jackpot", tagline: "The jester and lucky cards", volatility: "High", color: ["#065f46", "#022c22"], seed: 151, category: "Fantasy",
     symbolIds: ["S1", "S2", "S3", "S4", "S5", "S6", "S7"], shape: shapeOf(["S1", "S2", "S3", "S4", "S5", "S6", "S7"], VOLATILE), freeSpinMultiplier: 3, wildExpand: false,
     symbols: { S1: "🎲", S2: "🎯", S3: "🎪", S4: "🎈", S5: "🃏", S6: "🤡", S7: "🎰", WILD: "🃏", SCATTER: "🎁" },
@@ -254,7 +266,7 @@ export const SLOT_GAMES = [
     symbols: { S1: "⚓", S2: "🧭", S3: "🗡️", S4: "🦜", S5: "🏴‍☠️", S6: "🚢", S7: "💰", WILD: "💀", SCATTER: "🗺️" },
     scatterName: "Harta", wildName: "Kafka (zgjerohet)",
   }),
-  def('arctic-fortune', {
+  def('arctic-fortune', { variant: 2,
     name: "Arctic Fortune", tagline: "Penguins and lucky ice", volatility: "Low", color: ["#0e7490", "#083344"], seed: 163, category: "Adventure",
     symbolIds: ["S1", "S2", "S3", "S4", "S5", "S6", "S7"], shape: shapeOf(["S1", "S2", "S3", "S4", "S5", "S6", "S7"], CLASSIC), freeSpinMultiplier: 2, wildExpand: false,
     symbols: { S1: "❄️", S2: "⛄", S3: "🧊", S4: "🐧", S5: "🐻‍❄️", S6: "🦭", S7: "🏔️", WILD: "🌟", SCATTER: "🌨️" },
@@ -266,7 +278,7 @@ export const SLOT_GAMES = [
     symbols: { S1: "🌴", S2: "🦜", S3: "🐍", S4: "🦒", S5: "🐘", S6: "🦁", S7: "🦏", WILD: "🐅", SCATTER: "🥁" },
     scatterName: "Daulle", wildName: "Tigri (zgjerohet)",
   }),
-  def('samurai-blade', {
+  def('samurai-blade', { variant: 7,
     name: "Samurai Blade", tagline: "The samurai blade and sakura", volatility: "High", color: ["#7f1d1d", "#18181b"], seed: 173, category: "Fantasy",
     symbolIds: ["S1", "S2", "S3", "S4", "S5", "S6", "S7"], shape: shapeOf(["S1", "S2", "S3", "S4", "S5", "S6", "S7"], VOLATILE), freeSpinMultiplier: 3, wildExpand: false,
     symbols: { S1: "🌸", S2: "🎎", S3: "🏯", S4: "🍵", S5: "⛩️", S6: "🥷", S7: "⚔️", WILD: "🐉", SCATTER: "🏮" },
@@ -284,13 +296,13 @@ export const SLOT_GAMES = [
     symbols: { S1: "⛏️", S2: "🪨", S3: "🔦", S4: "🚂", S5: "🧨", S6: "🤠", S7: "🥇", WILD: "💣", SCATTER: "💎" },
     scatterName: "Diamond", wildName: "Dinamiti (zgjerohet)",
   }),
-  def('lucky-seven-wheel', {
+  def('lucky-seven-wheel', { variant: 3,
     name: "Lucky Seven Wheel", tagline: "Sevens and the wheel of fortune", volatility: "Low", color: ["#9a3412", "#1c0a05"], seed: 191, category: "Classic",
     symbolIds: ["S1", "S2", "S3", "S4", "S5", "S6", "S7"], shape: shapeOf(["S1", "S2", "S3", "S4", "S5", "S6", "S7"], CLASSIC), freeSpinMultiplier: 2, wildExpand: false,
     symbols: { S1: "🍒", S2: "🍋", S3: "🍇", S4: "🍉", S5: "🔔", S6: "💎", S7: "7️⃣", WILD: "⭐", SCATTER: "🎡" },
     scatterName: "Rrota", wildName: "Star",
   }),
-  def('night-racer', {
+  def('night-racer', { variant: 8,
     name: "Night Racer", tagline: "Sports cars and night racing", volatility: "High", color: ["#0f172a", "#1e1b4b"], seed: 193, category: "Sport",
     symbolIds: ["S1", "S2", "S3", "S4", "S5", "S6", "S7"], shape: shapeOf(["S1", "S2", "S3", "S4", "S5", "S6", "S7"], VOLATILE), freeSpinMultiplier: 3, wildExpand: false,
     symbols: { S1: "⛽", S2: "🔧", S3: "🚦", S4: "🏁", S5: "🚓", S6: "🏎️", S7: "🏆", WILD: "⚡", SCATTER: "🏁" },

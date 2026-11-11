@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import './lobby/lobby.css';
 
 // "Loading the game" screen: the cover, the name and a bar that fills in `ms`, then calls onDone (the game opens full page).
 const GameLoader: React.FC<{ name: string; img?: string; art?: React.ReactNode; ms?: number; onDone: () => void }> = ({ name, img, art, ms = 3000, onDone }) => {
@@ -11,16 +12,18 @@ const GameLoader: React.FC<{ name: string; img?: string; art?: React.ReactNode; 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return (
-    <div className="fixed inset-0 z-[95] flex flex-col items-center justify-center bg-[#07070c] text-white px-6" role="status" aria-live="polite">
-      <div className="relative w-44 sm:w-56 aspect-[4/5] rounded-2xl overflow-hidden border border-yellow-500/60 shadow-[0_0_40px_rgba(250,204,21,0.25)] mb-6">
+    <div className="fixed inset-0 z-[95] flex flex-col items-center justify-center text-white px-6 overflow-hidden" role="status" aria-live="polite" style={{ background: '#05080c' }}>
+      {img && <div className="absolute inset-0 opacity-60" style={{ backgroundImage: `url(${img})`, backgroundSize: 'cover', backgroundPosition: 'center', filter: 'blur(48px) saturate(1.5) brightness(.5)', transform: 'scale(1.2)' }} />}
+      <div className="absolute inset-0" style={{ background: 'radial-gradient(60% 50% at 50% 45%, transparent, rgba(5,8,12,.85))' }} />
+      <div className="relative w-44 sm:w-56 aspect-[4/5] rounded-3xl overflow-hidden mb-7 lb-rise" style={{ border: '2px solid rgba(243,207,106,.7)', boxShadow: '0 30px 70px rgba(0,0,0,.8), 0 0 70px rgba(243,207,106,.25)' }}>
         {img ? <img src={img} alt={name} draggable={false} className="absolute inset-0 w-full h-full object-cover" /> : art}
       </div>
-      <div className="text-xl sm:text-2xl font-extrabold tracking-wide mb-1">{name}</div>
-      <div className="text-xs text-gray-400 mb-4">Loading game…</div>
-      <div className="w-full max-w-xs h-2.5 rounded-full bg-white/10 overflow-hidden border border-white/10">
-        <div className="h-full rounded-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 shadow-[0_0_12px_rgba(250,204,21,0.7)]" style={{ width: `${pct}%`, transition: 'width 80ms linear' }} />
+      <div className="relative lb-serif lb-foil text-2xl sm:text-3xl font-black mb-1 text-center">{name}</div>
+      <div className="relative text-[11px] tracking-[.25em] text-slate-400 mb-5">LOADING GAME</div>
+      <div className="relative w-full max-w-xs h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,.1)' }}>
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, transition: 'width 80ms linear', background: 'linear-gradient(90deg,#b8862b,#f3cf6a,#fff0b0)', boxShadow: '0 0 14px rgba(243,207,106,.8)' }} />
       </div>
-      <div className="mt-2 text-xs tabular-nums text-gray-300">{pct}%</div>
+      <div className="relative mt-2 text-xs tabular-nums text-slate-300">{pct}%</div>
     </div>
   );
 };

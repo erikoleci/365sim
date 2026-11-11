@@ -9,6 +9,8 @@ import { readLiveCorners, readLiveCards } from '../matchSettlement.js';
 import { settleMatch, recomputeBetStatus, creditWithLedger, refundAdminForWin, settleStuckBets, recoverFinishedWithoutResult, explainSettleBlock, wouldSettleNow } from '../matchSettlement.js';
 import { missedLiveCycles } from '../london365/liveState.js';
 import { logAudit } from '../auditLog.js';
+import { getAllProfiles, saveProfile, resetProfile, PROFILE_KEYS, slotKey } from '../casinoProfiles.js';
+import { SLOT_GAMES } from '../slots/games.js';
 import { computeMarketCoverage } from '../marketCoverageScan.js';
 import { settlementRuleRequired, getBetBlockReason } from '../marketRules.js';
 import { getFeedKeySamples, getEventFrames, getSocketEvents } from '../feedKeySampler.js';
@@ -1546,6 +1548,52 @@ router.get('/casino/report', requireSuperAdmin, async (req, res) => {
      FROM casino_rounds GROUP BY game, currency ORDER BY game, currency`
   );
   res.json({ rows: rows.map((r) => ({ game: r.game, currency: r.currency, rounds: r.rounds, staked: Number(r.staked), paid: Number(r.paid), houseResult: Number(r.staked) - Number(r.paid) })) });
+});
+// Math profile of every casino game (hit frequency, RTP, bet limits, max win): read, change, reset. Every change is audited.
+// What really happened in the played rounds (casino_rounds), per game key: hit frequency, net-win frequency, RTP, house edge, payout buckets.
+async function measuredByKey() {
+  const { rows } = await pool.query(
+    `SELECT game, COUNT(*)::int AS rounds, COUNT(*) FILTER (WHERE payout > 0)::int AS hits, COUNT(*) FILTER (WHERE payout > stake)::int AS net,
+            COUNT(*) FILTER (WHERE payout >= stake * 5)::int AS x5, COUNT(*) FILTER (WHERE payout >= stake * 20)::int AS x20, COUNT(*) FILTER (WHERE payout >= stake * 100)::int AS x100,
+            COALESCE(SUM(stake),0) AS staked, COALESCE(SUM(payout),0) AS paid
+     FROM casino_rounds WHERE status = 'FINISHED' GROUP BY game`
+  );
+  const slotIds = new Set(SLOT_GAMES.map((g) => g.id));
+  const out = {};
+  for (const r of rows) {
+    const key = r.game.startsWith('slots:') ? 'slots' : r.game === 'sugar-cascade' ? 'tumble' : slotIds.has(r.game) ? slotKey(r.game) : r.game;
+    const o = out[key] || (out[key] = { rounds: 0, hits: 0, net: 0, x5: 0, x20: 0, x100: 0, staked: 0, paid: 0 });
+    o.rounds += r.rounds; o.hits += r.hits; o.net += r.net; o.x5 += r.x5; o.x20 += r.x20; o.x100 += r.x100; o.staked += Number(r.staked); o.paid += Number(r.paid);
+  }
+  return out;
+}
+const withMeasured = async (profiles) => { const m = await measuredByKey(); return profiles.map((p) => ({ ...p, measured: m[p.key] || null })); };
+router.get('/casino/profiles', requireSuperAdmin, async (req, res) => {
+  res.json({ profiles: await withMeasured(await getAllProfiles()) });
+});
+router.put('/casino/profiles/:key', requireSuperAdmin, async (req, res) => {
+  if (!PROFILE_KEYS.includes(req.params.key)) return res.status(404).json({ error: 'Unknown game' });
+  try {
+    const { before, after } = await saveProfile(req.params.key, req.body);
+    await logAudit(req.user, 'CASINO_PROFILE', req.params.key, { before, after });
+    res.json({ profiles: await withMeasured(await getAllProfiles()) });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.post('/casino/profiles/:key/reset', requireSuperAdmin, async (req, res) => {
+  if (!PROFILE_KEYS.includes(req.params.key)) return res.status(404).json({ error: 'Unknown game' });
+  const { before, after } = await resetProfile(req.params.key);
+  await logAudit(req.user, 'CASINO_PROFILE_RESET', req.params.key, { before, after });
+  res.json({ profiles: await withMeasured(await getAllProfiles()) });
+});
+router.get('/casino/profiles-audit', requireSuperAdmin, async (req, res) => {
+  const { rows } = await pool.query(`SELECT actor_username, action, target, details, created_at FROM audit_log WHERE action IN ('CASINO_PROFILE','CASINO_PROFILE_RESET') ORDER BY created_at DESC LIMIT 40`);
+  res.json({ entries: rows });
+});
+// Clears the test rounds of the super admin himself (the demo statistics); players' rounds are never touched.
+router.post('/casino/reset-test-stats', requireSuperAdmin, async (req, res) => {
+  const r = await pool.query('DELETE FROM casino_rounds WHERE user_id = $1', [req.user.id]);
+  await logAudit(req.user, 'CASINO_RESET_TEST_STATS', null, { removed: r.rowCount });
+  res.json({ removed: r.rowCount });
 });
 router.put('/settings/ticket-deletion', requireSuperAdmin, async (req, res) => {
   const { allowed } = req.body || {};
