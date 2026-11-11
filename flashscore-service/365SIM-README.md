@@ -1,6 +1,7 @@
 # flashscore-service (vendored)
 
-Unmodified copy of https://github.com/omkarcloud/flashscore-scraper (MIT, see LICENSE), taken on 2026-11-11.
+Copy of https://github.com/omkarcloud/flashscore-scraper (MIT, see LICENSE), taken on 2026-11-11.
+One 365SIM patch: `flashscore/matches.py` get_summary also returns `substituted_in` (the player coming on; upstream kept only the player going off). Test: `python -m flashscore.test_substitutions`.
 It is a separate Python process: the 365SIM server only talks to it over HTTP, inside the Docker network, when `FLASHSCORE_URL` is set.
 The 365SIM server uses 3 endpoints: `/matches`, `/matches/summary`, `/matches/statistics`.
 

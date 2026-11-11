@@ -219,8 +219,10 @@ export async function initDb() {
       leg INTEGER,
       aggregate TEXT,
       leg_text TEXT,
+      stats_json TEXT,
       updated_at BIGINT NOT NULL
     );
+    ALTER TABLE match_extra ADD COLUMN IF NOT EXISTS stats_json TEXT;
 
     -- Live in-play stats snapshot per match (one row per match, overwritten
     -- on each poll) — possession/shots/corners/xG for the live stats panel.

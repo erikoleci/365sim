@@ -58,6 +58,10 @@ export function incidentRows(summary, fixture, ourHome, ourAway) {
       const second = has(type, /yellow.*red|second yellow/i);
       if (second) { count.YELLOW_CARD[side]++; rows.push({ minute, type: 'YELLOW_CARD', team: side, player, detail: String(count.YELLOW_CARD[side]), half }); }
       count.RED_CARD[side]++; rows.push({ minute, type: 'RED_CARD', team: side, player, detail: String(count.RED_CARD[side]), half });
+    } else if (has(type, /^substitution/i)) {
+      // the scraper (patched copy in flashscore-service/) attaches the player coming ON to the "Out" record; both names or nothing
+      const inName = inc.substituted_in && inc.substituted_in.name;
+      if (has(type, /out/i) && inName && player) rows.push({ minute, type: 'SUBSTITUTION', team: side, player: inName, detail: player, half });
     } else if (has(type, /yellow card/i)) {
       count.YELLOW_CARD[side]++; rows.push({ minute, type: 'YELLOW_CARD', team: side, player, detail: String(count.YELLOW_CARD[side]), half });
     }
@@ -65,6 +69,21 @@ export function incidentRows(summary, fixture, ourHome, ourAway) {
   const sh = Number(fixture && fixture.homeScore); const sa = Number(fixture && fixture.awayScore);
   if (Number.isFinite(sh) && Number.isFinite(sa) && (h !== sh || a !== sa)) return null;
   return rows;
+}
+
+// Statistics we do NOT already have from the main feed (it has possession, shots, corners, cards, xG, attacks): every other row of the
+// whole-match period, as [{ name, home, away }] with the strings Flashscore prints ("81% (281/346)", "12"). Big chances included.
+const HAVE = /^(ball possession|total shots|shots on target|shots off target|corner kicks|yellow cards|red cards|expected goals \(xg\)|attacks|dangerous attacks)$/i;
+export function otherStats(stats) {
+  const periods = (stats && stats.periods) || [];
+  const whole = periods.find((p) => /^match$|^full/i.test(String(p.period || ''))) || periods[0];
+  const out = [];
+  for (const g of (whole && whole.groups) || []) for (const s of g.statistics || []) {
+    const name = String(s.name || '').trim();
+    if (!name || HAVE.test(name) || s.home == null || s.away == null) continue;
+    out.push({ name: name.slice(0, 40), home: String(s.home).slice(0, 24), away: String(s.away).slice(0, 24) });
+  }
+  return out.slice(0, 40);
 }
 
 // /matches/statistics -> { home, away } big chances for the whole match (period "Match"/first period), or null when not published.

@@ -3,7 +3,7 @@
 // it never writes scores, never settles tickets and never touches odds. A failing/slow service is skipped silently.
 // FLASHSCORE_URL  e.g. http://flashscore:8000    FLASHSCORE_INTERVAL_MS (default 90000, min 30000)
 import { pool } from './db.js';
-import { parseMatchList, incidentRows, bigChances, findFlashscoreMatch } from './flashscoreMap.js';
+import { parseMatchList, incidentRows, bigChances, otherStats, findFlashscoreMatch } from './flashscoreMap.js';
 
 const timeout = () => Math.max(5000, Number(process.env.FLASHSCORE_TIMEOUT_MS) || 20000);
 async function get(path, fetchImpl) {
@@ -61,12 +61,14 @@ export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.f
       if (ev) out.eventsAdded += await logEvents(row.id, ev, now);
       else console.warn('[flashscore] incidents of ' + row.id + ' do not add up to the score ' + f.homeScore + '-' + f.awayScore + ' -- not logged');
       const bc = stats ? bigChances(stats) : null;
-      if (bc) {
+      const more = stats ? otherStats(stats) : [];
+      if (bc || more.length) {
         await pool.query(
-          `INSERT INTO match_extra (match_id, big_chances_home, big_chances_away, updated_at) VALUES ($1,$2,$3,$4)
+          `INSERT INTO match_extra (match_id, big_chances_home, big_chances_away, stats_json, updated_at) VALUES ($1,$2,$3,$4,$5)
            ON CONFLICT (match_id) DO UPDATE SET big_chances_home = COALESCE(EXCLUDED.big_chances_home, match_extra.big_chances_home),
-             big_chances_away = COALESCE(EXCLUDED.big_chances_away, match_extra.big_chances_away), updated_at = EXCLUDED.updated_at`,
-          [row.id, bc.home, bc.away, now]
+             big_chances_away = COALESCE(EXCLUDED.big_chances_away, match_extra.big_chances_away),
+             stats_json = COALESCE(EXCLUDED.stats_json, match_extra.stats_json), updated_at = EXCLUDED.updated_at`,
+          [row.id, bc ? bc.home : null, bc ? bc.away : null, more.length ? JSON.stringify(more) : null, now]
         );
         out.extras++;
       }

@@ -73,6 +73,18 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
   // sitting still) between the 15s poll/socket refreshes.
   const [activeTab, setActiveTab] = useState<string>(readOnly && (match.status === MatchStatus.LIVE || match.status === MatchStatus.FINISHED) ? 'EVENTS' : 'All');
   const [liveDetail, setLiveDetail] = useState<{ statistics: LiveStatistics | null; events: MatchEvent[]; extra?: MatchExtra | null } | null>(null);
+  // Statistics the main feed does not have (passes, tackles, fouls, saves...): printed as Flashscore gives them, text on both sides.
+  const extraStatsList = liveDetail?.extra?.stats?.length ? (
+    <div className="mt-4 space-y-2">
+      {liveDetail.extra.stats.map((s) => (
+        <div key={s.name} className="flex items-center justify-between text-xs border-b border-white/5 pb-1.5">
+          <span className="text-white font-bold tabular-nums w-1/3">{s.home}</span>
+          <span className="text-brand-textMuted text-center flex-1 uppercase">{s.name}</span>
+          <span className="text-white font-bold tabular-nums w-1/3 text-right">{s.away}</span>
+        </div>
+      ))}
+    </div>
+  ) : null;
   const [liveDetailLoading, setLiveDetailLoading] = useState(false);
   const [banner, setBanner] = useState<BannerInfo | null>(null);
   const [attackSamples, setAttackSamples] = useState<AttackSample[]>([]);
@@ -398,6 +410,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
           {liveDetail.extra.leg === 1 ? t('Ndeshja e parë') : liveDetail.extra.leg === 2 ? t('Ndeshja e kthimit') : ''}
           {liveDetail.extra.leg && liveDetail.extra.aggregate ? ' · ' : ''}
           {liveDetail.extra.aggregate ? `${t('Gjithsej')} ${liveDetail.extra.aggregate}` : ''}
+          {liveDetail.extra.leg === 2 && liveDetail.extra.firstLeg ? ` · ${t('Ndeshja e parë')} ${liveDetail.extra.firstLeg}` : ''}
         </div>
       )}
       {/* Stats / Events / Markets Content */}
@@ -407,8 +420,11 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
             <div className="text-center text-brand-textMuted text-xs py-8">{t('Duke ngarkuar statistikat...')}</div>
           
           ) : !liveDetail?.statistics || !STAT_FIELDS.some((k) => (liveDetail.statistics as any)[k] != null) ? (
-            liveDetail?.extra && (liveDetail.extra.bigChancesHome != null || liveDetail.extra.bigChancesAway != null) ? (
-              <StatBar label={t('Raste të mëdha')} home={liveDetail.extra.bigChancesHome} away={liveDetail.extra.bigChancesAway} />
+            liveDetail?.extra && (liveDetail.extra.bigChancesHome != null || liveDetail.extra.bigChancesAway != null || liveDetail.extra.stats?.length) ? (
+              <div>
+                {(liveDetail.extra.bigChancesHome != null || liveDetail.extra.bigChancesAway != null) && <StatBar label={t('Raste të mëdha')} home={liveDetail.extra.bigChancesHome} away={liveDetail.extra.bigChancesAway} />}
+                {extraStatsList}
+              </div>
             ) : (
             <div className="text-center text-brand-textMuted text-xs py-8">
               {t("Statistika live s'janë të disponueshme për këtë ndeshje.")}
@@ -425,6 +441,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
               {liveDetail.extra && (liveDetail.extra.bigChancesHome != null || liveDetail.extra.bigChancesAway != null) && (
                 <div className="mt-4"><StatBar label={t('Raste të mëdha')} home={liveDetail.extra.bigChancesHome} away={liveDetail.extra.bigChancesAway} /></div>
               )}
+              {extraStatsList}
             </div>
           )}
         </div>

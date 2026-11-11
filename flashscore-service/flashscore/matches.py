@@ -327,6 +327,20 @@ def get_summary(match):
                                lambda: _feed(f"df_sui_{_SPORT_SLOT}_{match_id}")])
     periods = []
     current = None
+    # 365SIM patch: a substitution record restates IM/IF/IU/IK a second time for the player coming ON; the generic parser keeps
+    # only the first value (the player going off), so the second IM/IF is read here and attached as `substituted_in`.
+    second = {}
+    for chunk in (text or "").split("~"):
+        seen, both = {}, {}
+        for pair in chunk.split("¬"):
+            key, sep, value = pair.partition("÷")
+            if not sep:
+                continue
+            if key in seen and key not in both:
+                both[key] = value
+            seen.setdefault(key, value)
+        if "III" in seen:
+            second[seen["III"]] = both
     for record in P.parse_records(text):
         if "AC" in record and "III" not in record:
             current = {"period": P.clean(record.get("AC")),
@@ -352,6 +366,9 @@ def get_summary(match):
             "home_score": P.to_int(record.get("IG")),
             "away_score": P.to_int(record.get("IH")),
         }
+        both = second.get(incident["id"]) or {}
+        if "Substitution" in (incident["type"] or "") and (both.get("IM") or both.get("IF")):
+            incident["substituted_in"] = P.player_ref(both.get("IM"), both.get("IF"), link_path=both.get("IU"))
         if current is None:
             current = {"period": None, "home_score_at_start": None,
                        "away_score_at_start": None, "incidents": []}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMatchList, incidentRows, bigChances, findFlashscoreMatch } from '../server/flashscoreMap.js';
+import { parseMatchList, incidentRows, bigChances, otherStats, findFlashscoreMatch } from '../server/flashscoreMap.js';
 
 const inc = (team, minute, type, name, extra = {}) => ({ team, minute: `${minute}'`, minute_number: minute, type, player: name ? { name } : null, reason: null, description: '', ...extra });
 const summary = (...incidents) => ({ periods: [{ period: '1st Half', incidents: incidents.slice(0, 2) }, { period: '2nd Half', incidents: incidents.slice(2) }] });
@@ -45,5 +45,20 @@ describe('big chances, matching', () => {
     expect(list).toHaveLength(1);
     expect(findFlashscoreMatch(list, { home_team: 'Bayern', away_team: 'PSG', start_time: '2026-11-11T20:05:00Z' })?.id).toBe('abc');
     expect(findFlashscoreMatch(list, { home_team: 'PSG', away_team: 'Bayern', start_time: '2026-11-11T20:05:00Z' })).toBeNull(); // swapped pair never trusted
+  });
+});
+
+describe('substitutions and the other statistics', () => {
+  it('a substitution row has the player coming on and the one going off; one without both names is skipped', () => {
+    const rows = incidentRows(summary(inc('home', 46, 'Substitution - Out', 'Lukebakio D.', { substituted_in: { name: 'Romero I.' } }), inc('away', 58, 'Substitution - Out', 'Endrick', {})), fx(0, 0), 'A', 'B');
+    expect(rows).toEqual([{ minute: 46, type: 'SUBSTITUTION', team: 'home', player: 'Romero I.', detail: 'Lukebakio D.', half: 2 }]);
+  });
+  it('keeps only statistics the main feed lacks', () => {
+    const stats = { periods: [{ period: 'Match', groups: [{ statistics: [
+      { name: 'Ball possession', home: '60%', away: '40%' }, { name: 'Total shots', home: '10', away: '4' },
+      { name: 'Passes', home: '81% (281/346)', away: '70% (200/285)' }, { name: 'Tackles', home: '12', away: '15' }, { name: 'Big chances', home: '3', away: '1' },
+    ] }] }] };
+    expect(otherStats(stats).map((s) => s.name)).toEqual(['Passes', 'Tackles', 'Big chances']);
+    expect(otherStats({ periods: [] })).toEqual([]);
   });
 });
