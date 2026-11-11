@@ -83,6 +83,7 @@ export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.f
 }
 export const __resetForTests = () => { lastDetailAt.clear(); doneFinished.clear(); };
 
+let lastErrAt = 0;
 export function startFlashscoreLoop() {
   if (!enabled()) return;
   const every = Math.max(30000, Number(process.env.FLASHSCORE_INTERVAL_MS || 90000));
@@ -91,7 +92,7 @@ export function startFlashscoreLoop() {
     if (busy) return;
     busy = true;
     runFlashscore().then((r) => { if (r && (r.eventsAdded || r.extras)) console.log('[flashscore] ' + JSON.stringify(r)); })
-      .catch((err) => console.error('[flashscore] cycle failed:', err.message))
+      .catch((err) => { if (Date.now() - lastErrAt > 15 * 60000) { lastErrAt = Date.now(); console.error('[flashscore] cycle failed:', err.message); } }) // one line per 15 min, not one per cycle
       .finally(() => { busy = false; });
   };
   const t = setInterval(tick, every);

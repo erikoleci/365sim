@@ -1,4 +1,4 @@
-import { loadTieInfo } from '../tieLeg.js';
+import { loadTieInfo, hasToQualify } from '../tieLeg.js';
 import { reconcileEvents } from '../eventReconcile.js';
 import express from 'express';
 import { gzip as gzipCb } from 'zlib';
@@ -408,8 +408,8 @@ async function buildLiveDetail(reqId) {
   } catch { /* table not there yet: no big chances */ }
   try {
     // the pre-match record (the one with the coupon) is reqId's own row; the twin only holds the live score
-    const { rows: [coupon] } = await queryWithRetry('SELECT * FROM matches_cache WHERE id = $1', [reqId]);
-    if (coupon) {
+    const coupon = own.rows[0]; // already loaded above: no extra database query
+    if (coupon && hasToQualify(coupon.raw_json)) {
       const sc = cache && cache.live_home_score != null && cache.live_away_score != null ? { home: Number(cache.live_home_score), away: Number(cache.live_away_score) }
         : coupon.result_home != null && coupon.result_away != null ? { home: Number(coupon.result_home), away: Number(coupon.result_away) } : null;
       const tie = await loadTieInfo(queryWithRetry, coupon, sc);
