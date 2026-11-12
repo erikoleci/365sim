@@ -3,7 +3,7 @@
 // Two steps: a DRY RUN that only reports, and an APPLY that is refused when anything is doubtful.
 //  - a leg is re-decided only when the rules reproduce its CURRENT status at the old score (so the rule is trustworthy for that leg) and
 //    need nothing but the score; every other leg is reported as "manual" and left untouched, unless the owner supplies its outcome
-//    in `overrides` ({ legId: 'WON'|'LOST'|'VOID' }, only for legs that are "manual");
+//    in `overrides` ({ legId: 'WON'|'LOST'|'VOID' }, any leg);
 //  - a ticket that would go from WON to not-WON is never applied (there is no claw-back path): it is reported and blocks the apply;
 //  - tickets that turn WON are paid through the normal path (recomputeBetStatus: ledger credit + admin charge).
 import { pool } from './db.js';
@@ -25,11 +25,11 @@ export function planMatch(match, newHome, newAway, legs, overrides = {}) {
   for (const leg of legs) {
     const atOld = safe(leg, oldCtx); const atNew = safe(leg, newCtx);
     let action = 'keep'; let to = atNew;
-    if (atNew == null || atOld !== leg.status) {
-      action = 'manual';
-      const o = overrides[leg.id];
-      if (o && OVERRIDE_OK.has(o)) { to = o; if (o !== leg.status) { action = 'override'; flips.set(leg.id, o); } }
-    } else if (atNew !== leg.status) { action = 'change'; flips.set(leg.id, atNew); }
+    const o = overrides[leg.id];
+    if (o && OVERRIDE_OK.has(o)) { // the owner decided this leg by hand (any leg: also one the rules would have kept)
+      to = o; action = o !== leg.status ? 'override' : 'keep'; if (o !== leg.status) flips.set(leg.id, o);
+    } else if (atNew == null || atOld !== leg.status) action = 'manual';
+    else if (atNew !== leg.status) { action = 'change'; flips.set(leg.id, atNew); }
     rows.push({ legId: leg.id, betId: leg.bet_id, market: leg.market_name, selection: leg.selection_name, odds: Number(leg.odds), current: leg.status, atOldScore: atOld, atNewScore: to, action });
   }
   return { rows, flips };
