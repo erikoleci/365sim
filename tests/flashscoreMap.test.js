@@ -145,3 +145,16 @@ describe('national team spelling and the raw incident sample', () => {
     expect(out[0]).toBe("1st Half|Goal|home|0'|Penalty||X");
   });
 });
+
+describe('incidentRows: scored penalty arriving as "Penalty Awarded"', () => {
+  const mk = (list) => ({ periods: [{ period: '1st Half', incidents: list }] });
+  it('counts bare Penalty Awarded as a goal only when that makes the score add up', () => {
+    const s = mk([{ type: 'Yellow Card', team: 'home', player: { name: 'A' }, time: '10' }, { type: 'Penalty Awarded', team: 'away', player: { name: 'B' }, time: '20' }]);
+    const rows = incidentRows(s, { homeScore: 0, awayScore: 1 }, 'H', 'A');
+    expect(rows.some((r) => r.type === 'GOAL' && r.detail === '0-1')).toBe(true);
+  });
+  it('keeps an awarded penalty that is not a goal out of the score', () => {
+    const s = mk([{ type: 'Penalty Awarded', team: 'away', player: { name: 'B' }, time: '20' }]);
+    expect(incidentRows(s, { homeScore: 0, awayScore: 0 }, 'H', 'A')).toEqual([]);
+  });
+});

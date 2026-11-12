@@ -35,6 +35,14 @@ export function parseMatchList(json) {
 // /matches/summary -> match_events rows. Returns null when the goals do not add up to the score Flashscore reports for the match
 // (a timeline that contradicts the score is worse than none), exactly like the API-Football source.
 export function incidentRows(summary, fixture, ourHome, ourAway) {
+  const strict = incidentRowsCore(summary, fixture, ourHome, ourAway, false);
+  if (strict) return strict;
+  // Logs show a SCORED penalty arriving as a bare "Penalty Awarded" (list 0-1 with only a yellow card + "Penalty Awarded"). Retry reading those
+  // as goals; the result is accepted ONLY when it then adds up to the reported score, so a plain awarded/missed penalty can never invent a goal.
+  return incidentRowsCore(summary, fixture, ourHome, ourAway, true);
+}
+
+function incidentRowsCore(summary, fixture, ourHome, ourAway, penAwardedAsGoal) {
   const rows = [];
   let h = 0; let a = 0;
   const count = { PENALTY: { home: 0, away: 0 }, YELLOW_CARD: { home: 0, away: 0 }, RED_CARD: { home: 0, away: 0 } };
@@ -52,11 +60,12 @@ export function incidentRows(summary, fixture, ourHome, ourAway) {
     const player = (inc.player && inc.player.name) || null;
     const text = `${type} ${inc.reason || ''} ${inc.description || ''}`;
     const ownGoal = has(type, /own goal/i) || has(inc.reason, /own goal/i);
-    if (has(type, /^goal$|^penalty goal$|own goal/i) || (has(type, /goal/i) && !has(type, /disallowed|cancel|no goal/i))) {
+    const bareAwarded = penAwardedAsGoal && has(type, /^penalty awarded$/i) && !has(text, /miss|saved|hit the|wide|over the bar|retake|cancel/i);
+    if (bareAwarded || has(type, /^goal$|^penalty goal$|own goal/i) || (has(type, /goal/i) && !has(type, /disallowed|cancel|no goal/i))) {
       if (has(type, /disallowed|cancel/i)) continue;
       const scoring = ownGoal ? (side === 'home' ? 'away' : 'home') : side;
       if (scoring === 'home') h++; else a++;
-      if (has(text, /penalty/i)) { count.PENALTY[scoring]++; rows.push({ minute, type: 'PENALTY', team: scoring, player, detail: String(count.PENALTY[scoring]), half }); }
+      if (bareAwarded || has(text, /penalty/i)) { count.PENALTY[scoring]++; rows.push({ minute, type: 'PENALTY', team: scoring, player, detail: String(count.PENALTY[scoring]), half }); }
       rows.push({ minute, type: 'GOAL', team: scoring === 'home' ? ourHome : ourAway, player: ownGoal ? (player ? `${player} (a.g.)` : '(a.g.)') : player, detail: `${h}-${a}`, half });
     } else if (has(type, /penalty/i) && has(text, /miss|saved|hit the|wide|over the bar/i)) {
       count.PENALTY[side]++; rows.push({ minute, type: 'PENALTY', team: side, player, detail: String(count.PENALTY[side]), half });
