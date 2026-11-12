@@ -49,3 +49,13 @@ describe('canSettleFromLiveScore: frozen clock projected forward', () => {
     expect(canSettleFromLiveScore({ ...base, live_minute_updated_at: now - 10 * 60000 }, now)).toBe(false);
   });
 });
+
+describe('canSettleFromLiveScore: a match whose clock is still moving is not over', () => {
+  it('105+ minutes after kick-off but the clock (83\') updated a minute ago: not settled; silent for 6 minutes at 83\': the old fallback applies', async () => {
+    const { canSettleFromLiveScore } = await import('../server/matchSettlement.js');
+    const now = Date.now();
+    const base = { live_home_score: 1, live_away_score: 1, live_minute: "83:47", start_time: new Date(now - 106 * 60000).toISOString() };
+    expect(canSettleFromLiveScore({ ...base, live_minute_updated_at: now - 60000 }, now)).toBe(false);
+    expect(canSettleFromLiveScore({ ...base, live_minute_updated_at: now - 6 * 60000 }, now)).toBe(true);
+  });
+});

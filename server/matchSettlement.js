@@ -1736,6 +1736,10 @@ export function canSettleFromLiveScore(row, now = Date.now()) {
   // its tickets waited for the 105 minute / 3 hour fallbacks.
   const clockStamp = Number(row.live_minute_updated_at);
   if (minute != null && Number.isFinite(clockStamp) && clockStamp > 0 && minute + (now - clockStamp) / 60000 >= PROJECTED_END_MINUTE) return true;
+  // The clock is still MOVING (updated in the last few minutes) and has not reached the end: the match is being played, however long ago it
+  // kicked off (a national-team match with a long break and stoppages is still at 83' 105 minutes after kick-off). The 105 minute fallback
+  // closed such matches on a stale score and settled their tickets (Italy-France, England-Croatia, Montenegro-Latvia of 12.11).
+  if (minute != null && Number.isFinite(clockStamp) && clockStamp > 0 && now - clockStamp < 5 * 60000 && minute < SETTLE_MIN_CLOCK_MINUTE) return false;
   const kickoff = Date.parse(row.start_time);
   return Number.isFinite(kickoff) && now - kickoff >= SETTLE_MIN_ELAPSED_MS;
 }
