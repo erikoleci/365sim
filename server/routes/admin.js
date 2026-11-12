@@ -1,6 +1,6 @@
 import { findProviderLabels } from '../providerLabels.js';
 import { buildDayAudit } from '../dayAudit.js';
-import { correctResult } from '../resultCorrection.js';
+import { correctBatch } from '../resultCorrection.js';
 import { getVcSamples } from '../vcSampler.js';
 import express from 'express';
 import bcrypt from 'bcryptjs';
@@ -1202,14 +1202,15 @@ router.patch('/bet-selections/:id', async (req, res) => {
 // via the manual override endpoint above rather than guessed.
 // force:true lets an admin re-settle a match the automatic scores poller
 // already closed, e.g. to correct a wrong final score.
-// Correct the final score of a FINISHED match closed on a wrong one and re-decide its tickets. Body { homeScore, awayScore, apply }:
-// without apply:true it is a DRY RUN (nothing is written). See resultCorrection.js for what is and is not re-decided.
-router.post('/matches/:id/correct-result', async (req, res) => {
-  const { homeScore, awayScore, apply } = req.body || {};
-  if (!Number.isInteger(homeScore) || !Number.isInteger(awayScore) || homeScore < 0 || awayScore < 0) return res.status(400).json({ error: 'homeScore and awayScore must be non-negative integers' });
-  const out = await correctResult(req.params.id, homeScore, awayScore, { apply: apply === true });
+// Correct the final score of FINISHED matches closed on a wrong one and re-decide their tickets, all matches planned together.
+// Body { items: [{ matchId, homeScore, awayScore, overrides? }], apply }: without apply:true it is a DRY RUN (nothing is written).
+router.post('/matches/correct-results', async (req, res) => {
+  const { items, apply } = req.body || {};
+  const okItem = (i) => i && typeof i.matchId === 'string' && Number.isInteger(i.homeScore) && Number.isInteger(i.awayScore) && i.homeScore >= 0 && i.awayScore >= 0;
+  if (!Array.isArray(items) || !items.length || !items.every(okItem)) return res.status(400).json({ error: 'items: [{ matchId, homeScore, awayScore }] required' });
+  const out = await correctBatch(items, { apply: apply === true });
   if (out.error) return res.status(400).json(out);
-  if (out.applied) await logAudit(req.user, 'MATCH_RESULT_CORRECT', req.params.id, { homeScore, awayScore, changes: out.changes, tickets: out.tickets.length });
+  if (out.applied) await logAudit(req.user, 'MATCH_RESULT_CORRECT', items.map((i) => i.matchId).join(','), { items, tickets: out.tickets.length });
   res.json(out);
 });
 
