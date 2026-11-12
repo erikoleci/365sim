@@ -50,9 +50,10 @@ export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.f
   const seen = new Set();
   for (let i = list.length - 1; i >= 0; i--) { if (seen.has(list[i].id)) list.splice(i, 1); else seen.add(list[i].id); } // the same match must never be listed twice (that would look ambiguous)
   const out = { candidates: todo.length, matched: 0, eventsAdded: 0, extras: 0 };
+  const unmatched = [];
   for (const row of todo) {
     const f = findFlashscoreMatch(list, row);
-    if (!f) continue;
+    if (!f) { if (unmatched.length < 5) unmatched.push(row.home_team + ' v ' + row.away_team); continue; }
     out.matched++;
     try {
       const q = encodeURIComponent(f.id);
@@ -79,8 +80,10 @@ export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.f
       if (row.status === 'FINISHED') doneFinished.add(row.id);
     } catch (err) { console.error('[flashscore] match ' + row.id + ' failed:', err.message); }
   }
+  if (unmatched.length && Date.now() - lastUnmatchedLog > 30 * 60000) { lastUnmatchedLog = Date.now(); console.log('[flashscore] no Flashscore match found for: ' + unmatched.join(' | ')); }
   return out;
 }
+let lastUnmatchedLog = 0;
 export const __resetForTests = () => { lastDetailAt.clear(); doneFinished.clear(); };
 
 let lastErrAt = 0;

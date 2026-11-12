@@ -62,3 +62,16 @@ describe('substitutions and the other statistics', () => {
     expect(otherStats({ periods: [] })).toEqual([]);
   });
 });
+
+describe('small leagues: different club spellings', () => {
+  const list = parseMatchList({ competitions: [{ competition: { name: 'Super Division' }, matches: [
+    { id: 'm1', start_time: '2026-11-12T08:00:00Z', home: { name: 'Bengaluru FC B' }, away: { name: 'Rebels FC' }, home_score: 0, away_score: 1 },
+    { id: 'm2', start_time: '2026-11-12T08:00:00Z', home: { name: 'Mumbai City B' }, away: { name: 'Soccerstar' }, home_score: 1, away_score: 0 },
+  ] }] });
+  it('matches "Bengaluru B" to "Bengaluru FC B" when the kickoff is the same minute', () => {
+    expect(findFlashscoreMatch(list, { home_team: 'Bengaluru B', away_team: 'Rebels FC', start_time: '2026-11-12T08:00:00Z' })?.id).toBe('m1');
+  });
+  it('does not accept a loose name match when the kickoff is 4 hours apart', () => {
+    expect(findFlashscoreMatch(list, { home_team: 'Bengaluru B', away_team: 'Rebels FC', start_time: '2026-11-12T12:00:00Z' })).toBeNull();
+  });
+});

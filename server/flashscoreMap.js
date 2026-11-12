@@ -2,6 +2,7 @@
 // Output conventions are the ones the other sources already use in match_events: GOAL rows carry the team NAME and the running
 // score ("2-1"); PENALTY / YELLOW_CARD / RED_CARD rows carry 'home' / 'away' and a running count per side.
 import { sameTeam } from './fixtureDedupe.js';
+import { looseSameClub } from './fixtureLink.js';
 
 const minuteOf = (inc) => {
   const n = Number(inc && inc.minute_number);
@@ -99,10 +100,14 @@ export function bigChances(stats) {
   return null;
 }
 
-// The Flashscore match that is OUR match: same home/away order, kickoff within 3 hours, exactly one candidate.
+// The Flashscore match that is OUR match, same home/away order, exactly one candidate.
+// Pass 1: both names match and the kickoff is within 3 hours. Pass 2 (small leagues spell clubs differently: "Bengaluru B" /
+// "Bengaluru FC B"): the kickoff must be within 10 minutes and both names must pass the looser club test. A swapped pair is never trusted.
 export function findFlashscoreMatch(list, row) {
   const t = Date.parse(row.start_time);
   if (!Number.isFinite(t)) return null;
-  const c = list.filter((f) => Math.abs(f.start - t) <= 3 * 3600 * 1000 && sameTeam(row.home_team, f.home) && sameTeam(row.away_team, f.away));
-  return c.length === 1 ? c[0] : null;
+  const strict = list.filter((f) => Math.abs(f.start - t) <= 3 * 3600 * 1000 && sameTeam(row.home_team, f.home) && sameTeam(row.away_team, f.away));
+  if (strict.length) return strict.length === 1 ? strict[0] : null;
+  const loose = list.filter((f) => Math.abs(f.start - t) <= 10 * 60000 && looseSameClub(row.home_team, f.home) && looseSameClub(row.away_team, f.away));
+  return loose.length === 1 ? loose[0] : null;
 }
