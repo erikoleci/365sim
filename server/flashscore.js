@@ -3,6 +3,7 @@
 // it never writes scores, never settles tickets and never touches odds. A failing/slow service is skipped silently.
 // Optional: FLASHSCORE_URL (use an external service instead)   FLASHSCORE_INTERVAL_MS (default 90000, min 30000)
 import { harvestLogos } from './fsLogos.js';
+import { isPastFirstHalf } from './marketPeriods.js';
 import { pool } from './db.js';
 import { serviceBase, enabled } from './flashscoreProc.js';
 import { parseMatchList, incidentRows, bigChances, otherStats, incidentDiag, findFlashscoreMatch, flashscoreClock } from './flashscoreMap.js';
@@ -86,6 +87,13 @@ export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.f
       if (fsClock && fsClock.closeOnly && !['ET', 'EXTRA_TIME', 'PEN', 'PENALTIES', 'AET'].includes(String(row.live_status || '').toUpperCase().trim())) {
         const res = await pool.query(`UPDATE matches_cache SET live_status = $2 WHERE id = $1 AND status = 'LIVE'`, [row.id, fsClock.status]);
         if (res && res.rowCount) out.closed = (out.closed || 0) + 1;
+      }
+      // 2nd half on Flashscore but OUR provider never signalled half time (the break was missed or its status is a number nobody can read):
+      // the first-half markets are over. Closing signal only ('2H' = past the first half, see marketPeriods.js); the clock and scores stay
+      // as they are. Without this they would stay open until the wall-clock safety net (80 min after kickoff).
+      if (stage2 && row.status === 'LIVE' && !isPastFirstHalf(row, now)) {
+        const res = await pool.query(`UPDATE matches_cache SET live_status = $2 WHERE id = $1 AND status = 'LIVE'`, [row.id, '2H']);
+        if (res && res.rowCount) out.firstHalfClosed = (out.firstHalfClosed || 0) + 1;
       }
       const stale = row.status === 'LIVE' && now - Number(row.live_minute_updated_at || 0) > 5 * 60000;
       let clock = stale ? flashscoreClock(f, now, secondHalfSeen.get(row.id)) : null;
