@@ -20,6 +20,18 @@ const StadiumPitch: React.FC<{ match: Match; stats: LiveStatistics | null; flash
   const frameRef = useRef<HTMLDivElement | null>(null);
   const [scrolledPast, setScrolledPast] = useState(false);
   const [hidden, setHidden] = useState(false);
+  // The sticky header is taller on a phone (two rows) than on a desktop: place the floating pitch right under it, measured.
+  const [topPx, setTopPx] = useState(60);
+  useEffect(() => {
+    if (!scrolledPast) return;
+    const measure = () => {
+      const nav = document.querySelector('nav.sticky') as HTMLElement | null;
+      setTopPx(Math.round((nav ? nav.getBoundingClientRect().bottom : 52) + 8));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [scrolledPast]);
 
   useEffect(() => {
     const el = frameRef.current;
@@ -57,7 +69,7 @@ const StadiumPitch: React.FC<{ match: Match; stats: LiveStatistics | null; flash
         </div>
       </div>
       {scrolledPast && !hidden && (
-        <div className="fixed top-[3.75rem] md:top-[5.75rem] right-2 z-40 w-[230px] max-w-[58vw] rounded-lg shadow-2xl ring-1 ring-black/60" style={{ animation: 'pitch-fade-in 0.3s ease both' }}>
+        <div className="fixed right-2 z-40 w-[230px] max-w-[58vw] rounded-lg shadow-2xl ring-1 ring-black/60" style={{ top: topPx, animation: 'pitch-fade-in 0.3s ease both' }}>
           <button onClick={() => setHidden(true)} aria-label={t('Mbyll')} className="absolute -top-2 -right-2 z-50 w-6 h-6 rounded-full bg-black/80 text-white text-xs font-bold leading-none border border-white/30">✕</button>
           <div onClick={() => frameRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })} className="cursor-pointer">
             <Stadium compact><LivePitch match={match} stats={stats} flash={flash} compact /></Stadium>
