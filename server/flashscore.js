@@ -1,5 +1,5 @@
-// Flashscore, GOALS ONLY (scorer, minute, half). The bundled scraper is started by the app itself (flashscoreProc.js); FLASHSCORE=0 turns it off.
-// It only fixes/adds GOAL rows of match_events: it never writes scores, clocks, statuses or odds and never settles anything.
+// Flashscore, SCORERS' NAMES ONLY. The bundled scraper is started by the app itself (flashscoreProc.js); FLASHSCORE=0 turns it off.
+// It only fills in the player name of GOAL rows our provider already logged: never scores, minutes, halves, clocks, statuses, odds, corners, cards, and it never settles anything.
 // Matches are linked to their Flashscore fixture by team names + kick-off; a match whose incidents do not add up to Flashscore's score is skipped.
 // Optional: FLASHSCORE_URL (external service)   FLASHSCORE_INTERVAL_MS (default 90000, min 30000)   FLASHSCORE_BACKFILL_HOURS (default 30)
 import { pool } from './db.js';
@@ -13,31 +13,26 @@ async function get(path, fetchImpl, base) {
   return res.json();
 }
 
-// A goal row that already exists (same team + running score, written by our provider) gets the scorer, the real minute and the real half.
-// A goal our provider never logged is added, filed where it belongs in the timeline (created_at = kick-off + minute, +15 min after half time).
+// ONLY the scorer's NAME: a goal row our provider already logged (same team + running score) gets the player's name when it has none.
+// Minutes, halves, scores, missing goals, corners, cards... all stay exactly as the provider wrote them; nothing is ever added or moved.
 async function logGoals(row, goals) {
-  let added = 0; let fixed = 0;
-  const kickoff = Date.parse(row.start_time);
-  for (const g of goals) {
-    const { rows: have } = await pool.query(
-      'SELECT id, player, minute, half FROM match_events WHERE match_id = $1 AND type = $2 AND team = $3 AND detail = $4 ORDER BY id LIMIT 1',
-      [row.id, 'GOAL', g.team, g.detail]
-    );
-    if (have.length) {
-      const h = have[0];
-      const sets = []; const params = [h.id];
-      if (g.player && h.player !== g.player) { params.push(g.player); sets.push(`player = $${params.length}`); }
-      if (g.minute != null && Number(h.minute) !== Number(g.minute)) { params.push(g.minute); sets.push(`minute = $${params.length}`); }
-      if ((g.half === 1 || g.half === 2) && h.half !== g.half && h.half !== 3) { params.push(g.half); sets.push(`half = $${params.length}`); }
-      if (sets.length) { await pool.query(`UPDATE match_events SET ${sets.join(', ')} WHERE id = $1`, params); fixed++; }
-      continue;
-    }
-    const at = Number.isFinite(kickoff) && g.minute != null ? kickoff + (g.minute + (g.half === 2 ? 15 : 0)) * 60000 : Date.now();
-    await pool.query('INSERT INTO match_events (match_id, minute, type, team, player, detail, created_at, half) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-      [row.id, g.minute, 'GOAL', g.team, g.player, g.detail, at, g.half]);
-    added++;
+  let named = 0;
+  const { rows: mine } = await pool.query(
+    'SELECT id, team, player, detail FROM match_events WHERE match_id = $1 AND type = $2 ORDER BY created_at, id', [row.id, 'GOAL']);
+  for (const side of [row.home_team, row.away_team]) {
+    const fsGoals = goals.filter((g) => g.team === side);
+    const ours = (mine || []).filter((e) => e.team === side);
+    fsGoals.forEach((g, i) => {
+      if (!g.player) return;
+      // same running score first; otherwise the n-th goal of that team, only when both sides count the same number of goals for it
+      const hit = ours.find((e) => e.detail === g.detail) || (ours.length === fsGoals.length ? ours[i] : null);
+      if (hit && !hit.player) { hit.player = g.player; hit.__set = true; }
+    });
   }
-  return { added, fixed };
+  for (const e of mine || []) {
+    if (e.__set) { await pool.query('UPDATE match_events SET player = $2 WHERE id = $1 AND player IS NULL', [e.id, e.player]); named++; }
+  }
+  return named;
 }
 
 const doneFinished = new Set();
@@ -64,7 +59,7 @@ export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.f
   }
   const seen = new Set();
   for (let i = list.length - 1; i >= 0; i--) { if (seen.has(list[i].id)) list.splice(i, 1); else seen.add(list[i].id); }
-  const out = { candidates: todo.length, matched: 0, goalsAdded: 0, goalsFixed: 0 };
+  const out = { candidates: todo.length, matched: 0, named: 0 };
   const unmatched = [];
   for (const row of todo) { // one match after the other
     const f = findFlashscoreMatch(list, row);
@@ -74,8 +69,7 @@ export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.f
       const summary = await get(`/matches/summary?match=${encodeURIComponent(f.id)}`, fetchImpl, base);
       const ev = incidentRows(summary, f, row.home_team, row.away_team);
       if (ev) {
-        const r = await logGoals(row, ev.filter((e) => e.type === 'GOAL'));
-        out.goalsAdded += r.added; out.goalsFixed += r.fixed;
+        out.named += await logGoals(row, ev.filter((e) => e.type === 'GOAL'));
         if (row.status === 'FINISHED') doneFinished.add(row.id);
       } else {
         const msg = incidentDiag(summary, f);
@@ -100,7 +94,7 @@ export function startFlashscoreLoop() {
     const sinceMs = backfilled ? 6 * 3600 * 1000 : backfillMs;
     runFlashscore({ sinceMs }).then((r) => {
       if (r && !r.disabled) backfilled = true;
-      if (r && (r.goalsAdded || r.goalsFixed || (r.unmatched && r.unmatched.length))) console.log('[flashscore] ' + JSON.stringify(r));
+      if (r && (r.named || (r.unmatched && r.unmatched.length))) console.log('[flashscore] ' + JSON.stringify(r));
     }).catch((err) => { if (Date.now() - lastErrAt > 15 * 60000) { lastErrAt = Date.now(); console.error('[flashscore] cycle failed:', err.message); } })
       .finally(() => { busy = false; });
   };
