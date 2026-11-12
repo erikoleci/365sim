@@ -1,4 +1,5 @@
 import { findProviderLabels } from '../providerLabels.js';
+import { buildDayAudit } from '../dayAudit.js';
 import { getVcSamples } from '../vcSampler.js';
 import express from 'express';
 import bcrypt from 'bcryptjs';
@@ -1364,6 +1365,12 @@ router.get('/feed-frames', (req, res) => {
 // Live tickets booked in the last ?hours= (default 24) with the match state at booking (minute, score) and the
 // model's win probability / edge per leg, worst first. Use it to see which live prices were off-market and to tune
 // LIVE_LEG_MAX_EDGE / LIVE_TICKET_MAX_EDGE. Example: /api/admin/live-audit?hours=6&min_edge=1.1
+// READ-ONLY: every match behind the tickets of the last ?hours= (default 30): result vs live score vs timeline goals/corners vs Flashscore.
+router.get('/day-audit', async (req, res) => {
+  const hours = Math.min(168, Math.max(1, Number(req.query.hours) || 30));
+  res.json(await buildDayAudit(pool, { hours }));
+});
+
 router.get('/live-audit', async (req, res) => {
   const hours = Math.min(168, Math.max(1, Number(req.query.hours) || 24));
   const minEdge = Number(req.query.min_edge) || 0;
