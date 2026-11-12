@@ -224,6 +224,13 @@ export async function initDb() {
     );
     ALTER TABLE match_extra ADD COLUMN IF NOT EXISTS stats_json TEXT;
 
+    -- Team crests: only the picture ADDRESS from Flashscore, keyed by our team name (see fsLogos.js).
+    CREATE TABLE IF NOT EXISTS fs_team_logos (
+      team_key TEXT PRIMARY KEY,
+      url TEXT NOT NULL,
+      updated_at BIGINT NOT NULL
+    );
+
     -- Provider action codes we cannot decode yet (see vcRecorder.js): used to find the penalty code by itself.
     CREATE TABLE IF NOT EXISTS vc_unmapped_seen (
       id SERIAL PRIMARY KEY,

@@ -58,6 +58,30 @@ export const TEAM_ALIASES: Record<string, string[]> = {
   'paok': ['paok thessaloniki', 'paok'], 'besiktas': ['besiktas jk', 'besiktas'],
 };
 
+// Crests from Flashscore: { team key: picture address }. Fetched once, lazily; the browser loads the pictures itself.
+let fsLogos: Record<string, string> | null = null;
+let fsLoading: Promise<void> | null = null;
+let fsFailedAt = 0;
+export function loadFsLogos(): Promise<void> {
+  if (fsLogos) return Promise.resolve();
+  if (fsLoading) return fsLoading;
+  if (fsFailedAt && Date.now() - fsFailedAt < RETRY_AFTER_MS) return Promise.resolve();
+  fsLoading = fetch('/api/matches/team-logos')
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+    .then((d: { logos?: Record<string, string> }) => { if (!d || typeof d.logos !== 'object' || !d.logos) throw new Error('bad'); fsLogos = d.logos; fsFailedAt = 0; })
+    .catch(() => { fsFailedAt = Date.now(); })
+    .finally(() => { fsLoading = null; listeners.forEach((fn) => fn()); });
+  return fsLoading;
+}
+/** The Flashscore crest address for a team, or null (not seen yet). Exact key only, like the local collection. */
+export function resolveFsLogo(name: string): string | null {
+  if (!fsLogos || !name) return null;
+  return fsLogos[teamKey(name)] ?? null;
+}
+/** Changes whenever an index arrives, so every crest re-renders once. */
+export const logoVersion = (): number => (index ? 1 : 0) + (fsLogos ? 2 : 0);
+export function __setFsLogosForTests(next: Record<string, string> | null): void { fsLogos = next; fsFailedAt = 0; fsLoading = null; }
+
 let index: LogoIndex | null = null;
 let loading: Promise<void> | null = null;
 let failedAt = 0; // when the last attempt failed; a new attempt is allowed after RETRY_AFTER_MS

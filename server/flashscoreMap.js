@@ -24,6 +24,7 @@ export function parseMatchList(json) {
         homeScore: m.home_score ?? null, awayScore: m.away_score ?? null,
         status: m.status || null, stage: m.stage || null, stageId: m.stage_id ?? null, round: m.round || null, note: m.note || null,
         competition: (g.competition && g.competition.name) || null,
+        homeLogo: (m.home && m.home.logo) || null, awayLogo: (m.away && m.away.logo) || null,
       });
     }
   }

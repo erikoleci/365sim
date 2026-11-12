@@ -2,6 +2,7 @@
 // big chances, read from the self-hosted flashscore-service (flashscore-service/, MIT). It only ADDS facts:
 // it never writes scores, never settles tickets and never touches odds. A failing/slow service is skipped silently.
 // Optional: FLASHSCORE_URL (use an external service instead)   FLASHSCORE_INTERVAL_MS (default 90000, min 30000)
+import { harvestLogos } from './fsLogos.js';
 import { pool } from './db.js';
 import { serviceBase, enabled } from './flashscoreProc.js';
 import { parseMatchList, incidentRows, bigChances, otherStats, incidentDiag, findFlashscoreMatch, flashscoreClock } from './flashscoreMap.js';
@@ -52,6 +53,21 @@ export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.f
   const seen = new Set();
   for (let i = list.length - 1; i >= 0; i--) { if (seen.has(list[i].id)) list.splice(i, 1); else seen.add(list[i].id); } // the same match must never be listed twice (that would look ambiguous)
   const out = { candidates: todo.length, matched: 0, eventsAdded: 0, extras: 0 };
+  // Crests: the same list gives every team's picture address. Our live / finished rows and today's upcoming ones are linked to
+  // their Flashscore fixture exactly like the events below, and only the (new) addresses are written. Never blocks the cycle.
+  try {
+    const { rows: upcoming } = await pool.query(
+      `SELECT home_team, away_team, start_time FROM matches_cache
+        WHERE status = 'UPCOMING' AND start_time::timestamptz BETWEEN $1::timestamptz AND $2::timestamptz LIMIT 400`,
+      [new Date(now).toISOString(), new Date(now + 24 * 3600 * 1000).toISOString()]
+    );
+    const pairs = [];
+    for (const r of [...todo, ...upcoming]) {
+      const f = findFlashscoreMatch(list, r);
+      if (f && (f.homeLogo || f.awayLogo)) pairs.push({ home: r.home_team, away: r.away_team, homeLogo: f.homeLogo, awayLogo: f.awayLogo });
+    }
+    out.logos = await harvestLogos(pool, pairs);
+  } catch (e) { console.warn('[flashscore] crests skipped: ' + (e && e.message)); }
   const unmatched = [];
   for (const row of todo) {
     const f = findFlashscoreMatch(list, row);

@@ -1,4 +1,5 @@
 import { loadTieInfo, hasToQualify } from '../tieLeg.js';
+import { getFsLogoMap } from '../fsLogos.js';
 import { reconcileEvents } from '../eventReconcile.js';
 import express from 'express';
 import { gzip as gzipCb } from 'zlib';
@@ -304,6 +305,12 @@ async function buildLiveList() {
   }
   return { matches: dedupeMatches(matches, logMerge) };
 }
+// Team crests from Flashscore ({ team key: address }); the browser loads the pictures itself.
+router.get('/team-logos', wrap(async (_req, res) => {
+  const body = await getFsLogoMap({ query: queryWithRetry });
+  res.set('Cache-Control', 'public, max-age=300');
+  res.json(body);
+}));
 router.get('/live', wrap(async (_req, res) => {
   if (liveListCache && Date.now() - liveListCache.at < LIVE_LIST_TTL_MS) return res.json(liveListCache.body);
   if (!liveListInflight) {
