@@ -34,6 +34,8 @@ type Fx = {
   burst?: boolean;         // goal-mouth shockwave
   curve?: boolean;
   big?: string;            // big centre banner text key
+  offside?: number;        // x of the offside line
+  touch?: boolean;         // throw-in: arrow on the touchline
 };
 
 const FX: Record<string, Fx> = {
@@ -44,6 +46,10 @@ const FX: Record<string, Fx> = {
   penalty: { path: 'M96 28 L106 25', tone: 'danger', dur: 1.3, zoneDepth: 20, target: { x: 96, y: 28 }, burst: true, big: 'Penallti' },
   shot_on_target: { path: 'M84 34 L106 26', tone: 'danger', dur: 1.2, zoneDepth: 26, burst: true },
   big_chance: { path: 'M86 36 L106 27', tone: 'danger', dur: 1.1, zoneDepth: 28, burst: true, big: 'Shanc i madh për gol' },
+  throw_in: { path: 'M80 54 Q80 42 88 39', tone: 'attack', dur: 1.8, zoneDepth: 0, touch: true },
+  back_line_restart: { path: 'M9 28 Q28 8 50 24', tone: 'calm', dur: 2.2, zoneDepth: 0 },
+  offside: { path: 'M62 36 L76 28', tone: 'attack', dur: 1.6, zoneDepth: 0, offside: 78 },
+  possession: { path: 'M30 38 L44 24 L58 36 L70 26', tone: 'calm', dur: 3.2, zoneDepth: 0 },
   goal: { path: 'M92 30 L107 28', tone: 'danger', dur: 1.4, zoneDepth: 22, burst: true, big: 'Gol' },
 };
 
@@ -130,6 +136,18 @@ const ActionFx: React.FC<{ kind: string; home: boolean; fx: Fx }> = ({ kind, hom
             <animateMotion dur={`${fx.dur}s`} repeatCount="indefinite" path={fx.path} calcMode="spline" keyTimes="0;1" keySplines="0.35 0 0.25 1" />
           </circle>
         </g>
+        {fx.offside != null && (
+          <g>
+            <line x1={fx.offside} y1="2" x2={fx.offside} y2="54" stroke="#fff" strokeWidth="0.5" strokeDasharray="2 1.6" style={{ animation: 'fx-dash 0.9s linear infinite' }} />
+            <path d={`M${fx.offside} 3 l5 1.8 l-5 1.8z`} fill={YELLOW} />
+          </g>
+        )}
+        {fx.touch && (
+          <g style={{ animation: 'fx-pulse 0.9s ease-in-out infinite', transformOrigin: '80px 54px' }}>
+            <path d="M74 54 h12" stroke={YELLOW} strokeWidth="0.9" strokeLinecap="round" />
+            <circle cx="80" cy="54" r="1.6" fill="none" stroke={YELLOW} strokeWidth="0.5" />
+          </g>
+        )}
         {kind === 'corner' && (
           <g style={{ transformOrigin: '106.4px 52.6px', animation: 'fx-wave 0.9s ease-in-out infinite' }}>
             <line x1="106.4" y1="52.6" x2="106.4" y2="47.6" stroke="#fff" strokeWidth="0.4" />
@@ -195,6 +213,23 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
 
       {showFx && fx && action && <ActionFx key={`${action.side}-${action.kind}`} kind={action.kind} home={!!home} fx={fx} />}
 
+      {action && (action.kind === 'injury' || action.kind === 'substitution') && (
+        <svg key={`${action.kind}-i`} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 w-full h-full z-[5] pointer-events-none" aria-hidden="true">
+          {action.kind === 'injury' ? (
+            <g style={{ transformOrigin: '55px 28px', animation: 'fx-pulse 0.9s ease-in-out infinite' }}>
+              <circle cx="55" cy="28" r="7" fill="rgba(0,0,0,0.35)" stroke="#fff" strokeWidth="0.5" />
+              <path d="M55 23.5v9M50.5 28h9" stroke="#ff3b3b" strokeWidth="2.2" strokeLinecap="round" />
+            </g>
+          ) : (
+            <g style={{ animation: 'fx-pulse 1.1s ease-in-out infinite', transformOrigin: '55px 28px' }}>
+              <circle cx="55" cy="28" r="8" fill="rgba(0,0,0,0.35)" stroke="#fff" strokeWidth="0.5" />
+              <path d="M50.5 31 l0 -8 m-2 2.4 l2 -2.4 l2 2.4" fill="none" stroke="#3ee05a" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M59.5 25 l0 8 m-2 -2.4 l2 2.4 l2 -2.4" fill="none" stroke="#ff4d4d" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+            </g>
+          )}
+        </svg>
+      )}
+
       {/* big banner: penalty / big chance / goal */}
       {bigText && (
         <div key={`${action?.side}-${action?.kind}-b`} className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
@@ -214,8 +249,8 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
           style={{ animation: 'pitch-text-in 0.35s ease-out both' }}
         >
           <div className="rounded-full bg-black/60 backdrop-blur-sm pl-2.5 pr-3 py-0.5 flex items-center gap-1.5 shadow-lg overflow-hidden" style={{ borderLeft: `3px solid ${accent}` }}>
-            {teamName && <span className="text-[10px] sm:text-xs font-semibold text-white/75 truncate">{teamName}</span>}
-            <span className="text-xs sm:text-sm font-extrabold text-white whitespace-nowrap">{t(action.label)}</span>
+            {teamName && <span className="text-[10px] sm:text-xs font-semibold text-white/75 truncate min-w-0 max-w-[45%]">{teamName}</span>}
+            <span className="text-xs sm:text-sm font-extrabold text-white whitespace-nowrap shrink-0">{t(action.label)}</span>
           </div>
         </div>
       )}

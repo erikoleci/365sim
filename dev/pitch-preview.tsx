@@ -9,6 +9,7 @@ const base: any = { id: 'x', homeTeam: 'Khonkaen Mordindang FC', awayTeam: 'Kora
 const kinds: Array<[string, string | null, 'home' | 'away' | null]> = [
   ['Pa veprim', null, null], ['attack', 'Sulm', 'home'], ['dangerous_attack', 'Sulm i rrezikshëm', 'away'], ['corner', 'Korne', 'home'],
   ['free_kick', 'Gjuajtje e lirë', 'away'], ['penalty', 'Penallti', 'home'], ['big_chance', 'Shanc i madh për gol', 'away'], ['goal', 'Gol', 'home'],
+  ['throw_in', 'Rivënie anësore', 'home'], ['back_line_restart', 'Rivënie fundore', 'away'], ['offside', 'Pozicion jashtë loje', 'home'], ['possession', 'Zotëron topin', 'away'], ['injury', 'Dëmtim', null], ['substitution', 'Ndërrim', null],
 ];
 const App = () => (
   <div style={{ padding: 8, display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,420px),1fr))' }}>

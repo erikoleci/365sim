@@ -108,8 +108,8 @@ const LIVE_TICK_RESYNC_MS = 5000;
 // pitch when the following messages carry no (decodable) VC. The provider's own
 // pitch keeps showing the last action until the NEXT one arrives; clearing it after a few seconds
 // made it flash ("it shows once and goes away until the next websocket"). So it is held until a
-// newer action replaces it; this is only the safety cap for a feed that goes quiet (default 2 min).
-const ACTION_HOLD_MS = Number(process.env.LIVE_ACTION_HOLD_MS) > 0 ? Number(process.env.LIVE_ACTION_HOLD_MS) : 120000;
+// newer action replaces it; this is only the safety cap for a feed that goes quiet (default 15 min).
+const ACTION_HOLD_MS = Number(process.env.LIVE_ACTION_HOLD_MS) > 0 ? Number(process.env.LIVE_ACTION_HOLD_MS) : 900000;
 // Stoppage actions are kept on the pitch at least this long (default 8 s) before an attack / possession code may replace them.
 const ACTION_STICKY_MS = Number(process.env.LIVE_ACTION_STICKY_MS) > 0 ? Number(process.env.LIVE_ACTION_STICKY_MS) : 8000;
 const STICKY_KINDS = new Set(['corner', 'free_kick', 'injury', 'substitution', 'goal', 'penalty']);
