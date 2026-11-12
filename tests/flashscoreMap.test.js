@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMatchList, incidentRows, bigChances, otherStats, findFlashscoreMatch } from '../server/flashscoreMap.js';
+import { parseMatchList, incidentRows, bigChances, otherStats, incidentDiag, findFlashscoreMatch } from '../server/flashscoreMap.js';
 
 const inc = (team, minute, type, name, extra = {}) => ({ team, minute: `${minute}'`, minute_number: minute, type, player: name ? { name } : null, reason: null, description: '', ...extra });
 const summary = (...incidents) => ({ periods: [{ period: '1st Half', incidents: incidents.slice(0, 2) }, { period: '2nd Half', incidents: incidents.slice(2) }] });
@@ -73,5 +73,22 @@ describe('small leagues: different club spellings', () => {
   });
   it('does not accept a loose name match when the kickoff is 4 hours apart', () => {
     expect(findFlashscoreMatch(list, { home_team: 'Bengaluru B', away_team: 'Rebels FC', start_time: '2026-11-12T12:00:00Z' })).toBeNull();
+  });
+});
+
+describe('score reference when the list has no score', () => {
+  const g = (team, minute, h, a) => inc(team, minute, 'Goal', 'P', { home_score: h, away_score: a });
+  it('uses the running score printed on the last goal', () => {
+    const rows = incidentRows(summary(g('home', 10, 1, 0), g('home', 40, 2, 0)), { homeScore: null, awayScore: null }, 'A', 'B');
+    expect(rows.filter((r) => r.type === 'GOAL')).toHaveLength(2);
+  });
+  it('still refuses when the incidents contradict that running score', () => {
+    expect(incidentRows(summary(g('home', 10, 1, 0), g('home', 40, 3, 0)), { homeScore: null, awayScore: null }, 'A', 'B')).toBeNull();
+  });
+  it('refuses goals when there is no score to check against at all', () => {
+    expect(incidentRows(summary(inc('home', 10, 'Goal', 'P')), { homeScore: null, awayScore: null }, 'A', 'B')).toBeNull();
+  });
+  it('describes what was seen', () => {
+    expect(incidentDiag(summary(inc('home', 10, 'Goal', 'P'), inc('home', 20, 'Goal', 'Q')), { homeScore: 5, awayScore: 0 })).toBe('list score 5-0; 2 incidents (Goalx2)');
   });
 });

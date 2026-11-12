@@ -4,7 +4,7 @@
 // Optional: FLASHSCORE_URL (use an external service instead)   FLASHSCORE_INTERVAL_MS (default 90000, min 30000)
 import { pool } from './db.js';
 import { serviceBase, enabled } from './flashscoreProc.js';
-import { parseMatchList, incidentRows, bigChances, otherStats, findFlashscoreMatch } from './flashscoreMap.js';
+import { parseMatchList, incidentRows, bigChances, otherStats, incidentDiag, findFlashscoreMatch } from './flashscoreMap.js';
 
 const timeout = () => Math.max(5000, Number(process.env.FLASHSCORE_TIMEOUT_MS) || 20000);
 async function get(path, fetchImpl, base) {
@@ -63,7 +63,7 @@ export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.f
       ]);
       const ev = incidentRows(summary, f, row.home_team, row.away_team);
       if (ev) out.eventsAdded += await logEvents(row.id, ev, now);
-      else console.warn('[flashscore] incidents of ' + row.id + ' do not add up to the score ' + f.homeScore + '-' + f.awayScore + ' -- not logged');
+      else console.warn('[flashscore] incidents of ' + row.id + ' do not add up (' + incidentDiag(summary, f) + ') -- not logged');
       const bc = stats ? bigChances(stats) : null;
       const more = stats ? otherStats(stats) : [];
       if (bc || more.length) {

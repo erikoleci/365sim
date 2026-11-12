@@ -67,8 +67,16 @@ export function incidentRows(summary, fixture, ourHome, ourAway) {
       count.YELLOW_CARD[side]++; rows.push({ minute, type: 'YELLOW_CARD', team: side, player, detail: String(count.YELLOW_CARD[side]), half });
     }
   }
-  const sh = Number(fixture && fixture.homeScore); const sa = Number(fixture && fixture.awayScore);
-  if (Number.isFinite(sh) && Number.isFinite(sa) && (h !== sh || a !== sa)) return null;
+  // The reference score: what Flashscore's list says; when the list has no score (null), the running score printed on the last goal
+  // of the incident list itself. With neither, nothing is logged (never a timeline that cannot be checked against a score).
+  const num = (v) => (v == null || v === '' ? NaN : Number(v));
+  let sh = num(fixture && fixture.homeScore); let sa = num(fixture && fixture.awayScore);
+  if (!Number.isFinite(sh) || !Number.isFinite(sa)) {
+    const goals = list.filter((i) => has(i.type, /goal/i) && !has(i.type, /disallowed|cancel/i) && Number.isFinite(num(i.home_score)) && Number.isFinite(num(i.away_score)));
+    if (!goals.length) return h + a === 0 && list.length === 0 ? rows : null;
+    const last = goals[goals.length - 1]; sh = num(last.home_score); sa = num(last.away_score);
+  }
+  if (h !== sh || a !== sa) return null;
   return rows;
 }
 
@@ -110,4 +118,13 @@ export function findFlashscoreMatch(list, row) {
   if (strict.length) return strict.length === 1 ? strict[0] : null;
   const loose = list.filter((f) => Math.abs(f.start - t) <= 10 * 60000 && looseSameClub(row.home_team, f.home) && looseSameClub(row.away_team, f.away));
   return loose.length === 1 ? loose[0] : null;
+}
+
+// One line for the log when the incidents do not add up: what we counted vs the reported score and the incident types seen.
+export function incidentDiag(summary, fixture) {
+  const types = {};
+  let n = 0;
+  for (const p of (summary && summary.periods) || []) for (const i of p.incidents || []) { n++; const k = String(i.type || '?'); types[k] = (types[k] || 0) + 1; }
+  const t = Object.entries(types).map(([k, v]) => `${k}x${v}`).join(', ');
+  return `list score ${fixture && fixture.homeScore}-${fixture && fixture.awayScore}; ${n} incidents (${t || 'none'})`;
 }
