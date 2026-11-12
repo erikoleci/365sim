@@ -38,13 +38,16 @@ export function incidentRows(summary, fixture, ourHome, ourAway) {
   let h = 0; let a = 0;
   const count = { PENALTY: { home: 0, away: 0 }, YELLOW_CARD: { home: 0, away: 0 }, RED_CARD: { home: 0, away: 0 } };
   const list = [];
-  for (const p of (summary && summary.periods) || []) for (const inc of p.incidents || []) list.push(inc);
+  for (const p of (summary && summary.periods) || []) for (const inc of p.incidents || []) list.push({ ...inc, __period: p.period });
   for (const inc of list) {
     const side = inc.team === 'home' || inc.team === 'away' ? inc.team : null;
     if (!side) continue;
     const type = String(inc.type || '');
     const minute = minuteOf(inc);
-    const half = minute != null && minute > 45 ? 2 : 1;
+    // The half comes from the PERIOD Flashscore files the incident under (a goal in first-half stoppage time, 45+3, is still the first half);
+    // only when the period is unknown does the minute decide.
+    const per = String(inc.__period || '');
+    const half = /^1st/i.test(per) ? 1 : /^2nd/i.test(per) ? 2 : (minute != null && minute > 45 ? 2 : 1);
     const player = (inc.player && inc.player.name) || null;
     const text = `${type} ${inc.reason || ''} ${inc.description || ''}`;
     const ownGoal = has(type, /own goal/i) || has(inc.reason, /own goal/i);

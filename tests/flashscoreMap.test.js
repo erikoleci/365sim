@@ -50,7 +50,7 @@ describe('big chances, matching', () => {
 
 describe('substitutions and the other statistics', () => {
   it('a substitution row has the player coming on and the one going off; one without both names is skipped', () => {
-    const rows = incidentRows(summary(inc('home', 46, 'Substitution - Out', 'Lukebakio D.', { substituted_in: { name: 'Romero I.' } }), inc('away', 58, 'Substitution - Out', 'Endrick', {})), fx(0, 0), 'A', 'B');
+    const rows = incidentRows({ periods: [{ period: '2nd Half', incidents: [inc('home', 46, 'Substitution - Out', 'Lukebakio D.', { substituted_in: { name: 'Romero I.' } }), inc('away', 58, 'Substitution - Out', 'Endrick', {})] }] }, fx(0, 0), 'A', 'B');
     expect(rows).toEqual([{ minute: 46, type: 'SUBSTITUTION', team: 'home', player: 'Romero I.', detail: 'Lukebakio D.', half: 2 }]);
   });
   it('keeps only statistics the main feed lacks', () => {
@@ -115,5 +115,16 @@ describe('Flashscore clock fallback', () => {
   });
   it('covers nothing else: finished, not started', () => {
     for (const stage of ['Finished', 'Scheduled']) expect(flashscoreClock({ start, stage }, at(100))).toBeNull();
+  });
+});
+
+describe('incident half comes from the period', () => {
+  it('first-half stoppage time (45+3) stays in the first half, a 46th-minute goal in the 2nd period is the second', () => {
+    const sum = { periods: [
+      { period: '1st Half', incidents: [{ team: 'home', minute: "45+3'", minute_number: 48, type: 'Goal', player: { name: 'A' } }] },
+      { period: '2nd Half', incidents: [{ team: 'away', minute: "46'", minute_number: 46, type: 'Goal', player: { name: 'B' } }] },
+    ] };
+    const rows = incidentRows(sum, { homeScore: 1, awayScore: 1 }, 'H', 'A');
+    expect(rows.map((r) => r.half)).toEqual([1, 2]);
   });
 });

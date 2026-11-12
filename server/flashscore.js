@@ -19,9 +19,12 @@ async function get(path, fetchImpl, base) {
 async function logEvents(matchId, rows, now) {
   let added = 0;
   for (const r of rows) {
-    const { rows: have } = await pool.query('SELECT id, player FROM match_events WHERE match_id = $1 AND type = $2 AND team = $3 AND detail = $4 LIMIT 1', [matchId, r.type, r.team, r.detail]);
+    const { rows: have } = await pool.query('SELECT id, player, half FROM match_events WHERE match_id = $1 AND type = $2 AND team = $3 AND detail = $4 LIMIT 1', [matchId, r.type, r.team, r.detail]);
     if (have.length) {
       if (!have[0].player && r.player) await pool.query('UPDATE match_events SET player = $2 WHERE id = $1', [have[0].id, r.player]);
+      // The row was logged by our provider while its status still said "first half" (half time never signalled): Flashscore knows the
+      // real half, so a goal of the 2nd half is no longer filed under the 1st.
+      if ((r.half === 1 || r.half === 2) && have[0].half !== r.half && have[0].half !== 3) await pool.query('UPDATE match_events SET half = $2 WHERE id = $1', [have[0].id, r.half]);
       continue;
     }
     await pool.query('INSERT INTO match_events (match_id, minute, type, team, player, detail, created_at, half) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [matchId, r.minute, r.type, r.team, r.player, r.detail, now, r.half]);

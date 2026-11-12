@@ -3,7 +3,8 @@ const db = { events: [], extra: null, match: { id: 'l365-1', home_team: 'Bayern'
 vi.mock('../server/db.js', () => {
   const query = async (sql, p = []) => {
     if (/FROM matches_cache/.test(sql)) return { rows: [db.match] };
-    if (/SELECT id, player FROM match_events/.test(sql)) { const e = db.events.find((x) => x.type === p[1] && x.team === p[2] && x.detail === p[3]); return { rows: e ? [e] : [] }; }
+    if (/SELECT id, player(, half)? FROM match_events/.test(sql)) { const e = db.events.find((x) => x.type === p[1] && x.team === p[2] && x.detail === p[3]); return { rows: e ? [e] : [] }; }
+    if (/UPDATE match_events SET half/.test(sql)) { db.events.find((x) => x.id === p[0]).half = p[1]; return { rows: [] }; }
     if (/UPDATE match_events SET player/.test(sql)) { db.events.find((x) => x.id === p[0]).player = p[1]; return { rows: [] }; }
     if (/INSERT INTO match_events/.test(sql)) { db.events.push({ id: db.events.length + 1, type: p[2], team: p[3], player: p[4], detail: p[5] }); return { rows: [] }; }
     if (/UPDATE matches_cache SET live_status/.test(sql)) { db.closed = p[1]; return { rowCount: 1, rows: [] }; }
@@ -43,6 +44,14 @@ describe('Flashscore enrichment loop', () => {
     __resetForTests(); db.closed = undefined;
     db.match = { ...db.match, live_status: '2H' }; // already past the first half: nothing to write
     expect((await runFlashscore({ fetchImpl: second })).firstHalfClosed).toBeUndefined();
+  });
+  it('a goal our provider filed under the 1st half gets the half Flashscore says (2nd)', async () => {
+    process.env.FLASHSCORE_URL = 'http://fs:8000';
+    db.events.push({ id: 1, type: 'GOAL', team: 'Bayern', player: 'Kane H.', detail: '1-0', half: 1, minute: 52 });
+    const sum2 = { periods: [{ period: '2nd Half', incidents: [{ team: 'home', minute: '52\'', minute_number: 52, type: 'Goal', player: { name: 'Kane H.' } }] }] };
+    const f2 = async (url) => ({ ok: true, json: async () => (url.includes('/matches/summary') ? sum2 : url.includes('/matches/statistics') ? stats : list()) });
+    await runFlashscore({ fetchImpl: f2 });
+    expect(db.events.find((e) => e.type === 'GOAL').half).toBe(2);
   });
   it('a failing service is an error for the cycle, not a crash or a write', async () => {
     process.env.FLASHSCORE_URL = 'http://fs:8000';
