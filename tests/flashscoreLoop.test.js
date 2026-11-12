@@ -33,6 +33,17 @@ describe('Flashscore enrichment loop', () => {
     expect(JSON.parse(db.extra.stats).map((x) => x.name)).toEqual(['Big chances', 'Tackles']);
     expect(db.extra).toMatchObject({ bch: 2, bca: 1 });
   });
+  it('2nd half on Flashscore closes the first-half markets when our provider never signalled half time', async () => {
+    process.env.FLASHSCORE_URL = 'http://fs:8000';
+    const second = async (url) => ({ ok: true, json: async () => (url.includes('/matches/summary') ? summary : url.includes('/matches/statistics') ? stats
+      : { competitions: [{ competition: { name: 'UCL' }, matches: [{ id: 'fs1', start_time: db.match.start_time, home: { name: 'Bayern' }, away: { name: 'PSG' }, home_score: 1, away_score: 0, stage: '2nd Half', stage_id: 13 }] }] }) });
+    db.match = { ...db.match, live_status: '1H', live_minute: '46', ht_home: null, start_time: new Date(Date.now() - 62 * 60000).toISOString() };
+    expect((await runFlashscore({ fetchImpl: second })).firstHalfClosed).toBe(1);
+    expect(db.closed).toBe('2H');
+    __resetForTests(); db.closed = undefined;
+    db.match = { ...db.match, live_status: '2H' }; // already past the first half: nothing to write
+    expect((await runFlashscore({ fetchImpl: second })).firstHalfClosed).toBeUndefined();
+  });
   it('a failing service is an error for the cycle, not a crash or a write', async () => {
     process.env.FLASHSCORE_URL = 'http://fs:8000';
     await expect(runFlashscore({ fetchImpl: async () => ({ ok: false, status: 502 }) })).rejects.toThrow(/502/);
