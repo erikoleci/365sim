@@ -360,24 +360,6 @@ const STATS_STALE_MS = 60000;
 // requests that arrive while one is being built share it.
 const LIVE_DETAIL_TTL_MS = 4000;
 const liveDetailMemo = new Map(); // id -> { at, body } | { promise }
-// Events arrive in the order they were logged, so one that is logged late (a Flashscore substitution made at half-time,
-// added minutes later) would sit among the 80th-minute events. The timeline is chronological: by half, then minute.
-// A row without a minute keeps the place of the row before it. Stable, so equal minutes keep their arrival order.
-export function chronological(events) {
-  if (!Array.isArray(events) || events.length < 2) return events;
-  let prev = [0, 0];
-  const keyed = events.map((e, i) => {
-    const m = e && e.minute != null && Number.isFinite(Number(e.minute)) ? Number(e.minute) : null;
-    if (m != null) {
-      const h = e.half != null ? Number(e.half) : (m <= 45 ? 1 : 2);
-      prev = [h, m];
-    }
-    return { e, i, k: prev };
-  });
-  keyed.sort((a, b) => a.k[0] - b.k[0] || a.k[1] - b.k[1] || a.i - b.i);
-  return keyed.map((x) => x.e);
-}
-
 async function buildLiveDetail(reqId) {
   // A ticket points at the pre-match record; the events live under its in-play twin (same fixture, other provider id).
   const own = await queryWithRetry('SELECT * FROM matches_cache WHERE id = $1', [reqId]);
@@ -441,7 +423,7 @@ async function buildLiveDetail(reqId) {
       if (tie) extra = { bigChancesHome: null, bigChancesAway: null, stats: null, ...(extra || {}), leg: tie.leg, aggregate: tie.aggregate, firstLeg: tie.firstLeg, legText: tie.legText };
     }
   } catch { /* no tie info */ }
-  return { statistics, events: chronological(sideEvents), extra, last_updated: lastUpdated };
+  return { statistics, events: sideEvents, extra, last_updated: lastUpdated };
 }
 router.get('/:id/live-detail', wrap(async (req, res) => {
   const id = req.params.id;
