@@ -44,6 +44,7 @@ import { settleFromFallback } from './resultsFallback.js';
 import { installCpuProfileSignal } from './cpuProfiler.js';
 import { startTicketedFixtureLoop } from './london365/ticketedFixtures.js';
 import { startApiFootballLoop } from './apiFootball.js';
+import { startFlashscoreLoop } from './flashscore.js';
 import { captureHalfTimeFromGoalLog } from './halfTime.js';
 import { startClockWriteFlusher } from './clockWrites.js';
 
@@ -377,6 +378,7 @@ async function start() {
   startFeedStatsLog();
   startLondon365LiveLoop();
   startApiFootballLoop();
+  startFlashscoreLoop();
   startTicketedFixtureLoop();
   installCpuProfileSignal();
   startLondon365Socket();

@@ -108,8 +108,8 @@ const LIVE_TICK_RESYNC_MS = 5000;
 // pitch when the following messages carry no (decodable) VC. The provider's own
 // pitch keeps showing the last action until the NEXT one arrives; clearing it after a few seconds
 // made it flash ("it shows once and goes away until the next websocket"). So it is held until a
-// newer action replaces it; this is only the safety cap for a feed that goes quiet (default 2 min).
-const ACTION_HOLD_MS = Number(process.env.LIVE_ACTION_HOLD_MS) > 0 ? Number(process.env.LIVE_ACTION_HOLD_MS) : 120000;
+// newer action replaces it; this is only the safety cap for a feed that goes quiet (default 15 min).
+const ACTION_HOLD_MS = Number(process.env.LIVE_ACTION_HOLD_MS) > 0 ? Number(process.env.LIVE_ACTION_HOLD_MS) : 900000;
 // Stoppage actions are kept on the pitch at least this long (default 8 s) before an attack / possession code may replace them.
 const ACTION_STICKY_MS = Number(process.env.LIVE_ACTION_STICKY_MS) > 0 ? Number(process.env.LIVE_ACTION_STICKY_MS) : 8000;
 const STICKY_KINDS = new Set(['corner', 'free_kick', 'injury', 'substitution', 'goal', 'penalty']);
@@ -753,14 +753,27 @@ async function applyGameDetailsNow(raw) {
   // match the totals are history we cannot date, so they must not be turned
   // into events at the current minute. Capped per tick so a data glitch can't
   // flood the table.
-  if (baselineKnown) {
+  // After a restart/deploy the in-memory baseline is gone, yet live_statistics still holds the totals we saw BEFORE this message: those are
+  // the real baseline, so corners won in the gap are logged instead of being treated as undatable history (this is why a match showed 1 corner).
+  let cornerPrev = prevCards;
+  let cornerKnown = baselineKnown;
+  if (!cardBaseline && !baselineKnown) {
+    try {
+      const { rows: ls } = await pool.query('SELECT corners_home, corners_away FROM live_statistics WHERE match_id = $1', [matchId]);
+      if (ls && ls[0] && ls[0].corners_home != null && ls[0].corners_away != null) {
+        cornerPrev = { ...prevCards, c1: Number(ls[0].corners_home) || 0, c2: Number(ls[0].corners_away) || 0 };
+        cornerKnown = true;
+      }
+    } catch { /* no baseline: corners stay history */ }
+  }
+  if (cornerKnown) {
     const addCorners = async (team, from, to) => {
-      for (let n = from + 1; n <= Math.min(to, from + 3); n++) {
+      for (let n = from + 1; n <= Math.min(to, from + 6); n++) {
         await insertEventOnce(matchId, minuteNum, 'CORNER', team, String(n), now);
       }
     };
-    if (c1 > prevCards.c1) await addCorners('home', prevCards.c1, c1);
-    if (c2 > prevCards.c2) await addCorners('away', prevCards.c2, c2);
+    if (c1 > cornerPrev.c1) await addCorners('home', cornerPrev.c1, c1);
+    if (c2 > cornerPrev.c2) await addCorners('away', cornerPrev.c2, c2);
   }
 
   // Penalty kicks as discrete events (VC x1236, "Goditje dënimi"). Logged on the message where the

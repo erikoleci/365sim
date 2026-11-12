@@ -38,7 +38,8 @@ export function useMatchDetail(detailMatchId: string | null, matches: Match[]) {
 
   const detailMatch = useMemo(() => {
     const entry = matches.find((m) => m.id === detailMatchId);
-    if (!entry) return undefined;
+    // List not loaded yet (page refresh): the full match fetched by id stands in, so the page never flashes the home screen.
+    if (!entry) return full && full.id === detailMatchId ? full : undefined;
     return full && full.id === detailMatchId ? { ...entry, markets: full.markets } : entry;
   }, [matches, detailMatchId, full]);
 
