@@ -354,7 +354,8 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
             <div className="mt-2 text-xs text-brand-accent">
               FT
               {match.score?.htHome != null && match.score?.htAway != null ? ` | HT: ${match.score.htHome}-${match.score.htAway}` : ''}
-              {match.score?.homeCorners != null && match.score?.awayCorners != null ? ` | Corners: ${match.score.homeCorners}-${match.score.awayCorners}` : ''}
+              {liveDetail?.statistics?.corners_home != null && liveDetail?.statistics?.corners_away != null && (liveDetail.statistics.corners_home + liveDetail.statistics.corners_away > 0)
+                ? ` | Corners: ${liveDetail.statistics.corners_home}-${liveDetail.statistics.corners_away}` : ''}
             </div>
           )}
         </div>
