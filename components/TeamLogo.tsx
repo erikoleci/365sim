@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { leagueCountry } from '../utils/leagueGrouping';
+import { nationalTeamFlag } from '../utils/nationalTeamFlag';
 import { isTeamLogoIndexReady, loadFsLogos, loadTeamLogoIndex, logoVersion, resolveFsLogo, resolveTeamLogo, subscribeTeamLogoIndex } from '../utils/teamLogos';
 
 export type TeamLogoSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
@@ -48,6 +49,13 @@ const TeamLogo: React.FC<Props> = ({ name, country, league, providerLogo, size =
   const box = { width: px, height: px };
 
   if (!src) {
+    // A national team has no crest: its country's flag stands in (exact country names only), else the initials tile.
+    const flag = nationalTeamFlag(name);
+    if (flag) {
+      return (
+        <span style={{ ...box, fontSize: Math.round(px * 0.78) }} className={`shrink-0 flex items-center justify-center leading-none select-none ${className}`} role="img" aria-label={name}>{flag}</span>
+      );
+    }
     return (
       <span
         style={{ ...box, fontSize: Math.max(7, Math.round(px * 0.42)) }}

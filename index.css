@@ -88,6 +88,7 @@ body {
 
 
 @keyframes fx-run { 0% { transform: translateX(-6px); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateX(16px); opacity: 0; } }
+@keyframes fx-heat { 0%,100% { opacity: 0.65; } 50% { opacity: 1; } }
 @keyframes fx-dash { to { stroke-dashoffset: -3.8; } }
 @keyframes fx-shock { 0% { transform: scale(0.4); opacity: 0.9; } 100% { transform: scale(3.2); opacity: 0; } }
 @keyframes fx-pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.35); opacity: 0.6; } }

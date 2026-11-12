@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { __setFsLogosForTests, resolveFsLogo, logoVersion } from '../utils/teamLogos';
+import { __setFsLogosForTests, resolveFsLogo, logoVersion } from '../utils/teamLogos.ts';
 
 describe('Flashscore crests in the browser', () => {
   it('resolves by the normalised key and never guesses', () => {

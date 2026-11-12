@@ -106,17 +106,13 @@ const PitchLines: React.FC = () => {
 };
 
 // The moving picture of the action: ball flight with a glowing trail, spot rings, goal shockwave.
-const ActionFx: React.FC<{ kind: string; home: boolean; fx: Fx }> = ({ kind, home, fx }) => {
-  const uid = useId().replace(/:/g, '');
+const ActionFx: React.FC<{ kind: string; home: boolean; fx: Fx }> = React.memo(({ kind, home, fx }) => {
   const hot = fx.tone === 'danger';
   const col = hot ? HOT : '#ffffff';
   const mirror = home ? '' : `translate(${W} 0) scale(-1 1)`;
   const gx = 107.5;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 w-full h-full z-[5] pointer-events-none" aria-hidden="true">
-      <defs>
-        <filter id={`gl-${uid}`} x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="0.8" /></filter>
-      </defs>
       <g transform={mirror}>
         {/* shockwave at the goal mouth */}
         {fx.burst && [0, 0.5, 1].map((d) => (
@@ -142,8 +138,8 @@ const ActionFx: React.FC<{ kind: string; home: boolean; fx: Fx }> = ({ kind, hom
           </g>
         ) : (
           <>
-            <path d={fx.path} fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round" opacity="0.28" filter={`url(#gl-${uid})`} />
-            <path d={fx.path} fill="none" stroke={col} strokeWidth="0.7" strokeLinecap="round" strokeDasharray={fx.wall != null ? undefined : '2 1.8'} style={fx.wall != null ? undefined : { animation: 'fx-dash 0.7s linear infinite' }} />
+            <path d={fx.path} fill="none" stroke={col} strokeWidth="2.6" strokeLinecap="round" opacity="0.2" />
+            <path d={fx.path} fill="none" stroke={col} strokeWidth="0.7" strokeLinecap="round" strokeDasharray={fx.wall != null ? undefined : '2 1.8'} />
           </>
         )}
         {fx.wall != null && [-4.5, -1.5, 1.5, 4.5].map((dy, i) => (
@@ -160,7 +156,7 @@ const ActionFx: React.FC<{ kind: string; home: boolean; fx: Fx }> = ({ kind, hom
         </g>
         {fx.offside != null && (
           <g>
-            <line x1={fx.offside} y1="2" x2={fx.offside} y2="54" stroke="#fff" strokeWidth="0.5" strokeDasharray="2 1.6" style={{ animation: 'fx-dash 0.9s linear infinite' }} />
+            <line x1={fx.offside} y1="2" x2={fx.offside} y2="54" stroke="#fff" strokeWidth="0.5" strokeDasharray="2 1.6" />
             <path d={`M${fx.offside} 3 l5 1.8 l-5 1.8z`} fill={YELLOW} />
           </g>
         )}
@@ -182,7 +178,7 @@ const ActionFx: React.FC<{ kind: string; home: boolean; fx: Fx }> = ({ kind, hom
       </g>
     </svg>
   );
-};
+});
 
 const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash, compact }) => {
   const { t } = useI18n();
@@ -226,7 +222,8 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash, compact }) =
             [home ? 'right' : 'left']: 0, width: `${fx.zoneDepth}%`,
             background: ZONE_BG(fx.tone, !!home),
             borderRadius: home ? '60% 0 0 60% / 50% 0 0 50%' : '0 60% 60% 0 / 0 50% 50% 0',
-            animation: `${hot ? 'pitch-heat 1.1s' : 'pitch-fade-in 0.6s'} ease-in-out ${hot ? 'infinite' : 'both'}`,
+            animation: `${hot ? 'fx-heat 1.2s' : 'pitch-fade-in 0.6s'} ease-in-out ${hot ? 'infinite' : 'both'}`,
+            willChange: hot ? 'opacity' : undefined,
           }}
         />
       )}
@@ -270,7 +267,7 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash, compact }) =
           aria-live="polite"
           style={{ animation: 'pitch-text-in 0.35s ease-out both' }}
         >
-          <div className="rounded-full bg-black/60 backdrop-blur-sm pl-2.5 pr-3 py-0.5 flex items-center gap-1.5 shadow-lg overflow-hidden" style={{ borderLeft: `3px solid ${accent}` }}>
+          <div className="rounded-full bg-black/60 pl-2.5 pr-3 py-0.5 flex items-center gap-1.5 shadow-lg overflow-hidden" style={{ borderLeft: `3px solid ${accent}` }}>
             {teamName && <span className="text-[10px] sm:text-xs font-semibold text-white/75 truncate min-w-0 max-w-[45%]">{teamName}</span>}
             <span className="text-xs sm:text-sm font-extrabold text-white whitespace-nowrap shrink-0">{t(action.label)}</span>
           </div>
@@ -278,12 +275,12 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash, compact }) =
       )}
 
       {/* the two teams, with the way each one attacks */}
-      {!compact && <div className="absolute top-1.5 left-1.5 z-20 max-w-[30%] flex items-center gap-1 rounded-full bg-black/45 backdrop-blur-sm pl-1.5 pr-2 py-0.5 text-[10px] md:text-xs font-semibold text-white/90">
+      {!compact && <div className="absolute top-1.5 left-1.5 z-20 max-w-[30%] flex items-center gap-1 rounded-full bg-black/45 pl-1.5 pr-2 py-0.5 text-[10px] md:text-xs font-semibold text-white/90">
         <TeamLogo name={match.homeTeam} league={match.league} providerLogo={match.homeTeamLogo} size="xs" />
         <span className="truncate">{match.homeTeam}</span>
         <span aria-hidden="true" style={{ color: YELLOW }}>▸</span>
       </div>}
-      {!compact && <div className="absolute top-1.5 right-1.5 z-20 max-w-[30%] flex items-center gap-1 rounded-full bg-black/45 backdrop-blur-sm pr-1.5 pl-2 py-0.5 text-[10px] md:text-xs font-semibold text-white/90">
+      {!compact && <div className="absolute top-1.5 right-1.5 z-20 max-w-[30%] flex items-center gap-1 rounded-full bg-black/45 pr-1.5 pl-2 py-0.5 text-[10px] md:text-xs font-semibold text-white/90">
         <span aria-hidden="true" style={{ color: YELLOW }}>◂</span>
         <span className="truncate">{match.awayTeam}</span>
         <TeamLogo name={match.awayTeam} league={match.league} providerLogo={match.awayTeamLogo} size="xs" />
@@ -308,7 +305,7 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash, compact }) =
       )}
 
       {flash && (
-        <div className="absolute left-1/2 top-9 z-30 max-w-[92%] flex items-center gap-2 bg-black/80 backdrop-blur-sm rounded-full pl-2.5 pr-4 py-1 shadow-xl" style={{ animation: 'pitch-card-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2) both', border: `1px solid ${flash.kind === 'RED_CARD' ? 'rgba(255,70,70,0.6)' : 'rgba(255,223,27,0.6)'}` }}>
+        <div className="absolute left-1/2 top-9 z-30 max-w-[92%] flex items-center gap-2 bg-black/80 rounded-full pl-2.5 pr-4 py-1 shadow-xl" style={{ animation: 'pitch-card-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2) both', border: `1px solid ${flash.kind === 'RED_CARD' ? 'rgba(255,70,70,0.6)' : 'rgba(255,223,27,0.6)'}` }}>
           <CardIcon color={flash.kind === 'RED_CARD' ? 'red' : 'yellow'} className="w-4 h-6" />
           <span className="text-white text-xs md:text-sm font-bold leading-none">
             {flash.kind === 'RED_CARD' ? t('Karton i kuq') : t('Karton i verdhë')}
@@ -318,7 +315,7 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash, compact }) =
       )}
 
       {hasPoss && (
-        <div className="absolute bottom-1.5 left-1.5 z-20 flex items-center gap-2 rounded-full bg-black/50 backdrop-blur-sm px-2.5 py-0.5 text-[10px] md:text-xs font-bold tabular-nums text-white">
+        <div className="absolute bottom-1.5 left-1.5 z-20 flex items-center gap-2 rounded-full bg-black/50 px-2.5 py-0.5 text-[10px] md:text-xs font-bold tabular-nums text-white">
           <span style={{ color: YELLOW }}>{possHome}%</span>
           <div className="w-14 md:w-24 h-1.5 rounded-full bg-white/70 overflow-hidden">
             <div className="h-full rounded-full" style={{ width: `${possHome}%`, background: YELLOW, transition: 'width 800ms ease' }} />
