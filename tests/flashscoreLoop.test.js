@@ -6,6 +6,7 @@ vi.mock('../server/db.js', () => {
     if (/SELECT id, player FROM match_events/.test(sql)) { const e = db.events.find((x) => x.type === p[1] && x.team === p[2] && x.detail === p[3]); return { rows: e ? [e] : [] }; }
     if (/UPDATE match_events SET player/.test(sql)) { db.events.find((x) => x.id === p[0]).player = p[1]; return { rows: [] }; }
     if (/INSERT INTO match_events/.test(sql)) { db.events.push({ id: db.events.length + 1, type: p[2], team: p[3], player: p[4], detail: p[5] }); return { rows: [] }; }
+    if (/UPDATE matches_cache SET live_minute/.test(sql)) { db.clock = { minute: p[1], status: p[3], staleBefore: p[4] }; return { rowCount: 1, rows: [] }; }
     if (/INSERT INTO match_extra/.test(sql)) { db.extra = { bch: p[1], bca: p[2], stats: p[3] }; return { rows: [] }; }
     return { rows: [] };
   };
@@ -19,7 +20,7 @@ const stats = { periods: [{ period: 'Match', groups: [{ statistics: [{ name: 'Bi
 const fetchImpl = async (url) => ({ ok: true, json: async () => (url.includes('/matches/summary') ? summary : url.includes('/matches/statistics') ? stats : list()) });
 
 describe('Flashscore enrichment loop', () => {
-  beforeEach(() => { db.events = []; db.extra = null; __resetForTests(); delete process.env.FLASHSCORE_URL; });
+  beforeEach(() => { db.events = []; db.extra = null; db.clock = undefined; __resetForTests(); delete process.env.FLASHSCORE_URL; });
   it('is idle when there is no scraper available (no Python / no URL)', async () => { expect(await runFlashscore({ fetchImpl })).toEqual({ disabled: true }); });
   it('adds scorer + penalty + extras, and fills in a missing scorer name without duplicating', async () => {
     process.env.FLASHSCORE_URL = 'http://fs:8000';
@@ -36,4 +37,21 @@ describe('Flashscore enrichment loop', () => {
     await expect(runFlashscore({ fetchImpl: async () => ({ ok: false, status: 502 }) })).rejects.toThrow(/502/);
     expect(db.events).toHaveLength(0);
   });
+  it('clock fallback: only when our provider clock is stale; never touches a fresh one', async () => {
+    process.env.FLASHSCORE_URL = 'http://fs:8000';
+    const withStage = (stage, stageId) => async (url) => ({ ok: true, json: async () => (url.includes('/matches/summary') ? summary : url.includes('/matches/statistics') ? stats
+      : { competitions: [{ competition: { name: 'UCL' }, matches: [{ id: 'fs1', start_time: db.match.start_time, home: { name: 'Bayern' }, away: { name: 'PSG' }, home_score: 1, away_score: 0, stage, stage_id: stageId }] }] }) });
+    db.match = { ...db.match, live_minute_updated_at: Date.now() - 60000 }; // fresh clock
+    await runFlashscore({ fetchImpl: withStage('Half Time', 38) });
+    expect(db.clock).toBeUndefined();
+    __resetForTests();
+    db.match = { ...db.match, live_minute_updated_at: Date.now() - 10 * 60000, live_home_score: 0, live_away_score: 0 }; // silent for 10 minutes, our score is behind (0-0 vs 1-0)
+    expect((await runFlashscore({ fetchImpl: withStage('Half Time', 38) })).clock).toBeUndefined(); // HT refused: scores differ
+    __resetForTests();
+    db.match = { ...db.match, live_home_score: 1, live_away_score: 0 }; // same score
+    const r = await runFlashscore({ fetchImpl: withStage('Half Time', 38) });
+    expect(r.clock).toBe(1);
+    expect(db.clock).toMatchObject({ minute: '45', status: 'HT' });
+  });
 });
+

@@ -22,7 +22,7 @@ export function parseMatchList(json) {
       out.push({
         id: String(m.id), start, home: m.home.name, away: m.away.name,
         homeScore: m.home_score ?? null, awayScore: m.away_score ?? null,
-        status: m.status || null, round: m.round || null, note: m.note || null,
+        status: m.status || null, stage: m.stage || null, stageId: m.stage_id ?? null, round: m.round || null, note: m.note || null,
         competition: (g.competition && g.competition.name) || null,
       });
     }
@@ -127,4 +127,26 @@ export function incidentDiag(summary, fixture) {
   for (const p of (summary && summary.periods) || []) for (const i of p.incidents || []) { n++; const k = String(i.type || '?'); types[k] = (types[k] || 0) + 1; }
   const t = Object.entries(types).map(([k, v]) => `${k}x${v}`).join(', ');
   return `list score ${fixture && fixture.homeScore}-${fixture && fixture.awayScore}; ${n} incidents (${t || 'none'})`;
+}
+
+// The match clock from Flashscore's STAGE (exact: 1st half / half time / 2nd half) plus the wall clock inside the stage (an estimate).
+// Used only as a fallback when our own provider's clock has stopped. `seenSecondHalfAt` = when this process first saw the 2nd half
+// (the start of the half is never later than that); without it the 2nd half is assumed to start 62 min after kickoff (45 + stoppage + break).
+// Returns { status: 'live' | 'HT', minute: string } or null (stage not covered: extra time, penalties, finished, not started...).
+export function flashscoreClock(f, now, seenSecondHalfAt = null) {
+  if (!f || !Number.isFinite(f.start)) return null;
+  const stage = String(f.stage || '').toLowerCase();
+  const id = Number(f.stageId);
+  if (id === 38 || stage === 'half time') return { status: 'HT', minute: '45' };
+  if (id === 12 || stage === '1st half') {
+    const m = Math.floor((now - f.start) / 60000) + 1;
+    if (m < 1) return null;
+    return { status: 'live', minute: m > 45 ? '45+' : String(m) };
+  }
+  if (id === 13 || stage === '2nd half') {
+    const start2 = Number.isFinite(seenSecondHalfAt) ? Math.min(seenSecondHalfAt, now) : f.start + 62 * 60000;
+    const m = 46 + Math.max(0, Math.floor((now - start2) / 60000));
+    return { status: 'live', minute: m > 90 ? '90+' : String(m) };
+  }
+  return null;
 }

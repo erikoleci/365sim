@@ -4,7 +4,7 @@
 // Optional: FLASHSCORE_URL (use an external service instead)   FLASHSCORE_INTERVAL_MS (default 90000, min 30000)
 import { pool } from './db.js';
 import { serviceBase, enabled } from './flashscoreProc.js';
-import { parseMatchList, incidentRows, bigChances, otherStats, incidentDiag, findFlashscoreMatch } from './flashscoreMap.js';
+import { parseMatchList, incidentRows, bigChances, otherStats, incidentDiag, findFlashscoreMatch, flashscoreClock } from './flashscoreMap.js';
 
 const timeout = () => Math.max(5000, Number(process.env.FLASHSCORE_TIMEOUT_MS) || 20000);
 async function get(path, fetchImpl, base) {
@@ -28,6 +28,8 @@ async function logEvents(matchId, rows, now) {
   return added;
 }
 
+const lastStage = new Map(); // match id -> 'two' | 'other' (last stage seen by this process)
+const secondHalfSeen = new Map(); // match id -> ms the 2nd half was first seen by this process
 const lastDetailAt = new Map(); // match id -> ms of the last details pull (a live match: every cycle; a finished one: once)
 const doneFinished = new Set();
 
@@ -35,7 +37,7 @@ export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.f
   if (!fetchImpl || !enabled()) return { disabled: true };
   // Football matches that are live, or ended in the last 3 hours (so the final scorers/stats are captured once).
   const { rows } = await pool.query(
-    `SELECT id, home_team, away_team, start_time, status FROM matches_cache
+    `SELECT id, home_team, away_team, start_time, status, live_minute, live_minute_updated_at, live_status, live_home_score, live_away_score FROM matches_cache
       WHERE status IN ('LIVE','FINISHED') AND start_time::timestamptz BETWEEN $1::timestamptz AND $2::timestamptz`,
     [new Date(now - 6 * 3600 * 1000).toISOString(), new Date(now + 5 * 60000).toISOString()]
   );
@@ -55,6 +57,28 @@ export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.f
     const f = findFlashscoreMatch(list, row);
     if (!f) { if (unmatched.length < 5) unmatched.push(row.home_team + ' v ' + row.away_team); continue; }
     out.matched++;
+    // Clock fallback: only when OUR provider's clock has gone quiet (no update for 5+ minutes while the match is LIVE). Never overrides a
+    // fresh clock, never touches scores or settlement; the write itself re-checks that the clock is still stale.
+    try {
+      const stage2 = String(f.stage || '').toLowerCase() === '2nd half' || Number(f.stageId) === 13;
+      // the 2nd half start is known only if this process SAW the stage before it (otherwise, e.g. after a restart, the kickoff estimate is used)
+      const before = lastStage.get(row.id);
+      if (stage2 && before !== undefined && before !== 'two' && !secondHalfSeen.has(row.id)) secondHalfSeen.set(row.id, now);
+      lastStage.set(row.id, stage2 ? 'two' : 'other');
+      const stale = row.status === 'LIVE' && now - Number(row.live_minute_updated_at || 0) > 5 * 60000;
+      let clock = stale ? flashscoreClock(f, now, secondHalfSeen.get(row.id)) : null;
+      // 'HT' makes the app capture the half-time score from OUR live score (first write wins, settles half-time markets): only say HT when
+      // our live score is the same as Flashscore's, so a missed goal can never be frozen in as the half-time score.
+      if (clock && clock.status === 'HT' && !(Number(row.live_home_score) === Number(f.homeScore) && Number(row.live_away_score) === Number(f.awayScore) && row.live_home_score != null && f.homeScore != null)) clock = null;
+      if (clock) {
+        const res = await pool.query(
+          `UPDATE matches_cache SET live_minute = $2, live_minute_updated_at = $3, live_status = $4
+            WHERE id = $1 AND status = 'LIVE' AND (live_minute_updated_at IS NULL OR live_minute_updated_at < $5)`,
+          [row.id, clock.minute, now, clock.status, now - 5 * 60000]
+        );
+        if (res && res.rowCount) out.clock = (out.clock || 0) + 1;
+      }
+    } catch (err) { console.error('[flashscore] clock of ' + row.id + ' failed:', err.message); }
     try {
       const q = encodeURIComponent(f.id);
       const [summary, stats] = await Promise.all([
@@ -84,7 +108,7 @@ export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.f
   return out;
 }
 let lastUnmatchedLog = 0;
-export const __resetForTests = () => { lastDetailAt.clear(); doneFinished.clear(); };
+export const __resetForTests = () => { lastDetailAt.clear(); doneFinished.clear(); secondHalfSeen.clear(); lastStage.clear(); };
 
 let lastErrAt = 0;
 export function startFlashscoreLoop() {
@@ -94,7 +118,7 @@ export function startFlashscoreLoop() {
   const tick = () => {
     if (busy) return;
     busy = true;
-    runFlashscore().then((r) => { if (r && (r.eventsAdded || r.extras)) console.log('[flashscore] ' + JSON.stringify(r)); })
+    runFlashscore().then((r) => { if (r && (r.eventsAdded || r.extras || r.clock)) console.log('[flashscore] ' + JSON.stringify(r)); })
       .catch((err) => { if (Date.now() - lastErrAt > 15 * 60000) { lastErrAt = Date.now(); console.error('[flashscore] cycle failed:', err.message); } }) // one line per 15 min, not one per cycle
       .finally(() => { busy = false; });
   };

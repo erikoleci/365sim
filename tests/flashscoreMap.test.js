@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMatchList, incidentRows, bigChances, otherStats, incidentDiag, findFlashscoreMatch } from '../server/flashscoreMap.js';
+import { parseMatchList, incidentRows, bigChances, otherStats, incidentDiag, findFlashscoreMatch, flashscoreClock } from '../server/flashscoreMap.js';
 
 const inc = (team, minute, type, name, extra = {}) => ({ team, minute: `${minute}'`, minute_number: minute, type, player: name ? { name } : null, reason: null, description: '', ...extra });
 const summary = (...incidents) => ({ periods: [{ period: '1st Half', incidents: incidents.slice(0, 2) }, { period: '2nd Half', incidents: incidents.slice(2) }] });
@@ -90,5 +90,25 @@ describe('score reference when the list has no score', () => {
   });
   it('describes what was seen', () => {
     expect(incidentDiag(summary(inc('home', 10, 'Goal', 'P'), inc('home', 20, 'Goal', 'Q')), { homeScore: 5, awayScore: 0 })).toBe('list score 5-0; 2 incidents (Goalx2)');
+  });
+});
+
+describe('Flashscore clock fallback', () => {
+  const start = Date.parse('2026-11-12T08:00:00Z');
+  const at = (min) => start + min * 60000;
+  it('1st half: minute from the kickoff, "45+" in stoppage time', () => {
+    expect(flashscoreClock({ start, stage: '1st Half' }, at(10.5))).toEqual({ status: 'live', minute: '11' });
+    expect(flashscoreClock({ start, stage: '1st Half' }, at(47))).toEqual({ status: 'live', minute: '45+' });
+  });
+  it('half time is exact from the stage', () => {
+    expect(flashscoreClock({ start, stage: 'Half Time', stageId: 38 }, at(55))).toEqual({ status: 'HT', minute: '45' });
+  });
+  it('2nd half: from the moment we saw it start, else assumed 62 min after kickoff; "90+" in stoppage', () => {
+    expect(flashscoreClock({ start, stage: '2nd Half' }, at(75), at(65))).toEqual({ status: 'live', minute: '56' });
+    expect(flashscoreClock({ start, stage: '2nd Half' }, at(72))).toEqual({ status: 'live', minute: '56' });
+    expect(flashscoreClock({ start, stage: '2nd Half' }, at(130))).toEqual({ status: 'live', minute: '90+' });
+  });
+  it('covers nothing else: finished, extra time, not started', () => {
+    for (const stage of ['Finished', 'Extra Time', 'Penalties', 'Scheduled']) expect(flashscoreClock({ start, stage }, at(100))).toBeNull();
   });
 });
