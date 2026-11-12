@@ -350,14 +350,20 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
               <StadiumPitch match={match} stats={liveDetail?.statistics ?? null} flash={cardFlash} />
             </div>
           )}
-          {isFinished && (
-            <div className="mt-2 text-xs text-brand-accent">
-              FT
-              {match.score?.htHome != null && match.score?.htAway != null ? ` | HT: ${match.score.htHome}-${match.score.htAway}` : ''}
-              {liveDetail?.statistics?.corners_home != null && liveDetail?.statistics?.corners_away != null && (liveDetail.statistics.corners_home + liveDetail.statistics.corners_away > 0)
-                ? ` | Corners: ${liveDetail.statistics.corners_home}-${liveDetail.statistics.corners_away}` : ''}
-            </div>
-          )}
+          {isFinished && (() => {
+            const ch = liveDetail?.statistics?.corners_home, ca = liveDetail?.statistics?.corners_away;
+            const chips: Array<[string, string]> = [];
+            if (match.score?.htHome != null && match.score?.htAway != null) chips.push(['HT', `${match.score.htHome} - ${match.score.htAway}`]);
+            if (ch != null && ca != null && ch + ca > 0) chips.push([t('Korne'), `${ch} - ${ca}`]);
+            return (
+              <div className="mt-2 mx-auto max-w-[560px] rounded-xl border border-white/10 px-3 py-2 flex flex-wrap items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg, #14572f, #0e3a21)' }}>
+                <span className="rounded-full bg-black/45 px-2.5 py-0.5 text-[11px] font-black tracking-wide text-brand-yellow">{t('Ndeshja mbaroi')}</span>
+                {chips.map(([k, v]) => (
+                  <span key={k} className="rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-semibold text-white/90">{k} <b className="tabular-nums text-white">{v}</b></span>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       </div>
 

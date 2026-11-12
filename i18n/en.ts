@@ -170,6 +170,8 @@ export const enCore: Record<string, string> = {
 
   // --- LivePitch (action labels come from server/liveAction.js) ---
   'Ndeshja live': 'Live match',
+  'Shanc i madh për gol': 'Big chance to score',
+  'Ndeshja mbaroi': 'Full time',
   'Karton i kuq': 'Red card',
   'Karton i verdhë': 'Yellow card',
   'Sulm i rrezikshëm': 'Dangerous attack',
