@@ -44,8 +44,6 @@ import { settleFromFallback } from './resultsFallback.js';
 import { installCpuProfileSignal } from './cpuProfiler.js';
 import { startTicketedFixtureLoop } from './london365/ticketedFixtures.js';
 import { startApiFootballLoop } from './apiFootball.js';
-import { startFlashscoreLoop } from './flashscore.js';
-import { flushVcRecorder } from './vcRecorder.js';
 import { captureHalfTimeFromGoalLog } from './halfTime.js';
 import { startClockWriteFlusher } from './clockWrites.js';
 
@@ -379,8 +377,6 @@ async function start() {
   startFeedStatsLog();
   startLondon365LiveLoop();
   startApiFootballLoop();
-  startFlashscoreLoop();
-  { const t = setInterval(() => { flushVcRecorder(pool).catch(() => {}); }, 60000); if (t.unref) t.unref(); }
   startTicketedFixtureLoop();
   installCpuProfileSignal();
   startLondon365Socket();

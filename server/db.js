@@ -211,36 +211,6 @@ export async function initDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_match_events_match ON match_events (match_id, created_at);
 
-    -- Extra match facts from the Flashscore service: big chances and first/second leg + aggregate (one row per match).
-    CREATE TABLE IF NOT EXISTS match_extra (
-      match_id TEXT PRIMARY KEY,
-      big_chances_home INTEGER,
-      big_chances_away INTEGER,
-      leg INTEGER,
-      aggregate TEXT,
-      leg_text TEXT,
-      stats_json TEXT,
-      updated_at BIGINT NOT NULL
-    );
-    ALTER TABLE match_extra ADD COLUMN IF NOT EXISTS stats_json TEXT;
-
-    -- Team crests: only the picture ADDRESS from Flashscore, keyed by our team name (see fsLogos.js).
-    CREATE TABLE IF NOT EXISTS fs_team_logos (
-      team_key TEXT PRIMARY KEY,
-      url TEXT NOT NULL,
-      updated_at BIGINT NOT NULL
-    );
-
-    -- Provider action codes we cannot decode yet (see vcRecorder.js): used to find the penalty code by itself.
-    CREATE TABLE IF NOT EXISTS vc_unmapped_seen (
-      id SERIAL PRIMARY KEY,
-      match_id TEXT NOT NULL,
-      match_name TEXT,
-      code TEXT NOT NULL,
-      at BIGINT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_vc_unmapped_match ON vc_unmapped_seen (match_id, at);
-
     -- Live in-play stats snapshot per match (one row per match, overwritten
     -- on each poll) — possession/shots/corners/xG for the live stats panel.
     CREATE TABLE IF NOT EXISTS live_statistics (

@@ -122,10 +122,6 @@ export const enCore: Record<string, string> = {
   'Korner për': 'Corner for',
   'Vendosur live': 'Booked live',
   'Fillimi i ndeshjes': 'Kick-off',
-  'Ndeshja e parë': 'First leg',
-  'Ndeshja e kthimit': 'Second leg',
-  'Gjithsej': 'Aggregate',
-  'Raste të mëdha': 'Big chances',
   'Fundi i ndeshjes': 'Full time',
   'Rezultati në fund të pjesës së parë': 'Score after first half',
   'Rezultati në fillim të pjesës së dytë': 'Score at start of second half',
@@ -170,8 +166,6 @@ export const enCore: Record<string, string> = {
 
   // --- LivePitch (action labels come from server/liveAction.js) ---
   'Ndeshja live': 'Live match',
-  'Shanc i madh për gol': 'Big chance to score',
-  'Ndeshja mbaroi': 'Full time',
   'Karton i kuq': 'Red card',
   'Karton i verdhë': 'Yellow card',
   'Sulm i rrezikshëm': 'Dangerous attack',

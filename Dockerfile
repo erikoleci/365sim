@@ -5,14 +5,6 @@ WORKDIR /app
 # Repo is managed with pnpm (pnpm-lock.yaml); enable it via corepack bundled with Node 22.
 RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
 
-# Flashscore scraper (small Python service, started by the app itself on 127.0.0.1 only; see server/flashscoreProc.js).
-# Failure-proof on purpose: if this optional step cannot be built, the image still builds and the app simply runs without Flashscore.
-COPY flashscore-service/requirements.txt /tmp/fs-requirements.txt
-RUN (apt-get update && apt-get install -y --no-install-recommends python3 python3-venv \
-      && python3 -m venv /opt/fsvenv && /opt/fsvenv/bin/pip install --no-cache-dir -r /tmp/fs-requirements.txt) \
-    || (echo "flashscore: optional Python setup failed, continuing without it" && rm -rf /opt/fsvenv); \
-    rm -rf /var/lib/apt/lists/*
-
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 

@@ -250,9 +250,6 @@ const App: React.FC = () => {
               onBetClick={slip.toggleSelection}
               selectedIds={slip.selectedIds}
             />
-          ) : nav.detailMatchId ? (
-            // a match page is being opened (refresh): wait for it instead of flashing the home screen
-            <div className="p-6 text-brand-textMuted text-sm text-center">…</div>
           ) : (
             <SportsbookHome
               currentLeague={nav.currentLeague}

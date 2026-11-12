@@ -31,19 +31,3 @@ describe('mapEventToMatch - live fields', () => {
     expect(m.currentMinuteUpdatedAt).toBeUndefined();
   });
 });
-
-describe('mapEventToMatch - finished match facts are never made up', () => {
-  const fin = (o = {}) => row({ status: 'FINISHED', result_home: 7, result_away: 1, start_time: new Date(Date.now() - 5 * 3600000).toISOString(), ...o });
-  it('no captured half-time score: no HT, and never a made-up 0-0 / corners / cards', () => {
-    const s = mapEventToMatch(fin()).score;
-    expect(s).toMatchObject({ home: 7, away: 1 });
-    expect(s.htHome).toBeUndefined();
-    expect(s.htAway).toBeUndefined();
-    expect(s.homeCorners).toBeUndefined();
-    expect(s.homeYellowCards).toBeUndefined();
-  });
-  it('a captured half-time score is passed on, including a real 0-0', () => {
-    expect(mapEventToMatch(fin({ ht_home: 0, ht_away: 0 })).score).toMatchObject({ htHome: 0, htAway: 0 });
-    expect(mapEventToMatch(fin({ ht_home: 2, ht_away: 1 })).score).toMatchObject({ htHome: 2, htAway: 1 });
-  });
-});

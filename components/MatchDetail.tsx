@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Match, MatchStatus } from '../types';
 import * as api from '../services/api';
-import type { LiveStatistics, MatchEvent, MatchExtra } from '../services/api';
+import type { LiveStatistics, MatchEvent } from '../services/api';
 import StadiumPitch from './StadiumPitch';
 import StatRings from './StatRings';
 import { useTickingClock, formatLiveClock } from './MatchCard';
@@ -72,19 +72,7 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
   // never looks frozen on whatever minute it happened to load at (e.g. "93'"
   // sitting still) between the 15s poll/socket refreshes.
   const [activeTab, setActiveTab] = useState<string>(readOnly && (match.status === MatchStatus.LIVE || match.status === MatchStatus.FINISHED) ? 'EVENTS' : 'All');
-  const [liveDetail, setLiveDetail] = useState<{ statistics: LiveStatistics | null; events: MatchEvent[]; extra?: MatchExtra | null } | null>(null);
-  // Statistics the main feed does not have (passes, tackles, fouls, saves...): printed as Flashscore gives them, text on both sides.
-  const extraStatsList = liveDetail?.extra?.stats?.length ? (
-    <div className="mt-4 space-y-2">
-      {liveDetail.extra.stats.map((s) => (
-        <div key={s.name} className="flex items-center justify-between text-xs border-b border-white/5 pb-1.5">
-          <span className="text-white font-bold tabular-nums w-1/3">{s.home}</span>
-          <span className="text-brand-textMuted text-center flex-1 uppercase">{s.name}</span>
-          <span className="text-white font-bold tabular-nums w-1/3 text-right">{s.away}</span>
-        </div>
-      ))}
-    </div>
-  ) : null;
+  const [liveDetail, setLiveDetail] = useState<{ statistics: LiveStatistics | null; events: MatchEvent[] } | null>(null);
   const [liveDetailLoading, setLiveDetailLoading] = useState(false);
   const [banner, setBanner] = useState<BannerInfo | null>(null);
   const [attackSamples, setAttackSamples] = useState<AttackSample[]>([]);
@@ -350,20 +338,13 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
               <StadiumPitch match={match} stats={liveDetail?.statistics ?? null} flash={cardFlash} />
             </div>
           )}
-          {isFinished && (() => {
-            const ch = liveDetail?.statistics?.corners_home, ca = liveDetail?.statistics?.corners_away;
-            const chips: Array<[string, string]> = [];
-            if (match.score?.htHome != null && match.score?.htAway != null) chips.push(['HT', `${match.score.htHome} - ${match.score.htAway}`]);
-            if (ch != null && ca != null && ch + ca > 0) chips.push([t('Korne'), `${ch} - ${ca}`]);
-            return (
-              <div className="mt-2 mx-auto max-w-[560px] rounded-xl border border-white/10 px-3 py-2 flex flex-wrap items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg, #14572f, #0e3a21)' }}>
-                <span className="rounded-full bg-black/45 px-2.5 py-0.5 text-[11px] font-black tracking-wide text-brand-yellow">{t('Ndeshja mbaroi')}</span>
-                {chips.map(([k, v]) => (
-                  <span key={k} className="rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-semibold text-white/90">{k} <b className="tabular-nums text-white">{v}</b></span>
-                ))}
-              </div>
-            );
-          })()}
+          {isFinished && (
+            <div className="mt-2 text-xs text-brand-accent">
+              FT
+              {match.score?.htHome != null && match.score?.htAway != null ? ` | HT: ${match.score.htHome}-${match.score.htAway}` : ''}
+              {match.score?.homeCorners != null && match.score?.awayCorners != null ? ` | Corners: ${match.score.homeCorners}-${match.score.awayCorners}` : ''}
+            </div>
+          )}
         </div>
       </div>
 
@@ -412,14 +393,6 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
          </div>
       </div>
 
-      {liveDetail?.extra && (liveDetail.extra.leg || liveDetail.extra.aggregate) && (
-        <div className="px-4 py-1.5 bg-[#2f2f2f] text-center text-[11px] text-brand-yellow font-bold border-b border-white/5">
-          {liveDetail.extra.leg === 1 ? t('Ndeshja e parë') : liveDetail.extra.leg === 2 ? t('Ndeshja e kthimit') : ''}
-          {liveDetail.extra.leg && liveDetail.extra.aggregate ? ' · ' : ''}
-          {liveDetail.extra.aggregate ? `${t('Gjithsej')} ${liveDetail.extra.aggregate}` : ''}
-          {liveDetail.extra.leg === 2 && liveDetail.extra.firstLeg ? ` · ${t('Ndeshja e parë')} ${liveDetail.extra.firstLeg}` : ''}
-        </div>
-      )}
       {/* Stats / Events / Markets Content */}
       {activeTab === 'STATS' ? (
         <div className="p-4 overflow-y-auto flex-1 bg-[#282828]">
@@ -427,15 +400,9 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
             <div className="text-center text-brand-textMuted text-xs py-8">{t('Duke ngarkuar statistikat...')}</div>
           
           ) : !liveDetail?.statistics || !STAT_FIELDS.some((k) => (liveDetail.statistics as any)[k] != null) ? (
-            liveDetail?.extra && (liveDetail.extra.bigChancesHome != null || liveDetail.extra.bigChancesAway != null || liveDetail.extra.stats?.length) ? (
-              <div>
-                {(liveDetail.extra.bigChancesHome != null || liveDetail.extra.bigChancesAway != null) && <StatBar label={t('Raste të mëdha')} home={liveDetail.extra.bigChancesHome} away={liveDetail.extra.bigChancesAway} />}
-                {extraStatsList}
-              </div>
-            ) : (
             <div className="text-center text-brand-textMuted text-xs py-8">
               {t("Statistika live s'janë të disponueshme për këtë ndeshje.")}
-            </div>)
+            </div>
           ) : (
             <div>
               <StatRings stats={liveDetail.statistics} homeName={match.homeTeam} awayName={match.awayTeam} />
@@ -445,10 +412,6 @@ const MatchDetail: React.FC<MatchDetailProps> = ({ match, leagueLabel, onClose, 
               {(liveDetail.statistics.xg_home != null || liveDetail.statistics.xg_away != null) && (
                 <div className="mt-4"><StatBar label="xG" home={liveDetail.statistics.xg_home} away={liveDetail.statistics.xg_away} /></div>
               )}
-              {liveDetail.extra && (liveDetail.extra.bigChancesHome != null || liveDetail.extra.bigChancesAway != null) && (
-                <div className="mt-4"><StatBar label={t('Raste të mëdha')} home={liveDetail.extra.bigChancesHome} away={liveDetail.extra.bigChancesAway} /></div>
-              )}
-              {extraStatsList}
             </div>
           )}
         </div>

@@ -57,7 +57,6 @@ import { isTrackedGame, getLiveRow, setLiveRow, forgetLiveRow, __resetLiveTracke
 import { bump } from './feedStats.js';
 import { captureHalfTimeScore } from './halfTime.js';
 import { observeVcFrame } from './vcDeltaSampler.js';
-import { recordUnmappedVc } from './vcRecorder.js';
 import { isHalfTimeLatched, enterHalfTime, maybeReleaseHalfTime, __resetHalfTimeLatchForTests } from './halfTimeLatch.js';
 import { queueClockWrite } from './clockWrites.js';
 import { sampleFeedKeys, recordEventFrame } from './feedKeySampler.js';
@@ -109,8 +108,8 @@ const LIVE_TICK_RESYNC_MS = 5000;
 // pitch when the following messages carry no (decodable) VC. The provider's own
 // pitch keeps showing the last action until the NEXT one arrives; clearing it after a few seconds
 // made it flash ("it shows once and goes away until the next websocket"). So it is held until a
-// newer action replaces it; this is only the safety cap for a feed that goes quiet (default 15 min).
-const ACTION_HOLD_MS = Number(process.env.LIVE_ACTION_HOLD_MS) > 0 ? Number(process.env.LIVE_ACTION_HOLD_MS) : 900000;
+// newer action replaces it; this is only the safety cap for a feed that goes quiet (default 2 min).
+const ACTION_HOLD_MS = Number(process.env.LIVE_ACTION_HOLD_MS) > 0 ? Number(process.env.LIVE_ACTION_HOLD_MS) : 120000;
 // Stoppage actions are kept on the pitch at least this long (default 8 s) before an attack / possession code may replace them.
 const ACTION_STICKY_MS = Number(process.env.LIVE_ACTION_STICKY_MS) > 0 ? Number(process.env.LIVE_ACTION_STICKY_MS) : 8000;
 const STICKY_KINDS = new Set(['corner', 'free_kick', 'injury', 'substitution', 'goal', 'penalty']);
@@ -566,8 +565,7 @@ async function applyGameDetailsNow(raw) {
   if (decodedAction && decodedAction.kind === 'penalty') setPenaltyLock(matchId, nowMs);
   else if (decodedAction || (score && (score.home !== row.live_home_score || score.away !== row.live_away_score))) clearPenaltyLock(matchId);
   recordVcSample(attrs.VC, decodedAction && decodedAction.label, { match: `${attrs.H} - ${attrs.A}`, score: attrs.SC, t: attrs.T });
-  const vcSample = observeVcFrame(eid, attrs, Boolean(decodedAction), { match: `${attrs.H} - ${attrs.A}` });
-  if (vcSample) recordUnmappedVc({ matchId, match: `${attrs.H} - ${attrs.A}`, code: attrs.VC }, nowMs); // a NEW unmapped code only (never every frame)
+  observeVcFrame(eid, attrs, Boolean(decodedAction), { match: `${attrs.H} - ${attrs.A}` });
   const vcText = String(attrs.VC ?? '').trim();
   if (vcText && !decodedAction && !unmappedVcSeen.has(vcText) && unmappedVcSeen.size < UNMAPPED_VC_CAP) {
     unmappedVcSeen.add(vcText);

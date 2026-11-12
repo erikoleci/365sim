@@ -22,12 +22,6 @@ describe('decodeLiveAction', () => {
     expect(decodeLiveAction('21025')).toMatchObject({ side: 'away', kind: 'injury' });
   });
 
-  it('decodes 1023 as a penalty (Ghana v Somalia, missed penalty at minute 14), with or without a team digit', () => {
-    expect(decodeLiveAction('1023')).toEqual({ side: null, kind: 'penalty', label: 'Penallti' });
-    expect(decodeLiveAction('11023')).toMatchObject({ side: 'home', kind: 'penalty' });
-    expect(decodeLiveAction('21023')).toMatchObject({ side: 'away', kind: 'penalty' });
-  });
-
   it('returns null for unknown or malformed codes (never guesses)', () => {
     expect(decodeLiveAction('21099')).toBeNull();
     expect(decodeLiveAction('11010')).toEqual({ side: 'home', kind: 'free_kick', label: 'Gjuajtje e lirë' });

@@ -45,7 +45,7 @@ const EventIcon: React.FC<{ kind: string }> = ({ kind }) => {
 };
 
 type Row =
-  | { kind: 'event'; key: string; minute: string; text: string; kind2: string; player?: string; out?: string; side: 'home' | 'away' | null }
+  | { kind: 'event'; key: string; minute: string; text: string; kind2: string; player?: string; side: 'home' | 'away' | null }
   | { kind: 'marker'; key: string; text: string; strong?: boolean };
 
 const MatchTimeline: React.FC<{ events: MatchEvent[]; home: string; away: string; state?: TimelineState }> = ({ events, home, away, state }) => {
@@ -85,7 +85,7 @@ const MatchTimeline: React.FC<{ events: MatchEvent[]; home: string; away: string
         text = `${ev.type === 'CORNER' ? t('Korneri') : ev.type === 'YELLOW_CARD' ? t('Karton i verdhë') : ev.type === 'RED_CARD' ? t('Karton i kuq') : t('Goli')} ${n}`;
       } else if (ev.type === 'SUBSTITUTION') text = t('Ndërrim');
       else if (ev.type === 'VAR') text = 'VAR';
-      if (text) asc.push({ kind: 'event', key: `e${i}`, minute: eventMinuteLabel(ev), text, kind2: ev.type, player: ev.player || undefined, out: ev.type === 'SUBSTITUTION' && ev.detail ? ev.detail : undefined, side: sideOf(ev.team, home, away) });
+      if (text) asc.push({ kind: 'event', key: `e${i}`, minute: eventMinuteLabel(ev), text, kind2: ev.type, player: ev.player || undefined, side: sideOf(ev.team, home, away) });
     });
     if (ht === list.length && ht != null) pushHalfMarkers();
     if (st.halftime && ht == null) asc.push({ kind: 'marker', key: 'ht-now', text: t('Pushim'), strong: true });
@@ -108,8 +108,7 @@ const MatchTimeline: React.FC<{ events: MatchEvent[]; home: string; away: string
           <div className="relative flex flex-col items-center justify-center px-3 py-2 min-w-[4.5rem] max-w-[8rem]">
             {r.side && <span className={`absolute top-1 bottom-1 w-1 rounded bg-emerald-700 ${r.side === 'home' ? 'left-0' : 'right-0'}`} />}
             <span className="font-bold text-white text-[15px] tabular-nums leading-none">{r.minute}</span>
-            {r.player && <span className="mt-1 text-center font-bold text-white/90 text-[12px] leading-snug break-words">{r.out ? <span className="text-emerald-400">↑ {r.player}</span> : r.player}</span>}
-            {r.out && <span className="text-center text-red-400 text-[12px] leading-snug break-words">↓ {r.out}</span>}
+            {r.player && <span className="mt-1 text-center font-bold text-white/90 text-[12px] leading-snug break-words">{r.player}</span>}
           </div>
           <div className="flex items-center justify-start gap-2 pl-2 py-1.5 text-white">
             {r.side !== 'home' && <>{r.side === 'away' && <EventIcon kind={r.kind2} />}<span className="leading-tight">{r.text}</span></>}

@@ -327,9 +327,7 @@ export function mapEventToMatch(row) {
       ? Number(row.live_minute_updated_at) : undefined,
     liveStatus: row.live_status ?? undefined,
     score: status === 'FINISHED' && row.result_home !== null && row.result_away !== null
-      // Half-time score only when it was really captured (ht_home / ht_away); corners and cards are NOT stored on the match row, so they are left
-      // out instead of being shown as a made-up 0-0 (the page reads real corners from the live statistics when they exist).
-      ? { home: row.result_home, away: row.result_away, htHome: row.ht_home ?? undefined, htAway: row.ht_away ?? undefined, scorers: [] }
+      ? { home: row.result_home, away: row.result_away, htHome: 0, htAway: 0, homeYellowCards: 0, awayYellowCards: 0, homeCorners: 0, awayCorners: 0, scorers: [] }
       : undefined,
   };
 }

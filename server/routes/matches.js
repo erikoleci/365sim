@@ -1,5 +1,3 @@
-import { loadTieInfo, hasToQualify } from '../tieLeg.js';
-import { getFsLogoMap } from '../fsLogos.js';
 import { reconcileEvents } from '../eventReconcile.js';
 import express from 'express';
 import { gzip as gzipCb } from 'zlib';
@@ -305,12 +303,6 @@ async function buildLiveList() {
   }
   return { matches: dedupeMatches(matches, logMerge) };
 }
-// Team crests from Flashscore ({ team key: address }); the browser loads the pictures itself.
-router.get('/team-logos', wrap(async (_req, res) => {
-  const body = await getFsLogoMap({ query: queryWithRetry });
-  res.set('Cache-Control', 'public, max-age=300');
-  res.json(body);
-}));
 router.get('/live', wrap(async (_req, res) => {
   if (liveListCache && Date.now() - liveListCache.at < LIVE_LIST_TTL_MS) return res.json(liveListCache.body);
   if (!liveListInflight) {
@@ -403,27 +395,7 @@ async function buildLiveDetail(reqId) {
         return e;
       })
     : shownEvents;
-  // Extras: big chances (optional Flashscore service) + first/second leg from OUR coupon ("To qualify" market) and our stored results.
-  let extra = null;
-  try {
-    const { rows: ex } = await queryWithRetry('SELECT big_chances_home, big_chances_away, stats_json FROM match_extra WHERE match_id = $1', [mid]);
-    if (ex[0]) {
-      let stats = null;
-      try { stats = ex[0].stats_json ? JSON.parse(ex[0].stats_json) : null; } catch { /* ignore */ }
-      extra = { bigChancesHome: ex[0].big_chances_home, bigChancesAway: ex[0].big_chances_away, stats, leg: null, aggregate: null, legText: null };
-    }
-  } catch { /* table not there yet: no big chances */ }
-  try {
-    // the pre-match record (the one with the coupon) is reqId's own row; the twin only holds the live score
-    const coupon = own.rows[0]; // already loaded above: no extra database query
-    if (coupon && hasToQualify(coupon.raw_json)) {
-      const sc = cache && cache.live_home_score != null && cache.live_away_score != null ? { home: Number(cache.live_home_score), away: Number(cache.live_away_score) }
-        : coupon.result_home != null && coupon.result_away != null ? { home: Number(coupon.result_home), away: Number(coupon.result_away) } : null;
-      const tie = await loadTieInfo(queryWithRetry, coupon, sc);
-      if (tie) extra = { bigChancesHome: null, bigChancesAway: null, stats: null, ...(extra || {}), leg: tie.leg, aggregate: tie.aggregate, firstLeg: tie.firstLeg, legText: tie.legText };
-    }
-  } catch { /* no tie info */ }
-  return { statistics, events: sideEvents, extra, last_updated: lastUpdated };
+  return { statistics, events: sideEvents, last_updated: lastUpdated };
 }
 router.get('/:id/live-detail', wrap(async (req, res) => {
   const id = req.params.id;

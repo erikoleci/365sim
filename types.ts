@@ -52,13 +52,12 @@ export interface Market {
 export interface MatchScore {
   home: number;
   away: number;
-  /** Only present when really known (half-time score captured at the whistle); never a made-up 0-0. */
-  htHome?: number;
-  htAway?: number;
-  homeYellowCards?: number;
-  awayYellowCards?: number;
-  homeCorners?: number;
-  awayCorners?: number;
+  htHome: number;
+  htAway: number;
+  homeYellowCards: number;
+  awayYellowCards: number;
+  homeCorners: number;
+  awayCorners: number;
   scorers: string[];
 }
 

@@ -247,8 +247,7 @@ export interface MatchEvent {
   half?: number | null;
 }
 
-export interface MatchExtra { bigChancesHome: number | null; bigChancesAway: number | null; stats?: { name: string; home: string; away: string }[] | null; leg: number | null; aggregate: string | null; firstLeg?: string | null; legText: string | null }
-type LiveDetail = { statistics: LiveStatistics | null; events: MatchEvent[]; extra?: MatchExtra | null };
+type LiveDetail = { statistics: LiveStatistics | null; events: MatchEvent[] };
 const liveDetailPrefetch = new Map<string, { at: number; promise: Promise<LiveDetail> }>();
 
 // The finger is on a match: start downloading its events and statistics now, so they are there when the page opens.

@@ -3,309 +3,389 @@ import { Match, MatchStatus } from '../types';
 import type { LiveStatistics } from '../services/api';
 import { formatLiveStatus, isHalftime, formatScore, pickClockSource } from '../utils/liveStatus';
 import { useTickingClock, formatLiveClock } from './MatchCard';
-import { CardIcon } from './PitchIcons';
+import { BallIcon, CornerFlagIcon, CardIcon, OffsideFlagIcon } from './PitchIcons';
 import { useI18n } from '../i18n';
 import TeamLogo from './TeamLogo';
 
 interface LivePitchProps {
   match: Match;
   stats: LiveStatistics | null;
-  // A card that has just been shown by the referee (from the live CARD message); the parent clears it after a few seconds.
+  // A card that has just been shown by the referee (from the live CARD
+  // message); the parent clears it after a few seconds.
   flash?: { kind: 'YELLOW_CARD' | 'RED_CARD'; team: 'home' | 'away' } | null;
-  // The small floating copy: no team pills, no text tag, just the pitch, the animation, the clock and the score.
-  compact?: boolean;
 }
 
 type Action = NonNullable<Match['liveAction']>;
 
-// The pitch is drawn in a wide 110 x 56 box (a stylised, flatter pitch: wider than tall so the markets stay close).
-// The home team attacks to the RIGHT, the away team to the LEFT. Nothing is invented: every effect comes from the
-// decoded provider action; without one the pitch only shows the clock and the possession bar.
-const W = 110;
-const H = 56;
+// Everything the pitch draws for one action. The home team attacks to the
+// RIGHT, the away team to the LEFT (same as the provider's pitch). All
+// numbers are percentages of the pitch.
+interface Scene {
+  ball: { x: number; y: number } | null;
+  zone: { side: 'left' | 'right'; depth: number; tone: 'attack' | 'danger' | 'calm' } | null;
+  corner: { x: number } | null;      // x of the corner wedge (0 or 100)
+  offsideX: number | null;           // x of the offside line
+  label: { x: number; align: 'left' | 'right' | 'center' };
+  pulse: boolean;
+}
+
+function sceneFor(action: Action): Scene {
+  const home = action.side === 'home';
+  const none = action.side == null;
+  switch (action.kind) {
+    case 'dangerous_attack':
+      return { ball: none ? null : { x: home ? 87 : 13, y: 60 }, zone: none ? null : { side: home ? 'right' : 'left', depth: 28, tone: 'danger' }, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 72 : 28, align: home ? 'right' : 'left' }, pulse: true };
+    case 'attack':
+      return { ball: none ? null : { x: home ? 72 : 28, y: 62 }, zone: none ? null : { side: home ? 'right' : 'left', depth: 50, tone: 'attack' }, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: 50, align: home ? 'right' : 'left' }, pulse: false };
+    case 'possession':
+      return { ball: none ? null : { x: home ? 36 : 64, y: 66 }, zone: none ? null : { side: home ? 'left' : 'right', depth: 45, tone: 'calm' }, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 47 : 53, align: home ? 'left' : 'right' }, pulse: false };
+    case 'corner':
+      return { ball: none ? null : { x: home ? 97 : 3, y: 93 }, zone: null, corner: none ? null : { x: home ? 100 : 0 }, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 72 : 28, align: home ? 'right' : 'left' }, pulse: true };
+    case 'offside':
+      return { ball: none ? null : { x: home ? 70 : 30, y: 68 }, zone: null, corner: null, offsideX: none ? null : (home ? 78 : 22), label: none ? { x: 50, align: 'center' } : { x: home ? 76 : 24, align: home ? 'right' : 'left' }, pulse: false };
+    case 'back_line_restart':
+      return { ball: none ? null : { x: home ? 8 : 92, y: 62 }, zone: none ? null : { side: home ? 'left' : 'right', depth: 18, tone: 'calm' }, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 22 : 78, align: home ? 'left' : 'right' }, pulse: false };
+    case 'throw_in':
+      return { ball: none ? null : { x: home ? 78 : 22, y: 93 }, zone: null, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 78 : 22, align: home ? 'right' : 'left' }, pulse: false };
+    case 'shot_on_target':
+      return { ball: none ? null : { x: home ? 93 : 7, y: 50 }, zone: none ? null : { side: home ? 'right' : 'left', depth: 22, tone: 'danger' }, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 72 : 28, align: home ? 'right' : 'left' }, pulse: true };
+    case 'free_kick': // foul: the ball is set in the attacking half of the team that won the free kick
+      return { ball: none ? null : { x: home ? 68 : 32, y: 55 }, zone: none ? null : { side: home ? 'right' : 'left', depth: 36, tone: 'attack' }, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 66 : 34, align: home ? 'right' : 'left' }, pulse: true };
+    case 'goal': // ball in the net, the zone at that goal lights up
+      return { ball: none ? null : { x: home ? 98 : 2, y: 50 }, zone: none ? null : { side: home ? 'right' : 'left', depth: 20, tone: 'danger' }, corner: null, offsideX: null, label: none ? { x: 50, align: 'center' } : { x: home ? 72 : 28, align: home ? 'right' : 'left' }, pulse: true };
+    case 'substitution':
+    case 'injury':
+    case 'half_time': // no ball, no team: just the centred label
+      return { ball: null, zone: null, corner: null, offsideX: null, label: { x: 50, align: 'center' }, pulse: false };
+    default:
+      return { ball: null, zone: null, corner: null, offsideX: null, label: { x: 50, align: 'center' }, pulse: false };
+  }
+}
+
+// Light on the grass: a soft white glow for attacks, a hot red one for real
+// chances, a faint shade for quiet play. Always strongest at the goal it points to.
+const ZONE_BG: Record<'attack' | 'danger' | 'calm', (toRight: boolean) => string> = {
+  attack: (r) => `linear-gradient(to ${r ? 'right' : 'left'}, rgba(255,255,255,0), rgba(255,255,255,0.17))`,
+  danger: (r) => `linear-gradient(to ${r ? 'right' : 'left'}, rgba(255,240,205,0), rgba(255,240,205,0.30))`,
+  calm: (r) => `linear-gradient(to ${r ? 'right' : 'left'}, rgba(0,0,0,0), rgba(0,0,0,0.15))`,
+};
+
+// Chevrons that run toward the goal being attacked.
+const chevrons = (color: string) =>
+  `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='34' height='34' viewBox='0 0 34 34'%3E%3Cpath d='M11 8l9 9-9 9' fill='none' stroke='${color}' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`;
+const CHEVRONS_WHITE = chevrons('white');
+const CHEVRONS_HOT = chevrons('%23ff5a3c');
+
+const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
 const YELLOW = '#ffdf1b';
 const HOT = '#ff5a3c';
-const LINE = 'rgba(255,255,255,0.8)';
 
-type Fx = {
-  path: string;            // ball flight, in the home (left-to-right) direction
-  tone: 'attack' | 'danger' | 'calm';
-  dur: number;             // seconds per loop
-  zoneDepth: number;       // % of pitch width lit in front of the goal
-  target?: { x: number; y: number }; // ring on the spot (free kick / penalty)
-  burst?: boolean;         // goal-mouth shockwave
-  curve?: boolean;
-  big?: string;            // big centre banner text key
-  offside?: number;        // x of the offside line
-  touch?: boolean;         // throw-in: arrow on the touchline
-  arrows?: boolean;        // attack: waves of chevrons running at the goal (no dashed trail)
-  wall?: number;           // free kick: x of the defensive wall
-  nodes?: Array<[number, number]>; // possession: the pass points
-};
+// Turf: floodlit centre, darker towards the touchlines.
+const TURF = 'radial-gradient(120% 95% at 50% 38%, #3fae66 0%, #2c8f50 52%, #1d6a3a 100%)';
+const STRIPES = 'repeating-linear-gradient(90deg, rgba(255,255,255,0.045) 0 8.333%, rgba(0,0,0,0.055) 8.333% 16.666%)';
+const VIGNETTE = 'radial-gradient(130% 120% at 50% 45%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.38) 100%)';
 
-const FX: Record<string, Fx> = {
-  attack: { path: 'M38 34 L84 28', tone: 'attack', dur: 2.4, zoneDepth: 45, arrows: true },
-  dangerous_attack: { path: 'M64 38 L101 28', tone: 'danger', dur: 1.2, zoneDepth: 32, burst: true, arrows: true },
-  corner: { path: 'M106 53 Q99 18 94 27', tone: 'attack', dur: 2, zoneDepth: 28, curve: true },
-  free_kick: { path: 'M76 30 Q92 12 106 26', tone: 'attack', dur: 1.9, zoneDepth: 34, target: { x: 76, y: 30 }, curve: true, wall: 88 },
-  penalty: { path: 'M96 28 L106 25', tone: 'danger', dur: 1.3, zoneDepth: 20, target: { x: 96, y: 28 }, burst: true, big: 'Penallti' },
-  shot_on_target: { path: 'M84 34 L106 26', tone: 'danger', dur: 1.2, zoneDepth: 26, burst: true },
-  big_chance: { path: 'M86 36 L106 27', tone: 'danger', dur: 1.1, zoneDepth: 28, burst: true, big: 'Shanc i madh për gol' },
-  throw_in: { path: 'M80 54 Q80 42 88 39', tone: 'attack', dur: 1.8, zoneDepth: 0, touch: true },
-  back_line_restart: { path: 'M9 28 Q28 8 50 24', tone: 'calm', dur: 2.2, zoneDepth: 0 },
-  offside: { path: 'M62 36 L76 28', tone: 'attack', dur: 1.6, zoneDepth: 0, offside: 78 },
-  possession: { path: 'M30 38 L44 24 L58 36 L70 26', tone: 'calm', dur: 3.2, zoneDepth: 0, nodes: [[30, 38], [44, 24], [58, 36], [70, 26]] },
-  goal: { path: 'M92 30 L107 28', tone: 'danger', dur: 1.4, zoneDepth: 22, burst: true, big: 'Gol' },
-};
-
-const ZONE_BG = (tone: Fx['tone'], toRight: boolean) => {
-  const c = tone === 'danger' ? '255,45,30' : '255,255,255';
-  const a = tone === 'danger' ? 0.26 : 0.16;
-  return `linear-gradient(to ${toRight ? 'right' : 'left'}, rgba(${c},0), rgba(${c},${a}))`;
-};
-
-// Turf: deep floodlit green with a soft centre glow and mowing stripes.
-const TURF = 'radial-gradient(110% 130% at 50% 40%, #2fa05a 0%, #1f7d45 55%, #14572f 100%)';
-const STRIPES = 'repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0 8.333%, rgba(0,0,0,0.06) 8.333% 16.666%)';
-const VIGNETTE = 'radial-gradient(130% 140% at 50% 45%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.42) 100%)';
+// A real 105 x 68 m pitch drawn in a 110 x 73 box (2.5 units of run-off all
+// round, goals sit in the run-off), so circles are circles at any width.
+const LINE = 'rgba(255,255,255,0.78)';
 
 const PitchLines: React.FC = () => {
   const uid = useId().replace(/:/g, '');
-  const goals = [{ front: 2.5, back: 0.2 }, { front: 107.5, back: 109.8 }];
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 w-full h-full" aria-hidden="true">
-      <defs>
-        <pattern id={`net-${uid}`} width="0.55" height="0.55" patternUnits="userSpaceOnUse">
-          <path d="M0 0L0.55 0.55M0.55 0L0 0.55" stroke="rgba(255,255,255,0.7)" strokeWidth="0.07" fill="none" />
-        </pattern>
-      </defs>
-      <g fill="none" stroke={LINE} strokeWidth="0.34" strokeLinejoin="round">
-        <rect x="2.5" y="2" width="105" height="52" rx="0.6" />
-        <line x1="55" y1="2" x2="55" y2="54" />
-        <ellipse cx="55" cy="28" rx="8" ry="7.6" />
-        <rect x="2.5" y="12.6" width="15.5" height="30.8" />
-        <rect x="92" y="12.6" width="15.5" height="30.8" />
-        <rect x="2.5" y="21" width="5.4" height="14" />
-        <rect x="102.1" y="21" width="5.4" height="14" />
-        <path d="M18 22.6 A7.6 7.2 0 0 1 18 33.4" />
-        <path d="M92 22.6 A7.6 7.2 0 0 0 92 33.4" />
+  <svg viewBox="0 0 110 73" className="absolute inset-0 w-full h-full" aria-hidden="true">
+    <defs>
+      <pattern id={`net-${uid}`} width="0.55" height="0.55" patternUnits="userSpaceOnUse">
+        <path d="M0 0L0.55 0.55M0.55 0L0 0.55" stroke="rgba(255,255,255,0.7)" strokeWidth="0.07" fill="none" />
+      </pattern>
+    </defs>
+    <g fill="none" stroke={LINE} strokeWidth="0.38" strokeLinejoin="round">
+      <rect x="2.5" y="2.5" width="105" height="68" />
+      <line x1="55" y1="2.5" x2="55" y2="70.5" />
+      <circle cx="55" cy="36.5" r="9.15" />
+      {/* penalty areas, six-yard boxes, penalty arcs */}
+      <rect x="2.5" y="16.34" width="16.5" height="40.32" />
+      <rect x="91" y="16.34" width="16.5" height="40.32" />
+      <rect x="2.5" y="27.34" width="5.5" height="18.32" />
+      <rect x="102" y="27.34" width="5.5" height="18.32" />
+      <path d="M19 29.19 A9.15 9.15 0 0 1 19 43.81" />
+      <path d="M91 29.19 A9.15 9.15 0 0 0 91 43.81" />
+      {/* corner arcs */}
+      <path d="M3.5 2.5 A1 1 0 0 1 2.5 3.5" />
+      <path d="M106.5 2.5 A1 1 0 0 0 107.5 3.5" />
+      <path d="M3.5 70.5 A1 1 0 0 0 2.5 69.5" />
+      <path d="M106.5 70.5 A1 1 0 0 1 107.5 69.5" />
+    </g>
+    <g fill={LINE}>
+      <circle cx="55" cy="36.5" r="0.55" />
+      <circle cx="13.5" cy="36.5" r="0.5" />
+      <circle cx="96.5" cy="36.5" r="0.5" />
+    </g>
+    {/* goals in the run-off: posts, crossbar and a net that narrows towards the back (seen from above, in perspective) */}
+    {[{ front: 2.5, back: 0.15 }, { front: 107.5, back: 109.85 }].map((g, i) => (
+      <g key={i}>
+        <polygon points={`${g.front},32.84 ${g.back},33.7 ${g.back},39.3 ${g.front},40.16`} fill={`url(#net-${uid})`} stroke="rgba(255,255,255,0.75)" strokeWidth="0.22" strokeLinejoin="round" />
+        <polygon points={`${g.front},32.84 ${g.back},33.7 ${g.back},39.3 ${g.front},40.16`} fill="rgba(0,0,0,0.22)" />
+        <line x1={g.front} y1="32.84" x2={g.front} y2="40.16" stroke="#fff" strokeWidth="0.42" strokeLinecap="round" />
+        <circle cx={g.front} cy="32.84" r="0.36" fill="#fff" />
+        <circle cx={g.front} cy="40.16" r="0.36" fill="#fff" />
       </g>
-      <g fill={LINE}>
-        <circle cx="55" cy="28" r="0.5" />
-        <circle cx="13" cy="28" r="0.45" />
-        <circle cx="97" cy="28" r="0.45" />
-      </g>
-      {goals.map((g, i) => (
-        <g key={i}>
-          <polygon points={`${g.front},24.4 ${g.back},25.2 ${g.back},30.8 ${g.front},31.6`} fill={`url(#net-${uid})`} stroke="rgba(255,255,255,0.8)" strokeWidth="0.2" />
-          <line x1={g.front} y1="24.4" x2={g.front} y2="31.6" stroke="#fff" strokeWidth="0.45" strokeLinecap="round" />
-        </g>
-      ))}
-    </svg>
+    ))}
+  </svg>
   );
 };
 
-// The moving picture of the action: ball flight with a glowing trail, spot rings, goal shockwave.
-const ActionFx: React.FC<{ kind: string; home: boolean; fx: Fx }> = React.memo(({ kind, home, fx }) => {
-  const hot = fx.tone === 'danger';
-  const col = hot ? HOT : '#ffffff';
-  const mirror = home ? '' : `translate(${W} 0) scale(-1 1)`;
-  const gx = 107.5;
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 w-full h-full z-[5] pointer-events-none" aria-hidden="true">
-      <g transform={mirror}>
-        {/* shockwave at the goal mouth */}
-        {fx.burst && [0, 0.5, 1].map((d) => (
-          <circle key={d} cx={gx} cy="28" r="3" fill="none" stroke={col} strokeWidth="0.5" style={{ transformOrigin: `${gx}px 28px`, transformBox: 'view-box' as never, animation: `fx-shock 1.5s ease-out ${d}s infinite` }} />
-        ))}
-        {/* spot ring (free kick / penalty) */}
-        {fx.target && (
-          <g style={{ transformOrigin: `${fx.target.x}px ${fx.target.y}px`, animation: 'fx-pulse 1s ease-in-out infinite' }}>
-            <circle cx={fx.target.x} cy={fx.target.y} r="2.2" fill="none" stroke={YELLOW} strokeWidth="0.5" />
-            <circle cx={fx.target.x} cy={fx.target.y} r="0.7" fill={YELLOW} />
-          </g>
-        )}
-        {/* the trail: glow underneath, dashed line running along the flight */}
-        {fx.arrows ? (
-          // waves of chevrons run at the goal: a real "attack" look, not a ball arc
-          [0, 1, 2].map((r) => [0, 1, 2].map((c) => (
-            <path key={`${r}-${c}`} d={`M${30 + c * 11} ${16 + r * 12} l4 3.4 l-4 3.4`} fill="none" stroke={col} strokeWidth={hot ? 1.3 : 1} strokeLinecap="round" strokeLinejoin="round" style={{ animation: `fx-run ${hot ? 0.7 : 1.1}s ease-in ${(c * 0.16 + r * 0.07).toFixed(2)}s infinite` }} />
-          )))
-        ) : fx.nodes ? (
-          <g>
-            <polyline points={fx.nodes.map((n) => n.join(',')).join(' ')} fill="none" stroke="rgba(255,255,255,0.55)" strokeWidth="0.35" />
-            {fx.nodes.map(([x, y], i) => <circle key={i} cx={x} cy={y} r="1.1" fill="none" stroke="#fff" strokeWidth="0.4" style={{ transformOrigin: `${x}px ${y}px`, animation: `fx-pulse 1.2s ease-in-out ${i * 0.25}s infinite` }} />)}
-          </g>
-        ) : (
-          <>
-            <path d={fx.path} fill="none" stroke={col} strokeWidth="2.6" strokeLinecap="round" opacity="0.2" />
-            <path d={fx.path} fill="none" stroke={col} strokeWidth="0.7" strokeLinecap="round" strokeDasharray={fx.wall != null ? undefined : '2 1.8'} />
-          </>
-        )}
-        {fx.wall != null && [-4.5, -1.5, 1.5, 4.5].map((dy, i) => (
-          <rect key={i} x={fx.wall! - 0.6} y={28 + dy - 1.2} width="1.2" height="2.4" rx="0.6" fill="#fff" opacity="0.9" style={{ animation: `fx-pulse 0.8s ease-in-out ${i * 0.1}s infinite`, transformOrigin: `${fx.wall}px ${28 + dy}px` }} />
-        ))}
-        {/* the ball, flying along the path */}
-        <g>
-          <ellipse rx="1.5" ry="0.55" fill="rgba(0,0,0,0.4)" transform="translate(0 1.9)">
-            <animateMotion dur={`${fx.dur}s`} repeatCount="indefinite" path={fx.path} calcMode="spline" keyTimes="0;1" keySplines="0.35 0 0.25 1" />
-          </ellipse>
-          <circle r="1.55" fill="#fff" stroke="#1b1d22" strokeWidth="0.35">
-            <animateMotion dur={`${fx.dur}s`} repeatCount="indefinite" path={fx.path} calcMode="spline" keyTimes="0;1" keySplines="0.35 0 0.25 1" />
-          </circle>
-        </g>
-        {fx.offside != null && (
-          <g>
-            <line x1={fx.offside} y1="2" x2={fx.offside} y2="54" stroke="#fff" strokeWidth="0.5" strokeDasharray="2 1.6" />
-            <path d={`M${fx.offside} 3 l5 1.8 l-5 1.8z`} fill={YELLOW} />
-          </g>
-        )}
-        {fx.touch && (
-          <g style={{ animation: 'fx-pulse 0.9s ease-in-out infinite', transformOrigin: '80px 54px' }}>
-            <path d="M74 54 h12" stroke={YELLOW} strokeWidth="0.9" strokeLinecap="round" />
-            <circle cx="80" cy="54" r="1.6" fill="none" stroke={YELLOW} strokeWidth="0.5" />
-          </g>
-        )}
-        {kind === 'corner' && (
-          <g style={{ transformOrigin: '106.4px 52.6px', animation: 'fx-wave 0.9s ease-in-out infinite' }}>
-            <line x1="106.4" y1="52.6" x2="106.4" y2="47.6" stroke="#fff" strokeWidth="0.4" />
-            <path d="M106.4 47.6 l-3.4 1.4 l3.4 1.4z" fill={YELLOW} />
-          </g>
-        )}
-        {kind === 'goal' && [0, 1, 2, 3, 4, 5].map((i) => (
-          <circle key={i} cx={gx - 4} cy="28" r="0.7" fill={i % 2 ? YELLOW : '#fff'} style={{ ['--dx' as never]: `${-10 - i * 2}px`, ['--dy' as never]: `${(i - 2.5) * 7}px`, animation: `fx-spark 1.2s ease-out ${i * 0.07}s infinite` }} />
-        ))}
-      </g>
-    </svg>
-  );
-});
+// Players: drawn as small figures that stand in formation and slide with the play (the whole block shifts toward the ball,
+// the nearest man of the team on the ball steps up to it). Decorative: the feed has no player positions.
+type Role = 'gk' | 'def' | 'mid' | 'fwd';
+const SHIFT: Record<Role, number> = { gk: 0.08, def: 0.55, mid: 0.9, fwd: 1 };
+// home attacks to the right
+const HOME_FORMATION: Array<[number, number, Role]> = [
+  [6, 50, 'gk'], [20, 15, 'def'], [20, 38, 'def'], [20, 62, 'def'], [20, 85, 'def'],
+  [38, 16, 'mid'], [38, 39, 'mid'], [38, 61, 'mid'], [38, 84, 'mid'], [55, 36, 'fwd'], [55, 64, 'fwd'],
+];
+const AWAY_FORMATION: Array<[number, number, Role]> = [
+  [94, 50, 'gk'], [80, 17, 'def'], [80, 39, 'def'], [80, 61, 'def'], [80, 83, 'def'],
+  [64, 26, 'mid'], [64, 50, 'mid'], [64, 74, 'mid'], [46, 22, 'fwd'], [45, 50, 'fwd'], [46, 78, 'fwd'],
+];
+const KITS = {
+  home: { shirt: '#f4f6f8', shorts: '#e4e8ee', socks: '#f4f6f8', trim: '#c9ced6' },
+  away: { shirt: '#24262c', shorts: '#16171b', socks: '#24262c', trim: '#ffdf1b' },
+  homeGk: { shirt: '#3ee05a', shorts: '#1a6b2c', socks: '#1a6b2c', trim: '#c9ffd2' },
+  awayGk: { shirt: '#ffb21e', shorts: '#7a4a00', socks: '#7a4a00', trim: '#fff0c4' },
+};
 
-const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash, compact }) => {
+const Player: React.FC<{ kit: typeof KITS.home }> = ({ kit }) => (
+  <svg viewBox="0 0 14 28" className="w-full h-full overflow-visible" aria-hidden="true">
+    <ellipse cx="7" cy="26.6" rx="5.6" ry="1.7" fill="rgba(0,0,0,0.38)" />
+    <rect x="4.7" y="15.5" width="2" height="9.6" rx="0.9" fill="#d9a77d" />
+    <rect x="7.3" y="15.5" width="2" height="9.6" rx="0.9" fill="#d9a77d" />
+    <rect x="4.5" y="21" width="2.4" height="4.4" rx="1" fill={kit.socks} />
+    <rect x="7.1" y="21" width="2.4" height="4.4" rx="1" fill={kit.socks} />
+    <path d="M3.9 12.4h6.2l.5 5H3.4z" fill={kit.shorts} />
+    <rect x="2.9" y="5" width="8.2" height="8.6" rx="2.6" fill={kit.shirt} />
+    <rect x="2.9" y="9.6" width="8.2" height="1" fill={kit.trim} opacity="0.7" />
+    <rect x="1.2" y="5.8" width="2" height="7" rx="1" fill="#d9a77d" />
+    <rect x="10.8" y="5.8" width="2" height="7" rx="1" fill="#d9a77d" />
+    <circle cx="7" cy="3.3" r="2.5" fill="#e3b48a" />
+    <path d="M4.6 3.1a2.4 2.4 0 0 1 4.8 0c-.9-.9-3.9-.9-4.8 0z" fill="#2b2118" />
+  </svg>
+);
+
+const Players: React.FC<{ ball: { x: number; y: number } | null; side: 'home' | 'away' | null | undefined }> = ({ ball, side }) => {
+  const shift = ball ? (ball.x - 50) * 0.38 : 0;
+  const place = (team: 'home' | 'away') => {
+    const formation = team === 'home' ? HOME_FORMATION : AWAY_FORMATION;
+    const list = formation.map(([bx, by, role]) => ({ x: Math.min(95, Math.max(5, bx + shift * SHIFT[role])), y: by, role }));
+    if (ball && side === team) {
+      // the man closest to the ball (not the keeper) steps up to it
+      let best = -1, bestD = Infinity;
+      list.forEach((p, i) => { if (p.role === 'gk') return; const d = Math.hypot(p.x - ball.x, (p.y - ball.y) * 0.7); if (d < bestD) { bestD = d; best = i; } });
+      if (best >= 0) list[best] = { ...list[best], x: ball.x + (team === 'home' ? -2.6 : 2.6), y: Math.min(94, Math.max(8, ball.y + 1.5)) };
+    }
+    return list;
+  };
+  return (
+    <>
+      {(['home', 'away'] as const).flatMap((team) => place(team).map((p, i) => (
+        <div
+          key={`${team}-${i}`}
+          className="absolute pointer-events-none"
+          style={{
+            left: `${p.x}%`, top: `${p.y}%`, width: '2.5%', aspectRatio: '1 / 2',
+            transform: 'translate(-50%, -88%)',
+            zIndex: 2 + Math.floor(p.y / 14),
+            transition: `left 1400ms ${EASE}, top 1400ms ${EASE}`,
+          }}
+        >
+          <Player kit={p.role === 'gk' ? (team === 'home' ? KITS.homeGk : KITS.awayGk) : KITS[team]} />
+        </div>
+      )))}
+    </>
+  );
+};
+
+// Live pitch. Everything drawn here comes from a decoded provider action or
+// real stats; with no known action the pitch just shows the clock and the
+// possession bar -- nothing is invented.
+const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
   const { t } = useI18n();
   const isLive = match.status === MatchStatus.LIVE;
   const clockSrc = pickClockSource(match, stats);
-  const liveClock = useTickingClock(isLive ? clockSrc.raw : undefined, clockSrc.stamp, isLive && !isHalftime(match), clockSrc.estimated);
+  const liveClock = useTickingClock(
+    isLive ? clockSrc.raw : undefined,
+    clockSrc.stamp,
+    isLive && !isHalftime(match),
+    clockSrc.estimated
+  );
   if (!isLive) return null;
 
   const halftime = isHalftime(match);
-  const action: Action | null = !halftime && match.liveAction ? match.liveAction : null;
-  const fx = action ? FX[action.kind] ?? null : null;
-  const home = action?.side === 'home';
-  const hasSide = action?.side === 'home' || action?.side === 'away';
-  const showFx = !!(fx && hasSide);
+  const action = !halftime && match.liveAction ? match.liveAction : null;
+  const scene = action ? sceneFor(action) : null;
   const clockLabel = formatLiveClock(liveClock);
   const hasPoss = stats?.possession_home != null;
   const possHome = stats?.possession_home ?? 50;
   const possAway = stats?.possession_away ?? (100 - possHome);
-  const teamName = action && hasSide ? (home ? match.homeTeam : match.awayTeam) : null;
-  const hot = fx?.tone === 'danger';
+  const teamName = action && action.side ? (action.side === 'home' ? match.homeTeam : match.awayTeam) : null;
+
+  const zone = scene?.zone ?? null;
+  const toRight = zone?.side === 'right';
+  const hot = action?.kind === 'dangerous_attack' || action?.kind === 'shot_on_target';
   const accent = hot ? HOT : YELLOW;
-  const bigText = showFx && fx?.big ? t(fx.big) : null;
+  const labelTransform = scene?.label.align === 'right' ? 'translate(calc(-100% - 10px), -50%)'
+    : scene?.label.align === 'left' ? 'translate(10px, -50%)' : 'translate(-50%, -50%)';
+  const chevrons = zone && zone.tone !== 'calm';
   const homeGoals = formatScore(match.liveHomeScore);
   const awayGoals = formatScore(match.liveAwayScore);
 
   return (
     <div
-      className="relative w-full mx-auto max-w-[560px] aspect-[110/56] rounded-xl overflow-hidden select-none ring-1 ring-white/10 shadow-[0_12px_30px_-14px_rgba(0,0,0,0.9)]"
+      className="relative w-full mx-auto max-w-[400px] aspect-[110/73] rounded-xl overflow-hidden select-none ring-1 ring-black/50 shadow-[0_14px_34px_-14px_rgba(0,0,0,0.85)]"
       style={{ background: TURF }}
       role="img"
       aria-label={halftime ? t('Pushim') : action ? `${teamName ? teamName + ': ' : ''}${t(action.label)}` : t('Ndeshja live')}
     >
+      {/* mowing stripes + floodlight falloff */}
       <div className="absolute inset-0" style={{ background: STRIPES }} />
 
-      {/* light in front of the goal that is being attacked */}
-      {showFx && fx && (
+      {/* attack zone: slides/widens smoothly, soft curved inner edge, chevrons run toward the goal */}
+      <div
+        className="absolute top-0 bottom-0 overflow-hidden"
+        style={{
+          [toRight ? 'right' : 'left']: 0,
+          width: zone ? `${zone.depth}%` : '0%',
+          opacity: zone ? 1 : 0,
+          background: zone ? ZONE_BG[zone.tone](toRight) : 'transparent',
+          borderRadius: toRight ? '55% 0 0 55% / 50% 0 0 50%' : '0 55% 55% 0 / 0 50% 50% 0',
+          transition: `width 900ms ${EASE}, opacity 500ms ease`,
+          boxShadow: zone?.tone === 'danger' ? `inset ${toRight ? '-' : ''}26px 0 30px -14px rgba(255,70,40,0.5)` : undefined,
+          animation: zone?.tone === 'danger' ? 'pitch-heat 1.5s ease-in-out infinite' : undefined,
+        }}
+      >
+        {chevrons && (
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: zone.tone === 'danger' ? CHEVRONS_HOT : CHEVRONS_WHITE,
+              backgroundSize: '34px 34px',
+              opacity: zone.tone === 'danger' ? 0.85 : 0.4,
+              transform: toRight ? 'none' : 'scaleX(-1)',
+              WebkitMaskImage: 'linear-gradient(to right, transparent, #000 80%)',
+              maskImage: 'linear-gradient(to right, transparent, #000 80%)',
+              animation: 'pitch-chevrons 1.3s linear infinite',
+            }}
+          />
+        )}
+      </div>
+
+      <PitchLines />
+
+      {/* the players in formation (decorative), sliding with the play */}
+      <Players ball={scene?.ball ?? null} side={action?.side} />
+
+      {/* corner wedge, like the provider's corner view */}
+      {scene?.corner && (
         <div
-          key={`${action?.side}-${action?.kind}-z`}
-          className="absolute top-0 bottom-0"
+          className="absolute bottom-0 w-[26%] h-[48%]"
           style={{
-            [home ? 'right' : 'left']: 0, width: `${fx.zoneDepth}%`,
-            background: ZONE_BG(fx.tone, !!home),
-            borderRadius: home ? '60% 0 0 60% / 50% 0 0 50%' : '0 60% 60% 0 / 0 50% 50% 0',
-            animation: `${hot ? 'fx-heat 1.2s' : 'pitch-fade-in 0.6s'} ease-in-out ${hot ? 'infinite' : 'both'}`,
-            willChange: hot ? 'opacity' : undefined,
+            [scene.corner.x === 100 ? 'right' : 'left']: 0,
+            background: 'linear-gradient(to top, rgba(0,0,0,0.30), rgba(0,0,0,0.04))',
+            clipPath: scene.corner.x === 100 ? 'polygon(100% 100%, 0% 100%, 100% 0%)' : 'polygon(0% 100%, 100% 100%, 0% 0%)',
+            animation: 'pitch-fade-in 0.5s ease both',
           }}
         />
       )}
 
-      <PitchLines />
-
-      {showFx && fx && action && <ActionFx key={`${action.side}-${action.kind}`} kind={action.kind} home={!!home} fx={fx} />}
-
-      {action && (action.kind === 'injury' || action.kind === 'substitution') && (
-        <svg key={`${action.kind}-i`} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 w-full h-full z-[5] pointer-events-none" aria-hidden="true">
-          {action.kind === 'injury' ? (
-            <g style={{ transformOrigin: '55px 28px', animation: 'fx-pulse 0.9s ease-in-out infinite' }}>
-              <circle cx="55" cy="28" r="7" fill="rgba(0,0,0,0.35)" stroke="#fff" strokeWidth="0.5" />
-              <path d="M55 23.5v9M50.5 28h9" stroke="#ff3b3b" strokeWidth="2.2" strokeLinecap="round" />
-            </g>
-          ) : (
-            <g style={{ animation: 'fx-pulse 1.1s ease-in-out infinite', transformOrigin: '55px 28px' }}>
-              <circle cx="55" cy="28" r="8" fill="rgba(0,0,0,0.35)" stroke="#fff" strokeWidth="0.5" />
-              <path d="M50.5 31 l0 -8 m-2 2.4 l2 -2.4 l2 2.4" fill="none" stroke="#3ee05a" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M59.5 25 l0 8 m-2 -2.4 l2 2.4 l2 -2.4" fill="none" stroke="#ff4d4d" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-            </g>
-          )}
-        </svg>
-      )}
-
-      {/* big banner: penalty / big chance / goal */}
-      {bigText && (
-        <div key={`${action?.side}-${action?.kind}-b`} className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
-          <div className="text-center" style={{ animation: 'fx-banner 0.5s cubic-bezier(0.2,0.9,0.3,1.3) both' }}>
-            <div className="text-base sm:text-2xl font-black uppercase tracking-tight text-white" style={{ textShadow: `0 0 18px ${accent}, 0 2px 0 rgba(0,0,0,0.5)`, animation: hot ? 'fx-shake 0.6s ease-in-out infinite' : undefined }}>{bigText}</div>
-            {teamName && <div className="mt-0.5 text-[10px] sm:text-xs font-bold text-white/85 truncate max-w-[70vw]">{teamName}</div>}
-          </div>
+      {/* offside line */}
+      {scene?.offsideX != null && (
+        <div className="absolute top-0 bottom-0" style={{ left: `${scene.offsideX}%`, width: 0, borderLeft: '2px dashed rgba(255,255,255,0.9)', filter: 'drop-shadow(0 0 3px rgba(255,255,255,0.6))', animation: 'pitch-fade-in 0.4s ease both' }}>
+          <div className="absolute top-1 left-1"><OffsideFlagIcon className="w-3 h-4 md:w-4 md:h-5" /></div>
         </div>
       )}
 
-      {/* small action tag for the other actions */}
-      {!compact && action && !bigText && action.kind !== 'possession' && (
+      {/* ball: glides between positions, with its shadow on the grass */}
+      <div
+        className="absolute z-10"
+        style={{
+          left: `${scene?.ball?.x ?? 50}%`,
+          top: `${scene?.ball?.y ?? 50}%`,
+          width: 0, height: 0,
+          opacity: scene?.ball ? 1 : 0,
+          transition: `left 1100ms ${EASE}, top 1100ms ${EASE}, opacity 400ms ease`,
+        }}
+      >
+        {scene?.pulse && (
+          <span className="absolute -left-4 -top-4 w-8 h-8 rounded-full border-2" style={{ borderColor: hot ? 'rgba(255,120,90,0.9)' : 'rgba(255,255,255,0.85)', animation: 'pitch-ping 1.4s ease-out infinite' }} />
+        )}
+        <span className="absolute -left-3 top-1.5 w-6 h-2 rounded-full bg-black/45 blur-[2px]" />
+        <span className="absolute -left-2.5 -top-2.5 block w-5 h-5 md:w-[22px] md:h-[22px] drop-shadow-[0_2px_3px_rgba(0,0,0,0.6)]">
+          <BallIcon className="w-full h-full" />
+        </span>
+        {action?.kind === 'corner' && scene?.ball && (
+          <span className="absolute" style={{ left: scene.ball.x > 50 ? -20 : 6, top: -28 }}><CornerFlagIcon className="w-3 h-5 md:w-4 md:h-6" /></span>
+        )}
+      </div>
+
+      {/* broadcast-style lower third: team + action */}
+      {action && scene && (
         <div
-          key={`${action.side}-${action.kind}-t`}
-          className="absolute z-10 pointer-events-none left-1/2 bottom-2 -translate-x-1/2 max-w-[94%]"
+          className="absolute z-10 pointer-events-none max-w-[46%]"
           aria-live="polite"
-          style={{ animation: 'pitch-text-in 0.35s ease-out both' }}
+          style={{
+            left: `${scene.label.x}%`, top: '38%', transform: labelTransform,
+            transition: `left 900ms ${EASE}`,
+          }}
         >
-          <div className="rounded-full bg-black/60 pl-2.5 pr-3 py-0.5 flex items-center gap-1.5 shadow-lg overflow-hidden" style={{ borderLeft: `3px solid ${accent}` }}>
-            {teamName && <span className="text-[10px] sm:text-xs font-semibold text-white/75 truncate min-w-0 max-w-[45%]">{teamName}</span>}
-            <span className="text-xs sm:text-sm font-extrabold text-white whitespace-nowrap shrink-0">{t(action.label)}</span>
+          <div
+            key={`${action.side}-${action.kind}`}
+            className="rounded-md bg-black/55 backdrop-blur-sm pl-2.5 pr-3 py-1 md:py-1.5 shadow-lg"
+            style={{ borderLeft: `3px solid ${accent}`, animation: 'pitch-text-in 0.35s ease-out both' }}
+          >
+            {teamName && <div className="text-[10px] md:text-xs font-semibold leading-tight text-white/75 truncate">{teamName}</div>}
+            <div className="text-sm md:text-xl font-extrabold leading-tight text-white tracking-tight whitespace-nowrap">{t(action.label)}</div>
           </div>
         </div>
       )}
 
-      {/* the two teams, with the way each one attacks */}
-      {!compact && <div className="absolute top-1.5 left-1.5 z-20 max-w-[30%] flex items-center gap-1 rounded-full bg-black/45 pl-1.5 pr-2 py-0.5 text-[10px] md:text-xs font-semibold text-white/90">
+      {/* the two teams, with the way each one attacks (home to the right) */}
+      <div className="absolute top-2 left-2 z-20 max-w-[30%] flex items-center gap-1 rounded-full bg-black/45 backdrop-blur-sm pl-2 pr-1.5 py-0.5 text-[10px] md:text-xs font-semibold text-white/90">
         <TeamLogo name={match.homeTeam} league={match.league} providerLogo={match.homeTeamLogo} size="xs" />
         <span className="truncate">{match.homeTeam}</span>
         <span aria-hidden="true" style={{ color: YELLOW }}>▸</span>
-      </div>}
-      {!compact && <div className="absolute top-1.5 right-1.5 z-20 max-w-[30%] flex items-center gap-1 rounded-full bg-black/45 pr-1.5 pl-2 py-0.5 text-[10px] md:text-xs font-semibold text-white/90">
+      </div>
+      <div className="absolute top-2 right-2 z-20 max-w-[30%] flex items-center gap-1 rounded-full bg-black/45 backdrop-blur-sm pr-2 pl-1.5 py-0.5 text-[10px] md:text-xs font-semibold text-white/90">
         <span aria-hidden="true" style={{ color: YELLOW }}>◂</span>
         <span className="truncate">{match.awayTeam}</span>
         <TeamLogo name={match.awayTeam} league={match.league} providerLogo={match.awayTeamLogo} size="xs" />
-      </div>}
-
-      {/* clock */}
-      <div className={`absolute top-1.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] md:text-sm font-bold tabular-nums whitespace-nowrap shadow-md ${halftime ? 'bg-brand-yellow text-black' : 'bg-black/60 text-white'}`}>
-        {!halftime && <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />}
-        <span>{halftime ? t('Pushim') : (clockLabel ?? formatLiveStatus(match))}</span>
-        {compact && <span className="text-brand-yellow">{homeGoals}-{awayGoals}</span>}
       </div>
 
+      {/* clock */}
+      <div
+        className={`absolute top-8 sm:top-2 left-1/2 -translate-x-1/2 z-20 max-w-[92%] flex items-center gap-1.5 rounded-full px-3 py-0.5 text-[11px] md:text-sm font-bold tabular-nums whitespace-nowrap shadow-md ${halftime ? 'bg-brand-yellow text-black' : 'bg-black/65 backdrop-blur-sm text-white'}`}
+      >
+        {!halftime && <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />}
+        <span>{halftime ? t('Pushim') : (clockLabel ?? formatLiveStatus(match))}</span>
+      </div>
+
+      {/* half time: the pitch rests, the score stays */}
       {halftime && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.55)', animation: 'pitch-fade-in 0.5s ease both' }}>
+        <div className="absolute inset-0 z-10 flex items-center justify-center" style={{ background: 'radial-gradient(circle at 50% 50%, rgba(0,0,0,0.5), rgba(0,0,0,0.62))', animation: 'pitch-fade-in 0.5s ease both' }}>
           <div className="text-center">
-            <div className="text-2xl md:text-4xl font-black tracking-tight text-white">{t('Pushim')}</div>
-            <div className="mt-1 inline-flex items-center gap-3 rounded-full bg-black/45 px-4 py-0.5 text-lg md:text-2xl font-black tabular-nums text-brand-yellow">
+            <div className="text-2xl md:text-5xl font-black tracking-tight text-white">{t('Pushim')}</div>
+            <div className="mt-1 text-xs md:text-sm font-semibold text-white/75">{t('Fundi i pjesës së parë')}</div>
+            <div className="mt-2 inline-flex items-center gap-3 rounded-full bg-black/45 px-4 py-1 text-lg md:text-2xl font-black tabular-nums text-brand-yellow">
               <span>{homeGoals}</span><span className="text-white/50">-</span><span>{awayGoals}</span>
             </div>
           </div>
         </div>
       )}
 
+      {/* card just shown */}
       {flash && (
-        <div className="absolute left-1/2 top-9 z-30 max-w-[92%] flex items-center gap-2 bg-black/80 rounded-full pl-2.5 pr-4 py-1 shadow-xl" style={{ animation: 'pitch-card-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2) both', border: `1px solid ${flash.kind === 'RED_CARD' ? 'rgba(255,70,70,0.6)' : 'rgba(255,223,27,0.6)'}` }}>
+        <div
+          className="absolute left-1/2 top-[3.75rem] sm:top-10 md:top-12 z-30 max-w-[92%] flex items-center gap-2 bg-black/80 backdrop-blur-sm rounded-full pl-2.5 pr-4 py-1.5 shadow-xl"
+          style={{ animation: 'pitch-card-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2) both', border: `1px solid ${flash.kind === 'RED_CARD' ? 'rgba(255,70,70,0.6)' : 'rgba(255,223,27,0.6)'}` }}
+        >
           <CardIcon color={flash.kind === 'RED_CARD' ? 'red' : 'yellow'} className="w-4 h-6" />
           <span className="text-white text-xs md:text-sm font-bold leading-none">
             {flash.kind === 'RED_CARD' ? t('Karton i kuq') : t('Karton i verdhë')}
@@ -314,16 +394,18 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash, compact }) =
         </div>
       )}
 
+      {/* possession (real numbers only) */}
       {hasPoss && (
-        <div className="absolute bottom-1.5 left-1.5 z-20 flex items-center gap-2 rounded-full bg-black/50 px-2.5 py-0.5 text-[10px] md:text-xs font-bold tabular-nums text-white">
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-full bg-black/50 backdrop-blur-sm px-3 py-1 text-[10px] md:text-xs font-bold tabular-nums text-white">
           <span style={{ color: YELLOW }}>{possHome}%</span>
-          <div className="w-14 md:w-24 h-1.5 rounded-full bg-white/70 overflow-hidden">
+          <div className="w-20 md:w-32 h-1.5 rounded-full bg-white/70 overflow-hidden">
             <div className="h-full rounded-full" style={{ width: `${possHome}%`, background: YELLOW, transition: 'width 800ms ease' }} />
           </div>
           <span>{possAway}%</span>
         </div>
       )}
 
+      {/* light on the turf */}
       <div className="absolute inset-0 pointer-events-none" style={{ background: VIGNETTE }} />
     </div>
   );

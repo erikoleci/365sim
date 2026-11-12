@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { leagueCountry } from '../utils/leagueGrouping';
-import { isTeamLogoIndexReady, loadFsLogos, loadTeamLogoIndex, logoVersion, resolveFsLogo, resolveTeamLogo, subscribeTeamLogoIndex } from '../utils/teamLogos';
+import { isTeamLogoIndexReady, loadTeamLogoIndex, resolveTeamLogo, subscribeTeamLogoIndex } from '../utils/teamLogos';
 
 export type TeamLogoSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 const PX: Record<TeamLogoSize, number> = { xs: 14, sm: 18, md: 24, lg: 32, xl: 48 };
@@ -27,24 +27,17 @@ const initialsOf = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 
  */
 const TeamLogo: React.FC<Props> = ({ name, country, league, providerLogo, size = 'sm', className = '' }) => {
   const px = typeof size === 'number' ? size : PX[size];
-  // Re-render when an index arrives (the local collection and the Flashscore list are both fetched lazily, once, shared).
-  useSyncExternalStore(subscribeTeamLogoIndex, logoVersion, () => 0);
-  const ready = isTeamLogoIndexReady();
-  useEffect(() => { if (!ready) void loadTeamLogoIndex(); void loadFsLogos(); }, [ready]);
+  // Re-render once when the (lazily fetched) index arrives; every instance shares the one fetch.
+  const ready = useSyncExternalStore(subscribeTeamLogoIndex, isTeamLogoIndexReady, () => false);
+  useEffect(() => { if (!ready) void loadTeamLogoIndex(); }, [ready]);
 
   const countryHint = country ?? (league ? leagueCountry(league) : null);
-  const fs = resolveFsLogo(name);
   const local = ready ? resolveTeamLogo(name, countryHint) : null;
-  // Order: Flashscore crest, then the local collection, then the provider's crest, then initials.
-  const [stage, setStage] = useState<'fs' | 'local' | 'provider' | 'none'>('fs');
+  const [stage, setStage] = useState<'local' | 'provider' | 'none'>('local');
   const [retried, setRetried] = useState(false); // a failed local crest is fetched once more before giving up
-  useEffect(() => { setStage('fs'); setRetried(false); }, [name, local, fs, providerLogo]);
+  useEffect(() => { setStage('local'); setRetried(false); }, [name, local, providerLogo]);
 
-  const current: 'fs' | 'local' | 'provider' | null =
-    stage === 'fs' && fs ? 'fs'
-      : (stage === 'fs' || stage === 'local') && local ? 'local'
-        : stage !== 'none' && providerLogo ? 'provider' : null;
-  const src = current === 'fs' ? fs : current === 'local' ? (retried ? `${local}?r=1` : local) : current === 'provider' ? providerLogo : null;
+  const src = stage === 'local' && local ? (retried ? `${local}?r=1` : local) : stage !== 'none' && providerLogo ? providerLogo : null;
   const box = { width: px, height: px };
 
   if (!src) {
@@ -69,11 +62,9 @@ const TeamLogo: React.FC<Props> = ({ name, country, league, providerLogo, size =
       draggable={false}
       style={box}
       className={`shrink-0 object-contain ${className}`}
-      referrerPolicy="no-referrer"
       onError={() => {
-        if (current === 'fs') { setStage('local'); return; } // Flashscore refused or has no picture: the next source
-        if (current === 'local' && !retried) { setRetried(true); return; } // one retry (busy connection, blip)
-        setStage(current === 'local' && providerLogo ? 'provider' : 'none');
+        if (stage === 'local' && local && !retried) { setRetried(true); return; } // one retry (busy connection, blip)
+        setStage((s) => (s === 'local' && providerLogo ? 'provider' : 'none'));
       }}
     />
   );

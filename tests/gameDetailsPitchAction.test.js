@@ -98,7 +98,7 @@ describe('applyGameDetails - the pitch action reaches (and stays on) the client'
     vi.advanceTimersByTime(60000);
     await applyGameDetails(tag({ ...base, T: '660' }));
     expect(lastAction()).toMatchObject({ side: 'away', kind: 'dangerous_attack' });
-    vi.advanceTimersByTime(905000); // past the safety cap (15 min) with nothing newer
+    vi.advanceTimersByTime(125000); // past the safety cap with nothing newer
     await applyGameDetails(tag({ ...base, T: '785' }));
     expect(lastAction()).toBeNull();
   });
