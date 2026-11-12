@@ -65,8 +65,15 @@ export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.f
       const before = lastStage.get(row.id);
       if (stage2 && before !== undefined && before !== 'two' && !secondHalfSeen.has(row.id)) secondHalfSeen.set(row.id, now);
       lastStage.set(row.id, stage2 ? 'two' : 'other');
+      // Extra time / penalties on Flashscore: close our markets even if our provider is still showing the 2nd half (closing is the safe direction).
+      const fsClock = row.status === 'LIVE' ? flashscoreClock(f, now) : null;
+      if (fsClock && fsClock.closeOnly && !['ET', 'EXTRA_TIME', 'PEN', 'PENALTIES', 'AET'].includes(String(row.live_status || '').toUpperCase().trim())) {
+        const res = await pool.query(`UPDATE matches_cache SET live_status = $2 WHERE id = $1 AND status = 'LIVE'`, [row.id, fsClock.status]);
+        if (res && res.rowCount) out.closed = (out.closed || 0) + 1;
+      }
       const stale = row.status === 'LIVE' && now - Number(row.live_minute_updated_at || 0) > 5 * 60000;
       let clock = stale ? flashscoreClock(f, now, secondHalfSeen.get(row.id)) : null;
+      if (clock && clock.closeOnly) clock = null; // handled above (live_status only)
       // 'HT' makes the app capture the half-time score from OUR live score (first write wins, settles half-time markets): only say HT when
       // our live score is the same as Flashscore's, so a missed goal can never be frozen in as the half-time score.
       if (clock && clock.status === 'HT' && !(Number(row.live_home_score) === Number(f.homeScore) && Number(row.live_away_score) === Number(f.awayScore) && row.live_home_score != null && f.homeScore != null)) clock = null;
@@ -118,7 +125,7 @@ export function startFlashscoreLoop() {
   const tick = () => {
     if (busy) return;
     busy = true;
-    runFlashscore().then((r) => { if (r && (r.eventsAdded || r.extras || r.clock)) console.log('[flashscore] ' + JSON.stringify(r)); })
+    runFlashscore().then((r) => { if (r && (r.eventsAdded || r.extras || r.clock || r.closed)) console.log('[flashscore] ' + JSON.stringify(r)); })
       .catch((err) => { if (Date.now() - lastErrAt > 15 * 60000) { lastErrAt = Date.now(); console.error('[flashscore] cycle failed:', err.message); } }) // one line per 15 min, not one per cycle
       .finally(() => { busy = false; });
   };

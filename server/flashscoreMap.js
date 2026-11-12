@@ -132,7 +132,7 @@ export function incidentDiag(summary, fixture) {
 // The match clock from Flashscore's STAGE (exact: 1st half / half time / 2nd half) plus the wall clock inside the stage (an estimate).
 // Used only as a fallback when our own provider's clock has stopped. `seenSecondHalfAt` = when this process first saw the 2nd half
 // (the start of the half is never later than that); without it the 2nd half is assumed to start 62 min after kickoff (45 + stoppage + break).
-// Returns { status: 'live' | 'HT', minute: string } or null (stage not covered: extra time, penalties, finished, not started...).
+// Returns { status: 'live' | 'HT', minute } for the regular time, { status: 'ET' | 'AET' | 'PEN', closeOnly: true } for extra time / penalties, or null (finished, not started...).
 export function flashscoreClock(f, now, seenSecondHalfAt = null) {
   if (!f || !Number.isFinite(f.start)) return null;
   const stage = String(f.stage || '').toLowerCase();
@@ -148,5 +148,9 @@ export function flashscoreClock(f, now, seenSecondHalfAt = null) {
     const m = 46 + Math.max(0, Math.floor((now - start2) / 60000));
     return { status: 'live', minute: m > 90 ? '90+' : String(m) };
   }
+  // Extra time / penalties: CLOSING signals only (the app closes every market when live_status is ET / PEN / AET, see marketPeriods.js).
+  if (id === 6 || stage === 'extra time') return { status: 'ET', minute: null, closeOnly: true };
+  if (id === 10 || stage === 'after extra time') return { status: 'AET', minute: null, closeOnly: true };
+  if (id === 7 || id === 11 || stage === 'penalties' || stage === 'after penalties') return { status: 'PEN', minute: null, closeOnly: true };
   return null;
 }

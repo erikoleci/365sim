@@ -108,7 +108,12 @@ describe('Flashscore clock fallback', () => {
     expect(flashscoreClock({ start, stage: '2nd Half' }, at(72))).toEqual({ status: 'live', minute: '56' });
     expect(flashscoreClock({ start, stage: '2nd Half' }, at(130))).toEqual({ status: 'live', minute: '90+' });
   });
-  it('covers nothing else: finished, extra time, not started', () => {
-    for (const stage of ['Finished', 'Extra Time', 'Penalties', 'Scheduled']) expect(flashscoreClock({ start, stage }, at(100))).toBeNull();
+  it('extra time / penalties give closing signals only', () => {
+    expect(flashscoreClock({ start, stage: 'Extra Time', stageId: 6 }, at(100))).toEqual({ status: 'ET', minute: null, closeOnly: true });
+    expect(flashscoreClock({ start, stage: 'Penalties', stageId: 7 }, at(100))).toMatchObject({ status: 'PEN', closeOnly: true });
+    expect(flashscoreClock({ start, stage: 'After Extra Time', stageId: 10 }, at(100))).toMatchObject({ status: 'AET', closeOnly: true });
+  });
+  it('covers nothing else: finished, not started', () => {
+    for (const stage of ['Finished', 'Scheduled']) expect(flashscoreClock({ start, stage }, at(100))).toBeNull();
   });
 });
