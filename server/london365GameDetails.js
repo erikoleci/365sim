@@ -57,6 +57,7 @@ import { isTrackedGame, getLiveRow, setLiveRow, forgetLiveRow, __resetLiveTracke
 import { bump } from './feedStats.js';
 import { captureHalfTimeScore } from './halfTime.js';
 import { observeVcFrame } from './vcDeltaSampler.js';
+import { recordUnmappedVc } from './vcRecorder.js';
 import { isHalfTimeLatched, enterHalfTime, maybeReleaseHalfTime, __resetHalfTimeLatchForTests } from './halfTimeLatch.js';
 import { queueClockWrite } from './clockWrites.js';
 import { sampleFeedKeys, recordEventFrame } from './feedKeySampler.js';
@@ -565,7 +566,8 @@ async function applyGameDetailsNow(raw) {
   if (decodedAction && decodedAction.kind === 'penalty') setPenaltyLock(matchId, nowMs);
   else if (decodedAction || (score && (score.home !== row.live_home_score || score.away !== row.live_away_score))) clearPenaltyLock(matchId);
   recordVcSample(attrs.VC, decodedAction && decodedAction.label, { match: `${attrs.H} - ${attrs.A}`, score: attrs.SC, t: attrs.T });
-  observeVcFrame(eid, attrs, Boolean(decodedAction), { match: `${attrs.H} - ${attrs.A}` });
+  const vcSample = observeVcFrame(eid, attrs, Boolean(decodedAction), { match: `${attrs.H} - ${attrs.A}` });
+  if (vcSample) recordUnmappedVc({ matchId, match: `${attrs.H} - ${attrs.A}`, code: attrs.VC }, nowMs); // a NEW unmapped code only (never every frame)
   const vcText = String(attrs.VC ?? '').trim();
   if (vcText && !decodedAction && !unmappedVcSeen.has(vcText) && unmappedVcSeen.size < UNMAPPED_VC_CAP) {
     unmappedVcSeen.add(vcText);

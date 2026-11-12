@@ -16,6 +16,7 @@ import { settlementRuleRequired, getBetBlockReason } from '../marketRules.js';
 import { getFeedKeySamples, getEventFrames, getSocketEvents } from '../feedKeySampler.js';
 import { getRecentErrors } from '../recentErrors.js';
 import { getUnmappedVcReport } from '../vcDeltaSampler.js';
+import { penaltyCandidates } from '../vcRecorder.js';
 import { mapEventToMatch } from '../oddsUtils.js';
 
 import { transferBalance, transferBalances, amountParts, readWallet, walletColumn, normalizeAccountCurrency, disallowedPart, accountCurrencyError } from '../ledger.js';
@@ -52,7 +53,7 @@ router.use(requireAuth, requireAdmin);
 // (requireSuperAdmin is a function declaration, so it is available here.)
 for (const path of [
   '/london365', '/bet-selections', '/matches', '/pending-legs', '/legs', '/market-coverage', '/unmapped-vc',
-  '/corner-diagnose', '/recent-errors', '/vc-codes', '/provider-labels', '/feed-keys', '/feed-frames', '/settle-diagnose',
+  '/corner-diagnose', '/recent-errors', '/vc-codes', '/provider-labels', '/vc-penalty-candidates', '/feed-keys', '/feed-frames', '/settle-diagnose',
   '/bets/settle-stuck', '/risk', '/live-audit', '/market-audit',
 ]) router.use(path, requireSuperAdmin);
 
@@ -1343,6 +1344,11 @@ router.get('/vc-codes', (req, res) => {
 // Asks the provider's own site what it calls each live action code (to find the penalty code).
 router.get('/provider-labels', async (req, res) => {
   try { res.json(await findProviderLabels()); } catch (e) { res.status(502).json({ error: String(e.message || e) }); }
+});
+
+// Which unmapped provider code keeps appearing just before Flashscore's penalty rows (the penalty code candidate).
+router.get('/vc-penalty-candidates', async (req, res) => {
+  try { res.json(await penaltyCandidates(pool)); } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
 });
 
 router.get('/feed-keys', (req, res) => {
