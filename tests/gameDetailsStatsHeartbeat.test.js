@@ -4,6 +4,7 @@ function tag(attrs) {
   return '<Detaje ' + Object.entries(attrs).map(([k, v]) => k + '="' + v + '"').join(' ') + ' />';
 }
 
+const mocks_prev = vi.hoisted(() => ({ rows: [] }));
 const mocks = vi.hoisted(function () {
   const matches = new Map();
   const log = [];
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(function () {
       const row = matches.get(params[0]);
       return Promise.resolve({ rows: row ? [{ ...row }] : [] });
     }
+    if (s.includes('SELECT corners_home')) return Promise.resolve({ rows: mocks_prev.rows });
     return Promise.resolve({ rows: [] });
   }
   return { matches, log, pool: { query } };
@@ -33,7 +35,7 @@ const { applyGameDetails, __resetLiveStateForTests } = await import('../server/l
 
 const EID = '777-test';
 const frame = (o = {}) => tag({ EID, SC: '0-0', H: 'A', A: 'B', T: '1200', C1: '0', C2: '0', YC1: '0', YC2: '0', RC1: '0', RC2: '0', ...o });
-const stats = () => mocks.log.filter((q) => q.s.includes('live_statistics'));
+const stats = () => mocks.log.filter((q) => q.s.includes('live_statistics') && !/^\s*SELECT/i.test(q.s));
 
 beforeEach(() => {
   mocks.matches.clear();
@@ -70,5 +72,15 @@ describe('live_statistics keeps corners alive while nothing changes', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('corner events after a restart (in-memory baseline lost)', () => {
+  it('logs the corners won since the totals saved in live_statistics', async () => {
+    mocks_prev.rows = [{ corners_home: 2, corners_away: 0 }];
+    await applyGameDetails(frame({ C1: '4' }));
+    const ins = mocks.log.filter((q) => q.s.includes('INSERT INTO match_events') && q.params[2] === 'CORNER').map((q) => q.params[4]);
+    mocks_prev.rows = [];
+    expect(ins).toEqual(['3', '4']);
   });
 });
