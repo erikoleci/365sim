@@ -12,6 +12,8 @@ interface LivePitchProps {
   stats: LiveStatistics | null;
   // A card that has just been shown by the referee (from the live CARD message); the parent clears it after a few seconds.
   flash?: { kind: 'YELLOW_CARD' | 'RED_CARD'; team: 'home' | 'away' } | null;
+  // The small floating copy: no team pills, no text tag, just the pitch, the animation, the clock and the score.
+  compact?: boolean;
 }
 
 type Action = NonNullable<Match['liveAction']>;
@@ -182,7 +184,7 @@ const ActionFx: React.FC<{ kind: string; home: boolean; fx: Fx }> = ({ kind, hom
   );
 };
 
-const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
+const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash, compact }) => {
   const { t } = useI18n();
   const isLive = match.status === MatchStatus.LIVE;
   const clockSrc = pickClockSource(match, stats);
@@ -261,7 +263,7 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
       )}
 
       {/* small action tag for the other actions */}
-      {action && !bigText && action.kind !== 'possession' && (
+      {!compact && action && !bigText && action.kind !== 'possession' && (
         <div
           key={`${action.side}-${action.kind}-t`}
           className="absolute z-10 pointer-events-none left-1/2 bottom-2 -translate-x-1/2 max-w-[94%]"
@@ -276,21 +278,22 @@ const LivePitch: React.FC<LivePitchProps> = ({ match, stats, flash }) => {
       )}
 
       {/* the two teams, with the way each one attacks */}
-      <div className="absolute top-1.5 left-1.5 z-20 max-w-[30%] flex items-center gap-1 rounded-full bg-black/45 backdrop-blur-sm pl-1.5 pr-2 py-0.5 text-[10px] md:text-xs font-semibold text-white/90">
+      {!compact && <div className="absolute top-1.5 left-1.5 z-20 max-w-[30%] flex items-center gap-1 rounded-full bg-black/45 backdrop-blur-sm pl-1.5 pr-2 py-0.5 text-[10px] md:text-xs font-semibold text-white/90">
         <TeamLogo name={match.homeTeam} league={match.league} providerLogo={match.homeTeamLogo} size="xs" />
         <span className="truncate">{match.homeTeam}</span>
         <span aria-hidden="true" style={{ color: YELLOW }}>▸</span>
-      </div>
-      <div className="absolute top-1.5 right-1.5 z-20 max-w-[30%] flex items-center gap-1 rounded-full bg-black/45 backdrop-blur-sm pr-1.5 pl-2 py-0.5 text-[10px] md:text-xs font-semibold text-white/90">
+      </div>}
+      {!compact && <div className="absolute top-1.5 right-1.5 z-20 max-w-[30%] flex items-center gap-1 rounded-full bg-black/45 backdrop-blur-sm pr-1.5 pl-2 py-0.5 text-[10px] md:text-xs font-semibold text-white/90">
         <span aria-hidden="true" style={{ color: YELLOW }}>◂</span>
         <span className="truncate">{match.awayTeam}</span>
         <TeamLogo name={match.awayTeam} league={match.league} providerLogo={match.awayTeamLogo} size="xs" />
-      </div>
+      </div>}
 
       {/* clock */}
       <div className={`absolute top-1.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] md:text-sm font-bold tabular-nums whitespace-nowrap shadow-md ${halftime ? 'bg-brand-yellow text-black' : 'bg-black/60 text-white'}`}>
         {!halftime && <span className="w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse" />}
         <span>{halftime ? t('Pushim') : (clockLabel ?? formatLiveStatus(match))}</span>
+        {compact && <span className="text-brand-yellow">{homeGoals}-{awayGoals}</span>}
       </div>
 
       {halftime && (

@@ -57,10 +57,10 @@ const StadiumPitch: React.FC<{ match: Match; stats: LiveStatistics | null; flash
         </div>
       </div>
       {scrolledPast && !hidden && (
-        <div className="fixed top-[3.25rem] right-2 z-40 w-[250px] max-w-[62vw] rounded-lg shadow-2xl ring-1 ring-black/60" style={{ animation: 'pitch-fade-in 0.3s ease both' }}>
+        <div className="fixed top-[3.75rem] md:top-[5.75rem] right-2 z-40 w-[230px] max-w-[58vw] rounded-lg shadow-2xl ring-1 ring-black/60" style={{ animation: 'pitch-fade-in 0.3s ease both' }}>
           <button onClick={() => setHidden(true)} aria-label={t('Mbyll')} className="absolute -top-2 -right-2 z-50 w-6 h-6 rounded-full bg-black/80 text-white text-xs font-bold leading-none border border-white/30">✕</button>
           <div onClick={() => frameRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })} className="cursor-pointer">
-            <Stadium compact><LivePitch match={match} stats={stats} flash={flash} /></Stadium>
+            <Stadium compact><LivePitch match={match} stats={stats} flash={flash} compact /></Stadium>
           </div>
         </div>
       )}

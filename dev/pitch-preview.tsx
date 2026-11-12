@@ -12,6 +12,8 @@ const kinds: Array<[string, string | null, 'home' | 'away' | null]> = [
   ['throw_in', 'Rivënie anësore', 'home'], ['back_line_restart', 'Rivënie fundore', 'away'], ['offside', 'Pozicion jashtë loje', 'home'], ['possession', 'Zotëron topin', 'away'], ['injury', 'Dëmtim', null], ['substitution', 'Ndërrim', null],
 ];
 const App = () => (
+  <>
+  <div style={{ position: 'fixed', top: 60, right: 8, zIndex: 50, width: 230, maxWidth: '58vw' }}><LivePitch compact match={{ ...base, liveAction: { kind: 'corner', label: 'Korne', side: 'home' } }} stats={null} /></div>
   <div style={{ padding: 8, display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,420px),1fr))' }}>
     {kinds.map(([k, label, side]) => (
       <div key={k}><div style={{ color: '#aaa', font: '11px sans-serif' }}>{k} {side}</div>
@@ -19,5 +21,6 @@ const App = () => (
       </div>
     ))}
   </div>
+  </>
 );
 ReactDOM.createRoot(document.getElementById('root')!).render(<App />);
