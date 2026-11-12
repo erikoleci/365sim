@@ -36,20 +36,23 @@ type Fx = {
   big?: string;            // big centre banner text key
   offside?: number;        // x of the offside line
   touch?: boolean;         // throw-in: arrow on the touchline
+  arrows?: boolean;        // attack: waves of chevrons running at the goal (no dashed trail)
+  wall?: number;           // free kick: x of the defensive wall
+  nodes?: Array<[number, number]>; // possession: the pass points
 };
 
 const FX: Record<string, Fx> = {
-  attack: { path: 'M44 36 Q62 22 80 30', tone: 'attack', dur: 2.2, zoneDepth: 45 },
-  dangerous_attack: { path: 'M68 42 Q88 24 101 28', tone: 'danger', dur: 1.6, zoneDepth: 32, burst: true },
+  attack: { path: 'M38 34 L84 28', tone: 'attack', dur: 2.4, zoneDepth: 45, arrows: true },
+  dangerous_attack: { path: 'M64 38 L101 28', tone: 'danger', dur: 1.2, zoneDepth: 32, burst: true, arrows: true },
   corner: { path: 'M106 53 Q99 18 94 27', tone: 'attack', dur: 2, zoneDepth: 28, curve: true },
-  free_kick: { path: 'M76 30 Q92 12 106 26', tone: 'attack', dur: 1.9, zoneDepth: 34, target: { x: 76, y: 30 }, curve: true },
+  free_kick: { path: 'M76 30 Q92 12 106 26', tone: 'attack', dur: 1.9, zoneDepth: 34, target: { x: 76, y: 30 }, curve: true, wall: 88 },
   penalty: { path: 'M96 28 L106 25', tone: 'danger', dur: 1.3, zoneDepth: 20, target: { x: 96, y: 28 }, burst: true, big: 'Penallti' },
   shot_on_target: { path: 'M84 34 L106 26', tone: 'danger', dur: 1.2, zoneDepth: 26, burst: true },
   big_chance: { path: 'M86 36 L106 27', tone: 'danger', dur: 1.1, zoneDepth: 28, burst: true, big: 'Shanc i madh për gol' },
   throw_in: { path: 'M80 54 Q80 42 88 39', tone: 'attack', dur: 1.8, zoneDepth: 0, touch: true },
   back_line_restart: { path: 'M9 28 Q28 8 50 24', tone: 'calm', dur: 2.2, zoneDepth: 0 },
   offside: { path: 'M62 36 L76 28', tone: 'attack', dur: 1.6, zoneDepth: 0, offside: 78 },
-  possession: { path: 'M30 38 L44 24 L58 36 L70 26', tone: 'calm', dur: 3.2, zoneDepth: 0 },
+  possession: { path: 'M30 38 L44 24 L58 36 L70 26', tone: 'calm', dur: 3.2, zoneDepth: 0, nodes: [[30, 38], [44, 24], [58, 36], [70, 26]] },
   goal: { path: 'M92 30 L107 28', tone: 'danger', dur: 1.4, zoneDepth: 22, burst: true, big: 'Gol' },
 };
 
@@ -125,8 +128,25 @@ const ActionFx: React.FC<{ kind: string; home: boolean; fx: Fx }> = ({ kind, hom
           </g>
         )}
         {/* the trail: glow underneath, dashed line running along the flight */}
-        <path d={fx.path} fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round" opacity="0.28" filter={`url(#gl-${uid})`} />
-        <path d={fx.path} fill="none" stroke={col} strokeWidth="0.7" strokeLinecap="round" strokeDasharray="2 1.8" style={{ animation: 'fx-dash 0.7s linear infinite' }} />
+        {fx.arrows ? (
+          // waves of chevrons run at the goal: a real "attack" look, not a ball arc
+          [0, 1, 2].map((r) => [0, 1, 2].map((c) => (
+            <path key={`${r}-${c}`} d={`M${30 + c * 11} ${16 + r * 12} l4 3.4 l-4 3.4`} fill="none" stroke={col} strokeWidth={hot ? 1.3 : 1} strokeLinecap="round" strokeLinejoin="round" style={{ animation: `fx-run ${hot ? 0.7 : 1.1}s ease-in ${(c * 0.16 + r * 0.07).toFixed(2)}s infinite` }} />
+          )))
+        ) : fx.nodes ? (
+          <g>
+            <polyline points={fx.nodes.map((n) => n.join(',')).join(' ')} fill="none" stroke="rgba(255,255,255,0.55)" strokeWidth="0.35" />
+            {fx.nodes.map(([x, y], i) => <circle key={i} cx={x} cy={y} r="1.1" fill="none" stroke="#fff" strokeWidth="0.4" style={{ transformOrigin: `${x}px ${y}px`, animation: `fx-pulse 1.2s ease-in-out ${i * 0.25}s infinite` }} />)}
+          </g>
+        ) : (
+          <>
+            <path d={fx.path} fill="none" stroke={col} strokeWidth="1.8" strokeLinecap="round" opacity="0.28" filter={`url(#gl-${uid})`} />
+            <path d={fx.path} fill="none" stroke={col} strokeWidth="0.7" strokeLinecap="round" strokeDasharray={fx.wall != null ? undefined : '2 1.8'} style={fx.wall != null ? undefined : { animation: 'fx-dash 0.7s linear infinite' }} />
+          </>
+        )}
+        {fx.wall != null && [-4.5, -1.5, 1.5, 4.5].map((dy, i) => (
+          <rect key={i} x={fx.wall! - 0.6} y={28 + dy - 1.2} width="1.2" height="2.4" rx="0.6" fill="#fff" opacity="0.9" style={{ animation: `fx-pulse 0.8s ease-in-out ${i * 0.1}s infinite`, transformOrigin: `${fx.wall}px ${28 + dy}px` }} />
+        ))}
         {/* the ball, flying along the path */}
         <g>
           <ellipse rx="1.5" ry="0.55" fill="rgba(0,0,0,0.4)" transform="translate(0 1.9)">
