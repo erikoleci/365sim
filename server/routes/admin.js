@@ -1,5 +1,6 @@
 import { findProviderLabels } from '../providerLabels.js';
 import { buildDayAudit } from '../dayAudit.js';
+import { correctResult } from '../resultCorrection.js';
 import { getVcSamples } from '../vcSampler.js';
 import express from 'express';
 import bcrypt from 'bcryptjs';
@@ -54,7 +55,7 @@ router.use(requireAuth, requireAdmin);
 for (const path of [
   '/london365', '/bet-selections', '/matches', '/pending-legs', '/legs', '/market-coverage', '/unmapped-vc',
   '/corner-diagnose', '/recent-errors', '/vc-codes', '/provider-labels', '/feed-keys', '/feed-frames', '/settle-diagnose',
-  '/bets/settle-stuck', '/risk', '/live-audit', '/market-audit',
+  '/bets/settle-stuck', '/risk', '/live-audit', '/market-audit', '/day-audit',
 ]) router.use(path, requireSuperAdmin);
 
 // Every agent and user belongs to one admin (users.admin_id). A normal admin only sees and manages his own;
@@ -1201,6 +1202,17 @@ router.patch('/bet-selections/:id', async (req, res) => {
 // via the manual override endpoint above rather than guessed.
 // force:true lets an admin re-settle a match the automatic scores poller
 // already closed, e.g. to correct a wrong final score.
+// Correct the final score of a FINISHED match closed on a wrong one and re-decide its tickets. Body { homeScore, awayScore, apply }:
+// without apply:true it is a DRY RUN (nothing is written). See resultCorrection.js for what is and is not re-decided.
+router.post('/matches/:id/correct-result', async (req, res) => {
+  const { homeScore, awayScore, apply } = req.body || {};
+  if (!Number.isInteger(homeScore) || !Number.isInteger(awayScore) || homeScore < 0 || awayScore < 0) return res.status(400).json({ error: 'homeScore and awayScore must be non-negative integers' });
+  const out = await correctResult(req.params.id, homeScore, awayScore, { apply: apply === true });
+  if (out.error) return res.status(400).json(out);
+  if (out.applied) await logAudit(req.user, 'MATCH_RESULT_CORRECT', req.params.id, { homeScore, awayScore, changes: out.changes, tickets: out.tickets.length });
+  res.json(out);
+});
+
 router.post('/matches/:id/settle', async (req, res) => {
   const { homeScore, awayScore } = req.body || {};
   if (!Number.isInteger(homeScore) || !Number.isInteger(awayScore) || homeScore < 0 || awayScore < 0) {
