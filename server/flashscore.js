@@ -6,7 +6,7 @@ import { harvestLogos } from './fsLogos.js';
 import { isPastFirstHalf } from './marketPeriods.js';
 import { pool } from './db.js';
 import { serviceBase, enabled } from './flashscoreProc.js';
-import { parseMatchList, incidentRows, bigChances, otherStats, incidentDiag, findFlashscoreMatch, flashscoreClock } from './flashscoreMap.js';
+import { parseMatchList, incidentRows, bigChances, otherStats, incidentDiag, incidentSample, findFlashscoreMatch, flashscoreClock } from './flashscoreMap.js';
 
 const timeout = () => Math.max(5000, Number(process.env.FLASHSCORE_TIMEOUT_MS) || 20000);
 async function get(path, fetchImpl, base) {
@@ -33,6 +33,7 @@ async function logEvents(matchId, rows, now) {
   return added;
 }
 
+const lastDiag = new Map(); // match id -> the last mismatch text logged for it
 const lastStage = new Map(); // match id -> 'two' | 'other' (last stage seen by this process)
 const secondHalfSeen = new Map(); // match id -> ms the 2nd half was first seen by this process
 const lastDetailAt = new Map(); // match id -> ms of the last details pull (a live match: every cycle; a finished one: once)
@@ -121,7 +122,16 @@ export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.f
       ]);
       const ev = incidentRows(summary, f, row.home_team, row.away_team);
       if (ev) out.eventsAdded += await logEvents(row.id, ev, now);
-      else console.warn('[flashscore] incidents of ' + row.id + ' do not add up (' + incidentDiag(summary, f) + ') -- not logged');
+      else {
+        // once per change, not every 90 s: the same mismatch repeated hundreds of times buries the log
+        const diag = incidentDiag(summary, f);
+        if (lastDiag.get(row.id) !== diag) {
+          lastDiag.set(row.id, diag);
+          if (lastDiag.size > 2000) lastDiag.clear();
+          console.warn('[flashscore] incidents of ' + row.id + ' do not add up (' + diag + ') -- not logged');
+          console.warn('[flashscore] raw incidents of ' + row.id + ' (period|type|team|minute|reason|description|player): ' + incidentSample(summary).join(' ;; '));
+        }
+      }
       const bc = stats ? bigChances(stats) : null;
       const more = stats ? otherStats(stats) : [];
       if (bc || more.length) {
@@ -142,7 +152,7 @@ export async function runFlashscore({ now = Date.now(), fetchImpl = globalThis.f
   return out;
 }
 let lastUnmatchedLog = 0;
-export const __resetForTests = () => { lastDetailAt.clear(); doneFinished.clear(); secondHalfSeen.clear(); lastStage.clear(); };
+export const __resetForTests = () => { lastDetailAt.clear(); doneFinished.clear(); secondHalfSeen.clear(); lastStage.clear(); lastDiag.clear(); };
 
 let lastErrAt = 0;
 export function startFlashscoreLoop() {

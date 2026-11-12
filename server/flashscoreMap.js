@@ -3,6 +3,7 @@
 // score ("2-1"); PENALTY / YELLOW_CARD / RED_CARD rows carry 'home' / 'away' and a running count per side.
 import { sameTeam } from './fixtureDedupe.js';
 import { looseSameClub } from './fixtureLink.js';
+import { stripDiacritics } from '../utils/teamLogoKey.js';
 
 const minuteOf = (inc) => {
   const n = Number(inc && inc.minute_number);
@@ -115,10 +116,23 @@ export function bigChances(stats) {
 // The Flashscore match that is OUR match, same home/away order, exactly one candidate.
 // Pass 1: both names match and the kickoff is within 3 hours. Pass 2 (small leagues spell clubs differently: "Bengaluru B" /
 // "Bengaluru FC B"): the kickoff must be within 10 minutes and both names must pass the looser club test. A swapped pair is never trusted.
+// National teams are spelled differently by the two sites (our "Türkiye" is Flashscore's "Turkey"): both sides are brought to one spelling first.
+const NATIONAL_ALIAS = new Map([
+  ['turkiye', 'turkey'], ['czechia', 'czech republic'], ['korea republic', 'south korea'], ['republic of korea', 'south korea'], ['usa', 'united states'],
+  ['united states of america', 'united states'], ['cote d ivoire', 'ivory coast'], ['north macedonia', 'macedonia'], ['cabo verde', 'cape verde'],
+  ['congo dr', 'dr congo'], ['democratic republic of the congo', 'dr congo'], ['eswatini', 'swaziland'], ['holland', 'netherlands'],
+  ['bosnia and herzegovina', 'bosnia'], ['bosnia herzegovina', 'bosnia'], ['china pr', 'china'], ['chinese taipei', 'taiwan'], ['uae', 'united arab emirates'],
+]);
+export function nationalAlias(name) {
+  const k = stripDiacritics(name).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return NATIONAL_ALIAS.get(k) || name;
+}
+const sameTeamN = (a, b) => sameTeam(a, b) || sameTeam(nationalAlias(a), nationalAlias(b));
+
 export function findFlashscoreMatch(list, row) {
   const t = Date.parse(row.start_time);
   if (!Number.isFinite(t)) return null;
-  const strict = list.filter((f) => Math.abs(f.start - t) <= 3 * 3600 * 1000 && sameTeam(row.home_team, f.home) && sameTeam(row.away_team, f.away));
+  const strict = list.filter((f) => Math.abs(f.start - t) <= 3 * 3600 * 1000 && sameTeamN(row.home_team, f.home) && sameTeamN(row.away_team, f.away));
   if (strict.length) return strict.length === 1 ? strict[0] : null;
   const loose = list.filter((f) => Math.abs(f.start - t) <= 10 * 60000 && looseSameClub(row.home_team, f.home) && looseSameClub(row.away_team, f.away));
   return loose.length === 1 ? loose[0] : null;
@@ -131,6 +145,19 @@ export function incidentDiag(summary, fixture) {
   for (const p of (summary && summary.periods) || []) for (const i of p.incidents || []) { n++; const k = String(i.type || '?'); types[k] = (types[k] || 0) + 1; }
   const t = Object.entries(types).map(([k, v]) => `${k}x${v}`).join(', ');
   return `list score ${fixture && fixture.homeScore}-${fixture && fixture.awayScore}; ${n} incidents (${t || 'none'})`;
+}
+
+// The raw incidents of a match that does not add up, one short line each (period | type | team | minute | reason | description), so the
+// real shape of a penalty / disallowed goal / etc. can be read from the log instead of guessed. At most 16, each cut to 90 characters.
+export function incidentSample(summary) {
+  const out = [];
+  for (const p of (summary && summary.periods) || []) {
+    for (const i of p.incidents || []) {
+      if (out.length >= 16) return out;
+      out.push([p.period, i.type, i.team, i.minute, i.reason, i.description, i.player && i.player.name].map((x) => (x == null ? '' : String(x))).join('|').slice(0, 90));
+    }
+  }
+  return out;
 }
 
 // The match clock from Flashscore's STAGE (exact: 1st half / half time / 2nd half) plus the wall clock inside the stage (an estimate).

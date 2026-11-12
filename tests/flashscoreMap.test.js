@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMatchList, incidentRows, bigChances, otherStats, incidentDiag, findFlashscoreMatch, flashscoreClock } from '../server/flashscoreMap.js';
+import { nationalAlias, incidentSample, parseMatchList, incidentRows, bigChances, otherStats, incidentDiag, findFlashscoreMatch, flashscoreClock } from '../server/flashscoreMap.js';
 
 const inc = (team, minute, type, name, extra = {}) => ({ team, minute: `${minute}'`, minute_number: minute, type, player: name ? { name } : null, reason: null, description: '', ...extra });
 const summary = (...incidents) => ({ periods: [{ period: '1st Half', incidents: incidents.slice(0, 2) }, { period: '2nd Half', incidents: incidents.slice(2) }] });
@@ -126,5 +126,22 @@ describe('incident half comes from the period', () => {
     ] };
     const rows = incidentRows(sum, { homeScore: 1, awayScore: 1 }, 'H', 'A');
     expect(rows.map((r) => r.half)).toEqual([1, 2]);
+  });
+});
+
+describe('national team spelling and the raw incident sample', () => {
+  it('Türkiye finds Flashscore\'s Turkey; unrelated teams still do not match', () => {
+    expect(nationalAlias('Türkiye')).toBe('turkey');
+    const start = Date.parse('2026-11-12T17:45:00Z');
+    const list = [{ id: 'x', start, home: 'Turkey', away: 'Belgium' }, { id: 'y', start, home: 'Spain', away: 'France' }];
+    expect(findFlashscoreMatch(list, { home_team: 'Türkiye', away_team: 'Belgium', start_time: new Date(start).toISOString() })?.id).toBe('x');
+    expect(findFlashscoreMatch(list, { home_team: 'Turkiye', away_team: 'Belgium', start_time: new Date(start).toISOString() })?.id).toBe('x');
+    expect(findFlashscoreMatch(list, { home_team: 'Italy', away_team: 'Belgium', start_time: new Date(start).toISOString() })).toBeNull();
+  });
+  it('incidentSample prints one short line per incident, capped', () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({ type: 'Goal', team: 'home', minute: `${i}'`, reason: 'Penalty', player: { name: 'X' } }));
+    const out = incidentSample({ periods: [{ period: '1st Half', incidents: many }] });
+    expect(out).toHaveLength(16);
+    expect(out[0]).toBe("1st Half|Goal|home|0'|Penalty||X");
   });
 });
