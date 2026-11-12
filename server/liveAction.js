@@ -44,11 +44,14 @@ const ACTIONS = {
   '1013': { kind: 'substitution', label: 'Ndërrim' },
   '1015': { kind: 'half_time', label: 'Pushim' },
   '1017': { kind: 'full_time', label: 'Ndeshja mbaroi' },
+  // Penalty (owner-observed 2026-11-12, Ghana v Somalia: penalty missed at minute 14; the panel showed ONE new code, 1023,
+  // first seen at T=839 s = 13:59, home side, score stayed 0-0). One sighting: confirm with the next penalty (vc-penalty-candidates).
+  '1023': { kind: 'penalty', label: 'Penallti' },
   '1024': { kind: 'throw_in', label: 'Rivënie anësore' },
   '1025': { kind: 'injury', label: 'Dëmtim' }, // player injured (owner-confirmed; seen VC="1025", FC Van v Gandzasar Kapan, T=3717)
   '1234': { kind: 'offside', label: 'Pozicion jashtë loje' },
   // "Goditje dënimi" is the same as a free kick / foul (owner-confirmed 2026-11-04), so it is NOT a penalty: no betting pause,
-  // no PENALTY event. The real penalty code is still unknown (find it in the admin VC codes panel).
+  // no PENALTY event. The penalty code is 1023 (see above).
   '1236': { kind: 'free_kick', label: 'Gjuajtje e lirë' }, // VC="11236", Central Stallions v Deren FC, T=4827
 };
 
