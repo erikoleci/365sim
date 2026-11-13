@@ -186,9 +186,30 @@ export async function fetchMatches(league?: string): Promise<{ matches: Match[];
 // small/fast. This fetches the ONE match being opened with every market —
 // GET /matches/:id was already doing a full unfiltered SELECT * server-side
 // and is unchanged; this is just the first frontend caller of it.
-export async function fetchMatchById(id: string): Promise<Match> {
+const matchFullPrefetch = new Map<string, { at: number; promise: Promise<Match> }>();
+const requestMatchById = async (id: string): Promise<Match> => {
   const { match } = await request<{ match: Match }>(`/matches/${encodeURIComponent(id)}`);
   return match;
+};
+
+// The finger is on a match (pointer down, before the click lands): start downloading its full markets now.
+export function prefetchMatchById(id: string): void {
+  const now = Date.now();
+  const hit = matchFullPrefetch.get(id);
+  if (hit && now - hit.at < 10000) return;
+  if (matchFullPrefetch.size > 20) matchFullPrefetch.clear();
+  const promise = requestMatchById(id);
+  promise.catch(() => matchFullPrefetch.delete(id));
+  matchFullPrefetch.set(id, { at: now, promise });
+}
+
+export async function fetchMatchById(id: string): Promise<Match> {
+  const hit = matchFullPrefetch.get(id);
+  if (hit && Date.now() - hit.at < 10000) {
+    matchFullPrefetch.delete(id); // used once: the next look asks the server again
+    try { return await hit.promise; } catch { /* fall through to a normal request */ }
+  }
+  return requestMatchById(id);
 }
 
 // Only the matches in play, small and fast: fetched first when a tab opens or returns (see useMatchesFeed.loadLive).

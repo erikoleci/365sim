@@ -298,7 +298,7 @@ const MatchRow: React.FC<MatchRowProps> = ({ match, onBetClick, onOpenDetail, is
     <div className={`flex flex-col md:flex-row border-b border-brand-divider bg-brand-panel hover:bg-[#3f3f3f] transition-colors group py-3 px-3 ${isLive ? 'border-l-4 border-l-brand-accent' : ''}`}>
       
       {/* Time & Teams Info */}
-      <div className="flex-1 flex items-center cursor-pointer mb-3 md:mb-0" onPointerDown={() => { if (match.status === MatchStatus.LIVE) api.prefetchLiveDetail(String(match.liveSourceId ?? match.id)); }} onClick={() => onOpenDetail(match)}>
+      <div className="flex-1 flex items-center cursor-pointer mb-3 md:mb-0" onPointerDown={() => { api.prefetchMatchById(match.id); if (match.status === MatchStatus.LIVE) api.prefetchLiveDetail(String(match.liveSourceId ?? match.id)); }} onClick={() => onOpenDetail(match)}>
         <div className="text-xs text-brand-textMuted w-12 text-center flex flex-col items-center justify-center shrink-0">
            {isLive ? (
                <div className={`font-bold leading-tight ${isHalftime(match) ? 'text-brand-yellow' : 'text-brand-accent animate-pulse'}`}>
