@@ -35,7 +35,7 @@ export async function userMetrics(pool, { rangeStart, rangeEnd, adminId = null, 
        JOIN users u ON u.id = b.user_id
        WHERE b.created_at >= $1 AND b.created_at < $2 AND b.status NOT IN ('CANCELLED', 'VOID')
          AND ($5::text IS NULL OR COALESCE(u.admin_id, (SELECT x.admin_id FROM users x WHERE x.id = u.agent_id)) = $5)
-         AND ($6::text IS NULL OR u.agent_id = $6)
+         AND ($6::text IS NULL OR u.agent_id = $6 OR u.id = $6)
      )
      SELECT user_id, currency,
             COUNT(*)::int AS tickets,
@@ -97,24 +97,29 @@ export function buildCommissionReport({ admins, agents, users, metrics }) {
     }
     return { ALL: finishMetrics(t.ALL), EUR: finishMetrics(t.EUR) };
   };
-  const player = (u) => ({ id: u.id, name: u.name, username: u.username, isActive: u.is_active, currencies: sumOf([u]) });
+  const player = (u, self = false) => ({ id: u.id, name: u.name, username: u.username, isActive: u.is_active, self, currencies: sumOf([u]) });
   const owner = (x) => x.admin_id ?? null;
+  // An agent (or admin) who bets himself is a player too: his own tickets are listed as the first row of his group and counted in every
+  // total, so nothing a logged-in agent/admin plays is left out of the report.
+  const hasTickets = (u) => byUser.has(u.id);
   const groupFor = (admin) => {
     const myAgents = agents.filter((a) => owner(a) === admin.id);
     const rows = myAgents.map((a) => {
+      const own = hasTickets(a) ? [a] : [];
       const mine = users.filter((u) => u.agent_id === a.id);
-      return { id: a.id, name: a.name, username: a.username, isActive: a.is_active, direct: false, currencies: sumOf(mine), players: mine.map(player) };
+      return { id: a.id, name: a.name, username: a.username, isActive: a.is_active, direct: false, currencies: sumOf([...own, ...mine]), players: [...own.map((u) => player(u, true)), ...mine.map((u) => player(u))] };
     });
-    const direct = users.filter((u) => !u.agent_id && owner(u) === admin.id);
-    if (direct.length) rows.push({ id: null, name: '', username: '', isActive: true, direct: true, currencies: sumOf(direct), players: direct.map(player) });
-    const everyone = users.filter((u) => owner(u) === admin.id);
+    const adminSelf = admin.id != null && hasTickets(admin) ? [admin] : [];
+    const direct = [...adminSelf, ...users.filter((u) => !u.agent_id && owner(u) === admin.id)];
+    if (direct.length) rows.push({ id: null, name: '', username: '', isActive: true, direct: true, currencies: sumOf(direct), players: direct.map((u) => player(u, adminSelf.includes(u))) });
+    const everyone = [...adminSelf, ...myAgents.filter(hasTickets), ...users.filter((u) => owner(u) === admin.id)];
     return { admin: { id: admin.id, name: admin.name, username: admin.username }, rows, totals: sumOf(everyone) };
   };
   const list = [...admins];
   const hasUnowned = [...agents, ...users].some((x) => owner(x) === null);
   if (hasUnowned && !list.some((a) => a.id === null)) list.push({ id: null, name: '', username: '' });
   const groups = list.map(groupFor).filter((g) => g.rows.length > 0 || g.admin.id !== null);
-  return { rates: { single: COMMISSION_SINGLE_PCT, multi: COMMISSION_MULTI_PCT }, groups, totals: sumOf(users) };
+  return { rates: { single: COMMISSION_SINGLE_PCT, multi: COMMISSION_MULTI_PCT }, groups, totals: sumOf([...users, ...agents.filter(hasTickets), ...admins.filter((a) => a.id != null && hasTickets(a))]) };
 }
 
 // 'YYYY-MM' (one month) or 'all' (everything) -> the [rangeStart, rangeEnd) window and its label.

@@ -172,7 +172,7 @@ const CommissionReport: React.FC<{ scope: 'owner' | 'agent' }> = ({ scope }) => 
                             <tr><td colSpan={11} className="px-2 pt-2 pb-1 text-[10px] uppercase text-brand-textMuted">{t('Komisioni i çdo lojtari')}</td></tr>
                           )}
                           {r.players.map((p) => rowsOf(
-                            <span className={'pl-4 ' + (p.isActive ? '' : 'line-through text-brand-textMuted')}>{p.name} <span className="text-brand-textMuted">@{p.username}</span></span>,
+                            <span className={'pl-4 ' + (p.isActive ? '' : 'line-through text-brand-textMuted')}>{p.name} <span className="text-brand-textMuted">@{p.username}</span>{p.self && <span className="text-brand-yellow ml-1">({t('vetë')})</span>}</span>,
                             p.currencies, 'bg-black/20', undefined, `${k}-${p.id}`
                           ))}
                           {r.players.length === 0 && <tr><td colSpan={11} className="px-2 py-2 text-brand-textMuted pl-6">{t('Asnjë lojtar.')}</td></tr>}

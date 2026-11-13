@@ -721,7 +721,7 @@ export async function adminMoveAccount(accountId: string, adminId: string | null
 // Agent commission report: 4% live / single result, 8% two or more results; lek (ALL) and euro (EUR) kept apart.
 export interface CommissionMetrics { xhiro: number; fitim: number; pending: number; activeTickets: number; tickets: number; diferenca: number; percAgjentit: number; kompania: number }
 export interface CommissionMetricsByCur { ALL: CommissionMetrics; EUR: CommissionMetrics }
-export interface CommissionPlayer { id: string; name: string; username: string; isActive: boolean; currencies: CommissionMetricsByCur }
+export interface CommissionPlayer { id: string; name: string; username: string; isActive: boolean; self?: boolean; currencies: CommissionMetricsByCur }
 export interface CommissionRow { id: string | null; name: string; username: string; isActive: boolean; direct: boolean; currencies: CommissionMetricsByCur; players: CommissionPlayer[] }
 export interface CommissionReportData {
   month: string; from?: string | null; to?: string | null; rates: { single: number; multi: number };
