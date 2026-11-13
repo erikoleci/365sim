@@ -418,20 +418,24 @@ router.get('/:id/live-detail', wrap(async (req, res) => {
 router.get('/:id', wrap(async (req, res) => {
   const { rows } = await queryWithRetry('SELECT * FROM matches_cache WHERE id = $1', [req.params.id]);
   if (!rows[0]) return res.status(404).json({ error: 'Match not found' });
-  // In-play corner totals are only offered while the live corner counter is fresh (see marketRules).
-  if (rows[0].status === 'LIVE' || rows[0].live_status != null) {
-    const lc = await readLiveCorners({ query: queryWithRetry }, rows[0].id);
-    if (lc) rows[0].live_corners = lc;
-    // same for the card totals: open only while the live card counter is fresh
-    const cc = await readLiveCards({ query: queryWithRetry }, rows[0].id);
-    if (cc) rows[0].live_cards = cc;
-  }
-  let match = mapEventToMatch(rows[0]);
   // Pre-match record of a match that is being played under another provider id: show the twin's score and minute.
   const sourceId = await liveSourceIdFor(queryWithRetry, rows[0]);
+  // In-play corner / card totals are only offered while the live counter is fresh (see marketRules). The counters belong to the
+  // record that is being played (the twin when there is one): the pre-match record has none of its own, so reading them from it
+  // left every corner / card total closed on a match that was live under its twin's id.
+  const counterId = sourceId || rows[0].id;
+  const attachCounters = async (row) => {
+    const lc = await readLiveCorners({ query: queryWithRetry }, counterId);
+    if (lc) row.live_corners = lc;
+    const cc = await readLiveCards({ query: queryWithRetry }, counterId);
+    if (cc) row.live_cards = cc;
+  };
+  if (rows[0].status === 'LIVE' || rows[0].live_status != null || (sourceId && sourceId !== rows[0].id)) await attachCounters(rows[0]);
+  let match = mapEventToMatch(rows[0]);
   if (sourceId && sourceId !== rows[0].id) {
     const { rows: twinRows } = await queryWithRetry('SELECT * FROM matches_cache WHERE id = $1', [sourceId]);
     if (twinRows[0]) {
+      if (twinRows[0].status === 'LIVE' || twinRows[0].live_status != null) await attachCounters(twinRows[0]);
       const merged = dedupeMatches([match, mapEventToMatch(twinRows[0])]);
       if (merged.length === 1) match = { ...merged[0], id: match.id, liveSourceId: sourceId };
     }
