@@ -525,6 +525,7 @@ export async function adminFetchAgentCredit(range?: { from?: number | null; to?:
 export interface AdminPendingLeg {
   match_id: string; match_home: string; match_away: string; market_name: string; selection_name: string;
   legs: number; bets: number; start_time: string; match_status: string; result_home: number | null; result_away: number | null;
+  tickets?: { betId: string; ticketNo: number | null; createdAt: number | string; stake: number | string; currency: string; odds: number | string; username: string; name: string; agent: string | null }[];
 }
 export async function adminFetchPendingLegs() {
   return request<{ legs: AdminPendingLeg[] }>('/admin/pending-legs');

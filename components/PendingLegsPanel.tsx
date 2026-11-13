@@ -49,6 +49,22 @@ const PendingLegsPanel: React.FC = () => {
             </div>
             <div className="text-sm text-brand-text mt-1">{r.market_name}: <b>{r.selection_name}</b></div>
             <div className="text-xs text-brand-textMuted">{r.legs} bileta · {r.bets} fletë</div>
+            {r.tickets && r.tickets.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {r.tickets.map((t, i) => {
+                  const d = new Date(Number(t.createdAt));
+                  const when = Number.isFinite(d.getTime()) ? d.toLocaleString('sq-AL', { timeZone: 'Europe/Tirane', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : '';
+                  return (
+                    <div key={t.betId + i} className="text-xs bg-black/30 rounded px-2 py-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                      <span className="text-white font-bold">#{t.ticketNo ?? t.betId.slice(-8)}</span>
+                      <span className="text-brand-text">{t.name} <span className="text-brand-textMuted">@{t.username}</span>{t.agent && <span className="text-brand-textMuted"> · agjenti @{t.agent}</span>}</span>
+                      <span className="text-brand-textMuted">{when}</span>
+                      <span className="text-brand-textMuted">{Number(t.stake)} {t.currency} · kuota {Number(t.odds)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             <div className="flex gap-2 mt-2">
               <button disabled={busy === key} onClick={() => decide(r, 'WON')} className="flex-1 min-h-[44px] rounded bg-brand-accent text-black font-bold text-sm">Fitues</button>
               <button disabled={busy === key} onClick={() => decide(r, 'LOST')} className="flex-1 min-h-[44px] rounded bg-red-600 text-white font-bold text-sm">Humbës</button>

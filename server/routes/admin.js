@@ -1234,8 +1234,12 @@ router.get('/pending-legs', async (req, res) => {
   const { rows } = await pool.query(
     `SELECT bs.match_id, bs.match_home, bs.match_away, bs.market_name, bs.selection_name,
             COUNT(*)::int AS legs, COUNT(DISTINCT bs.bet_id)::int AS bets, MAX(m.start_time) AS start_time, MAX(m.status) AS match_status,
-            MAX(m.result_home) AS result_home, MAX(m.result_away) AS result_away
+            MAX(m.result_home) AS result_home, MAX(m.result_away) AS result_away,
+            -- who placed each ticket and when, so the owner can tell the tickets apart
+            json_agg(json_build_object('betId', b.id, 'ticketNo', b.ticket_no, 'createdAt', b.created_at, 'stake', b.stake, 'currency', COALESCE(b.currency, 'ALL'),
+                                       'odds', bs.odds, 'username', u.username, 'name', u.name, 'agent', ua.username) ORDER BY b.created_at) AS tickets
        FROM bet_selections bs JOIN matches_cache m ON m.id = bs.match_id
+       JOIN bets b ON b.id = bs.bet_id JOIN users u ON u.id = b.user_id LEFT JOIN users ua ON ua.id = u.agent_id
       WHERE bs.status = 'PENDING' AND (m.status = 'FINISHED' OR m.start_time < $1)
       GROUP BY bs.match_id, bs.match_home, bs.match_away, bs.market_name, bs.selection_name
       ORDER BY MAX(m.start_time) DESC, bs.market_name LIMIT 500`, [cutoff]);
