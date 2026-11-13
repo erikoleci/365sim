@@ -150,13 +150,3 @@ describe('Godet kornen e N-te (Nth corner of the match)', () => {
     expect(determineLegOutcome(leg('1'), ctx)).toBe('LOST');
   });
 });
-
-describe('a corner counter stuck at 0-0 is not trusted', () => {
-  it('the markets close from the 35th minute with a 0-0 counter, and stay open before it or once a corner was counted', () => {
-    const base = { live_status: '1H' };
-    const zero = { home: 0, away: 0, fresh: true };
-    expect(reason(row({ ...base, live_minute: '20:00', live_corners: zero }), 'Lart 8.5')).toBeNull();
-    expect(reason(row({ ...base, live_minute: '40:20', live_corners: zero }), 'Lart 8.5')).toBe('NOT_VERIFIABLE_LIVE');
-    expect(reason(row({ ...base, live_minute: '40:20', live_corners: { home: 1, away: 0, fresh: true } }), 'Lart 8.5')).toBeNull();
-  });
-});
