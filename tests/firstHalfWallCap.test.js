@@ -31,3 +31,12 @@ describe('first half when the provider never signalled half time: the break show
     expect(q).toContain('BETWEEN 46 AND 130');
   });
 });
+
+describe('provider market names for both teams to score', () => {
+  it('"Gol JoGol Pjesa 1 Live" is the first-half GG market, "Gol / Jo Gol Ne P2" the second-half one, "Gol Jo Gol Live" the full-time one', async () => {
+    const { classifyMarket } = await import('../server/marketRules.js');
+    expect(classifyMarket('l365-1-m1', 'Gol JoGol Pjesa 1 Live')).toMatchObject({ kind: 'btts', period: 'H1' });
+    expect(classifyMarket('l365-1-m1', 'Gol / Jo Gol Ne P2')).toMatchObject({ kind: 'btts', period: 'H2' });
+    expect(classifyMarket('l365-1-m1', 'Gol Jo Gol Live')).toMatchObject({ kind: 'btts', period: null });
+  });
+});

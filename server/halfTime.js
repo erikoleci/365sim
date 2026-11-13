@@ -85,13 +85,15 @@ export function halfTimeFromGoalLog(goals, homeTeam, awayTeam, homeScore, awaySc
 export async function captureHalfTimeFromGoalLog({ now = Date.now() } = {}) {
   const { rows } = await pool.query(
     `SELECT m.id, m.home_team, m.away_team, m.live_home_score, m.live_away_score, m.live_minute, m.start_time FROM matches_cache m
-      WHERE m.status = 'LIVE' AND m.ht_home IS NULL AND m.live_home_score IS NOT NULL AND m.live_away_score IS NOT NULL
-        AND EXISTS (SELECT 1 FROM bet_selections bs WHERE bs.match_id = m.id AND bs.status = 'PENDING')`);
+      WHERE m.status = 'LIVE' AND m.ht_home IS NULL AND m.live_home_score IS NOT NULL AND m.live_away_score IS NOT NULL`);
   let captured = 0;
   for (const m of rows) {
     const minute = minuteToNumber(m.live_minute);
     const sinceKickoff = now - Date.parse(m.start_time);
-    if (!Number.isFinite(minute) || minute < 60 || !(sinceKickoff >= 75 * 60000)) continue; // clearly into the second half, in game time AND wall time
+    // Clearly into the second half, in game time AND wall time (no stoppage time reaches minute 50 before 62 real minutes). EVERY live match without a
+    // half-time score is covered, not only the ones with open tickets: the second-half markets ("Gol / Jo Gol Ne P2", totals of the 2nd half) stay closed
+    // without it, so waiting for a ticket meant nobody could place the first one.
+    if (!Number.isFinite(minute) || minute < 50 || !(sinceKickoff >= 62 * 60000)) continue;
     const { rows: goals } = await pool.query("SELECT team, minute FROM match_events WHERE match_id = $1 AND type = 'GOAL'", [m.id]);
     const ht = halfTimeFromGoalLog(goals, m.home_team, m.away_team, m.live_home_score, m.live_away_score);
     if (!ht) continue;
