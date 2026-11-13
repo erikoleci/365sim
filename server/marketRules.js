@@ -554,7 +554,17 @@ function liveCounterFreshAndEarly(counter, row) {
   if (!Number.isFinite(minute) || minute >= LAST_EVENT_CUTOFF_MINUTE) return null; // the end is too close
   return counter;
 }
-const cornersFreshAndEarly = (row) => liveCounterFreshAndEarly(row.live_corners, row);
+// A corner counter still at 0-0 from the 35th minute on is the provider NOT counting corners for that match (seen: a finished
+// match with 0-0 corners and no corner row at 94'), not a match without corners: it is not trusted, so the corner markets stay closed
+// instead of letting a bet through on a corner that has already been taken.
+const CORNER_COUNTER_STUCK_MINUTE = 35;
+const cornersFreshAndEarly = (row) => {
+  const c = liveCounterFreshAndEarly(row.live_corners, row);
+  if (!c) return null;
+  const minute = parseInt(String(row.live_minute || ''), 10);
+  if (c.home + c.away === 0 && Number.isFinite(minute) && minute >= CORNER_COUNTER_STUCK_MINUTE) return null;
+  return c;
+};
 
 // ---- card markets in play -----------------------------------------------------------------
 // Same idea as the corner totals: the live feed keeps the card counters current (YC1/YC2/RC1/RC2 ->
