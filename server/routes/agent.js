@@ -330,12 +330,12 @@ router.get('/reports/monthly', async (req, res) => {
   const { year, month, rangeStart, rangeEnd, label } = monthRange(req.query.month);
 
   const { rows: totalsRows } = await pool.query(
-    `SELECT COUNT(DISTINCT u.id)::int AS total_users,
+    `SELECT (COUNT(DISTINCT u.id) FILTER (WHERE u.id <> $1))::int AS total_users,
             COALESCE(COUNT(b.id), 0)::int AS total_tickets,
             ${MONEY_SUMS}
      FROM users u
      LEFT JOIN bets b ON b.user_id = u.id AND b.status <> 'CANCELLED' AND b.created_at >= $2 AND b.created_at < $3
-     WHERE u.agent_id = $1`,
+     WHERE (u.agent_id = $1 OR u.id = $1)`, // the agent's own tickets count too (his own account is a player of his)
     [req.user.id, rangeStart, rangeEnd]
   );
 
@@ -345,7 +345,7 @@ router.get('/reports/monthly', async (req, res) => {
             ${MONEY_SUMS}
      FROM users u
      LEFT JOIN bets b ON b.user_id = u.id AND b.status <> 'CANCELLED' AND b.created_at >= $2 AND b.created_at < $3
-     WHERE u.agent_id = $1
+     WHERE (u.agent_id = $1 OR u.id = $1)
      GROUP BY u.id
      ORDER BY turnover DESC`,
     [req.user.id, rangeStart, rangeEnd]
