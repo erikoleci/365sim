@@ -95,6 +95,11 @@ export function minuteOf(raw) {
 // first half: only the break itself does (the provider's half-time signal). The wall clock stays
 // as a backstop for a missed signal: even a first half with +20 ends ~70 real minutes after kickoff.
 export const FIRST_HALF_MAX_WALL_MIN = 80;
+// A break (half time, ~15 min) has passed when the real time since kick-off exceeds the game clock by this much: in the first half the
+// two differ only by the kick-off delay (0-5 min, even in +18 stoppage time), in the second half by the break (15). Needs a game minute of
+// 46+ so a delayed kick-off early in the first half is never mistaken for it. Used when the provider never signalled half time.
+export const BREAK_GAP_MIN = 12;
+export const BREAK_MIN_CLOCK = 46;
 const FIRST_HALF_NO_DATA_WALL_MIN = 50;
 
 // Has the first half of this match (a matches_cache row) already ended?
@@ -113,6 +118,7 @@ export function isPastFirstHalf(row, now = Date.now()) {
   const minute = minuteOf(row.live_minute);
   const elapsedMin = (now - kickoff) / 60000;
   if (elapsedMin >= FIRST_HALF_MAX_WALL_MIN) return true;
+  if (minute != null && minute >= BREAK_MIN_CLOCK && elapsedMin - minute >= BREAK_GAP_MIN) return true; // the break has happened (see BREAK_GAP_MIN)
   if (!raw && minute == null && elapsedMin >= FIRST_HALF_NO_DATA_WALL_MIN) return true;
   return false;
 }

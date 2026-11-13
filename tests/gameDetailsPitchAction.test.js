@@ -114,31 +114,20 @@ describe('applyGameDetails - the pitch action reaches (and stays on) the client'
     expect(lastAction()).toMatchObject({ side: 'away', kind: 'possession' });
   });
 
-  it('an injury stays up for the minimum time even when attack / possession frames follow at once; a later stoppage replaces it', async () => {
-    await applyGameDetails(tag({ ...base, T: '1200', VC: '11025' })); // home injury
-    expect(lastAction()).toMatchObject({ side: 'home', kind: 'injury' });
-    vi.advanceTimersByTime(1000);
-    await applyGameDetails(tag({ ...base, T: '1201', VC: '21001' })); // away attack right after
-    expect(lastAction()).toMatchObject({ side: 'home', kind: 'injury' });
-    vi.advanceTimersByTime(2000);
-    await applyGameDetails(tag({ ...base, T: '1203', VC: '11004' })); // a corner is a stoppage too: replaces it
-    expect(lastAction()).toMatchObject({ side: 'home', kind: 'corner' });
-    vi.advanceTimersByTime(9000); // past the minimum time
-    await applyGameDetails(tag({ ...base, T: '1212', VC: '21001' }));
-    expect(lastAction()).toMatchObject({ side: 'away', kind: 'attack' });
-  });
-
-  it('a shot on target is not wiped by an attack / possession frame a second later; a more important action replaces it at once; after the minimum time anything may', async () => {
+  it('the newest action always replaces the one on the pitch, whatever it is (no action is more important), and stays until the next one', async () => {
     await applyGameDetails(tag({ ...base, T: '900', VC: '11011' })); // home shot on target
     expect(lastAction()).toMatchObject({ side: 'home', kind: 'shot_on_target' });
     vi.advanceTimersByTime(1000);
-    await applyGameDetails(tag({ ...base, T: '901', VC: '21001' })); // away attack: less important, inside the minimum time
-    expect(lastAction()).toMatchObject({ side: 'home', kind: 'shot_on_target' });
+    await applyGameDetails(tag({ ...base, T: '901', VC: '21001' })); // away attack one second later replaces it
+    expect(lastAction()).toMatchObject({ side: 'away', kind: 'attack' });
     vi.advanceTimersByTime(1000);
-    await applyGameDetails(tag({ ...base, T: '902', VC: '11004' })); // corner: more important, replaces at once
+    await applyGameDetails(tag({ ...base, T: '902', VC: '11004' })); // corner replaces the attack
     expect(lastAction()).toMatchObject({ side: 'home', kind: 'corner' });
-    vi.advanceTimersByTime(9000);
-    await applyGameDetails(tag({ ...base, T: '911', VC: '21002' }));
+    vi.advanceTimersByTime(1000);
+    await applyGameDetails(tag({ ...base, T: '903', VC: '21002' })); // possession replaces the corner
+    expect(lastAction()).toMatchObject({ side: 'away', kind: 'possession' });
+    vi.advanceTimersByTime(40000);
+    await applyGameDetails(tag({ ...base, T: '943' })); // no VC: the last one is still there
     expect(lastAction()).toMatchObject({ side: 'away', kind: 'possession' });
   });
 

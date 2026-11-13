@@ -30,9 +30,12 @@ describe('extra time: markets are closed', () => {
   it('events logged in extra time get half 3', () => {
     expect(halfSql('$1')).toMatch(/IN \('ET', 'EXTRA_TIME'\) THEN 3/);
   });
-  it('the first half is never ended by the game clock (stoppage time is unbounded: +15, +20)', () => {
+  it('the first half is never ended by the game clock ALONE (stoppage time is unbounded: +15, +20): the clock only counts together with the real time gap of the break', () => {
     const sql = halfSql('$1');
-    expect(sql).not.toMatch(/live_minute/);
     expect(sql).toMatch(/ht_home IS NOT NULL THEN 2/);
+    // every use of live_minute sits in the one clause that also compares it with the real time since kick-off
+    const clauses = sql.split('WHEN').filter((c) => /live_minute/.test(c));
+    expect(clauses).toHaveLength(1);
+    expect(clauses[0]).toMatch(/EXTRACT\(EPOCH FROM \(NOW\(\) - start_time/);
   });
 });

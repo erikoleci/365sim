@@ -19,7 +19,7 @@
 //        real minutes after the scheduled kickoff, a match with no HT seen is taken to be in the
 //        second half (a first half with +20 stoppage still ends ~70 real minutes after kickoff).
 // Penalties stay NULL (unknown).
-import { FIRST_HALF_MAX_WALL_MIN } from './marketPeriods.js';
+import { FIRST_HALF_MAX_WALL_MIN, BREAK_GAP_MIN, BREAK_MIN_CLOCK } from './marketPeriods.js';
 export const FIRST_HALF_WALL_LIMIT_MIN = FIRST_HALF_MAX_WALL_MIN;
 export const halfSql = (p) => `(SELECT CASE
   WHEN UPPER(COALESCE(live_status, '')) IN ('ET', 'EXTRA_TIME') THEN 3
@@ -28,6 +28,9 @@ export const halfSql = (p) => `(SELECT CASE
   WHEN rt_home IS NOT NULL THEN 3
   WHEN ht_home IS NOT NULL THEN 2
   WHEN status = 'LIVE' AND start_time::text !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN 1
+  WHEN status = 'LIVE' AND live_minute ~ '^[0-9]{2,3}($|[^0-9])'
+       AND substring(live_minute from '^[0-9]+')::int BETWEEN ${BREAK_MIN_CLOCK} AND 130
+       AND EXTRACT(EPOCH FROM (NOW() - start_time::text::timestamptz)) / 60 - substring(live_minute from '^[0-9]+')::int >= ${BREAK_GAP_MIN} THEN 2
   WHEN status = 'LIVE'
        AND NOW() - start_time::text::timestamptz <= INTERVAL '${FIRST_HALF_WALL_LIMIT_MIN} minutes' THEN 1
   WHEN status = 'LIVE' THEN 2
