@@ -113,6 +113,12 @@ const ACTION_HOLD_MS = Number(process.env.LIVE_ACTION_HOLD_MS) > 0 ? Number(proc
 // Stoppage actions are kept on the pitch at least this long (default 8 s) before an attack / possession code may replace them.
 const ACTION_STICKY_MS = Number(process.env.LIVE_ACTION_STICKY_MS) > 0 ? Number(process.env.LIVE_ACTION_STICKY_MS) : 8000;
 const STICKY_KINDS = new Set(['corner', 'free_kick', 'injury', 'substitution', 'goal', 'penalty']);
+// EVERY action stays on the pitch at least this long (default 5 s) before a LESS important one may replace it: the provider sends frames
+// every second or two and an attack / possession frame used to wipe a shot or a throw-in after a blink. A more (or equally) important
+// action replaces it at once.
+const ACTION_MIN_SHOW_MS = Number(process.env.LIVE_ACTION_MIN_MS) > 0 ? Number(process.env.LIVE_ACTION_MIN_MS) : 5000;
+const ACTION_PRIORITY = { goal: 5, penalty: 5, corner: 4, free_kick: 4, injury: 4, substitution: 4, shot_on_target: 3, big_chance: 3, dangerous_attack: 2, throw_in: 1, back_line_restart: 1, offside: 1, attack: 1, possession: 0 };
+const priorityOf = (a) => (a && ACTION_PRIORITY[a.kind] != null ? ACTION_PRIORITY[a.kind] : 1);
 // VC codes we could not decode, logged once each so they can be labelled in
 // liveAction.js (never guessed). Bounded so a noisy feed cannot grow it.
 const unmappedVcSeen = new Set();
@@ -580,8 +586,8 @@ async function applyGameDetailsNow(raw) {
   // flash them for a frame. Only another stoppage replaces one inside that window.
   const incoming = decodedAction && decodedAction.kind !== 'half_time' && decodedAction.kind !== 'full_time' ? decodedAction
     : (foundNow ? { side: foundNow.side, kind: foundNow.kind, label: foundNow.label } : null);
-  const stickyActive = Boolean(held && held.stickyUntil > nowMs && STICKY_KINDS.has(held.action.kind));
-  const suppressed = stickyActive && Boolean(incoming) && !STICKY_KINDS.has(incoming.kind);
+  const stickyActive = Boolean(held && held.stickyUntil > nowMs);
+  const suppressed = stickyActive && Boolean(incoming) && priorityOf(incoming) < priorityOf(held.action);
   if (decodedAction && decodedAction.kind === 'full_time') {
     held = null;
   } else if (incoming && !suppressed) {
@@ -590,7 +596,7 @@ async function applyGameDetailsNow(raw) {
       action: incoming,
       until: nowMs + ACTION_HOLD_MS,
       // the same code repeating on every tick does not extend the window
-      stickyUntil: same ? held.stickyUntil : (STICKY_KINDS.has(incoming.kind) ? nowMs + ACTION_STICKY_MS : 0),
+      stickyUntil: same ? held.stickyUntil : nowMs + (STICKY_KINDS.has(incoming.kind) ? ACTION_STICKY_MS : ACTION_MIN_SHOW_MS),
     };
   }
   const liveAction = suppressed

@@ -128,6 +128,20 @@ describe('applyGameDetails - the pitch action reaches (and stays on) the client'
     expect(lastAction()).toMatchObject({ side: 'away', kind: 'attack' });
   });
 
+  it('a shot on target is not wiped by an attack / possession frame a second later; a more important action replaces it at once; after the minimum time anything may', async () => {
+    await applyGameDetails(tag({ ...base, T: '900', VC: '11011' })); // home shot on target
+    expect(lastAction()).toMatchObject({ side: 'home', kind: 'shot_on_target' });
+    vi.advanceTimersByTime(1000);
+    await applyGameDetails(tag({ ...base, T: '901', VC: '21001' })); // away attack: less important, inside the minimum time
+    expect(lastAction()).toMatchObject({ side: 'home', kind: 'shot_on_target' });
+    vi.advanceTimersByTime(1000);
+    await applyGameDetails(tag({ ...base, T: '902', VC: '11004' })); // corner: more important, replaces at once
+    expect(lastAction()).toMatchObject({ side: 'home', kind: 'corner' });
+    vi.advanceTimersByTime(9000);
+    await applyGameDetails(tag({ ...base, T: '911', VC: '21002' }));
+    expect(lastAction()).toMatchObject({ side: 'away', kind: 'possession' });
+  });
+
   it('the final whistle (VC 1017) shows "Ndeshja mbaroi" with no side and the old action does not come back', async () => {
     await applyGameDetails(tag({ ...base, T: '5300', VC: '11004' }));
     vi.advanceTimersByTime(1000);
