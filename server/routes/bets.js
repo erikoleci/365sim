@@ -5,7 +5,7 @@ import pool from '../db.js';
 import { requireAuth } from './auth.js';
 import { resolveCurrentSelection, mapEventToMatch, isStaleLive } from '../oddsUtils.js';
 import { getBetBlockReason, describeBlockReason, nextEventKind, eventOrderOrdinal, isLiveCornerMarket, isLiveCardMarket } from '../marketRules.js';
-import { readNextEventCounters, readLiveCorners, readLiveCards, liveFairProbability, liveEdge } from '../matchSettlement.js';
+import { readNextEventCounters, readLiveCorners, readLiveCards, liveFairProbability, liveEdge, edgeTestApplies } from '../matchSettlement.js';
 import { minuteOf } from '../marketPeriods.js';
 import { certainOutcomeReason } from '../liveCertainty.js';
 import { withLiveTwin } from '../liveTwin.js';
@@ -397,7 +397,8 @@ router.post('/', wrap(async (req, res) => {
         const edge = liveEdge(currentOdds, fair);
         placedState.pWin = Number(fair.pWin.toFixed(4));
         placedState.edge = Number(edge.toFixed(3));
-        if (fair.pWin >= LIVE_LEG_MAX_PROB || edge > LIVE_LEG_MAX_EDGE) {
+        const edgeApplies = edgeTestApplies(score, minute);
+        if (fair.pWin >= LIVE_LEG_MAX_PROB || (edgeApplies && edge > LIVE_LEG_MAX_EDGE)) {
           console.log('[bets] live price gate: match=' + matchRow.id + ' market=' + sel.marketId + ' sel=' + sel.selectionId + ' odds=' + currentOdds + ' pWin=' + placedState.pWin + ' edge=' + placedState.edge + ' ' + score.h + '-' + score.a + " " + minute + "'" + ' user=' + req.user.id);
           return fail(409, {
             error: `Betting on \"${current.marketName}\" for ${matchRow.home_team} vs ${matchRow.away_team} is closed — the match situation has made this price unavailable.`,
@@ -406,7 +407,7 @@ router.post('/', wrap(async (req, res) => {
             closed: [{ matchId: sel.matchId, marketId: sel.marketId, selectionId: sel.selectionId }],
           });
         }
-        liveEdges.push(edge);
+        if (edgeApplies) liveEdges.push(edge);
       }
     }
     if (boostRequested) {
