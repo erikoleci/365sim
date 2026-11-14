@@ -5,6 +5,7 @@ import { requireAuth } from './auth.js';
 import { wrap } from '../asyncHandler.js';
 import { isAdminRole, isSuperAdmin } from '../roles.js';
 import { scopeOf } from '../adminScope.js';
+import { notifySupportInBackground } from '../supportNotify.js';
 
 // Support: a player writes a problem (optionally tagging one of his own tickets), his admin and the super admin read and
 // answer it. The player never learns who answered: every staff message reaches him as plain "Support".
@@ -102,6 +103,7 @@ router.post('/threads', wrap(async (req, res) => {
     await client.query('INSERT INTO support_messages (thread_id, from_role, sender_id, body, created_at) VALUES ($1, \'USER\', $2, $3, $4)', [id, req.user.id, body, now]);
     await client.query('COMMIT');
   } catch (err) { await client.query('ROLLBACK').catch(() => {}); throw err; } finally { client.release(); }
+  notifySupportInBackground(pool, { userId: req.user.id, ticketNo, matchLabel, body, isNew: true }); // phone notification for the owner
   res.status(201).json({ id });
 }));
 
@@ -114,6 +116,7 @@ router.post('/threads/:id/messages', wrap(async (req, res) => {
   await pool.query('INSERT INTO support_messages (thread_id, from_role, sender_id, body, created_at) VALUES ($1, \'USER\', $2, $3, $4)', [req.params.id, req.user.id, body, now]);
   // A new message from the player re-opens a closed thread and is unread for the staff.
   await pool.query(`UPDATE support_threads SET last_message_at = $2, last_from = 'USER', status = 'OPEN', user_seen_at = $2 WHERE id = $1`, [req.params.id, now]);
+  notifySupportInBackground(pool, { userId: req.user.id, ticketNo: null, matchLabel: null, body, isNew: false });
   res.status(201).json({ ok: true });
 }));
 

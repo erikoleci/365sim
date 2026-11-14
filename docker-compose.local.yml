@@ -63,6 +63,11 @@ services:
       API_FOOTBALL_DAILY_MAX: ${API_FOOTBALL_DAILY_MAX:-90}
       # 1 = fitimi i userit i zbritet adminit që e ka (përgjigjet gjithsesi useri, admini mund të dalë negativ). 0 = si më parë.
       ADMIN_PAYS_WINS: ${ADMIN_PAYS_WINS:-0}
+      # Njoftim në telefon kur një lojtar shkruan te Support (ntfy.sh dhe/ose Telegram; bosh = pa njoftim)
+      NTFY_TOPIC: ${NTFY_TOPIC:-}
+      NTFY_SERVER: ${NTFY_SERVER:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
     ports:
       - "127.0.0.1:3001:3001"   # http://localhost:3001 vetëm nga kjo PC
 
