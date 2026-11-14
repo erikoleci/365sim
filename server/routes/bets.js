@@ -88,6 +88,10 @@ const LIVE_LEG_MAX_EDGE = Number(process.env.LIVE_LEG_MAX_EDGE ?? 1.25);
 const LIVE_LEG_MAX_PROB = Number(process.env.LIVE_LEG_MAX_PROB ?? 0.93);
 const LIVE_TICKET_MAX_EDGE = Number(process.env.LIVE_TICKET_MAX_EDGE ?? 1.5);
 const LIVE_PRICE_GATE = () => process.env.LIVE_PRICE_GATE !== '0';
+// The "price too generous" refusal (a leg's edge over the model, and the product of the edges on a ticket) is OFF by default: players place what they
+// want live (owner's decision 2026-11-14). The model only knows score and minute, not the strength of the teams, so it refused real prices of weaker teams.
+// LIVE_EDGE_TEST=1 turns it back on. What the score has already decided stays closed (marketRules) and so does an outcome that is practically certain.
+const LIVE_EDGE_TEST = () => process.env.LIVE_EDGE_TEST === '1';
 const LIVE_ODDS_MAX_AGE_MS = Math.max(0, Number(process.env.LIVE_BET_ODDS_MAX_AGE_MS ?? 120000));
 
 
@@ -397,7 +401,7 @@ router.post('/', wrap(async (req, res) => {
         const edge = liveEdge(currentOdds, fair);
         placedState.pWin = Number(fair.pWin.toFixed(4));
         placedState.edge = Number(edge.toFixed(3));
-        const edgeApplies = edgeTestApplies(score, minute);
+        const edgeApplies = LIVE_EDGE_TEST() && edgeTestApplies(score, minute);
         if (fair.pWin >= LIVE_LEG_MAX_PROB || (edgeApplies && edge > LIVE_LEG_MAX_EDGE)) {
           console.log('[bets] live price gate: match=' + matchRow.id + ' market=' + sel.marketId + ' sel=' + sel.selectionId + ' odds=' + currentOdds + ' pWin=' + placedState.pWin + ' edge=' + placedState.edge + ' ' + score.h + '-' + score.a + " " + minute + "'" + ' user=' + req.user.id);
           return fail(409, {
@@ -437,7 +441,7 @@ router.post('/', wrap(async (req, res) => {
 
   // The edges of the live legs multiply on an accumulator: five legs each a little too generous are a big
   // overall edge even though every single leg passed. Refuse the ticket as a whole.
-  if (LIVE_PRICE_GATE() && liveEdges.length > 1) {
+  if (LIVE_PRICE_GATE() && LIVE_EDGE_TEST() && liveEdges.length > 1) {
     const ticketEdge = liveEdges.reduce((a, b) => a * b, 1);
     if (ticketEdge > LIVE_TICKET_MAX_EDGE) {
       console.log('[bets] live price gate: ticket edge ' + ticketEdge.toFixed(2) + ' over ' + LIVE_TICKET_MAX_EDGE + ' user=' + req.user.id);
