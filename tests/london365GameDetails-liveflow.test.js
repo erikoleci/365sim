@@ -41,6 +41,9 @@ const mocks = vi.hoisted(function () {
       stats.set(matchId, { ...stats.get(matchId), corners_home: cornersHome, corners_away: cornersAway });
       return Promise.resolve({ rows: [], rowCount: 1 });
     }
+    if (s.indexOf('SELECT corners_home, corners_away, yellow_home') === 0) {
+      return Promise.resolve({ rows: stats.has(params[0]) ? [stats.get(params[0])] : [] });
+    }
     if (s.indexOf('INSERT INTO live_statistics (match_id, possession_home') === 0) {
       const [matchId, possHome, possAway] = params;
       stats.set(matchId, { ...stats.get(matchId), possession_home: possHome, possession_away: possAway });
@@ -298,5 +301,17 @@ describe('applyGameDetails — corners (C1/C2) and possession (H7/A7) reach live
   it('does not write possession when H7/A7 are absent from this tick (does not fabricate 0/0)', async function () {
     await applyGameDetails(tag({ EID: '72000001', T: '100', SC: '0-0' })); // no H7/A7 at all
     expect(mocks.stats.get('l365-72000001')).toBeUndefined();
+  });
+});
+
+describe('applyGameDetails — after an app restart the saved totals are the baseline (nothing lost in the gap)', function () {
+  it('logs the cards and corners that happened while the app was restarting', async function () {
+    mocks.store.set('l365-72000009', { id: 'l365-72000009', home_team: 'Home FC', away_team: 'Away FC', live_home_score: 0, live_away_score: 0, live_minute: '50' });
+    mocks.stats.set('l365-72000009', { corners_home: 3, corners_away: 1, yellow_home: 1, yellow_away: 0, red_home: 0, red_away: 0 });
+    await applyGameDetails(tag({ EID: '72000009', T: '3000', SC: '0-0', YC1: '2', YC2: '0', RC1: '0', RC2: '0', C1: '4', C2: '1' }));
+    const types = mocks.events.filter((e) => e[0] === 'l365-72000009').map((e) => e[2] + ':' + e[3]);
+    expect(types).toContain('YELLOW_CARD:home');
+    expect(types).toContain('CORNER:home');
+    expect(types.filter((t) => t.startsWith('YELLOW_CARD')).length).toBe(1); // only the one new card, not the whole history
   });
 });

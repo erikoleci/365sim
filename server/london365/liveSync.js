@@ -15,6 +15,7 @@ import { resolveSports, api } from './api.js';
 import { leagueById, resolveLeagueByName } from './leagueRegistry.js';
 import { isAllowedByCountryFilter } from './leagueRules.js';
 import { isTicketedFixture } from './ticketedFixtures.js';
+import { ingestProviderEvents } from './providerEvents.js';
 import { isoFromWholeDate, parseScore, normalizeLiveMinute } from './clock.js';
 import { upsertMatch, recordGoalIfChanged } from './persist.js';
 import { leagueKeyFromCountry } from './leagueKeys.js';
@@ -237,6 +238,8 @@ export async function syncLondon365LiveOnce() {
       if (!isTrackedGame('l365-' + g.id) && !isAllowedByCountryFilter(g, resolvedLeagueEarly) && !isTicketedFixture(g)) return;
       liveIds.add('l365-' + g.id);
       liveSeen++;
+      // The provider's own list of corners / cards (see providerEvents.js): logged even when the game-details socket delivers nothing.
+      if (g.result_list) await ingestProviderEvents('l365-' + g.id, g.result_list, g.current_minute).catch((err) => console.error('[london365] provider events ' + g.id + ' failed:', err.message));
       // Each game processed independently: one malformed/failing game must
       // never abort the whole sync cycle. Before this, an uncaught error
       // here (e.g. a bad upsert) threw past this loop entirely, skipping

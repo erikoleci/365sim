@@ -733,11 +733,25 @@ async function applyGameDetailsNow(raw) {
   // date, and turning them into events stamped with the CURRENT minute is what
   // produced cards at the wrong minute. The totals themselves are still saved
   // to live_statistics below.
-  if (baselineKnown) {
-    if (yc1 > prevCards.yc1) await recordCard('YELLOW_CARD', 'home', yc1);
-    if (yc2 > prevCards.yc2) await recordCard('YELLOW_CARD', 'away', yc2);
-    if (rc1 > prevCards.rc1) await recordCard('RED_CARD', 'home', rc1);
-    if (rc2 > prevCards.rc2) await recordCard('RED_CARD', 'away', rc2);
+  // After a restart / deploy the in-memory baseline is gone, yet live_statistics still holds the totals seen BEFORE this message:
+  // those are the real baseline (read once, used for cards and corners), so what happened in the gap is logged, not lost.
+  let savedStats = null;
+  if (!cardBaseline && !baselineKnown) {
+    try { savedStats = (await pool.query('SELECT corners_home, corners_away, yellow_home, yellow_away, red_home, red_away FROM live_statistics WHERE match_id = $1', [matchId])).rows[0] || null; }
+    catch { savedStats = null; }
+  }
+  const nz = (v) => (v == null ? null : (Number(v) || 0));
+  let cardPrev = prevCards;
+  let cardKnown = baselineKnown;
+  if (savedStats && [savedStats.yellow_home, savedStats.yellow_away, savedStats.red_home, savedStats.red_away].every((v) => v != null)) {
+    cardPrev = { ...prevCards, yc1: nz(savedStats.yellow_home), yc2: nz(savedStats.yellow_away), rc1: nz(savedStats.red_home), rc2: nz(savedStats.red_away) };
+    cardKnown = true;
+  }
+  if (cardKnown) {
+    if (yc1 > cardPrev.yc1) await recordCard('YELLOW_CARD', 'home', yc1);
+    if (yc2 > cardPrev.yc2) await recordCard('YELLOW_CARD', 'away', yc2);
+    if (rc1 > cardPrev.rc1) await recordCard('RED_CARD', 'home', rc1);
+    if (rc2 > cardPrev.rc2) await recordCard('RED_CARD', 'away', rc2);
   }
 
   // Corners as discrete events (the "Ngjarjet" list), one per increment of
@@ -749,14 +763,9 @@ async function applyGameDetailsNow(raw) {
   // the real baseline, so corners won in the gap are logged instead of being treated as undatable history (this is why a match showed 1 corner).
   let cornerPrev = prevCards;
   let cornerKnown = baselineKnown;
-  if (!cardBaseline && !baselineKnown) {
-    try {
-      const { rows: ls } = await pool.query('SELECT corners_home, corners_away FROM live_statistics WHERE match_id = $1', [matchId]);
-      if (ls && ls[0] && ls[0].corners_home != null && ls[0].corners_away != null) {
-        cornerPrev = { ...prevCards, c1: Number(ls[0].corners_home) || 0, c2: Number(ls[0].corners_away) || 0 };
-        cornerKnown = true;
-      }
-    } catch { /* no baseline: corners stay history */ }
+  if (savedStats && savedStats.corners_home != null && savedStats.corners_away != null) {
+    cornerPrev = { ...prevCards, c1: nz(savedStats.corners_home), c2: nz(savedStats.corners_away) };
+    cornerKnown = true;
   }
   if (cornerKnown) {
     const addCorners = async (team, from, to) => {
