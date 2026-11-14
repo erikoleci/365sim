@@ -69,18 +69,22 @@ export async function ingestProviderEvents(matchId, resultList, currentClock, { 
   if (seen.get(matchId) === text) return 0;
   const nowSec = clockSeconds(currentClock);
   let added = 0;
-  for (let i = 0; i < rows.length; i++) {
-    const r = rows[i];
-    const { rows: dup } = await db.query('SELECT 1 FROM match_events WHERE match_id = $1 AND type = $2 AND team = $3 AND detail = $4 LIMIT 1', [matchId, r.type, r.team, r.detail]);
-    if (dup && dup.length) continue;
-    // created_at orders the timeline: put each event where it happened relative to the clock now.
-    const at = nowSec != null ? now - Math.max(0, nowSec - r.seconds) * 1000 : now + i;
-    try {
-      await db.query(`INSERT INTO match_events (match_id, minute, type, team, detail, created_at, half) VALUES ($1,$2,$3,$4,$5,$6,${halfSql('$1')})`, [matchId, r.minute, r.type, r.team, r.detail, at]);
-    } catch {
-      await db.query('INSERT INTO match_events (match_id, minute, type, team, detail, created_at) VALUES ($1,$2,$3,$4,$5,$6)', [matchId, r.minute, r.type, r.team, r.detail, at]);
+  if (rows.length) {
+    // One query for what is already stored (not one per event): this runs for every live game, every cycle that the list changed.
+    const { rows: have } = await db.query("SELECT type, team, detail FROM match_events WHERE match_id = $1 AND type IN ('CORNER','YELLOW_CARD')", [matchId]);
+    const known = new Set((have || []).map((h) => h.type + ':' + h.team + ':' + h.detail));
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (known.has(r.type + ':' + r.team + ':' + r.detail)) continue;
+      // created_at orders the timeline: put each event where it happened relative to the clock now.
+      const at = nowSec != null ? now - Math.max(0, nowSec - r.seconds) * 1000 : now + i;
+      try {
+        await db.query(`INSERT INTO match_events (match_id, minute, type, team, detail, created_at, half) VALUES ($1,$2,$3,$4,$5,$6,${halfSql('$1')})`, [matchId, r.minute, r.type, r.team, r.detail, at]);
+      } catch {
+        await db.query('INSERT INTO match_events (match_id, minute, type, team, detail, created_at) VALUES ($1,$2,$3,$4,$5,$6)', [matchId, r.minute, r.type, r.team, r.detail, at]);
+      }
+      added++;
     }
-    added++;
   }
   if (seen.size >= SEEN_CAP) seen.clear();
   seen.set(matchId, text);

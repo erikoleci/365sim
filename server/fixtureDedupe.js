@@ -172,16 +172,28 @@ function sameTeamRaw(x, y) {
 }
 
 export const __sameTeamRaw = sameTeamRaw; // for tests: the same answer without the memory
-const pairMemo = new Map();
+// Every pair of names is judged once and remembered for good. One list refresh compares ~1-2 million pairs of the same few
+// thousand names (each match against every match within 3 hours of its kick-off). The old memo was a Map keyed by the two
+// strings and emptied at 200 000 entries, so it was emptied again and again inside ONE refresh and every refresh recomputed
+// the Levenshtein of all of them (measured on the busy server: ~80% of all CPU, and 7 s per refresh on a 2700-match list).
+// Names are numbered; the answer for the pair (a, b) lives in one byte of a table: 0 not judged yet, 1 different, 2 same.
+// Same answers as sameTeamRaw, only remembered. 8192 distinct names = 64 MB; past that the table starts over.
+const PAIR_CAP = 8192;
+const nameIds = new Map();
+let pairState = null;
+export const __resetPairMemoForTests = () => { nameIds.clear(); if (pairState) pairState.fill(0); };
 export function sameTeam(x, y) {
-  const key = String(x || '') + '\u0001' + String(y || '');
-  let v = pairMemo.get(key);
-  if (v === undefined) {
-    v = sameTeamRaw(x, y);
-    if (pairMemo.size >= 200000) pairMemo.clear();
-    pairMemo.set(key, v);
-  }
-  return v;
+  const a = String(x || ''), b = String(y || '');
+  if (!pairState) pairState = new Uint8Array(PAIR_CAP * PAIR_CAP);
+  if (nameIds.size >= PAIR_CAP - 1) { nameIds.clear(); pairState.fill(0); }
+  let ia = nameIds.get(a);
+  if (ia === undefined) { ia = nameIds.size; nameIds.set(a, ia); }
+  let ib = nameIds.get(b);
+  if (ib === undefined) { ib = nameIds.size; nameIds.set(b, ib); }
+  const k = ia * PAIR_CAP + ib;
+  let v = pairState[k];
+  if (v === 0) { v = sameTeamRaw(a, b) ? 2 : 1; pairState[k] = v; }
+  return v === 2;
 }
 
 export function sameFixture(a, b) {

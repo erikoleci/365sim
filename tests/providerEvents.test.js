@@ -20,7 +20,7 @@ describe('provider result_list', () => {
     const known = new Set(['CORNER:home:1']);
     const inserted = [];
     const db = { query: vi.fn(async (sql, p) => {
-      if (sql.startsWith('SELECT 1')) return { rows: known.has(p[1] + ':' + p[2] + ':' + p[3]) ? [{}] : [] };
+      if (sql.startsWith('SELECT type')) return { rows: [{ type: 'CORNER', team: 'home', detail: '1' }] };
       inserted.push(p); return { rows: [] };
     }) };
     expect(await ingestProviderEvents('l365-1', SAMPLE, '41:30', { db, now: 1_000_000 })).toBe(7);
@@ -31,7 +31,7 @@ describe('provider result_list', () => {
   });
   it('keeps the corner totals for the live corner markets, refreshed even when the list did not change', async () => {
     __resetProviderEventsForTests(); __resetProviderCornersForTests();
-    const db = { query: vi.fn(async (sql) => (sql.startsWith('SELECT 1') ? { rows: [{}] } : { rows: [] })) };
+    const db = { query: vi.fn(async () => ({ rows: [] })) };
     await ingestProviderEvents('l365-2', SAMPLE, '41:30', { db, now: 5000 });
     expect(getProviderCorners('l365-2')).toEqual({ home: 4, away: 2, at: 5000 });
     await ingestProviderEvents('l365-2', SAMPLE, '42:30', { db, now: 35000 });
