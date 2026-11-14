@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { getProviderCorners, __resetProviderCornersForTests } from '../server/providerCounters.js';
 vi.mock('../server/db.js', () => ({ default: { query: vi.fn() } }));
 const { parseResultList, providerEventRows, ingestProviderEvents, __resetProviderEventsForTests } = await import('../server/london365/providerEvents.js');
 
@@ -27,5 +28,15 @@ describe('provider result_list', () => {
     const calls = db.query.mock.calls.length;
     expect(await ingestProviderEvents('l365-1', SAMPLE, '41:35', { db, now: 1_005_000 })).toBe(0);
     expect(db.query.mock.calls.length).toBe(calls);
+  });
+  it('keeps the corner totals for the live corner markets, refreshed even when the list did not change', async () => {
+    __resetProviderEventsForTests(); __resetProviderCornersForTests();
+    const db = { query: vi.fn(async (sql) => (sql.startsWith('SELECT 1') ? { rows: [{}] } : { rows: [] })) };
+    await ingestProviderEvents('l365-2', SAMPLE, '41:30', { db, now: 5000 });
+    expect(getProviderCorners('l365-2')).toEqual({ home: 4, away: 2, at: 5000 });
+    await ingestProviderEvents('l365-2', SAMPLE, '42:30', { db, now: 35000 });
+    expect(getProviderCorners('l365-2').at).toBe(35000);
+    await ingestProviderEvents('l365-3', '4,1,1,1,1,20:00;', '30:00', { db, now: 1 });
+    expect(getProviderCorners('l365-3')).toBe(null); // no corner in the list proves nothing about "0 corners"
   });
 });

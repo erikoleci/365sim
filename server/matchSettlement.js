@@ -1,3 +1,4 @@
+import { getProviderCorners } from './providerCounters.js';
 import { sameTeam } from './fixtureDedupe.js';
 import pool from './db.js';
 import { sameFixture } from './fixtureDedupe.js';
@@ -478,15 +479,23 @@ export async function readNextEventCounters(client, matchId, kind) {
 // `fresh` = the live feed touched live_statistics within maxAgeMs (the gamedetails heartbeat keeps it
 // moving while the feed delivers), so a dead feed never lets a bet through on a frozen count.
 export async function readLiveCorners(client, matchId, now = Date.now(), maxAgeMs = 60000) {
+  let fromDb = null;
   try {
     const { rows } = await client.query('SELECT corners_home, corners_away, updated_at FROM live_statistics WHERE match_id = $1', [matchId]);
     const r = rows[0];
-    if (!r) return null;
-    const home = numOrNaN(r.corners_home); const away = numOrNaN(r.corners_away);
-    if (!Number.isFinite(home) || !Number.isFinite(away)) return null;
-    const at = Number(r.updated_at);
-    return { home, away, fresh: Number.isFinite(at) && now - at <= maxAgeMs };
-  } catch { return null; }
+    if (r) {
+      const home = numOrNaN(r.corners_home); const away = numOrNaN(r.corners_away);
+      if (Number.isFinite(home) && Number.isFinite(away)) {
+        const at = Number(r.updated_at);
+        fromDb = { home, away, fresh: Number.isFinite(at) && now - at <= maxAgeMs };
+      }
+    }
+  } catch { fromDb = null; }
+  if (fromDb && fromDb.fresh) return fromDb;
+  // The game-details socket did not deliver a fresh count: the provider's own corner list (read every live cycle) is the source.
+  const p = getProviderCorners(matchId);
+  if (p && now - p.at <= maxAgeMs) return { home: p.home, away: p.away, fresh: true };
+  return fromDb;
 }
 // Live card counters (yellow + red per team, as the feed counts them) for the in-play card totals markets:
 // { home, away, fresh }. Same freshness rule as readLiveCorners.

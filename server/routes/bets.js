@@ -305,7 +305,7 @@ router.post('/', wrap(async (req, res) => {
     if (matchRow.status === 'LIVE' || matchRow.live_status != null) {
       isLiveTicket = true;
       if (isLiveCornerMarket(current.marketName)) {
-        matchRow.live_corners = await readLiveCorners(pool, matchRow.id);
+        matchRow.live_corners = await readLiveCorners(pool, matchRow.live_source_id || matchRow.id);
         if (LIVE_CORNER_LOCK_MS > 0) {
           const { rows: cRows } = await dbq("SELECT MAX(created_at) AS last_at FROM match_events WHERE match_id = $1 AND type = 'CORNER'", [matchRow.id]);
           if (isLiveEventLocked(matchRow, cRows[0]?.last_at, { lockMs: LIVE_CORNER_LOCK_MS })) {
@@ -317,7 +317,7 @@ router.post('/', wrap(async (req, res) => {
         }
       }
       if (isLiveCardMarket(current.marketName)) {
-        matchRow.live_cards = await readLiveCards(pool, matchRow.id);
+        matchRow.live_cards = await readLiveCards(pool, matchRow.live_source_id || matchRow.id);
         if (LIVE_CARD_LOCK_MS > 0) {
           const { rows: kRows } = await dbq("SELECT MAX(created_at) AS last_at FROM match_events WHERE match_id = $1 AND type IN ('YELLOW_CARD','RED_CARD')", [matchRow.id]);
           if (isLiveEventLocked(matchRow, kRows[0]?.last_at, { lockMs: LIVE_CARD_LOCK_MS })) {

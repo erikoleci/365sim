@@ -7,6 +7,7 @@
 // so a restart of the app or a match the socket never delivers still ends with the full timeline.
 import pool from '../db.js';
 import { halfSql } from '../eventHalf.js';
+import { setProviderCorners } from '../providerCounters.js';
 
 const TYPES = { 2: 'CORNER', 4: 'YELLOW_CARD' };
 
@@ -45,6 +46,7 @@ const clockSeconds = (clock) => {
   return m ? Number(m[1]) * 60 + Number(m[2]) : null;
 };
 
+const loggedTypes = new Set(); // evidence only: one log line per unconfirmed type code (to learn goals / red cards / substitutions)
 const seen = new Map(); // match id -> last result_list handled
 const SEEN_CAP = 3000;
 
@@ -52,8 +54,19 @@ const SEEN_CAP = 3000;
 // event both paths know is stored once. Cheap: nothing happens while the list is unchanged.
 export async function ingestProviderEvents(matchId, resultList, currentClock, { db = pool, now = Date.now() } = {}) {
   const text = String(resultList || '');
-  if (!text || seen.get(matchId) === text) return 0;
+  if (!text) return 0;
   const rows = providerEventRows(text);
+  for (const e of parseResultList(text)) {
+    if (TYPES[e.type] || loggedTypes.has(e.type) || loggedTypes.size > 40) continue;
+    loggedTypes.add(e.type);
+    console.log('[result-list-type] type=' + e.type + ' side=' + e.side + ' at=' + Math.floor(e.seconds / 60) + "' match=" + matchId + ' list=' + text.slice(0, 160));
+  }
+  // Corner totals for the live corner markets: refreshed on EVERY call (each live cycle), the list is the provider's full corner log.
+  // Only when the list shows at least one corner: an empty / foreign list proves nothing about "0 corners".
+  const home = rows.filter((r) => r.type === 'CORNER' && r.team === 'home').length;
+  const away = rows.filter((r) => r.type === 'CORNER' && r.team === 'away').length;
+  if (home + away > 0) setProviderCorners(matchId, home, away, now);
+  if (seen.get(matchId) === text) return 0;
   const nowSec = clockSeconds(currentClock);
   let added = 0;
   for (let i = 0; i < rows.length; i++) {
