@@ -9,7 +9,7 @@ import { pushOddsChanged } from '../ws.js';
 import { noteMatchChanged } from '../matchChanges.js';
 import { trackGame, noteMatchStatus, setLiveRow } from '../liveTracker.js';
 import { captureHalfTimeScore, captureRegularTimeScore } from '../halfTime.js';
-import { isHalfTimeLatched } from '../halfTimeLatch.js';
+import { isHalfTimeLatched, normalizeProviderStatus } from '../halfTimeLatch.js';
 import { createStatusSampler } from '../liveStatusSampler.js';
 import { countOutcomes, mergeEvents, isSparseEvent, applyFullLiveCatalog } from './markets.js';
 import { eventMinuteFromClock } from './clock.js';
@@ -113,7 +113,7 @@ export async function upsertMatch(ev, league, status, liveScores, liveInfo, leag
     const inMinute = liveInfo && liveInfo.minute ? liveInfo.minute : null;
     // While the gamedetails feed says the break is on (VC=1015 latch), the provider's numeric api_status
     // must not overwrite HT, or clients would see the clock running again during the break.
-    const inLiveStatus = isHalfTimeLatched(ev.id) ? 'HT' : (liveInfo && liveInfo.apiStatus != null ? String(liveInfo.apiStatus) : null);
+    const inLiveStatus = isHalfTimeLatched(ev.id) ? 'HT' : normalizeProviderStatus(liveInfo && liveInfo.apiStatus, inMinute);
 
     // Effective post-write values, mirroring the UPSERT's CASE/COALESCE rules
     // exactly (a different-match/reused id has `existing` cleared above, so

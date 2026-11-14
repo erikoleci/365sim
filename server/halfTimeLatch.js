@@ -37,6 +37,15 @@ export function enterHalfTime(matchId, now = Date.now()) {
   return true; // newly entered
 }
 
+// The provider's numeric api_status, read from the live table (2026-11-14: 1 = 1st half, 2 = half-time at 45:00, 3 = 2nd half at 46-97').
+// It survives a restart of the app, unlike the in-memory latch.
+// Only the single sample seen so far (45:00) is trusted: "2" with any other minute stays as the provider sent it.
+export function normalizeProviderStatus(apiStatus, minute) {
+  if (apiStatus == null) return null;
+  const s = String(apiStatus);
+  return s === '2' && String(minute || '').trim() === '45:00' ? 'HT' : s;
+}
+
 // Returns true when the latch was released by this call.
 export function maybeReleaseHalfTime(matchId, { action, restStatus, scoreMoved, now = Date.now() } = {}) {
   const since = latched.get(matchId);
