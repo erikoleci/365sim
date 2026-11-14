@@ -986,6 +986,11 @@ export async function supportInboxStatus(id: string, status: 'OPEN' | 'CLOSED') 
   return request<{ ok: boolean }>(`/support/inbox/${encodeURIComponent(id)}/status`, { method: 'POST', body: JSON.stringify({ status }) });
 }
 
+// ---- Web Push (staff devices) ----
+export async function pushKey() { return request<{ publicKey: string }>('/push/key'); }
+export async function pushSubscribe(subscription: unknown) { return request<{ ok: boolean }>('/push/subscribe', { method: 'POST', body: JSON.stringify({ subscription }) }); }
+export async function pushUnsubscribe(endpoint: string) { return request<{ ok: boolean }>('/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint }) }); }
+
 // ---- Crash / Hi-Lo / Hold & Win ----
 export async function casinoCrashStart(stake: number, autoCashout?: number | null) {
   return request<{ roundId: string; growth: number; autoCashout: number | null; balance: number }>('/casino/crash/start', { method: 'POST', body: JSON.stringify({ stake, autoCashout: autoCashout || undefined }) });

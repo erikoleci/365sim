@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as api from '../services/api';
+import { PushState, pushState, enablePush, disablePush } from '../utils/webPush';
 
 // Staff side of Support. An admin sees the players he owns; the super admin sees everyone and which admin each player belongs to.
 // Replies are anonymous for the player: he only ever sees "Support".
@@ -76,6 +77,26 @@ const Thread: React.FC<{ id: string; isSuper: boolean; onBack: () => void }> = (
   );
 };
 
+const PushToggle: React.FC = () => {
+  const [st, setSt] = useState<PushState | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { pushState().then(setSt); }, []);
+  if (!st || st === 'unsupported') return null;
+  const hint = st === 'ios-install' ? 'Në iPhone: hap sajtin në Safari → Share → "Add to Home Screen", pastaj hapi nga ikona dhe aktivizo njoftimet.'
+    : st === 'denied' ? 'Njoftimet janë bllokuar në shfletues. Lejoji te Settings të sajtit.' : '';
+  const toggle = async () => { setBusy(true); try { setSt(st === 'on' ? await disablePush() : await enablePush()); } catch { setSt(await pushState()); } setBusy(false); };
+  return (
+    <div className="mb-3 text-xs">
+      {(st === 'on' || st === 'off') && (
+        <button onClick={toggle} disabled={busy} className={`px-3 py-1.5 rounded font-bold ${st === 'on' ? 'bg-green-700 hover:bg-green-600' : 'bg-brand-yellow text-brand-bg'}`}>
+          {st === 'on' ? '🔔 Njoftimet aktive (shtyp për t’i çaktivizuar)' : '🔔 Aktivizo njoftimet në këtë pajisje'}
+        </button>
+      )}
+      {hint && <div className="text-brand-textMuted">{hint}</div>}
+    </div>
+  );
+};
+
 const SupportInbox: React.FC<{ isSuper: boolean; onChanged?: () => void }> = ({ isSuper, onChanged }) => {
   const [status, setStatus] = useState<'OPEN' | 'CLOSED'>('OPEN');
   const [threads, setThreads] = useState<api.SupportThread[] | null>(null);
@@ -94,6 +115,7 @@ const SupportInbox: React.FC<{ isSuper: boolean; onChanged?: () => void }> = ({ 
     <div className="bg-brand-panel border border-[#444] rounded p-4">
       {openId ? <Thread id={openId} isSuper={isSuper} onBack={() => { setOpenId(null); load(); onChanged?.(); }} /> : (
         <>
+          <PushToggle />
           <div className="flex items-center gap-2 mb-3">
             {(['OPEN', 'CLOSED'] as const).map((s) => (
               <button key={s} onClick={() => setStatus(s)} className={`text-xs font-bold px-3 py-1.5 rounded ${status === s ? 'bg-brand-yellow text-brand-bg' : 'bg-brand-bg text-brand-textMuted'}`}>{s === 'OPEN' ? 'Të hapura' : 'Të mbyllura'}</button>

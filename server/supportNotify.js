@@ -1,3 +1,5 @@
+import { notifyStaffDevices } from './webPush.js';
+
 // Phone notification for the owner when a player writes to Support. Channels (any or both): ntfy.sh topic (NTFY_TOPIC, optional NTFY_SERVER) and
 // Telegram (TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID). Nothing configured = nothing is sent. Never blocks or fails the request that triggered it.
 const IMPORTANT = /terheq|tërheq|terhiq|dalje|\bdil(?:ni|ush|je)?\b|pages|pagës|\bpare\b|paratë|kerkes|kërkes|urgjent|urgjenc|ndihm|problem|gabim|mashtr|bllok|humb|anul|rimburs|depozit|deposit|withdraw|help|urgent/i;
@@ -43,16 +45,18 @@ export async function notifySupport(notice, { env = process.env, fetchImpl = glo
 }
 
 let warned = false;
-// Fire and forget from a route: looks the player up, builds the notice and sends it; any problem is only logged.
+// Fire and forget from a route: looks the player up, builds the notice and sends it (Web Push to the staff devices, ntfy / Telegram when
+// configured); any problem is only logged and never reaches the player.
 export function notifySupportInBackground(pool, { userId, ticketNo, matchLabel, body, isNew }) {
   const env = process.env;
-  if (!env.NTFY_TOPIC && !(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID)) {
-    if (!warned) { warned = true; console.log('[support-notify] no NTFY_TOPIC / TELEGRAM_* set: support messages are not pushed to a phone'); }
-    return;
-  }
   (async () => {
     let player = null;
-    try { player = (await pool.query('SELECT username, name FROM users WHERE id = $1', [userId])).rows[0] || null; } catch { /* the notice goes without the name */ }
-    await notifySupport(buildSupportNotice({ player, ticketNo, matchLabel, body, isNew }));
+    try { player = (await pool.query('SELECT username, name, admin_id FROM users WHERE id = $1', [userId])).rows[0] || null; } catch { /* the notice goes without the name */ }
+    const notice = buildSupportNotice({ player, ticketNo, matchLabel, body, isNew });
+    const jobs = [notifyStaffDevices({ adminId: player && player.admin_id, payload: { title: notice.title, body: notice.text, tag: 'support', url: '/', important: notice.important } })
+      .catch((e) => console.error('[support-notify] web push failed:', e && e.message))];
+    if (env.NTFY_TOPIC || (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID)) jobs.push(notifySupport(notice));
+    else if (!warned) { warned = true; console.log('[support-notify] no NTFY_TOPIC / TELEGRAM_* set: only Web Push reaches the staff phones'); }
+    await Promise.all(jobs);
   })().catch((e) => console.error('[support-notify] failed:', e && e.message));
 }

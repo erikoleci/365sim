@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 import { LanguageProvider } from './i18n';
+import { registerServiceWorker } from './utils/webPush';
 
 const startApp = () => {
   const rootElement = document.getElementById('root');
@@ -22,3 +23,4 @@ const startApp = () => {
 };
 
 startApp();
+registerServiceWorker();
