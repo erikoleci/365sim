@@ -1959,6 +1959,13 @@ export function liveFairProbability(leg, score, minute) {
 // Expected return per unit staked at `odds`: > 1 means the price is better than the model says is fair.
 export const liveEdge = (odds, fair) => (fair ? odds * fair.pWin + fair.pVoid : null);
 
+// The model knows the score and the minute, not the strength of the teams. While the score is still level in the first half
+// (0-0, 1-1 ... up to the break) no goal has made any price stale, and the price differs from the model only because one team
+// is stronger (a 3.2 for the home side at 0-0 is a real underdog price, not a free lunch): the "price is too generous" test is
+// not applied there, neither on the leg nor in the product of a ticket. The "practically decided" test always applies.
+export const EDGE_TEST_MAX_LEVEL_MINUTE = 45;
+export const edgeTestApplies = (score, minute) => !(score && Number.isFinite(minute) && score.h === score.a && minute <= EDGE_TEST_MAX_LEVEL_MINUTE);
+
 export const isStatsMarketName = (name) => STATS_MARKET.test(norm(name));
 
 
