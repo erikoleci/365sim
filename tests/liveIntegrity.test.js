@@ -12,7 +12,7 @@ describe('live integrity', () => {
   });
   it('a live ticket is checked again after the delay (second verification)', () => {
     const src = readFileSync(new URL('../server/routes/bets.js', import.meta.url), 'utf8');
-    expect(src).toMatch(/verified = await verifySelections\(LIVE_REPRICE_TOLERANCE\)/);
+    expect(src).toMatch(/verified = await verifySelections\(LIVE_REPRICE_TOLERANCE, \{ bookAtSent: true \}\)/);
   });
   it('flagged users wait longer than normal users, and have a lower live stake', () => {
     const normal = riskPolicy('NORMAL', 5000);

@@ -59,9 +59,10 @@ const LIVE_CORNER_LOCK_MS = Math.max(0, Number(process.env.LIVE_BET_CORNER_LOCK_
 // by the provider right after each card, so betting on them pauses briefly after any card.
 const LIVE_CARD_LOCK_MS = Math.max(0, Number(process.env.LIVE_BET_CARD_LOCK_MS ?? 15000));
 const LIVE_EVENT_LOCK_MS = Math.max(0, Number(process.env.LIVE_BET_EVENT_LOCK_MS ?? 30000));
-// After the delay the ticket is booked at the WORSE of the price seen before and after the delay.
-// If the price fell by more than this share the ticket is not booked: the player must re-confirm the new price.
-const LIVE_REPRICE_TOLERANCE = Math.max(0, Number(process.env.LIVE_REPRICE_TOLERANCE ?? 0.10));
+// After the delay the ticket is booked at the price the player pressed (or a better one).
+// Owner's decision 2026-11-14: a price that falls during the hold NEVER stops the ticket (fewer problems shown to players): it is
+// booked at the worse price. Default 1 = no share of drop refuses it; set LIVE_REPRICE_TOLERANCE=0.10 to ask the player again past 10%.
+const LIVE_REPRICE_TOLERANCE = Math.max(0, Number(process.env.LIVE_REPRICE_TOLERANCE ?? 1));
 // How long the work AFTER the hold usually takes (second price check + booking in the database), as a
 // moving average. The hold is shortened by this much so the player's ticket is accepted ~LIVE_BET_DELAY_MS
 // after pressing, not LIVE_BET_DELAY_MS plus that work (which made tickets take 8-16 s on a slow database).
@@ -543,23 +544,18 @@ router.post('/', wrap(async (req, res) => {
     if (verified.fail) return res.status(verified.fail.status).json(verified.fail.body);
   }
   if ((verified.inPlay || highStake) && policy.delayMs > 0 && !acceptedRetry) {
-    const firstPass = verified;
     const holdStartedAt = Date.now();
     // The delay counts from the moment the request arrived: the first verification and the risk checks are part of it,
     // so the player waits the delay itself (about 5 s), not the delay PLUS the work done before it.
     await new Promise((r) => setTimeout(r, Math.max(0, policy.delayMs - (Date.now() - betStartedAt) - Math.min(postHoldMs, POST_HOLD_CAP_MS))));
-    // Second look at the freshest data. A small price drop is accepted, a big one asks the player again.
+    // Second look at the freshest data (the ticket is still checked: market closed, suspended, etc.).
     phase.hold = Date.now() - holdStartedAt;
     const verify2StartedAt = Date.now();
-    verified = await verifySelections(LIVE_REPRICE_TOLERANCE);
+    // Owner's decision 2026-11-14: the ticket is booked at the price the player pressed (never a worse one, that looks like cheating); a better
+    // price that appeared during the hold is kept for the player.
+    verified = await verifySelections(LIVE_REPRICE_TOLERANCE, { bookAtSent: true });
     phase.verify2 = Date.now() - verify2StartedAt;
     if (verified.fail) return res.status(verified.fail.status).json(verified.fail.body);
-    // Book every leg at the worse of: price before the delay, price after the delay.
-    const repriced = verified.verifiedSelections.map((leg, i) => {
-      const before = firstPass.verifiedSelections[i]?.odds;
-      return typeof before === 'number' && before < leg.odds ? { ...leg, odds: before } : leg;
-    });
-    verified = { ...verified, verifiedSelections: repriced, totalOdds: repriced.reduce((acc, leg) => acc * leg.odds, 1) };
   }
   const { totalOdds, verifiedSelections, isLiveTicket } = verified;
 
