@@ -8,13 +8,23 @@
 // suspension (price <= 1.01) so we never close a market on a guess.
 
 // Lowercase + strip diacritics + collapse whitespace ("Pjesa e Parë" -> "pjesa e pare").
+// Market names repeat thousands of times per list rebuild (same few hundred labels on every match), so the result is
+// memoised in a bounded Map (cleared when it grows past the cap) instead of running NFD + 3 regexes each time.
+const NORM_CAP = 20000;
+const normCache = new Map();
 export function normMarketText(str) {
-  return String(str ?? '')
+  const key = typeof str === 'string' ? str : String(str ?? '');
+  const hit = normCache.get(key);
+  if (hit !== undefined) return hit;
+  const out = key
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim();
+  if (normCache.size >= NORM_CAP) normCache.clear();
+  normCache.set(key, out);
+  return out;
 }
 
 // The provider names periods in several forms, all seen on real tickets:
