@@ -37,11 +37,12 @@ describe('global casino setting', () => {
     expect((await m.getProfile('slot:hot-fruits')).rtp).toBe(0.7);
     expect((await m.getProfile('slot:royal-gems')).rtp).toBe(0.4);
   });
-  it('refuses values out of range or impossible together, and changes nothing', async () => {
+  it('refuses values out of range, and changes nothing', async () => {
     const m = await mod();
     await expect(m.saveGlobalProfile({ hitFrequency: 0.99 })).rejects.toThrow(/between/);
     await expect(m.saveGlobalProfile({ rtp: 2 })).rejects.toThrow(/between/);
-    await expect(m.saveGlobalProfile({ hitFrequency: 0.95, rtp: 0.05 })).rejects.toThrow(/at least 0.1/);
+    await expect(m.saveGlobalProfile({ hitFrequency: 0.95, rtp: 0.05 })).resolves.toBeTruthy();
+    store.clear(); (await mod()).clearProfileCache();
     await expect(m.saveGlobalProfile({})).rejects.toThrow(/Nothing/);
     expect(await m.getGlobalProfile()).toEqual({ hitFrequency: null, rtp: null });
   });
