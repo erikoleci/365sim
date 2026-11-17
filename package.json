@@ -43,6 +43,7 @@
     "react-dom": "^18.2.0",
     "socket.io-client": "2.4.0",
     "tailwindcss": "^3.4.3",
+    "three": "0.170.0",
     "typescript": "^5.2.2",
     "vite": "^5.2.0",
     "ws": "^8.18.0"
@@ -51,6 +52,7 @@
     "@types/node": "^26.6.5",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
+    "@types/three": "0.170.0",
     "sharp": "^0.35.5",
     "vitest": "^2.1.9"
   }

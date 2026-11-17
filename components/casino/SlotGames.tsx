@@ -2,7 +2,7 @@ import BigWin, { winTier } from './BigWin';
 import './lobby/lobby.css';
 import SlotLever from './SlotLever';
 import StakeInput from './StakeInput';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import * as api from '../../services/api';
 import SlotReel from './SlotReel';
 import CountUp from './CountUp';
@@ -10,6 +10,10 @@ import CoinBurst from './CoinBurst';
 import SymbolIcon from './SymbolIcon';
 import GameLoader from './GameLoader';
 import { sfx, setSound, soundOn } from './slotSound';
+
+// The 3D reels (Three.js) are a separate chunk, fetched only when a slot is opened; without WebGL the CSS reels stay.
+const Reels3D = React.lazy(() => import('./slot3d/Reels3D'));
+const webglOk = () => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch { return false; } };
 
 // The ten paylines (row per reel), same as the server's engine: used only to light up the winning cells.
 const PAYLINES = [
@@ -105,6 +109,7 @@ const SlotGame: React.FC<{
   const [burst, setBurst] = useState(0); // bumps for every win worth celebrating (key of the coin shower)
   const [showPay, setShowPay] = useState(false);
   const [snd, setSnd] = useState(soundOn());
+  const [use3d, setUse3d] = useState(webglOk);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
 
@@ -199,17 +204,21 @@ const SlotGame: React.FC<{
         <div className="bulbs w-full" />
         <div className="flex items-center gap-2">
 <div className="flex-1 min-w-0 cabinet-glow bg-black/60 rounded-xl p-2 sm:p-3 border-4 border-yellow-600/70 shadow-[inset_0_0_30px_rgba(0,0,0,0.8),0_0_24px_rgba(212,175,55,0.25)]">
-          <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
-            {grid.map((col, r) => (
-              <SlotReel
-                key={r}
-                symbols={col}
-                spinning={spinning[r]}
-                pool={Object.values(game.symbols)}
-                litRows={[0, 1, 2].filter((row) => lit.has(`${r}-${row}`))}
-              />
-            ))}
-          </div>
+          {(() => {
+            const cssReels = (
+              <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
+                {grid.map((col, r) => (
+                  <SlotReel key={r} symbols={col} spinning={spinning[r]} pool={Object.values(game.symbols)} litRows={[0, 1, 2].filter((row) => lit.has(`${r}-${row}`))} />
+                ))}
+              </div>
+            );
+            if (!use3d) return cssReels;
+            return (
+              <Suspense fallback={cssReels}>
+                <Reels3D grid={grid} spinning={spinning} lit={lit} pool={Object.values(game.symbols)} colors={game.color as [string, string]} onFail={() => setUse3d(false)} />
+              </Suspense>
+            );
+          })()}
         </div>
           <SlotLever onPull={spin} disabled={busy || bal < stake} className="shrink-0" />
         </div>
