@@ -5,6 +5,7 @@ import StakeInput from './StakeInput';
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import * as api from '../../services/api';
 import SlotReel from './SlotReel';
+import { slotTheme, THEME_ORN } from './slotThemes';
 import CountUp from './CountUp';
 import CoinBurst from './CoinBurst';
 import SymbolIcon from './SymbolIcon';
@@ -183,7 +184,7 @@ const SlotGame: React.FC<{
 
   const top = Object.keys(game.paytable).filter((k) => k !== 'WILD');
   return (
-    <div className="sg-root rounded-2xl overflow-hidden relative" style={{ background: `radial-gradient(900px 420px at 50% 0%, ${game.color[1]}cc, transparent 70%), linear-gradient(160deg, ${game.color[0]}, ${game.color[1]})` }}>
+    <div className={`sg-root rounded-2xl overflow-hidden relative${busy ? ' sg-busy' : ''}`} data-sgt={slotTheme(game.id)} style={{ background: `radial-gradient(900px 420px at 50% 0%, ${game.color[1]}cc, transparent 70%), linear-gradient(160deg, ${game.color[0]}, ${game.color[1]})` }}>
       {burst > 0 && <CoinBurst key={burst} />}
       {bigWin && <BigWin tier={bigWin.tier} amount={bigWin.amount} format={(v) => fmt(v, currency)} onDone={() => setBigWin(null)} />}
       <div className="sg-head flex items-center justify-between px-4 py-3">
@@ -206,7 +207,7 @@ const SlotGame: React.FC<{
         </div>
 
         <div className="bulbs w-full" />
-        <div className="sg-marquee" aria-hidden>{game.symbols.WILD} {game.symbols.SCATTER} <span>{game.lines} LINES · {game.volatility}</span> {game.symbols.SCATTER} {game.symbols.WILD}</div>
+        <div className="sg-marquee" aria-hidden>{THEME_ORN[slotTheme(game.id)][0]} {game.symbols.WILD} {game.symbols.SCATTER} <span>{game.lines} LINES · {game.volatility}</span> {game.symbols.SCATTER} {game.symbols.WILD} {THEME_ORN[slotTheme(game.id)][1]}</div>
         <div className="flex items-center gap-2">
 <div className="flex-1 min-w-0 cabinet-glow sg-cabinet">
           {(() => {

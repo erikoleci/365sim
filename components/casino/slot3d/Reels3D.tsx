@@ -42,11 +42,13 @@ const Reels3D: React.FC<Props> = ({ grid, spinning, lit, pool, colors, onFail })
       if (dead) return;
       let renderer: any;
       try {
-        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'default' });
+        const dpr0 = window.devicePixelRatio || 1;
+        renderer = new THREE.WebGLRenderer({ antialias: dpr0 < 2, alpha: true, powerPreference: 'high-performance' });
       } catch { onFail?.(); return; }
       if (!renderer.getContext()) { onFail?.(); return; }
       const reduced = prefersReduced();
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      let pr = Math.min(window.devicePixelRatio || 1, (navigator.hardwareConcurrency || 4) <= 4 ? 1 : 1.5);
+      renderer.setPixelRatio(pr);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.05;
@@ -164,11 +166,14 @@ const Reels3D: React.FC<Props> = ({ grid, spinning, lit, pool, colors, onFail })
       window.addEventListener('pointermove', onMove, { passive: true });
 
       // ---- loop (sleeps when nothing moves)
-      let raf = 0; let last = 0; let running = false; let time = 0;
+      let raf = 0; let last = 0; let running = false; let time = 0; let slowSum = 0; let slowN = 0; let strikes = 0;
       const prevSpin = reels.map(() => false);
       const tick = (now: number) => {
         raf = 0; running = false;
-        const dt = Math.min(0.05, last ? (now - last) / 1000 : 0.016); last = now; time += dt;
+        const rawDt = last ? (now - last) / 1000 : 0.016;
+        const dt = Math.min(0.05, rawDt); last = now; time += dt;
+        // Slow device: after ~40 busy frames averaging over 26 ms, first drop the resolution, then give up on 3D (the CSS reels are lighter).
+        if (last && rawDt < 0.2) { slowSum += rawDt; slowN += 1; if (slowN >= 40) { const avg = slowSum / slowN; slowSum = 0; slowN = 0; if (avg > 0.026) { if (pr > 1) { pr = 1; renderer.setPixelRatio(1); resize(); } else if (++strikes >= 2) { onFail?.(); return; } } else strikes = 0; } }
         let busy = false;
         const { spinning: sp, lit: litSet } = live.current;
         for (let r = 0; r < N; r += 1) {

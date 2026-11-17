@@ -137,7 +137,7 @@
 .bulbs::before, .bulbs::after { animation: bulb-chase 1.1s steps(2, end) infinite; }
 .bulbs::after { animation-delay: .55s; opacity: .9; }
 @keyframes bulb-chase { 0% { opacity: 1; filter: drop-shadow(0 0 6px rgba(255,214,90,1)); } 50% { opacity: .35; filter: drop-shadow(0 0 1px rgba(255,214,90,.4)); } 100% { opacity: 1; } }
-.cabinet-glow { animation: cabinet-glow 2.6s ease-in-out infinite; }
+.cabinet-glow { }
 @keyframes cabinet-glow { 0%,100% { box-shadow: inset 0 0 30px rgba(0,0,0,.8), 0 0 22px rgba(212,175,55,.25); } 50% { box-shadow: inset 0 0 30px rgba(0,0,0,.8), 0 0 46px rgba(255,214,90,.6); } }
 .cabinet-shake { animation: cabinet-shake .5s linear 2; }
 @keyframes cabinet-shake { 0%,100% { transform: translate(0,0) } 20% { transform: translate(-3px,2px) } 40% { transform: translate(3px,-2px) } 60% { transform: translate(-2px,-3px) } 80% { transform: translate(2px,3px) } }
@@ -191,3 +191,44 @@
 .sg-spin:disabled { opacity: .55; filter: grayscale(.4); }
 @media (min-width: 640px) { .sg-cabinet { padding: 14px; } }
 @media (prefers-reduced-motion: reduce) { .sg-spin { transition: none; } }
+
+/* ---- per-game themes: variables only, so every game costs the same to draw ---- */
+.sg-root { --frame: linear-gradient(145deg,#fff0b0,#d9a62e 30%,#7a5410 55%,#f3cf6a 80%,#a8760f); --accent:#f5c542; --glow: rgba(212,175,55,.3); --rad: 18px; --fw: 5px; --pad: 10px;
+  --btn: linear-gradient(180deg,#8df06c,#35b53a 55%,#1f8a2a); --btn-d:#14611c; --btn-glow: rgba(53,181,58,.35); --btn-ink:#102008; --pat: none; --pat-size: auto; --pat-op:.18;
+  --title: linear-gradient(180deg,#fff6cf,#f5c542 55%,#b9820f); --track: .02em; --case: none; --win:#ffe27a; --head-bg: linear-gradient(180deg,rgba(0,0,0,.62),rgba(0,0,0,.32)); }
+.sg-root::before { content:''; position:absolute; inset:0; pointer-events:none; background-image: var(--pat); background-size: var(--pat-size); opacity: var(--pat-op); z-index:0; }
+.sg-root > .sg-head, .sg-root > .p-4 { position: relative; z-index: 1; }
+.sg-root .sg-head { background: var(--head-bg); border-bottom-color: var(--accent); }
+.sg-root .sg-title { background-image: var(--title); letter-spacing: var(--track); text-transform: var(--case); }
+.sg-root .sg-cabinet { border-radius: var(--rad); padding: var(--pad); border-width: var(--fw); background: linear-gradient(#07070b,#0d0d14) padding-box, var(--frame) border-box; box-shadow: inset 0 0 36px rgba(0,0,0,.9), 0 0 28px var(--glow); }
+.sg-root .sg-marquee { color: var(--accent); text-shadow: 0 0 8px var(--glow); }
+.sg-root .sg-wintext { color: var(--win); text-shadow: 0 0 14px var(--glow), 0 2px 0 rgba(0,0,0,.6); }
+.sg-root .sg-spin { background: var(--btn); color: var(--btn-ink); box-shadow: 0 5px 0 var(--btn-d), 0 10px 22px var(--btn-glow), inset 0 1px 0 rgba(255,255,255,.55); }
+.sg-root .sg-spin:active:not(:disabled) { box-shadow: 0 1px 0 var(--btn-d), 0 4px 10px var(--btn-glow), inset 0 1px 0 rgba(255,255,255,.5); }
+.sg-root { border-color: var(--accent); }
+.sg-busy .bulbs::before, .sg-busy .bulbs::after { animation: none; }
+
+.sg-root[data-sgt=classic] { --frame: linear-gradient(145deg,#f4f4f4,#9aa0a8 30%,#4b5058 55%,#e6e6e6 80%,#7b818a); --accent:#ff4d4d; --glow: rgba(255,60,60,.4); --rad: 22px; --btn: linear-gradient(180deg,#ff8a6b,#e0362c 55%,#a31b14); --btn-d:#6b0f0a; --btn-glow: rgba(224,54,44,.4); --btn-ink:#fff; --title: linear-gradient(180deg,#fff,#ffd84d 55%,#e08a00); --track:.12em; --case: uppercase;
+  --pat: repeating-linear-gradient(45deg,#fff 0 2px,transparent 2px 18px); --pat-op:.05; }
+.sg-root[data-sgt=egypt] { --frame: linear-gradient(145deg,#f3d9a0,#c79a3b 30%,#6b4a14 55%,#e7c46f 80%,#8a5f1b); --accent:#e6b94d; --glow: rgba(230,185,77,.35); --rad: 4px; --fw: 7px; --btn: linear-gradient(180deg,#5fd3c8,#17a39b 55%,#0b6b66); --btn-d:#064643; --btn-glow: rgba(23,163,155,.4); --btn-ink:#031f1d; --title: linear-gradient(180deg,#fff2c9,#e6b94d 55%,#8b5e12); --track:.18em; --case: uppercase;
+  --pat: repeating-linear-gradient(90deg,#e6b94d 0 3px,transparent 3px 26px),repeating-linear-gradient(0deg,#e6b94d 0 1px,transparent 1px 34px); --pat-op:.07; }
+.sg-root[data-sgt=gems] { --frame: conic-gradient(from 30deg,#c9b8ff,#6f4cff,#e9e2ff,#5a8bff,#c9b8ff,#6f4cff,#e9e2ff); --accent:#b9a2ff; --glow: rgba(140,110,255,.5); --rad: 10px; --fw: 6px; --btn: linear-gradient(180deg,#d8a8ff,#9b4dff 55%,#5b21b6); --btn-d:#3b1478; --btn-glow: rgba(155,77,255,.45); --btn-ink:#fff; --title: linear-gradient(180deg,#fff,#cdbbff 55%,#7b5cff); --track:.1em; --case: uppercase;
+  --pat: linear-gradient(60deg,#fff 25%,transparent 25%) 0 0/40px 70px,linear-gradient(120deg,#fff 25%,transparent 25%) 0 0/40px 70px; --pat-op:.04; }
+.sg-root[data-sgt=western] { --frame: linear-gradient(145deg,#c58a4a,#7a4a1f 30%,#3b220c 55%,#b27a3c 80%,#5a3513); --accent:#e0a050; --glow: rgba(224,160,80,.3); --rad: 8px; --fw: 9px; --btn: linear-gradient(180deg,#ffcf5a,#e09a14 55%,#9a5f06); --btn-d:#5f3803; --btn-glow: rgba(224,154,20,.4); --btn-ink:#2a1500; --title: linear-gradient(180deg,#ffe3a6,#d9902f 55%,#7a4310); --track:.14em; --case: uppercase;
+  --pat: repeating-linear-gradient(0deg,#000 0 2px,transparent 2px 22px); --pat-op:.18; }
+.sg-root[data-sgt=asia] { --frame: linear-gradient(145deg,#ffd9a0,#d12b2b 30%,#7a0f0f 55%,#f0b94d 80%,#a31b1b); --accent:#ffcf5a; --glow: rgba(255,80,60,.4); --rad: 14px 4px 14px 4px; --fw: 6px; --btn: linear-gradient(180deg,#ffd86b,#e8a216 55%,#a8660b); --btn-d:#6a3f05; --btn-glow: rgba(232,162,22,.4); --btn-ink:#2a1200; --title: linear-gradient(180deg,#fff0c4,#ffcf5a 55%,#d12b2b); --track:.16em; --case: uppercase;
+  --pat: radial-gradient(circle at 50% 100%,transparent 55%,#fff 56% 60%,transparent 61%) 0 0/36px 18px; --pat-op:.06; }
+.sg-root[data-sgt=nordic] { --frame: linear-gradient(145deg,#e7f1ff,#8aa4c4 30%,#3d5270 55%,#cfe0f5 80%,#6c86a6); --accent:#8fd0ff; --glow: rgba(120,190,255,.4); --rad: 6px; --fw: 7px; --btn: linear-gradient(180deg,#8fe3ff,#2ca0d6 55%,#0f5f8a); --btn-d:#093d59; --btn-glow: rgba(44,160,214,.4); --btn-ink:#031a28; --title: linear-gradient(180deg,#fff,#bfe6ff 55%,#4aa3d6); --track:.2em; --case: uppercase;
+  --pat: repeating-linear-gradient(135deg,#bfe6ff 0 1px,transparent 1px 14px); --pat-op:.08; }
+.sg-root[data-sgt=space] { --frame: linear-gradient(145deg,#00f0ff,#7a2cff 35%,#ff2cc8 70%,#00f0ff); --accent:#00f0ff; --glow: rgba(0,240,255,.55); --rad: 26px; --fw: 3px; --btn: linear-gradient(180deg,#ff6bd8,#c21fa6 55%,#6a0b66); --btn-d:#3d0540; --btn-glow: rgba(255,44,200,.5); --btn-ink:#fff; --title: linear-gradient(180deg,#fff,#7ff6ff 50%,#c06bff); --track:.22em; --case: uppercase; --win:#7ff6ff;
+  --pat: radial-gradient(#fff 1px,transparent 1.5px) 0 0/46px 46px,radial-gradient(#9ff 1px,transparent 1.5px) 23px 23px/46px 46px; --pat-op:.22; }
+.sg-root[data-sgt=candy] { --frame: repeating-linear-gradient(45deg,#fff 0 10px,#ff5fa8 10px 20px); --accent:#ff8fc8; --glow: rgba(255,120,190,.5); --rad: 34px; --fw: 8px; --pad: 12px; --btn: linear-gradient(180deg,#ffc2e4,#ff5fa8 55%,#c2217a); --btn-d:#8a0f55; --btn-glow: rgba(255,95,168,.45); --btn-ink:#fff; --title: linear-gradient(180deg,#fff,#ffc2e4 55%,#ff5fa8); --track:.04em; --win:#fff1a8;
+  --pat: radial-gradient(circle,#fff 0 6px,transparent 7px) 0 0/54px 54px,radial-gradient(circle,#fff 0 4px,transparent 5px) 27px 27px/54px 54px; --pat-op:.10; }
+.sg-root[data-sgt=aztec] { --frame: linear-gradient(145deg,#d9c79a,#8a7a52 30%,#4a3f26 55%,#c9b27a 80%,#6b5a35); --accent:#ff9a3c; --glow: rgba(255,154,60,.4); --rad: 0px; --fw: 9px; --btn: linear-gradient(180deg,#ffb067,#e8691a 55%,#9a3a07); --btn-d:#5c2204; --btn-glow: rgba(232,105,26,.45); --btn-ink:#fff; --title: linear-gradient(180deg,#ffe2b0,#ff9a3c 55%,#a8420b); --track:.14em; --case: uppercase;
+  --pat: repeating-linear-gradient(90deg,#000 0 14px,transparent 14px 28px),repeating-linear-gradient(0deg,#000 0 14px,transparent 14px 28px); --pat-op:.14; }
+.sg-root[data-sgt=ocean] { --frame: linear-gradient(145deg,#bff3ff,#2aa4c8 30%,#0a4f6e 55%,#8fe3f5 80%,#14799c); --accent:#5fe0ff; --glow: rgba(60,200,240,.45); --rad: 28px 28px 14px 14px; --fw: 6px; --btn: linear-gradient(180deg,#ffd1a0,#ff9a4d 55%,#c25a14); --btn-d:#7c3608; --btn-glow: rgba(255,154,77,.4); --btn-ink:#2a1200; --title: linear-gradient(180deg,#fff,#aeeeff 55%,#2aa4c8); --track:.08em;
+  --pat: radial-gradient(circle at 50% 0,transparent 58%,#fff 59% 62%,transparent 63%) 0 0/40px 20px; --pat-op:.08; }
+.sg-root[data-sgt=magic] { --frame: linear-gradient(145deg,#f0d9ff,#a35cff 30%,#41107a 55%,#7dffd0 80%,#7a2cc8); --accent:#c58cff; --glow: rgba(170,100,255,.55); --rad: 20px; --fw: 5px; --btn: linear-gradient(180deg,#7dffd0,#16b886 55%,#0a6b4f); --btn-d:#064230; --btn-glow: rgba(22,184,134,.45); --btn-ink:#02201a; --title: linear-gradient(180deg,#fff,#e0c2ff 50%,#7dffd0); --track:.1em; --win:#9dffe0;
+  --pat: radial-gradient(circle,#fff 1px,transparent 2px) 0 0/30px 30px; --pat-op:.12; }
+.sg-root[data-sgt=sport] { --frame: linear-gradient(145deg,#fff,#d9d9d9 30%,#4a8f3a 55%,#fff 80%,#2f6f25); --accent:#8cff6b; --glow: rgba(120,255,100,.4); --rad: 12px; --fw: 6px; --btn: linear-gradient(180deg,#fff27a,#f2c80a 55%,#a88a00); --btn-d:#6a5600; --btn-glow: rgba(242,200,10,.45); --btn-ink:#1a1600; --title: linear-gradient(180deg,#fff,#d6ffc9 55%,#4fbf3a); --track:.12em; --case: uppercase;
+  --pat: repeating-linear-gradient(90deg,#fff 0 40px,transparent 40px 80px); --pat-op:.05; }
