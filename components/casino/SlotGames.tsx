@@ -183,15 +183,15 @@ const SlotGame: React.FC<{
 
   const top = Object.keys(game.paytable).filter((k) => k !== 'WILD');
   return (
-    <div className="rounded-xl overflow-hidden border border-white/10 relative" style={{ background: `linear-gradient(160deg, ${game.color[0]}, ${game.color[1]})` }}>
+    <div className="sg-root rounded-2xl overflow-hidden relative" style={{ background: `radial-gradient(900px 420px at 50% 0%, ${game.color[1]}cc, transparent 70%), linear-gradient(160deg, ${game.color[0]}, ${game.color[1]})` }}>
       {burst > 0 && <CoinBurst key={burst} />}
       {bigWin && <BigWin tier={bigWin.tier} amount={bigWin.amount} format={(v) => fmt(v, currency)} onDone={() => setBigWin(null)} />}
-      <div className="flex items-center justify-between px-4 py-3 bg-black/40">
+      <div className="sg-head flex items-center justify-between px-4 py-3">
         <span className="w-14" aria-hidden />
-        <div className="text-center"><div className="font-bold text-white">{game.name}</div><div className="text-[10px] text-brand-yellow">{game.volatility} · {game.lines} lines</div></div>
+        <div className="text-center"><div className="sg-title font-black tracking-wide text-lg sm:text-xl">{game.name}</div><div className="text-[10px] text-brand-yellow tracking-widest uppercase">{game.volatility} · {game.lines} lines</div></div>
         <div className="flex gap-1.5">
-          <button onClick={() => { setSound(!snd); setSnd(!snd); }} aria-label="Sound" className="text-sm px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white">{snd ? '🔊' : '🔇'}</button>
-          <button onClick={() => setShowPay(true)} className="text-xs px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white">Paytable</button>
+          <button onClick={() => { setSound(!snd); setSnd(!snd); }} aria-label="Sound" className="sg-pill text-sm">{snd ? '🔊' : '🔇'}</button>
+          <button onClick={() => setShowPay(true)} className="sg-pill text-xs">Paytable</button>
         </div>
       </div>
 
@@ -206,8 +206,9 @@ const SlotGame: React.FC<{
         </div>
 
         <div className="bulbs w-full" />
+        <div className="sg-marquee" aria-hidden>{game.symbols.WILD} {game.symbols.SCATTER} <span>{game.lines} LINES · {game.volatility}</span> {game.symbols.SCATTER} {game.symbols.WILD}</div>
         <div className="flex items-center gap-2">
-<div className="flex-1 min-w-0 cabinet-glow bg-black/60 rounded-xl p-2 sm:p-3 border-4 border-yellow-600/70 shadow-[inset_0_0_30px_rgba(0,0,0,0.8),0_0_24px_rgba(212,175,55,0.25)]">
+<div className="flex-1 min-w-0 cabinet-glow sg-cabinet">
           {(() => {
             const cssReels = (
               <div className="grid gap-1.5 sm:gap-2" style={{ gridTemplateColumns: `repeat(${nReels}, minmax(0, 1fr))` }}>
@@ -227,13 +228,13 @@ const SlotGame: React.FC<{
           <SlotLever onPull={spin} disabled={busy || bal < stake} className="shrink-0 hidden sm:block" />
         </div>
 
-        <div className="h-12 flex flex-col items-center justify-center text-center">
+        <div className="sg-ticker h-14 flex flex-col items-center justify-center text-center">
           {freeInfo && <div className="text-xs font-bold text-cyan-300">{freeInfo}</div>}
-          {(lastWin > 0 || msg) && <div className={`text-lg font-extrabold ${lastWin > 0 ? 'text-brand-yellow' : 'text-red-300'}`}>{busy && lastWin > 0 ? `Win: ${fmt(lastWin, currency)}` : lastWin > 0 ? <span key={lastWin} className="win-pop inline-block">You won <CountUp value={lastWin} format={(n) => fmt(n, currency)} />!</span> : msg}</div>}
+          {(lastWin > 0 || msg) && <div className={`text-xl font-black ${lastWin > 0 ? 'sg-wintext' : 'text-red-300'}`}>{busy && lastWin > 0 ? `Win: ${fmt(lastWin, currency)}` : lastWin > 0 ? <span key={lastWin} className="win-pop inline-block">You won <CountUp value={lastWin} format={(n) => fmt(n, currency)} />!</span> : msg}</div>}
         </div>
 
         <div className="mb-3"><StakeInput value={stake} onChange={setStake} min={stakes[currency][0]} max={currency === 'EUR' ? 10000000 : 100000000} presets={stakes[currency]} unit={currency === 'EUR' ? '€' : 'L'} balance={bal} disabled={busy} /></div>
-        <button onClick={spin} disabled={busy || bal < stake} className="w-full py-3 rounded-xl font-extrabold text-lg bg-green-600 hover:bg-green-500 text-white disabled:opacity-50">
+        <button onClick={spin} disabled={busy || bal < stake} className="sg-spin">
           {busy ? '...' : `SPIN · ${stake} ${currency === 'EUR' ? '€' : 'L'}`}
         </button>
         <div className="text-[10px] text-center text-gray-400 mt-2">3 or more {game.symbols.SCATTER} ({game.scatterName}) award free spins. {game.symbols.WILD} ({game.wildName}) substitutes for symbols.</div>
