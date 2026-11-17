@@ -33,6 +33,8 @@ import Keno from './casino/Keno';
 import TumbleSlot from './casino/TumbleSlot';
 import Scratch from './casino/Scratch';
 import Lobby from './casino/lobby/Lobby';
+import GameShell from './casino/GameShell';
+import { TILES, LIVE_TILES } from './casino/lobby/catalog';
 import type { Tile } from './casino/lobby/catalog';
 
 interface CasinoHubProps {
@@ -64,7 +66,7 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
   useEffect(() => () => stopMusic(), []);
   const musicBtn = (
     <button onClick={() => { const v = !music; setMusic(v); setMusicPref(v); if (v) startMusic(); else stopMusic(); }} aria-label={music ? 'Turn music off' : 'Turn music on'}
-      className="fixed bottom-4 right-4 z-[96] w-11 h-11 rounded-full bg-black/70 border border-yellow-500/50 text-lg shadow-lg hover:bg-black/90 active:scale-95">{music ? '🎵' : '🔇'}</button>
+      className="fixed bottom-4 right-4 z-[1010] w-11 h-11 rounded-full bg-black/70 border border-yellow-500/50 text-lg shadow-lg hover:bg-black/90 active:scale-95">{music ? '🎵' : '🔇'}</button>
   );
   const close = () => setActiveGame(null);
   const b = { userBalance, onSetBalance, onClose: close };
@@ -79,11 +81,12 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
   // A game opens as its own full page (not a box inside the lobby): the lobby is replaced, the page starts at the top.
   useEffect(() => { if (activeGame) window.scrollTo(0, 0); }, [activeGame]);
   if (activeGame && gameEl[activeGame]) {
+    const tile = [...TILES, ...LIVE_TILES].find((x) => x.game === activeGame);
     return (
-      <div className="fixed inset-0 z-[80] overflow-y-auto bg-[#0b0b10]">
-        {musicBtn}
-        <div className="max-w-5xl mx-auto p-2 sm:p-4 min-h-full"><GameBoundary key={activeGame} onBack={close}>{gameEl[activeGame]}</GameBoundary></div>
-      </div>
+      <GameShell title={tile?.name || 'Casino'} onBack={close} extra={musicBtn}
+        balance={`${Number(userBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L`}>
+        <GameBoundary key={activeGame} onBack={close}>{gameEl[activeGame]}</GameBoundary>
+      </GameShell>
     );
   }
 

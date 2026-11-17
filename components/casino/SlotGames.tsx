@@ -9,6 +9,7 @@ import CountUp from './CountUp';
 import CoinBurst from './CoinBurst';
 import SymbolIcon from './SymbolIcon';
 import GameLoader from './GameLoader';
+import GameShell from './GameShell';
 import { sfx, setSound, soundOn } from './slotSound';
 
 // The 3D reels (Three.js) are a separate chunk, fetched only when a slot is opened; without WebGL the CSS reels stay.
@@ -56,7 +57,7 @@ const SlotGames: React.FC<Props> = ({ balance = 0, balanceEur = 0, accountCurren
   if (error) return <div className="text-red-400 text-sm p-4">{error}</div>;
   if (!data) return <div className="text-brand-textMuted text-sm p-4">Loading...</div>;
 
-  if (game) return <div className="fixed inset-0 z-[90] overflow-y-auto bg-[#0b0b10]"><div className="max-w-5xl mx-auto p-2 sm:p-4"><SlotGame game={game} stakes={data.stakes} demo={data.demo} balance={balance} balanceEur={balanceEur} accountCurrency={accountCurrency} onBalances={onBalances} onBack={() => setGame(null)} /></div></div>;
+  if (game) return <GameShell title={game.name} onBack={() => setGame(null)}><SlotGame game={game} stakes={data.stakes} demo={data.demo} balance={balance} balanceEur={balanceEur} accountCurrency={accountCurrency} onBalances={onBalances} onBack={() => setGame(null)} /></GameShell>;
 
   return (
     <div>
@@ -186,7 +187,7 @@ const SlotGame: React.FC<{
       {burst > 0 && <CoinBurst key={burst} />}
       {bigWin && <BigWin tier={bigWin.tier} amount={bigWin.amount} format={(v) => fmt(v, currency)} onDone={() => setBigWin(null)} />}
       <div className="flex items-center justify-between px-4 py-3 bg-black/40">
-        <button onClick={onBack} disabled={busy} className="text-sm text-gray-300 hover:text-white disabled:opacity-40">← Slots</button>
+        <span className="w-14" aria-hidden />
         <div className="text-center"><div className="font-bold text-white">{game.name}</div><div className="text-[10px] text-brand-yellow">{game.volatility} · {game.lines} lines</div></div>
         <div className="flex gap-1.5">
           <button onClick={() => { setSound(!snd); setSnd(!snd); }} aria-label="Sound" className="text-sm px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white">{snd ? '🔊' : '🔇'}</button>
@@ -223,7 +224,7 @@ const SlotGame: React.FC<{
             );
           })()}
         </div>
-          <SlotLever onPull={spin} disabled={busy || bal < stake} className="shrink-0" />
+          <SlotLever onPull={spin} disabled={busy || bal < stake} className="shrink-0 hidden sm:block" />
         </div>
 
         <div className="h-12 flex flex-col items-center justify-center text-center">

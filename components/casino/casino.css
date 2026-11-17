@@ -164,3 +164,12 @@
 .dog-dust { position: absolute; left: 4%; bottom: 6%; width: 18px; height: 14px; border-radius: 50%; background: radial-gradient(#e7c58f, rgba(231,197,143,0)); animation: dog-dust .45s ease-out infinite; box-shadow: -16px -3px 0 -3px rgba(231,197,143,.35), -30px 2px 0 -5px rgba(231,197,143,.25); }
 .dog-hero { background: radial-gradient(ellipse at 50% 0%, #1e3a8a 0%, #0b1330 55%, #05070f 100%); }
 @media (prefers-reduced-motion: reduce) { .dog-run-x, .dog-run-y, .dog-dust { animation: none; } }
+
+/* ---- Game page (GameShell): a full screen of its own, casino dark with a gold edge ---- */
+.gs-root { background: radial-gradient(1200px 600px at 50% -10%, #2a1a05 0%, #120b04 38%, #07070c 100%); padding-top: env(safe-area-inset-top); }
+.gs-bar { height: 52px; background: linear-gradient(180deg, rgba(20,14,6,.96), rgba(10,8,4,.92)); border-bottom: 1px solid rgba(245,197,66,.35); box-shadow: 0 6px 24px rgba(0,0,0,.55); }
+.gs-back { height: 40px; min-width: 44px; padding: 0 14px; border-radius: 12px; font-weight: 800; font-size: 15px; color: #1a1205; background: linear-gradient(180deg, #ffe08a, #e0a82e); box-shadow: 0 2px 0 #8a6414, 0 6px 14px rgba(224,168,46,.28); }
+.gs-back:active { transform: translateY(1px); box-shadow: 0 1px 0 #8a6414; }
+.gs-title { font-size: 16px; background: linear-gradient(180deg, #fff3c4, #f5c542 60%, #c98f12); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.gs-bal { min-width: 44px; max-width: 38vw; text-align: right; font-size: 12px; font-weight: 700; color: #fcd34d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (min-width: 640px) { .gs-bar { height: 58px; } .gs-title { font-size: 19px; } .gs-bal { font-size: 14px; } }
