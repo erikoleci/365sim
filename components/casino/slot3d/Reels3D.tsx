@@ -62,6 +62,7 @@ const Reels3D: React.FC<Props> = ({ grid, spinning, lit, pool, colors, onFail })
       const key = new THREE.DirectionalLight(0xfff0d0, 2.2); key.position.set(2, 5, 8); scene.add(key);
       const rim = new THREE.PointLight(tint, 40, 20); rim.position.set(0, 4, -3); scene.add(rim);
 
+      const N = Math.max(3, Math.min(7, live.current.grid.length || 5));   // reels of this game
       const R = 1 / (2 * Math.tan(Math.PI / FACES));      // drum radius for 1-unit faces
       const SPACING = 1.1;
       const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 60);
@@ -113,8 +114,8 @@ const Reels3D: React.FC<Props> = ({ grid, spinning, lit, pool, colors, onFail })
 
       // ---- reels
       const reels: Reel[] = [];
-      for (let r = 0; r < 5; r += 1) {
-        const group = new THREE.Group(); group.position.x = (r - 2) * SPACING; scene.add(group);
+      for (let r = 0; r < N; r += 1) {
+        const group = new THREE.Group(); group.position.x = (r - (N - 1) / 2) * SPACING; scene.add(group);
         const faces: any[] = []; const glows: any[] = [];
         for (let i = 0; i < FACES; i += 1) {
           const a = i * STEP;
@@ -129,8 +130,8 @@ const Reels3D: React.FC<Props> = ({ grid, spinning, lit, pool, colors, onFail })
       }
       // brass dividers between the reels and bars above and below the window
       const barGeo = new THREE.BoxGeometry(0.06, 3.6, 0.5);
-      for (let i = 0; i <= 5; i += 1) { const b = new THREE.Mesh(barGeo, metal); b.position.set((i - 2.5) * SPACING, 0, R + 0.02); scene.add(b); }
-      const capGeo = new THREE.BoxGeometry(5 * SPACING + 0.2, 0.35, 0.7);
+      for (let i = 0; i <= N; i += 1) { const b = new THREE.Mesh(barGeo, metal); b.position.set((i - N / 2) * SPACING, 0, R + 0.02); scene.add(b); }
+      const capGeo = new THREE.BoxGeometry(N * SPACING + 0.2, 0.35, 0.7);
       const capTop = new THREE.Mesh(capGeo, metal); capTop.position.set(0, 1.78, R + 0.1); scene.add(capTop);
       const capBot = new THREE.Mesh(capGeo, metal); capBot.position.set(0, -1.78, R + 0.1); scene.add(capBot);
 
@@ -140,14 +141,14 @@ const Reels3D: React.FC<Props> = ({ grid, spinning, lit, pool, colors, onFail })
       const rowFaces = [1, 0, FACES - 1]; // top, middle, bottom row of the window
       const showResult = (r: number) => rowFaces.forEach((f, row) => { const s = live.current.grid[r]?.[row]; if (s) setFace(reels[r], f, s); });
       const fillRandom = (r: number) => { for (let i = 0; i < FACES; i += 1) setFace(reels[r], i, randSym()); };
-      for (let r = 0; r < 5; r += 1) { fillRandom(r); showResult(r); }
+      for (let r = 0; r < N; r += 1) { fillRandom(r); showResult(r); }
 
       // ---- sizing
       const resize = () => {
         const w = el.clientWidth || 600; const h = el.clientHeight || 340;
         renderer.setSize(w, h, false);
         camera.aspect = w / h;
-        const need = 5 * SPACING + 0.5;                              // the width that must fit
+        const need = N * SPACING + 0.5;                              // the width that must fit
         const dist = Math.max(3.6 / (2 * Math.tan((camera.fov * Math.PI) / 360)), need / (2 * Math.tan((camera.fov * Math.PI) / 360) * camera.aspect));
         camera.position.set(base.x + par.x, base.y + par.y, R + dist);
         camera.lookAt(0, 0, 0);
@@ -164,13 +165,13 @@ const Reels3D: React.FC<Props> = ({ grid, spinning, lit, pool, colors, onFail })
 
       // ---- loop (sleeps when nothing moves)
       let raf = 0; let last = 0; let running = false; let time = 0;
-      const prevSpin = [false, false, false, false, false];
+      const prevSpin = reels.map(() => false);
       const tick = (now: number) => {
         raf = 0; running = false;
         const dt = Math.min(0.05, last ? (now - last) / 1000 : 0.016); last = now; time += dt;
         let busy = false;
         const { spinning: sp, lit: litSet } = live.current;
-        for (let r = 0; r < 5; r += 1) {
+        for (let r = 0; r < N; r += 1) {
           const rl = reels[r];
           const want = !!sp[r];
           if (want && !prevSpin[r]) { fillRandom(r); rl.mode = 'up'; rl.t = 0; rl.omega = 0; }
@@ -241,7 +242,8 @@ const Reels3D: React.FC<Props> = ({ grid, spinning, lit, pool, colors, onFail })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return <div ref={host} className="w-full" style={{ aspectRatio: '5 / 3.2' }} aria-hidden="true" />;
+  const n = Math.max(3, Math.min(7, grid.length || 5));
+  return <div ref={host} className="w-full mx-auto" style={{ aspectRatio: `${n * 1.1 + 0.5} / 3.6`, maxWidth: n >= 5 ? undefined : `${n * 160 + 80}px` }} aria-hidden="true" />;
 };
 
 export default Reels3D;

@@ -1,4 +1,5 @@
-// Video-slot engine: 5 reels x 3 rows, 10 paylines, wild, scatter -> free spins.
+// Video-slot engine: N reels (3 to 7) x 3 rows, paylines, wild, scatter -> free spins. A game that sets nothing is the
+// classic 5 reels x 10 paylines; `game.reels` and `game.paylines` give the others.
 // Everything here is pure: the randomness is injected (`rng(n)` returns an integer in [0, n)), so the same code
 // drives the real spins (crypto RNG), the RTP calculation and the tests.
 export const REELS = 5;
@@ -7,6 +8,21 @@ export const PAYLINES = [
   [1, 1, 1, 1, 1], [0, 0, 0, 0, 0], [2, 2, 2, 2, 2], [0, 1, 2, 1, 0], [2, 1, 0, 1, 2],
   [0, 0, 1, 2, 2], [2, 2, 1, 0, 0], [1, 0, 0, 0, 1], [1, 2, 2, 2, 1], [0, 1, 1, 1, 0],
 ];
+// Paylines for a layout other than the classic one: every path over the 3 rows that moves at most one row between
+// neighbouring reels, calmest first, then `count` of them picked evenly (so the set mixes straight and zig-zag lines).
+export function smoothLines(reels, count) {
+  const paths = [];
+  const walk = (acc) => {
+    if (acc.length === reels) { paths.push(acc); return; }
+    for (const d of [0, -1, 1]) { const n = acc[acc.length - 1] + d; if (n >= 0 && n <= 2) walk([...acc, n]); }
+  };
+  [0, 1, 2].forEach((r) => walk([r]));
+  const changes = (l) => l.reduce((a, v, i) => a + (i && v !== l[i - 1] ? 1 : 0), 0);
+  paths.sort((a, b) => changes(a) - changes(b) || a.join('').localeCompare(b.join('')));
+  const n = Math.min(count, paths.length);
+  return Array.from({ length: n }, (_, i) => paths[Math.floor((i * paths.length) / n)]);
+}
+export const linesOf = (game) => game.paylines || PAYLINES;
 export const WILD = 'WILD';
 export const SCATTER = 'SCATTER';
 
@@ -25,7 +41,7 @@ export function expandWilds(game, grid) {
 // bet of one line (total stake / number of lines). The best of "wild line" and "symbol line" is paid, once.
 export function evaluateLines(game, grid) {
   const wins = [];
-  PAYLINES.forEach((line, idx) => {
+  linesOf(game).forEach((line, idx) => {
     const syms = line.map((row, reel) => grid[reel][row]);
     let base = null;
     for (const s of syms) { if (s !== WILD) { base = s; break; } }
@@ -61,11 +77,11 @@ export function playSpin(game, rng, { free = false } = {}) {
 export function playRound(game, rng) {
   const spins = [];
   const first = playSpin(game, rng);
-  spins.push({ ...first, free: false, win: first.linePay / PAYLINES.length + first.scatterPay });
+  spins.push({ ...first, free: false, win: first.linePay / linesOf(game).length + first.scatterPay });
   let total = spins[0].win;
   for (let i = 0; i < first.freeSpinsAwarded; i += 1) {
     const s = playSpin(game, rng, { free: true });
-    const win = s.linePay / PAYLINES.length;
+    const win = s.linePay / linesOf(game).length;
     spins.push({ ...s, free: true, win });
     total += win;
   }
@@ -75,20 +91,19 @@ export function playRound(game, rng) {
 // Exact RTP by enumerating every combination of reel stops (reels are short on purpose, so this is cheap).
 // Free spins use the same reels, so their expected value is closed-form: E[spins] x E[free spin].
 export function exactRtp(game) {
-  const [a, b, c, d, e] = game.strips.map((s) => s.length);
+  const lens = game.strips.map((x) => x.length);
   let lineBase = 0; let lineFree = 0; let scatterPay = 0; let freeSpinsExpected = 0;
-  const total = a * b * c * d * e;
-  const stops = [0, 0, 0, 0, 0];
-  for (let i0 = 0; i0 < a; i0 += 1) for (let i1 = 0; i1 < b; i1 += 1) for (let i2 = 0; i2 < c; i2 += 1)
-    for (let i3 = 0; i3 < d; i3 += 1) for (let i4 = 0; i4 < e; i4 += 1) {
-      stops[0] = i0; stops[1] = i1; stops[2] = i2; stops[3] = i3; stops[4] = i4;
-      const grid = expandWilds(game, gridFromStops(game, stops));
-      const lw = evaluateLines(game, grid).reduce((x, w) => x + w.pay, 0);
-      const sc = countScatters(grid);
-      lineBase += lw; scatterPay += game.scatterPay[sc] ?? 0; freeSpinsExpected += game.freeSpins[sc] ?? 0;
-      lineFree += lw * game.freeSpinMultiplier;
-    }
-  const L = PAYLINES.length;
+  const total = lens.reduce((a, b) => a * b, 1);
+  const stops = lens.map(() => 0);
+  for (let n = 0; n < total; n += 1) {
+    const grid = expandWilds(game, gridFromStops(game, stops));
+    const lw = evaluateLines(game, grid).reduce((x, w) => x + w.pay, 0);
+    const sc = countScatters(grid);
+    lineBase += lw; scatterPay += game.scatterPay[sc] ?? 0; freeSpinsExpected += game.freeSpins[sc] ?? 0;
+    lineFree += lw * game.freeSpinMultiplier;
+    for (let r = lens.length - 1; r >= 0; r -= 1) { stops[r] += 1; if (stops[r] < lens[r]) break; stops[r] = 0; }
+  }
+  const L = linesOf(game).length;
   const baseEv = lineBase / total / L + scatterPay / total;
   const freeEvPerSpin = lineFree / total / L;
   const rtp = baseEv + (freeSpinsExpected / total) * freeEvPerSpin;

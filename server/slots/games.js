@@ -1,4 +1,4 @@
-import { WILD, SCATTER } from './engine.js';
+import { WILD, SCATTER, PAYLINES, smoothLines } from './engine.js';
 
 // Five video slots on one engine (5 reels x 3 rows, 10 paylines). The reel strips are fixed (20 symbols per reel,
 // shuffled once with a fixed seed) and the paytable is scaled so the exact return-to-player (RTP) is ~95%.
@@ -33,52 +33,54 @@ const reelCounts = (s, wild) => ({
   [s[0]]: wild ? 4 : 5, [s[1]]: 4, [s[2]]: 3, [s[3]]: 3, [s[4]]: 2, [s[5]]: 1, [s[6]]: 1,
   ...(wild ? { [WILD]: 1 } : {}), [SCATTER]: 1,
 });
-const strips = (s, seed) => [0, 1, 2, 3, 4].map((r) => strip(reelCounts(s, r >= 1 && r <= 3), seed + r * 101));
+const strips = (s, seed, reels = 5) => Array.from({ length: reels }, (_, r) => strip(reelCounts(s, r >= 1 && r <= reels - 2), seed + r * 101));
 
 // payShape: raw pays for [3, 4, 5] of a kind per symbol (low1..low4, high1..high3) before scaling.
-const pays = (shape, scale) => {
+// The pay for 6 and 7 of a kind (only the 6- and 7-reel games have them) doubles with every extra reel.
+const payAt = (p, n) => (n <= 5 ? p[n - 3] : p[2] * 2 ** (n - 5));
+const pays = (shape, scale, reels = 5) => {
   const t = {};
   Object.entries(shape).forEach(([sym, p]) => {
     t[sym] = {};
-    [3, 4, 5].forEach((n, i) => { t[sym][n] = Math.round(p[i] * scale * 20) / 20; });
+    for (let n = 3; n <= reels; n += 1) t[sym][n] = Math.round(payAt(p, n) * scale * 20) / 20;
   });
   return t;
 };
 
-const FREE_SPINS = { 3: 8, 4: 12, 5: 20 };
-const SCATTER_PAY = (scale) => ({ 3: Math.round(2 * scale * 20) / 20, 4: Math.round(10 * scale * 20) / 20, 5: Math.round(50 * scale * 20) / 20 });
+const FREE_SPINS = { 3: 8, 4: 12, 5: 20, 6: 25, 7: 30 };
+const SCATTER_PAY = (scale) => ({ 3: Math.round(2 * scale * 20) / 20, 4: Math.round(10 * scale * 20) / 20, 5: Math.round(50 * scale * 20) / 20, 6: Math.round(100 * scale * 20) / 20, 7: Math.round(200 * scale * 20) / 20 });
 
 // scale: tuned so the exact RTP is ~95% (run `node scripts/tuneSlots.mjs`).
 const TUNE = {
-  'hot-fruits': { scale: 2.5119, rtp: 94.74 },
+  'hot-fruits': { scale: 8.9529, rtp: 95.19 },
   'pharaoh-gold': { scale: 1.3359, rtp: 94.99 },
-  'diamond-rush': { scale: 2.781, rtp: 95.01 },
+  'diamond-rush': { scale: 2.7808, rtp: 95.0 },
   'wild-west-gold': { scale: 1.2966, rtp: 94.99 },
-  'lucky-dragon': { scale: 1.7307, rtp: 94.92 },
+  'lucky-dragon': { scale: 1.1301, rtp: 95.01 },
   'viking-fortune': { scale: 0.8617, rtp: 95.05 },
-  'space-odyssey': { scale: 2.7812, rtp: 95.01 },
+  'space-odyssey': { scale: 1.1339, rtp: 94.96 },
   'mystic-wolf': { scale: 1.301, rtp: 94.94 },
-  'candy-blast': { scale: 2.5154, rtp: 95.13 },
+  'candy-blast': { scale: 4.319, rtp: 94.88 },
   'aztec-sun': { scale: 1.3225, rtp: 94.89 },
   'blazing-sevens': { scale: 2.5119, rtp: 94.74 },
-  'fire-fruits-40': { scale: 1.0083, rtp: 94.96 },
-  'mega-hot-100': { scale: 2.5302, rtp: 94.96 },
+  'fire-fruits-40': { scale: 1.0096, rtp: 95.26 },
+  'mega-hot-100': { scale: 2.5312, rtp: 94.99 },
   'fruit-carnival': { scale: 2.7901, rtp: 95.22 },
   'money-rush': { scale: 2.781, rtp: 95.01 },
   'merlin-spell': { scale: 1.0238, rtp: 94.99 },
-  'ocean-pearls': { scale: 2.6363, rtp: 95.01 },
+  'ocean-pearls': { scale: 1.7406, rtp: 95.15 },
   'desert-explorer': { scale: 1.3876, rtp: 95.05 },
   'golden-lady': { scale: 1.9588, rtp: 95.10 },
   'emerald-clover': { scale: 0.8514, rtp: 94.97 },
-  'royal-gems': { scale: 2.9427, rtp: 95.00 },
+  'royal-gems': { scale: 1.3008, rtp: 94.89 },
   'jester-jackpot': { scale: 2.7659, rtp: 95.02 },
   'pirate-treasure': { scale: 1.1214, rtp: 94.98 },
-  'arctic-fortune': { scale: 2.515, rtp: 95.04 },
+  'arctic-fortune': { scale: 4.1693, rtp: 94.85 },
   'jungle-safari': { scale: 1.3401, rtp: 94.91 },
   'samurai-blade': { scale: 2.7094, rtp: 94.86 },
   'football-fever': { scale: 1.0806, rtp: 94.98 },
   'gold-miner': { scale: 0.8585, rtp: 95.03 },
-  'lucky-seven-wheel': { scale: 2.3819, rtp: 95.00 },
+  'lucky-seven-wheel': { scale: 7.8284, rtp: 95.1 },
   'night-racer': { scale: 2.7869, rtp: 94.98 },
 };
 
@@ -93,15 +95,18 @@ function perturb(shape, variant) {
   }));
 }
 
+// `reels` (3-7, default 5) and `lineCount` (default 10) make the games differ in shape, not only in pictures.
 const def = (id, o) => {
   const { scale, rtp } = TUNE[id];
-  const { symbolIds, shape: baseShape, variant, ...rest } = o;
+  const { symbolIds, shape: baseShape, variant, reels = 5, lineCount = 10, ...rest } = o;
   const shape = variant ? perturb(baseShape, variant) : baseShape;
+  const paylines = reels === 5 && lineCount === 10 ? PAYLINES : smoothLines(reels, lineCount);
   return {
     id, ...rest,
-    lines: 10,
-    strips: strips(symbolIds, rest.seed),
-    paytable: { ...pays(shape, scale), [WILD]: pays({ w: shape[symbolIds[6]] }, scale).w },
+    reels, paylines,
+    lines: paylines.length,
+    strips: strips(symbolIds, rest.seed, reels),
+    paytable: { ...pays(shape, scale, reels), [WILD]: pays({ w: shape[symbolIds[6]] }, scale, reels).w },
     scatterPay: SCATTER_PAY(scale),
     freeSpins: FREE_SPINS,
     rtp,
@@ -128,8 +133,8 @@ const candy = ids('GUMMY', 'LOLLI', 'DONUT', 'CUPCAKE', 'ICECREAM', 'CAKE', 'CHO
 const aztec = ids('MASK', 'CORN', 'JAGUAR', 'SERPENT', 'TEMPLE', 'CALENDAR', 'GOLDMASK');
 
 export const SLOT_GAMES = [
-  def('hot-fruits', {
-    name: 'Hot Fruits', tagline: 'The fruit classic with a wild star', volatility: 'Low', color: ['#7f1d1d', '#111827'], seed: 11,
+  def('hot-fruits', { reels: 3, lineCount: 5,
+    name: 'Hot Fruits', tagline: 'Classic 3-reel fruit machine, 5 lines', volatility: 'Low', color: ['#7f1d1d', '#111827'], seed: 11,
     symbolIds: fruits, shape: shapeOf(fruits, CLASSIC), freeSpinMultiplier: 2, wildExpand: false,
     symbols: { CHERRY: '🍒', LEMON: '🍋', ORANGE: '🍊', GRAPE: '🍇', WATERMELON: '🍉', BELL: '🔔', SEVEN: '7️⃣', WILD: '⭐', SCATTER: '🍀' },
     scatterName: 'Clover', wildName: 'Star',
@@ -140,8 +145,8 @@ export const SLOT_GAMES = [
     symbols: { PALM: '🌴', JAR: '🏺', BEETLE: '🪲', EYE: '👁️', SNAKE: '🐍', FALCON: '🦅', PHARAOH: '👑', WILD: '☀️', SCATTER: '📖' },
     scatterName: 'Libri', wildName: 'Sun (expanding)',
   }),
-  def('diamond-rush', {
-    name: 'Diamond Rush', tagline: 'Gems, big wins, high risk', volatility: 'High', color: ['#1e3a8a', '#0f172a'], seed: 37,
+  def('diamond-rush', { reels: 5, lineCount: 20,
+    name: 'Diamond Rush', tagline: 'Gems, 20 lines, big wins, high risk', volatility: 'High', color: ['#1e3a8a', '#0f172a'], seed: 37,
     symbolIds: diamond, shape: shapeOf(diamond, VOLATILE), freeSpinMultiplier: 3, wildExpand: false,
     symbols: { BLUE: '🟦', GREEN: '🟩', YELLOW: '🟨', PURPLE: '🟪', RING: '💍', CROWN: '👑', DIAMOND: '💎', WILD: '✨', SCATTER: '🔮' },
     scatterName: 'Orb', wildName: 'Spark',
@@ -152,8 +157,8 @@ export const SLOT_GAMES = [
     symbols: { CACTUS: '🌵', BOOT: '🥾', BEER: '🍺', GUN: '🔫', HORSE: '🐎', COWBOY: '🤠', GOLD: '🪙', WILD: '⭐', SCATTER: '💰' },
     scatterName: 'Golden sack', wildName: 'Sheriff star (expanding)',
   }),
-  def('lucky-dragon', {
-    name: 'Lucky Dragon', tagline: 'The dragon of fortune, x3 free spins', volatility: 'High', color: ['#14532d', '#1c1917'], seed: 53,
+  def('lucky-dragon', { reels: 6, lineCount: 15,
+    name: 'Lucky Dragon', tagline: '6 reels, 15 lines, x3 free spins', volatility: 'High', color: ['#14532d', '#1c1917'], seed: 53,
     symbolIds: dragon, shape: shapeOf(dragon, BALANCED), freeSpinMultiplier: 3, wildExpand: false,
     symbols: { BAMBOO: '🎋', LANTERN: '🏮', COOKIE: '🥠', ENVELOPE: '🧧', FISH: '🐟', TIGER: '🐯', DRAGON: '🐉', WILD: '☯️', SCATTER: '🪙' },
     scatterName: 'Monedha', wildName: 'Yin-Yang',
@@ -164,8 +169,8 @@ export const SLOT_GAMES = [
     symbols: { RUNE: 'ᚱ', HORN: '📯', AXE: '🪓', SHIELD: '🛡️', SHIP: '⛵', RAVEN: '🐦‍⬛', ODIN: '🧙', WILD: '⚡', SCATTER: '🪙' },
     scatterName: 'Monedha e Odinit', wildName: 'Rrufeja (zgjerohet)',
   }),
-  def('space-odyssey', {
-    name: 'Space Odyssey', tagline: 'A journey among the stars, x3 free spins', volatility: 'High', color: ['#312e81', '#020617'], seed: 71,
+  def('space-odyssey', { reels: 7, lineCount: 25,
+    name: 'Space Odyssey', tagline: '7 reels among the stars, x3 free spins', volatility: 'High', color: ['#312e81', '#020617'], seed: 71,
     symbolIds: space, shape: shapeOf(space, VOLATILE), freeSpinMultiplier: 3, wildExpand: false,
     symbols: { STAR: '⭐', MOON: '🌙', COMET: '☄️', SATURN: '🪐', ROCKET: '🚀', ALIEN: '👽', GALAXY: '🌌', WILD: '🛸', SCATTER: '🌠' },
     scatterName: 'Shooting star', wildName: 'Flying saucer',
@@ -176,7 +181,7 @@ export const SLOT_GAMES = [
     symbols: { PAW: '🐾', FEATHER: '🪶', ARROW: '🏹', TOTEM: '🗿', EAGLE: '🦅', BEAR: '🐻', WOLF: '🐺', WILD: '🌕', SCATTER: '🔥' },
     scatterName: 'Tribal fire', wildName: 'Full moon (expanding)',
   }),
-  def('candy-blast', {
+  def('candy-blast', { reels: 4, lineCount: 8,
     name: 'Candy Blast', tagline: 'Sweets and frequent wins', volatility: 'Low', color: ['#9d174d', '#3b0764'], seed: 83,
     symbolIds: candy, shape: shapeOf(candy, CLASSIC), freeSpinMultiplier: 2, wildExpand: false,
     symbols: { GUMMY: '🍬', LOLLI: '🍭', DONUT: '🍩', CUPCAKE: '🧁', ICECREAM: '🍦', CAKE: '🎂', CHOCO: '🍫', WILD: '🌈', SCATTER: '🎁' },
@@ -194,14 +199,14 @@ export const SLOT_GAMES = [
     symbols: { S1: "🍒", S2: "🍋", S3: "🍊", S4: "🍇", S5: "🍉", S6: "🔔", S7: "7️⃣", WILD: "⭐", SCATTER: "🔥" },
     scatterName: "Flaka", wildName: "Star",
   }),
-  def('fire-fruits-40', {
-    name: "Fire Fruits 40", tagline: "Klasiku me 40 linja zjarri", volatility: "Medium", color: ["#b45309", "#1c0f05"], seed: 101, category: "Classic",
+  def('fire-fruits-40', { reels: 5, lineCount: 20,
+    name: "Fire Fruits 40", tagline: "Fire classic with 20 lines", volatility: "Medium", color: ["#b45309", "#1c0f05"], seed: 101, category: "Classic",
     symbolIds: ["S1", "S2", "S3", "S4", "S5", "S6", "S7"], shape: shapeOf(["S1", "S2", "S3", "S4", "S5", "S6", "S7"], BALANCED), freeSpinMultiplier: 2, wildExpand: true,
     symbols: { S1: "🍒", S2: "🍋", S3: "🍊", S4: "🍇", S5: "🍉", S6: "🍀", S7: "7️⃣", WILD: "🔥", SCATTER: "🌟" },
     scatterName: "Golden star", wildName: "Fire (expanding)",
   }),
-  def('mega-hot-100', { variant: 1,
-    name: "Mega Hot 100", tagline: "The super classic, frequent payouts", volatility: "Low", color: ["#7f1d1d", "#0f0f1a"], seed: 103, category: "Classic",
+  def('mega-hot-100', { variant: 1, reels: 5, lineCount: 40,
+    name: "Mega Hot 100", tagline: "The super classic, 40 lines, frequent payouts", volatility: "Low", color: ["#7f1d1d", "#0f0f1a"], seed: 103, category: "Classic",
     symbolIds: ["S1", "S2", "S3", "S4", "S5", "S6", "S7"], shape: shapeOf(["S1", "S2", "S3", "S4", "S5", "S6", "S7"], CLASSIC), freeSpinMultiplier: 2, wildExpand: false,
     symbols: { S1: "🍒", S2: "🍋", S3: "🍊", S4: "🍇", S5: "🍉", S6: "⭐", S7: "7️⃣", WILD: "🃏", SCATTER: "💎" },
     scatterName: "Diamond", wildName: "Xhokeri",
@@ -224,8 +229,8 @@ export const SLOT_GAMES = [
     symbols: { S1: "🧪", S2: "📜", S3: "🕯️", S4: "🔮", S5: "🐉", S6: "🏰", S7: "🧙", WILD: "✨", SCATTER: "⭐" },
     scatterName: "Ylli magjik", wildName: "Magjia (zgjerohet)",
   }),
-  def('ocean-pearls', { variant: 4,
-    name: "Ocean Pearls", tagline: "Dolphins, shells and deep pearls", volatility: "Medium", color: ["#075985", "#082f49"], seed: 127, category: "Adventure",
+  def('ocean-pearls', { variant: 4, reels: 6, lineCount: 15,
+    name: "Ocean Pearls", tagline: "6 reels of dolphins, shells and deep pearls", volatility: "Medium", color: ["#075985", "#082f49"], seed: 127, category: "Adventure",
     symbolIds: ["S1", "S2", "S3", "S4", "S5", "S6", "S7"], shape: shapeOf(["S1", "S2", "S3", "S4", "S5", "S6", "S7"], STEADY), freeSpinMultiplier: 2, wildExpand: false,
     symbols: { S1: "🐚", S2: "🦀", S3: "🐠", S4: "🐙", S5: "🐢", S6: "🐬", S7: "🦪", WILD: "🌊", SCATTER: "🫧" },
     scatterName: "Flluska", wildName: "Vala",
@@ -248,8 +253,8 @@ export const SLOT_GAMES = [
     symbols: { S1: "🍀", S2: "🍺", S3: "🎩", S4: "🌈", S5: "🪙", S6: "🧚", S7: "☘️", WILD: "🌈", SCATTER: "🏺" },
     scatterName: "Ena e arit", wildName: "Ylberi (zgjerohet)",
   }),
-  def('royal-gems', { variant: 5,
-    name: "Royal Gems", tagline: "Royal gems", volatility: "Medium", color: ["#4c1d95", "#1e1b4b"], seed: 149, category: "Classic",
+  def('royal-gems', { variant: 5, reels: 7, lineCount: 25,
+    name: "Royal Gems", tagline: "7 reels, 25 lines of royal gems", volatility: "Medium", color: ["#4c1d95", "#1e1b4b"], seed: 149, category: "Classic",
     symbolIds: ["S1", "S2", "S3", "S4", "S5", "S6", "S7"], shape: shapeOf(["S1", "S2", "S3", "S4", "S5", "S6", "S7"], STEADY), freeSpinMultiplier: 2, wildExpand: false,
     symbols: { S1: "🟥", S2: "🟦", S3: "🟩", S4: "🟨", S5: "💎", S6: "👑", S7: "🏆", WILD: "💜", SCATTER: "✨" },
     scatterName: "Spark", wildName: "Amethyst",
@@ -266,8 +271,8 @@ export const SLOT_GAMES = [
     symbols: { S1: "⚓", S2: "🧭", S3: "🗡️", S4: "🦜", S5: "🏴‍☠️", S6: "🚢", S7: "💰", WILD: "💀", SCATTER: "🗺️" },
     scatterName: "Harta", wildName: "Kafka (zgjerohet)",
   }),
-  def('arctic-fortune', { variant: 2,
-    name: "Arctic Fortune", tagline: "Penguins and lucky ice", volatility: "Low", color: ["#0e7490", "#083344"], seed: 163, category: "Adventure",
+  def('arctic-fortune', { variant: 2, reels: 4, lineCount: 8,
+    name: "Arctic Fortune", tagline: "4 reels of penguins and lucky ice", volatility: "Low", color: ["#0e7490", "#083344"], seed: 163, category: "Adventure",
     symbolIds: ["S1", "S2", "S3", "S4", "S5", "S6", "S7"], shape: shapeOf(["S1", "S2", "S3", "S4", "S5", "S6", "S7"], CLASSIC), freeSpinMultiplier: 2, wildExpand: false,
     symbols: { S1: "❄️", S2: "⛄", S3: "🧊", S4: "🐧", S5: "🐻‍❄️", S6: "🦭", S7: "🏔️", WILD: "🌟", SCATTER: "🌨️" },
     scatterName: "Stuhia", wildName: "Ylli polar",
@@ -296,8 +301,8 @@ export const SLOT_GAMES = [
     symbols: { S1: "⛏️", S2: "🪨", S3: "🔦", S4: "🚂", S5: "🧨", S6: "🤠", S7: "🥇", WILD: "💣", SCATTER: "💎" },
     scatterName: "Diamond", wildName: "Dinamiti (zgjerohet)",
   }),
-  def('lucky-seven-wheel', { variant: 3,
-    name: "Lucky Seven Wheel", tagline: "Sevens and the wheel of fortune", volatility: "Low", color: ["#9a3412", "#1c0a05"], seed: 191, category: "Classic",
+  def('lucky-seven-wheel', { variant: 3, reels: 3, lineCount: 5,
+    name: "Lucky Seven Wheel", tagline: "Classic 3-reel sevens, 5 lines", volatility: "Low", color: ["#9a3412", "#1c0a05"], seed: 191, category: "Classic",
     symbolIds: ["S1", "S2", "S3", "S4", "S5", "S6", "S7"], shape: shapeOf(["S1", "S2", "S3", "S4", "S5", "S6", "S7"], CLASSIC), freeSpinMultiplier: 2, wildExpand: false,
     symbols: { S1: "🍒", S2: "🍋", S3: "🍇", S4: "🍉", S5: "🔔", S6: "💎", S7: "7️⃣", WILD: "⭐", SCATTER: "🎡" },
     scatterName: "Rrota", wildName: "Star",
@@ -315,6 +320,6 @@ export const getSlotGame = (id) => SLOT_GAMES.find((g) => g.id === id) || null;
 // What the browser may know about a game: no reel strips (they are the server's), everything the player is shown.
 export const publicGame = (g) => ({
   id: g.id, name: g.name, tagline: g.tagline, volatility: g.volatility, color: g.color, symbols: g.symbols,
-  rtp: g.rtp, lines: g.lines, paytable: g.paytable, scatterPay: g.scatterPay, freeSpins: g.freeSpins,
+  rtp: g.rtp, lines: g.lines, reels: g.reels, paylines: g.paylines, paytable: g.paytable, scatterPay: g.scatterPay, freeSpins: g.freeSpins,
   category: g.category, freeSpinMultiplier: g.freeSpinMultiplier, wildExpand: g.wildExpand, scatterName: g.scatterName, wildName: g.wildName,
 });

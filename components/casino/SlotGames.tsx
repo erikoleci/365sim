@@ -99,7 +99,10 @@ const SlotGame: React.FC<{
   const [stake, setStake] = useState(stakes[startCur][3]);
   const [demoBal, setDemoBal] = useState({ ...DEMO_START });
   const [grid, setGrid] = useState<string[][]>(() => idleGrid(game));
-  const [spinning, setSpinning] = useState<boolean[]>([false, false, false, false, false]);
+  const nReels = game.reels ?? 5;
+  const lineSet = game.paylines ?? PAYLINES;
+  const none = () => Array.from({ length: nReels }, () => false);
+  const [spinning, setSpinning] = useState<boolean[]>(none);
   const [lit, setLit] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
@@ -120,21 +123,21 @@ const SlotGame: React.FC<{
 
   const animateStop = useCallback(async (finalGrid: string[][], quick: boolean) => {
     setLit(new Set());
-    setSpinning([true, true, true, true, true]);
+    setSpinning(Array.from({ length: nReels }, () => true));
     sfx.spin();
-    for (let r = 0; r < 5; r += 1) {
-      await sleep(quick ? 150 : 380);
+    for (let r = 0; r < nReels; r += 1) {
+      await sleep(quick ? 150 : nReels > 5 ? 300 : 380);
       sfx.stop();
       spinningRef.current[r] = false;
       setGrid((g) => g.map((col, i) => (i === r ? finalGrid[r].map((s) => game.symbols[s]) : col)));
       setSpinning((sp) => sp.map((v, i) => (i === r ? false : v)));
     }
-  }, [game]);
-  const spinningRef = useRef<boolean[]>([false, false, false, false, false]);
+  }, [game, nReels]);
+  const spinningRef = useRef<boolean[]>(none());
 
   const lightUp = (sp: api.SlotSpin) => {
     const cells = new Set<string>();
-    sp.wins.forEach((w) => { for (let r = 0; r < w.count; r += 1) cells.add(`${r}-${PAYLINES[w.line][r]}`); });
+    sp.wins.forEach((w) => { for (let r = 0; r < w.count; r += 1) cells.add(`${r}-${lineSet[w.line][r]}`); });
     if (sp.scatters >= 3) sp.grid.forEach((col, r) => col.forEach((s, row) => { if (s === 'SCATTER') cells.add(`${r}-${row}`); }));
     setLit(cells);
   };
@@ -144,14 +147,14 @@ const SlotGame: React.FC<{
     if (bal < stake) { setMsg('Insufficient balance.'); return; }
     setBusy(true); setMsg(''); setLastWin(0); setFreeInfo('');
     try {
-      spinningRef.current = [true, true, true, true, true];
+      spinningRef.current = Array.from({ length: nReels }, () => true);
       const res = await api.casinoSlotSpin(game.id, stake, currency);
       if (!alive.current) return;
       let shown = 0;
       for (let i = 0; i < res.spins.length; i += 1) {
         const sp = res.spins[i];
         if (i > 0) setFreeInfo(`RROTULLIM FALAS ${i}/${res.spins.length - 1} · x${game.freeSpinMultiplier}`);
-        spinningRef.current = [true, true, true, true, true];
+        spinningRef.current = Array.from({ length: nReels }, () => true);
         await animateStop(sp.grid, i > 0);
         if (!alive.current) return;
         shown += sp.win;
@@ -171,8 +174,8 @@ const SlotGame: React.FC<{
     } catch (e: any) {
       setMsg(e?.message || 'Error');
     } finally {
-      spinningRef.current = [false, false, false, false, false];
-      setSpinning([false, false, false, false, false]);
+      spinningRef.current = none();
+      setSpinning(none());
       if (alive.current) setBusy(false);
     }
   };
@@ -206,7 +209,7 @@ const SlotGame: React.FC<{
 <div className="flex-1 min-w-0 cabinet-glow bg-black/60 rounded-xl p-2 sm:p-3 border-4 border-yellow-600/70 shadow-[inset_0_0_30px_rgba(0,0,0,0.8),0_0_24px_rgba(212,175,55,0.25)]">
           {(() => {
             const cssReels = (
-              <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
+              <div className="grid gap-1.5 sm:gap-2" style={{ gridTemplateColumns: `repeat(${nReels}, minmax(0, 1fr))` }}>
                 {grid.map((col, r) => (
                   <SlotReel key={r} symbols={col} spinning={spinning[r]} pool={Object.values(game.symbols)} litRows={[0, 1, 2].filter((row) => lit.has(`${r}-${row}`))} />
                 ))}
@@ -241,12 +244,12 @@ const SlotGame: React.FC<{
             <div className="flex justify-between items-center mb-2"><b>{game.name} · Tabela e pagesave</b><button onClick={() => setShowPay(false)}>✕</button></div>
             <div className="text-[11px] text-gray-400 mb-3">Payouts are multiples of the bet per line (stake ÷ {game.lines}). Symbols: Twemoji (CC-BY 4.0).</div>
             <div className="overflow-x-auto"><table className="w-full text-sm">
-              <thead><tr className="text-gray-400 text-xs"><th className="text-left">Simboli</th><th>x3</th><th>x4</th><th>x5</th></tr></thead>
+              <thead><tr className="text-gray-400 text-xs"><th className="text-left">Simboli</th>{Array.from({ length: nReels - 2 }, (_, i) => <th key={i}>x{i + 3}</th>)}</tr></thead>
               <tbody>
                 {[...top.reverse(), 'WILD'].map((k) => (
-                  <tr key={k} className="border-t border-white/10"><td className="py-1"><span className="inline-block w-8 h-8"><SymbolIcon symbol={game.symbols[k]} className="w-full h-full" /></span></td>{[3, 4, 5].map((n) => <td key={n} className="text-center tabular-nums">{game.paytable[k][n]}</td>)}</tr>
+                  <tr key={k} className="border-t border-white/10"><td className="py-1"><span className="inline-block w-8 h-8"><SymbolIcon symbol={game.symbols[k]} className="w-full h-full" /></span></td>{Array.from({ length: nReels - 2 }, (_, i) => i + 3).map((n) => <td key={n} className="text-center tabular-nums">{game.paytable[k][n]}</td>)}</tr>
                 ))}
-                <tr className="border-t border-white/10"><td className="py-1"><span className="inline-block w-8 h-8"><SymbolIcon symbol={game.symbols.SCATTER} className="w-full h-full" /></span></td>{[3, 4, 5].map((n) => <td key={n} className="text-center tabular-nums text-xs">{game.scatterPay[n]}× stake<br />{game.freeSpins[n]} free</td>)}</tr>
+                <tr className="border-t border-white/10"><td className="py-1"><span className="inline-block w-8 h-8"><SymbolIcon symbol={game.symbols.SCATTER} className="w-full h-full" /></span></td>{Array.from({ length: nReels - 2 }, (_, i) => i + 3).map((n) => <td key={n} className="text-center tabular-nums text-xs">{game.scatterPay[n]}× stake<br />{game.freeSpins[n]} free</td>)}</tr>
               </tbody>
             </table></div>
             <div className="text-[11px] text-gray-400 mt-3">Free spins pay x{game.freeSpinMultiplier}.{game.wildExpand ? ' Wild expands over the whole reel.' : ''} Maximum win per round: 2000× stake.</div>
@@ -259,7 +262,7 @@ const SlotGame: React.FC<{
 
 function idleGrid(game: api.VideoSlotInfo): string[][] {
   const base = Object.keys(game.symbols).filter((k) => k !== 'WILD' && k !== 'SCATTER');
-  return [0, 1, 2, 3, 4].map((r) => [0, 1, 2].map((row) => game.symbols[base[(r * 3 + row) % base.length]]));
+  return Array.from({ length: game.reels ?? 5 }, (_, r) => [0, 1, 2].map((row) => game.symbols[base[(r * 3 + row) % base.length]]));
 }
 
 export default SlotGames;
