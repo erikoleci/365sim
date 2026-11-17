@@ -104,7 +104,7 @@ const HiLo: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
         </>
       ) : (
         <>
-          <div className="mt-4"><StakeInput value={stake} onChange={setStake} min={1} max={5000} presets={[10, 50, 100, 500, 1000]} unit="L" balance={userBalance} disabled={busy} /></div>
+          <div className="mt-4"><StakeInput value={stake} onChange={setStake} min={1} max={100000000} presets={[10, 50, 100, 500, 1000]} unit="L" balance={userBalance} disabled={busy} /></div>
           <button onClick={deal} disabled={busy || userBalance < stake} className="mt-3 w-full py-4 rounded-xl font-black text-xl bg-gradient-to-b from-green-400 to-green-700 text-white shadow-lg disabled:opacity-50">DEAL · {stake} L</button>
         </>
       )}

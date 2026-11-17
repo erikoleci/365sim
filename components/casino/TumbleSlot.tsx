@@ -127,7 +127,7 @@ const TumbleSlot: React.FC<Props> = ({ balance = 0, balanceEur = 0, accountCurre
           {msg && <div className="text-sm font-extrabold text-cyan-200">{msg}</div>}
           {!msg && (busy ? running > 0 && <div className="text-lg font-extrabold text-brand-yellow">Win: {fmt(running, currency)}</div> : final > 0 ? <div className="text-xl font-extrabold text-brand-yellow win-pop">You won <CountUp value={final} format={(n) => fmt(n, currency)} />!</div> : null)}
         </div>
-        <div className="mb-3"><StakeInput value={stake} onChange={setStake} min={info.stakes[currency][0]} max={info.stakes[currency][info.stakes[currency].length - 1]} presets={info.stakes[currency]} unit={currency === 'EUR' ? '€' : 'L'} balance={bal} disabled={busy} /></div>
+        <div className="mb-3"><StakeInput value={stake} onChange={setStake} min={info.stakes[currency][0]} max={currency === 'EUR' ? 10000000 : 100000000} presets={info.stakes[currency]} unit={currency === 'EUR' ? '€' : 'L'} balance={bal} disabled={busy} /></div>
         <button onClick={play} disabled={busy || bal < stake} className="w-full py-3 rounded-xl font-extrabold text-lg bg-gradient-to-b from-pink-500 to-fuchsia-700 text-white disabled:opacity-50 shadow-lg">{busy ? '...' : `SPIN · ${stake} ${currency === 'EUR' ? '€' : 'L'}`}</button>
         <div className="text-[10px] text-center text-gray-300 mt-2">4+ {SYM.SCATTER} (gifts) award {info.freeSpins} free spins. During free spins every winning tumble raises the multiplier by +1 until the round ends.</div>
       </div>

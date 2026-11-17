@@ -2,7 +2,7 @@
 // The round number comes from the clock, the winning pocket is drawn by the server when betting closes.
 export const CYCLE_MS = 30000;
 export const BET_MS = 20000;
-export const MAX_TABLE_BET = 5000;
+export const MAX_TABLE_BET = 100_000_000; // no table limit: the balance is the limit
 export const RED = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
 export const SIMPLE_SPOTS = ['RED', 'BLACK', 'EVEN', 'ODD', 'LOW', 'HIGH', 'D1', 'D2', 'D3'];
 

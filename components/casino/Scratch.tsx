@@ -67,7 +67,7 @@ const Scratch: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       <div className="h-14 flex flex-col items-center justify-center text-center mt-3">
         {done && card && card.payout > 0 ? <div className="text-2xl font-extrabold text-brand-yellow win-pop">{msg} · <CountUp value={card.payout} format={(v) => `${v.toFixed(2)} L`} /></div> : <div className="text-lg font-bold text-gray-100">{msg}</div>}
       </div>
-      <div className="mb-3"><StakeInput value={stake} onChange={setStake} min={1} max={5000} presets={STAKES} unit="L" balance={userBalance} disabled={busy || (!!card && !done)} /></div>
+      <div className="mb-3"><StakeInput value={stake} onChange={setStake} min={1} max={100000000} presets={STAKES} unit="L" balance={userBalance} disabled={busy || (!!card && !done)} /></div>
       <div className="flex gap-2 w-full max-w-sm">
         {card && !done && <button onClick={revealAll} className="px-4 rounded-xl border border-white/25 text-gray-100">Reveal all</button>}
         <button onClick={buy} disabled={busy || (!!card && !done) || userBalance < stake} className="flex-1 py-3 rounded-xl font-extrabold text-lg bg-gradient-to-b from-green-500 to-green-700 text-white disabled:opacity-50 shadow-lg">{busy ? '...' : `BUY CARD · ${stake} L`}</button>

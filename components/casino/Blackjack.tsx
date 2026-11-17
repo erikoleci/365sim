@@ -145,7 +145,7 @@ const Blackjack: React.FC<BlackjackProps> = ({ onSetBalance, userBalance, onClos
                    <div className="flex flex-col items-center gap-2">
                        <div className="flex items-center gap-2">
                            {[5, 25, 100, 500].map((v) => (
-                               <button key={v} onClick={() => { setTouched(true); setStake((cur) => Math.min(5000, (cur === 25 && !touched ? 0 : cur) + v)); }} className="transition-transform hover:-translate-y-1 active:scale-95" aria-label={`Add ${v}`}>
+                               <button key={v} onClick={() => { setTouched(true); setStake((cur) => Math.min(100000000, (cur === 25 && !touched ? 0 : cur) + v)); }} className="transition-transform hover:-translate-y-1 active:scale-95" aria-label={`Add ${v}`}>
                                    <Chip value={v} size={38} />
                                </button>
                            ))}

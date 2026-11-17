@@ -85,7 +85,8 @@ router.use(async (req, res, next) => {
 // --- Shared house rules (kept simple & proportional to a play-money
 // simulator, not a full enterprise risk-limits system) ---
 const MIN_STAKE = 1;
-const MAX_STAKE = 5000;
+// No game limit: the player's balance is the limit. This is only a sanity ceiling so amount x max win stays inside NUMERIC(14,2).
+const MAX_STAKE = 100_000_000;
 // Fair play: every round is decided by the real draw (shuffled cards, real wheel, real dice) and pays the
 // standard table below. The house edge comes only from those payout tables, never from forcing outcomes.
 export const PAYOUT = {
@@ -146,7 +147,7 @@ export const SLOT_STAKES = {
   ALL: [10, 20, 50, 100, 200, 500, 1000, 2000, 5000],
   EUR: [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50],
 };
-export const SLOT_LIMITS = { ALL: { min: 10, max: 5000 }, EUR: { min: 0.1, max: 50 } };
+export const SLOT_LIMITS = { ALL: { min: 10, max: 100_000_000 }, EUR: { min: 0.1, max: 10_000_000 } };
 // Players type any stake they like (max 2 decimals) inside the currency's limits; the preset chips are only shortcuts.
 export function validSlotStake(currency, stake) {
   const lim = SLOT_LIMITS[currency];

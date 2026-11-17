@@ -228,7 +228,7 @@ const SlotGame: React.FC<{
           {(lastWin > 0 || msg) && <div className={`text-lg font-extrabold ${lastWin > 0 ? 'text-brand-yellow' : 'text-red-300'}`}>{busy && lastWin > 0 ? `Win: ${fmt(lastWin, currency)}` : lastWin > 0 ? <span key={lastWin} className="win-pop inline-block">You won <CountUp value={lastWin} format={(n) => fmt(n, currency)} />!</span> : msg}</div>}
         </div>
 
-        <div className="mb-3"><StakeInput value={stake} onChange={setStake} min={stakes[currency][0]} max={stakes[currency][stakes[currency].length - 1]} presets={stakes[currency]} unit={currency === 'EUR' ? '€' : 'L'} balance={bal} disabled={busy} /></div>
+        <div className="mb-3"><StakeInput value={stake} onChange={setStake} min={stakes[currency][0]} max={currency === 'EUR' ? 10000000 : 100000000} presets={stakes[currency]} unit={currency === 'EUR' ? '€' : 'L'} balance={bal} disabled={busy} /></div>
         <button onClick={spin} disabled={busy || bal < stake} className="w-full py-3 rounded-xl font-extrabold text-lg bg-green-600 hover:bg-green-500 text-white disabled:opacity-50">
           {busy ? '...' : `SPIN · ${stake} ${currency === 'EUR' ? '€' : 'L'}`}
         </button>

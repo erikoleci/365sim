@@ -25,11 +25,11 @@ let calibration = {};
 try { calibration = JSON.parse(fs.readFileSync(CAL_PATH, 'utf8')); } catch { calibration = {}; }
 export const getCalibration = (key) => calibration[key] || null;
 
-const OUTCOME_DEFAULTS = { hitFrequency: 0.15, rtp: 0.3, volatility: 5, minBet: 1, maxBet: 5000, maxWinMultiplier: 2000 };
-const RTP_DEFAULTS = { rtp: 0.6, minBet: 1, maxBet: 5000 };
+const OUTCOME_DEFAULTS = { hitFrequency: 0.15, rtp: 0.3, volatility: 5, minBet: 1, maxBet: 100_000_000, maxWinMultiplier: 2000 };
+const RTP_DEFAULTS = { rtp: 0.6, minBet: 1, maxBet: 100_000_000 };
 // Fixed-chance games whose payout table is scaled to the RTP. The default is the game's own RTP, so nothing changes until the admin does.
 export const NATURAL_RTP = { dice: 0.95, cups: 0.95 };
-const BETS_DEFAULTS = { minBet: 1, maxBet: 5000 };
+const BETS_DEFAULTS = { minBet: 1, maxBet: 100_000_000 };
 
 const OUTCOME_KEYS = ['slots', 'tumble', 'wheel', 'scratch', 'holdwin'];
 const RTP_KEYS = ['dogs', 'horses', 'plinko', 'dice', 'cups'];
@@ -84,7 +84,7 @@ export const PROFILE_KEYS = Object.keys(REGISTRY);
 
 // ---- validation -----------------------------------------------------------------------------------------------
 const RANGES = {
-  hitFrequency: [0.01, 0.95], rtp: [0.05, 1], volatility: [1, 5], minBet: [1, 5000], maxBet: [1, 5000], maxWinMultiplier: [1, 100000],
+  hitFrequency: [0.01, 0.95], rtp: [0.05, 1], volatility: [1, 5], minBet: [1, 100_000_000], maxBet: [1, 100_000_000], maxWinMultiplier: [1, 100000],
 };
 export const FIELD_LABELS = { hitFrequency: 'Hit frequency', rtp: 'RTP', volatility: 'Volatility', minBet: 'Min bet', maxBet: 'Max bet', maxWinMultiplier: 'Max win (x stake)' };
 
@@ -127,6 +127,8 @@ const merge = (entry, overrides) => {
   const o = overrides?.[entry.key] || {};
   const out = { ...entry.defaults };
   for (const f of Object.keys(entry.defaults)) if (typeof o[f] === 'number' && Number.isFinite(o[f])) out[f] = o[f];
+  // The old default cap (5000) was never a choice of the super admin: there is no bet limit any more, the balance is the limit.
+  if (o.maxBet === 5000) out.maxBet = entry.defaults.maxBet;
   return out;
 };
 export async function getProfile(key) {

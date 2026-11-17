@@ -72,7 +72,7 @@ const Keno: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
           {Object.entries(table).map(([h, m]) => <span key={h} className="px-2 py-0.5 rounded bg-black/40 border border-white/10">{h} hits <b className="text-brand-yellow">{m}x</b></span>)}
         </div>
       )}
-      <div className="mb-3"><StakeInput value={stake} onChange={setStake} min={1} max={5000} presets={STAKES} unit="L" balance={userBalance} disabled={busy} /></div>
+      <div className="mb-3"><StakeInput value={stake} onChange={setStake} min={1} max={100000000} presets={STAKES} unit="L" balance={userBalance} disabled={busy} /></div>
       <div className="flex gap-2 max-w-sm mx-auto">
         <button onClick={() => { setPicks([]); setShown([]); setWin(0); setMsg('Pick 1 to 8 numbers'); }} disabled={busy} className="px-4 rounded-xl border border-white/20 text-gray-200 disabled:opacity-50">Clear</button>
         <button onClick={play} disabled={busy || picks.length === 0 || userBalance < stake} className="flex-1 py-3 rounded-xl font-extrabold text-lg bg-gradient-to-b from-green-500 to-green-700 text-white disabled:opacity-50 shadow-lg">{busy ? '...' : `LUAJ · ${stake} L`}</button>

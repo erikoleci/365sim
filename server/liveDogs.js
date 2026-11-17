@@ -3,7 +3,7 @@ import { DOGS, DOG_RTP, drawOrder, dogsFor } from './dogs.js';
 export const RUNNERS = DOGS;
 export const CYCLE_MS = 40000;
 export const BET_MS = 25000;
-export const MAX_TABLE_BET = 5000;
+export const MAX_TABLE_BET = 100_000_000; // no table limit: the balance is the limit
 export const roundNo = (now = Date.now()) => Math.floor(now / CYCLE_MS);
 export function phaseAt(now = Date.now()) {
   const e = now % CYCLE_MS;

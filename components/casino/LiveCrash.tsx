@@ -121,7 +121,7 @@ const LiveCrash: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       {betting && !hasBet && (
         <>
           <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] items-end">
-            <StakeInput value={stake} onChange={setStake} min={1} max={5000} presets={[10, 50, 100, 500, 1000]} unit="L" balance={userBalance} />
+            <StakeInput value={stake} onChange={setStake} min={1} max={100000000} presets={[10, 50, 100, 500, 1000]} unit="L" balance={userBalance} />
             <label className="text-xs text-gray-300 flex flex-col gap-1">Auto cash-out (optional)
               <input value={auto} onChange={(e) => /^\d{0,3}(\.\d{0,2})?$/.test(e.target.value) && setAuto(e.target.value)} placeholder="e.g. 2.00" inputMode="decimal" className="w-32 rounded-lg bg-black/60 border border-white/20 px-2 py-2 text-center font-bold text-white" />
             </label>

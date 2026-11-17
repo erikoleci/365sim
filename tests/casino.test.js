@@ -16,14 +16,16 @@ afterEach(() => {
 });
 
 describe('validateStake', () => {
-  it('accepts stakes within [1, 5000]', () => {
+  it('has no game limit: any stake from 1 up to the sanity ceiling is accepted (the balance is the limit)', () => {
     expect(validateStake(1)).toBe(true);
     expect(validateStake(5000)).toBe(true);
+    expect(validateStake(5001)).toBe(true);
+    expect(validateStake(1_000_000)).toBe(true);
     expect(validateStake(250)).toBe(true);
   });
   it('rejects out-of-range or malformed stakes', () => {
     expect(validateStake(0)).toBe(false);
-    expect(validateStake(5001)).toBe(false);
+    expect(validateStake(100_000_001)).toBe(false);
     expect(validateStake(-10)).toBe(false);
     expect(validateStake(NaN)).toBe(false);
     expect(validateStake('50')).toBe(false);

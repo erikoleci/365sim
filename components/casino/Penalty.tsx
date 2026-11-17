@@ -111,7 +111,7 @@ const Penalty: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
         <button onClick={cashout} disabled={busy || total <= 1} className="mt-2 w-full py-3 rounded-xl font-black text-lg bg-gradient-to-b from-amber-300 to-orange-600 text-black disabled:opacity-40 shadow-lg">CASH OUT · {(locked.current * total).toFixed(2)} L</button>
       ) : (
         <>
-          <div className="mt-2"><StakeInput value={stake} onChange={setStake} min={1} max={5000} presets={[10, 50, 100, 500, 1000]} unit="L" balance={userBalance} disabled={busy} /></div>
+          <div className="mt-2"><StakeInput value={stake} onChange={setStake} min={1} max={100000000} presets={[10, 50, 100, 500, 1000]} unit="L" balance={userBalance} disabled={busy} /></div>
           <button onClick={start} disabled={busy || userBalance < stake} className="mt-3 w-full py-4 rounded-xl font-black text-xl bg-gradient-to-b from-green-400 to-green-700 text-white shadow-lg disabled:opacity-50">KICK OFF · {stake} L</button>
         </>
       )}

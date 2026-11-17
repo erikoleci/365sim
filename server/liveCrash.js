@@ -5,7 +5,7 @@ export const CYCLE_MS = 40000;
 export const BET_MS = 10000;
 export const GROWTH = 0.18;
 export const LIVE_CAP = 150;
-export const MAX_TABLE_BET = 5000;
+export const MAX_TABLE_BET = 100_000_000; // no table limit: the balance is the limit
 export const roundNo = (now = Date.now()) => Math.floor(now / CYCLE_MS);
 export const flightStart = (round) => round * CYCLE_MS + BET_MS;
 export const multiplierAt = (tSec) => Math.floor(Math.exp(GROWTH * Math.max(0, tSec)) * 100) / 100;

@@ -84,12 +84,12 @@ const LiveKeno: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
         <div className="text-center font-bold mt-3 min-h-[26px]">{winAmt > 0 ? <span className="text-brand-yellow win-pop inline-block text-lg">You won <CountUp value={winAmt} format={(v) => `${v.toFixed(2)} L`} /></span> : msg}</div>
       </div>
 
-      <div className="mt-3"><StakeInput value={stake} onChange={setStake} min={1} max={5000} presets={[10, 50, 100, 500, 1000]} unit="L" balance={userBalance} disabled={!betting} /></div>
+      <div className="mt-3"><StakeInput value={stake} onChange={setStake} min={1} max={100000000} presets={[10, 50, 100, 500, 1000]} unit="L" balance={userBalance} disabled={!betting} /></div>
       <div className="flex gap-2 mt-2">
         <button disabled={!betting || picks.length === 0} onClick={() => setPicks([])} className="px-4 rounded-xl border border-white/20 text-gray-200 disabled:opacity-40">Clear</button>
         <button onClick={place} disabled={!betting || picks.length === 0 || userBalance < stake} className="flex-1 py-3.5 rounded-xl font-black text-lg bg-gradient-to-b from-green-400 to-green-700 text-white shadow-lg disabled:opacity-50">{picks.length ? `BUY TICKET · ${picks.length} numbers · ${stake} L` : 'PICK YOUR NUMBERS'}</button>
       </div>
-      <div className="text-[11px] text-gray-400 mt-2 text-center">Balance: <b className="tabular-nums text-white">{userBalance.toFixed(2)} L</b> · 10 balls from 40 · max 5000 L per draw · credit only{st?.simulatedPlayers ? ' · includes simulated players' : ''}</div>
+      <div className="text-[11px] text-gray-400 mt-2 text-center">Balance: <b className="tabular-nums text-white">{userBalance.toFixed(2)} L</b> · 10 balls from 40 · credit only{st?.simulatedPlayers ? ' · includes simulated players' : ''}</div>
     </div>
   );
 };
