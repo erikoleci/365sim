@@ -5,7 +5,7 @@ import StakeInput from './StakeInput';
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import * as api from '../../services/api';
 import SlotReel from './SlotReel';
-import { slotTheme, THEME_ORN } from './slotThemes';
+import { slotTheme, THEME_ORN, THEME_METAL } from './slotThemes';
 import CountUp from './CountUp';
 import CoinBurst from './CoinBurst';
 import SymbolIcon from './SymbolIcon';
@@ -221,7 +221,7 @@ const SlotGame: React.FC<{
             if (!use3d) return cssReels;
             return (
               <Suspense fallback={cssReels}>
-                <Reels3D grid={grid} spinning={spinning} lit={lit} pool={Object.values(game.symbols)} colors={game.color as [string, string]} onFail={() => setUse3d(false)} />
+                <Reels3D grid={grid} spinning={spinning} lit={lit} pool={Object.values(game.symbols)} colors={game.color as [string, string]} metal={THEME_METAL[slotTheme(game.id)]} onFail={() => setUse3d(false)} />
               </Suspense>
             );
           })()}
@@ -229,7 +229,7 @@ const SlotGame: React.FC<{
           <SlotLever onPull={spin} disabled={busy || bal < stake} className="shrink-0 hidden sm:block" />
         </div>
 
-        <div className="sg-ticker h-14 flex flex-col items-center justify-center text-center">
+        <div className="sg-ticker h-12 flex flex-col items-center justify-center text-center">
           {freeInfo && <div className="text-xs font-bold text-cyan-300">{freeInfo}</div>}
           {(lastWin > 0 || msg) && <div className={`text-xl font-black ${lastWin > 0 ? 'sg-wintext' : 'text-red-300'}`}>{busy && lastWin > 0 ? `Win: ${fmt(lastWin, currency)}` : lastWin > 0 ? <span key={lastWin} className="win-pop inline-block">You won <CountUp value={lastWin} format={(n) => fmt(n, currency)} />!</span> : msg}</div>}
         </div>

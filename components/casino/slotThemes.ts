@@ -21,3 +21,8 @@ export const THEME_ORN: Record<SlotTheme, [string, string]> = {
   classic: ['★', '★'], egypt: ['𓂀', '𓂀'], gems: ['◆', '◆'], western: ['✦', '✦'], asia: ['❖', '❖'], nordic: ['ᛟ', 'ᛟ'],
   space: ['✧', '✧'], candy: ['●', '●'], aztec: ['▲', '▲'], ocean: ['≋', '≋'], magic: ['✺', '✺'], sport: ['⚽', '⚽'],
 };
+// Colour of the reel dividers and caps in the 3D window, per theme.
+export const THEME_METAL: Record<SlotTheme, number> = {
+  classic: 0xcfd3da, egypt: 0xc9a24a, gems: 0x9b7bff, western: 0x9a6a38, asia: 0xd13a30, nordic: 0xa8c4e4,
+  space: 0x22e6ff, candy: 0xff7ab8, aztec: 0x9a8a62, ocean: 0x3fb6d6, magic: 0xb98cff, sport: 0x6fcf55,
+};

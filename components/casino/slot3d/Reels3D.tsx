@@ -11,6 +11,7 @@ interface Props {
   lit: Set<string>;              // "reel-row" cells that are part of a win
   pool: string[];                // symbols drawn on the faces that are not the result
   colors: [string, string];      // the game's palette
+  metal?: number;                // colour of dividers and caps
   onFail?: () => void;           // WebGL not available -> the parent falls back to the CSS reels
 }
 
@@ -23,7 +24,7 @@ const prefersReduced = () => { try { return window.matchMedia('(prefers-reduced-
 
 type Reel = { group: any; faces: any[]; glows: any[]; theta: number; omega: number; mode: 'idle' | 'up' | 'spin' | 'stop'; t: number; from: number; to: number; dur: number; settle: number };
 
-const Reels3D: React.FC<Props> = ({ grid, spinning, lit, pool, colors, onFail }) => {
+const Reels3D: React.FC<Props> = ({ grid, spinning, lit, pool, colors, metal: metalColor, onFail }) => {
   const host = useRef<HTMLDivElement>(null);
   const live = useRef({ grid, spinning, lit, pool });
   live.current = { grid, spinning, lit, pool };
@@ -110,7 +111,7 @@ const Reels3D: React.FC<Props> = ({ grid, spinning, lit, pool, colors, onFail })
       const faceGeo = new THREE.PlaneGeometry(1, 1);
       const glowGeo = new THREE.PlaneGeometry(1.5, 1.5);
       const glowMat = new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 });
-      const metal = new THREE.MeshStandardMaterial({ color: 0xc9a24a, metalness: 1, roughness: 0.28, envMapIntensity: 1.2 });
+      const metal = new THREE.MeshStandardMaterial({ color: metalColor ?? 0xc9a24a, metalness: 1, roughness: 0.28, envMapIntensity: 1.2 });
       const mats: any[] = [];
       const randSym = () => live.current.pool[Math.floor(Math.random() * live.current.pool.length)];
 
