@@ -54,10 +54,16 @@ const CasinoProfilesPanel: React.FC = () => {
   const [audit, setAudit] = useState<Awaited<ReturnType<typeof api.adminCasinoProfilesAudit>>['entries']>([]);
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState('');
+  const [gHit, setGHit] = useState('');
+  const [gRtp, setGRtp] = useState('');
+  const [gSet, setGSet] = useState<api.CasinoGlobal>({ hitFrequency: null, rtp: null });
 
   const apply = (list: api.CasinoProfile[]) => { setProfiles(list); setDrafts(Object.fromEntries(list.map((p) => [p.key, toDraft(p)]))); };
   const load = useCallback(async () => {
-    try { apply((await api.adminCasinoProfiles()).profiles); setAudit((await api.adminCasinoProfilesAudit()).entries); setError(''); }
+    try {
+      const g = await api.adminCasinoGlobal(); setGSet(g);
+      setGHit(g.hitFrequency == null ? '' : String(+(g.hitFrequency * 100).toFixed(2))); setGRtp(g.rtp == null ? '' : String(+(g.rtp * 100).toFixed(2)));
+      apply((await api.adminCasinoProfiles()).profiles); setAudit((await api.adminCasinoProfilesAudit()).entries); setError(''); }
     catch (e: any) { setError(e?.message || 'Error'); }
   }, []);
   useEffect(() => { if (open && profiles.length === 0) void load(); }, [open, profiles.length, load]);
@@ -70,6 +76,16 @@ const CasinoProfilesPanel: React.FC = () => {
     setBusy(p.key); setError('');
     try { apply((await api.adminSaveCasinoProfile(p.key, body)).profiles); setAudit((await api.adminCasinoProfilesAudit()).entries); }
     catch (e: any) { setError(`${p.label}: ${e?.message || 'Error'}`); } finally { setBusy(''); }
+  };
+  const saveGlobal = async () => {
+    const body: { hitFrequency?: number; rtp?: number } = {};
+    if (gHit.trim() !== '') body.hitFrequency = Number(gHit) / 100;
+    if (gRtp.trim() !== '') body.rtp = Number(gRtp) / 100;
+    if (!Object.keys(body).length) { setError('Enter win chance and/or RTP'); return; }
+    if (!window.confirm('Apply to ALL casino games? Per-game hit % and RTP saved before will be replaced.')) return;
+    setBusy('__global'); setError('');
+    try { const r = await api.adminSaveCasinoGlobal(body); setGSet(r.global); apply(r.profiles); setAudit((await api.adminCasinoProfilesAudit()).entries); }
+    catch (e: any) { setError(`Global: ${e?.message || 'Error'}`); } finally { setBusy(''); }
   };
   const reset = async (p: api.CasinoProfile) => {
     setBusy(p.key); setError('');
@@ -92,6 +108,16 @@ const CasinoProfilesPanel: React.FC = () => {
           <div className="text-[11px] text-brand-textMuted mb-3">
             Hit frequency = share of rounds that pay anything (gross; many of those pay less than the stake). RTP = total paid / total staked. Volatility reshapes the winning payouts (the RTP stays the same). All are set per game and applied by the server before the result is shown;
             nothing depends on the player or on past results. "Natural" columns show how the game behaves without a profile (measured with 1,000,000 rounds).
+          </div>
+          <div className="border border-brand-yellow/60 rounded p-3 mb-3 bg-black/30">
+            <div className="text-sm font-bold mb-1">Global setting (all games)</div>
+            <div className="text-[11px] text-brand-textMuted mb-2">One value for every game. Win chance (hit %) applies to slots and the other outcome games; RTP to every game that has one. A game can still be tuned apart below afterwards.</div>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <label>Win chance % <input className={input} value={gHit} onChange={(e) => setGHit(e.target.value)} placeholder="e.g. 20" /></label>
+              <label>RTP % <input className={input} value={gRtp} onChange={(e) => setGRtp(e.target.value)} placeholder="e.g. 40" /></label>
+              <button disabled={busy === '__global'} onClick={saveGlobal} className="px-3 py-1 rounded bg-brand-yellow text-black font-bold disabled:opacity-40">Apply to all games</button>
+              <span className="text-[10px] text-brand-textMuted">Now: {gSet.hitFrequency == null ? 'default' : `${+(gSet.hitFrequency * 100).toFixed(2)}%`} / {gSet.rtp == null ? 'default' : `${+(gSet.rtp * 100).toFixed(2)}%`}</span>
+            </div>
           </div>
           {error && <div className="text-red-400 text-xs mb-2">{error}</div>}
           <div className="overflow-x-auto">

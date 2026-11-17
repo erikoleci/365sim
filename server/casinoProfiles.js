@@ -123,9 +123,16 @@ async function readOverrides() {
 }
 export const clearProfileCache = () => { cache = null; };
 
+// One setting for every game (the super admin's "global"): hit frequency for the games that have one, RTP for every game whose
+// RTP can be set. A game's own saved values still win over it, so a single game can be tuned apart.
+const GLOBAL = '__global';
+const fin = (v) => typeof v === 'number' && Number.isFinite(v);
 const merge = (entry, overrides) => {
   const o = overrides?.[entry.key] || {};
+  const g = overrides?.[GLOBAL] || {};
   const out = { ...entry.defaults };
+  if (entry.kind === 'outcome' && fin(g.hitFrequency)) out.hitFrequency = g.hitFrequency;
+  if (entry.kind !== 'bets' && fin(g.rtp)) out.rtp = g.rtp;
   for (const f of Object.keys(entry.defaults)) if (typeof o[f] === 'number' && Number.isFinite(o[f])) out[f] = o[f];
   // The old default cap (5000) was never a choice of the super admin: there is no bet limit any more, the balance is the limit.
   if (o.maxBet === 5000) out.maxBet = entry.defaults.maxBet;
@@ -269,4 +276,39 @@ export function betTotalOf(body) {
   const vals = Object.values(b);
   if (vals.length === 0 || !vals.every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
   return Math.round(vals.reduce((a, v) => a + v, 0) * 100) / 100;
+}
+
+// ---- the global setting ---------------------------------------------------------------------------------------
+export async function getGlobalProfile() {
+  const g = (await readOverrides())[GLOBAL] || {};
+  return { hitFrequency: fin(g.hitFrequency) ? g.hitFrequency : null, rtp: fin(g.rtp) ? g.rtp : null };
+}
+/** Sets hit frequency and/or RTP for ALL games at once. The per-game hit/RTP values saved before are dropped so every game follows it
+ *  (limits, volatility and max win of a game are kept). Checked against every game; one failing game refuses the whole change. */
+export async function saveGlobalProfile(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid settings');
+  const next = {};
+  for (const field of ['hitFrequency', 'rtp']) {
+    if (input[field] === undefined) continue;
+    const v = input[field];
+    if (typeof v !== 'number' || !Number.isFinite(v)) throw new Error(`${FIELD_LABELS[field]} must be a number`);
+    const [lo, hi] = RANGES[field];
+    if (v < lo || v > hi) throw new Error(`${FIELD_LABELS[field]} must be between ${lo} and ${hi}`);
+    next[field] = v;
+  }
+  if (!Object.keys(next).length) throw new Error('Nothing to change');
+  const ov = { ...(await readOverrides()) };
+  const before = await getGlobalProfile();
+  const g = { ...(ov[GLOBAL] || {}), ...next };
+  const trial = { ...ov, [GLOBAL]: g };
+  for (const k of Object.keys(trial)) if (k !== GLOBAL) { const { hitFrequency, rtp, ...rest } = trial[k]; trial[k] = rest; } // games follow the global
+  for (const k of PROFILE_KEYS) {
+    const e = REGISTRY[k];
+    if (e.kind !== 'outcome') continue;
+    try { checkWhole(k, merge(e, trial)); } catch (err) { throw new Error(`${e.label}: ${err.message}`); }
+  }
+  for (const k of Object.keys(trial)) if (k !== GLOBAL && !Object.keys(trial[k]).length) delete trial[k];
+  await pool.query('INSERT INTO kv_store (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [KEY, JSON.stringify(trial)]);
+  cache = trial; cacheAt = Date.now();
+  return { before, after: await getGlobalProfile() };
 }

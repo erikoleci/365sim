@@ -11,7 +11,7 @@ import { readLiveCorners, readLiveCards } from '../matchSettlement.js';
 import { settleMatch, recomputeBetStatus, creditWithLedger, refundAdminForWin, settleStuckBets, recoverFinishedWithoutResult, explainSettleBlock, wouldSettleNow } from '../matchSettlement.js';
 import { missedLiveCycles } from '../london365/liveState.js';
 import { logAudit } from '../auditLog.js';
-import { getAllProfiles, saveProfile, resetProfile, PROFILE_KEYS, slotKey } from '../casinoProfiles.js';
+import { getAllProfiles, saveProfile, resetProfile, getGlobalProfile, saveGlobalProfile, PROFILE_KEYS, slotKey } from '../casinoProfiles.js';
 import { SLOT_GAMES } from '../slots/games.js';
 import { computeMarketCoverage } from '../marketCoverageScan.js';
 import { settlementRuleRequired, getBetBlockReason } from '../marketRules.js';
@@ -1595,6 +1595,15 @@ const withMeasured = async (profiles) => { const m = await measuredByKey(); retu
 router.get('/casino/profiles', requireSuperAdmin, async (req, res) => {
   res.json({ profiles: await withMeasured(await getAllProfiles()) });
 });
+// One setting for every game: win chance (hit frequency) and RTP, as fractions (0.2 = 20%). Games follow it unless tuned apart.
+router.get('/casino/global', requireSuperAdmin, async (req, res) => { res.json(await getGlobalProfile()); });
+router.put('/casino/global', requireSuperAdmin, async (req, res) => {
+  try {
+    const { before, after } = await saveGlobalProfile(req.body);
+    await logAudit(req.user, 'CASINO_GLOBAL', 'all', { before, after });
+    res.json({ global: after, profiles: await withMeasured(await getAllProfiles()) });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
 router.put('/casino/profiles/:key', requireSuperAdmin, async (req, res) => {
   if (!PROFILE_KEYS.includes(req.params.key)) return res.status(404).json({ error: 'Unknown game' });
   try {
@@ -1610,7 +1619,7 @@ router.post('/casino/profiles/:key/reset', requireSuperAdmin, async (req, res) =
   res.json({ profiles: await withMeasured(await getAllProfiles()) });
 });
 router.get('/casino/profiles-audit', requireSuperAdmin, async (req, res) => {
-  const { rows } = await pool.query(`SELECT actor_username, action, target, details, created_at FROM audit_log WHERE action IN ('CASINO_PROFILE','CASINO_PROFILE_RESET') ORDER BY created_at DESC LIMIT 40`);
+  const { rows } = await pool.query(`SELECT actor_username, action, target, details, created_at FROM audit_log WHERE action IN ('CASINO_PROFILE','CASINO_PROFILE_RESET','CASINO_GLOBAL') ORDER BY created_at DESC LIMIT 40`);
   res.json({ entries: rows });
 });
 // Clears the test rounds of the super admin himself (the demo statistics); players' rounds are never touched.
