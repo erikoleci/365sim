@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import symbolMap from '../../../utils/symbolMap.json';
+import { getArt } from '../slotArt';
 
 // The five reels of a video slot as real 3D drums (Three.js). Loaded only when a slot is opened (React.lazy in
 // SlotGames, and `three` itself is a dynamic import inside this file), so nothing else in the site pays for it.
@@ -83,8 +84,14 @@ const Reels3D: React.FC<Props> = ({ grid, spinning, lit, pool, colors, metal: me
         const ctx = c.getContext('2d')!;
         let hue = 0; for (let i = 0; i < sym.length; i += 1) hue = (hue * 31 + sym.charCodeAt(i)) % 360;
         const rr = (x: number, y: number, w: number, h: number, r: number) => { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); };
+        const artUrl = getArt(sym);
         const paint = (img?: HTMLImageElement) => {
           ctx.clearRect(0, 0, 256, 256);
+          if (artUrl) { // real artwork fills the whole face
+            ctx.fillStyle = bg1; ctx.fillRect(0, 0, 256, 256);
+            if (img) ctx.drawImage(img, 0, 0, 256, 256);
+            return;
+          }
           const g = ctx.createLinearGradient(0, 0, 0, 256); g.addColorStop(0, bg0); g.addColorStop(1, bg1);
           ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 256);
           // glossy gem tile in a colour of its own
@@ -104,10 +111,10 @@ const Reels3D: React.FC<Props> = ({ grid, spinning, lit, pool, colors, metal: me
         tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = maxAniso;
         texCache.set(sym, tex);
         const file = MAP[sym];
-        if (file) {
+        if (artUrl || file) {
           const img = new Image();
           img.onload = () => { if (dead) return; paint(img); tex.needsUpdate = true; wake.current(); };
-          img.src = `/symbols/${file}.svg`;
+          img.src = artUrl || `/symbols/${file}.svg`;
         }
         return tex;
       };

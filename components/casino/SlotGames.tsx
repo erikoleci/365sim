@@ -6,6 +6,7 @@ import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react
 import * as api from '../../services/api';
 import SlotReel from './SlotReel';
 import { slotTheme, THEME_ORN, THEME_METAL } from './slotThemes';
+import { loadSlotArt, clearSlotArt, getBg } from './slotArt';
 import CountUp from './CountUp';
 import CoinBurst from './CoinBurst';
 import SymbolIcon from './SymbolIcon';
@@ -114,6 +115,8 @@ const SlotGame: React.FC<{
   const [burst, setBurst] = useState(0); // bumps for every win worth celebrating (key of the coin shower)
   const [showPay, setShowPay] = useState(false);
   const [turbo, setTurbo] = useState(false);
+  const [artVer, setArtVer] = useState(0); // bumps when this game's real artwork has been found (reels redraw with it)
+  useEffect(() => { let on = true; void loadSlotArt(game).then((n) => { if (on && n > 0) setArtVer(1); }); return () => { on = false; clearSlotArt(); }; }, [game]);
   const [auto, setAuto] = useState(0);
   const [betOpen, setBetOpen] = useState(false);
   const [snd, setSnd] = useState(soundOn());
@@ -201,7 +204,7 @@ const SlotGame: React.FC<{
 
   const top = Object.keys(game.paytable).filter((k) => k !== 'WILD');
   return (
-    <div className={`sg-root rounded-2xl overflow-hidden relative${busy ? ' sg-busy' : ''}`} data-sgt={slotTheme(game.id)} style={{ background: `radial-gradient(900px 420px at 50% 0%, ${game.color[1]}cc, transparent 70%), linear-gradient(160deg, ${game.color[0]}, ${game.color[1]})` }}>
+    <div className={`sg-root rounded-2xl overflow-hidden relative${busy ? ' sg-busy' : ''}`} data-sgt={slotTheme(game.id)} style={{ background: `${artVer && getBg() ? `linear-gradient(rgba(0,0,0,.35), rgba(0,0,0,.55)), url(${getBg()}) center/cover, ` : ''}radial-gradient(900px 420px at 50% 0%, ${game.color[1]}cc, transparent 70%), linear-gradient(160deg, ${game.color[0]}, ${game.color[1]})` }}>
       {burst > 0 && <CoinBurst key={burst} />}
       {bigWin && <BigWin tier={bigWin.tier} amount={bigWin.amount} format={(v) => fmt(v, currency)} onDone={() => setBigWin(null)} />}
       <div className="p-3 sm:p-4">
@@ -227,7 +230,7 @@ const SlotGame: React.FC<{
             if (!use3d) return cssReels;
             return (
               <Suspense fallback={cssReels}>
-                <Reels3D grid={grid} spinning={spinning} lit={lit} pool={Object.values(game.symbols)} colors={game.color as [string, string]} metal={THEME_METAL[slotTheme(game.id)]} onFail={() => setUse3d(false)} />
+                <Reels3D key={artVer} grid={grid} spinning={spinning} lit={lit} pool={Object.values(game.symbols)} colors={game.color as [string, string]} metal={THEME_METAL[slotTheme(game.id)]} onFail={() => setUse3d(false)} />
               </Suspense>
             );
           })()}
