@@ -69,6 +69,9 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
       className="fixed bottom-4 right-4 z-[1010] w-11 h-11 rounded-full bg-black/70 border border-yellow-500/50 text-lg shadow-lg hover:bg-black/90 active:scale-95">{music ? '🎵' : '🔇'}</button>
   );
   const close = () => setActiveGame(null);
+  const money = (n: number) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // The bar shows the wallet(s) the account plays with: lek, euro, or both for a lek + euro account.
+  const shellBalance = accountCurrency === 'EUR' ? `${money(userBalanceEur)} €` : accountCurrency === 'BOTH' ? `${money(userBalance)} L · ${money(userBalanceEur)} €` : `${money(userBalance)} L`;
   const b = { userBalance, onSetBalance, onClose: close };
   const gameEl: Record<string, React.ReactNode> = {
     slots: <SlotMachine {...b} />, blackjack: <Blackjack {...b} />, roulette: <Roulette {...b} />, poker: <VideoPoker {...b} />,
@@ -84,7 +87,7 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
     const tile = [...TILES, ...LIVE_TILES].find((x) => x.game === activeGame);
     return (
       <GameShell title={tile?.name || 'Casino'} onBack={close} extra={musicBtn}
-        balance={`${Number(userBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L`}>
+        balance={shellBalance}>
         <GameBoundary key={activeGame} onBack={close}>{gameEl[activeGame]}</GameBoundary>
       </GameShell>
     );
