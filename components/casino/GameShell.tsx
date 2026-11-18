@@ -8,12 +8,14 @@ interface Props {
   title: string;
   onBack: () => void;
   balance?: string;
+  /** Accent colour of the game (hex): tints the backdrop, bar and panels. */
+  accent?: string;
   /** Floating things (music button...) that must sit above the game. */
   extra?: React.ReactNode;
   children: React.ReactNode;
 }
 
-const GameShell: React.FC<Props> = ({ title, onBack, balance, extra, children }) => {
+const GameShell: React.FC<Props> = ({ title, onBack, balance, accent, extra, children }) => {
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -36,7 +38,7 @@ const GameShell: React.FC<Props> = ({ title, onBack, balance, extra, children })
   const back = () => { try { if (window.history.state?.casinoGame) { window.history.back(); return; } } catch { /* ignore */ } onBack(); };
 
   return createPortal(
-    <div className="gs-root fixed inset-0 z-[1000] flex flex-col text-white" role="dialog" aria-label={title}>
+    <div className="gs-root fixed inset-0 z-[1000] flex flex-col text-white" role="dialog" aria-label={title} style={accent ? ({ ['--acc' as string]: accent } as React.CSSProperties) : undefined}>
       <header className="gs-bar shrink-0 flex items-center gap-2 px-2 sm:px-4">
         <button type="button" onClick={back} className="gs-back" aria-label="Back to casino"><span aria-hidden>‹</span><span className="hidden xs:inline sm:inline"> Casino</span></button>
         <div className="flex-1 min-w-0 text-center truncate font-extrabold tracking-wide gs-title">{title}</div>
