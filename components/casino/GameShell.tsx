@@ -23,6 +23,16 @@ const GameShell: React.FC<Props> = ({ title, onBack, balance, extra, children })
     return () => { window.removeEventListener('popstate', pop); document.body.style.overflow = prev; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // The bar above already has "Back to casino": hide the old inner "‹ Exit / ← Casino / ‹ Lobby" buttons the games draw themselves.
+  const mainRef = React.useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = mainRef.current; if (!el) return undefined;
+    let t = 0;
+    const sweep = () => { t = 0; el.querySelectorAll('button').forEach((b) => { if (/^\s*(‹|←)\s+\S/.test(b.textContent || '')) (b as HTMLElement).style.display = 'none'; }); };
+    const mo = new MutationObserver(() => { if (!t) t = window.setTimeout(sweep, 60); });
+    mo.observe(el, { childList: true, subtree: true }); sweep();
+    return () => { mo.disconnect(); window.clearTimeout(t); };
+  }, []);
   const back = () => { try { if (window.history.state?.casinoGame) { window.history.back(); return; } } catch { /* ignore */ } onBack(); };
 
   return createPortal(
@@ -33,7 +43,7 @@ const GameShell: React.FC<Props> = ({ title, onBack, balance, extra, children })
         <div className="gs-bal tabular-nums">{balance ?? ''}</div>
       </header>
       <main className="flex-1 overflow-y-auto overscroll-contain">
-        <div className="max-w-5xl mx-auto p-2 sm:p-4" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 5rem)' }}>{children}</div>
+        <div ref={mainRef} className="gs-main max-w-5xl mx-auto p-2 sm:p-4" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 5rem)' }}>{children}</div>
       </main>
       {extra}
     </div>,

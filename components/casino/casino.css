@@ -232,3 +232,29 @@
   --pat: radial-gradient(circle,#fff 1px,transparent 2px) 0 0/30px 30px; --pat-op:.12; }
 .sg-root[data-sgt=sport] { --frame: linear-gradient(145deg,#fff,#d9d9d9 30%,#4a8f3a 55%,#fff 80%,#2f6f25); --accent:#8cff6b; --glow: rgba(120,255,100,.4); --rad: 12px; --fw: 6px; --btn: linear-gradient(180deg,#fff27a,#f2c80a 55%,#a88a00); --btn-d:#6a5600; --btn-glow: rgba(242,200,10,.45); --btn-ink:#1a1600; --title: linear-gradient(180deg,#fff,#d6ffc9 55%,#4fbf3a); --track:.12em; --case: uppercase;
   --pat: repeating-linear-gradient(90deg,#fff 0 40px,transparent 40px 80px); --pat-op:.05; }
+
+/* ---- shared modern look for every casino game page (applies inside GameShell only) ---- */
+.gs-main .casino-felt { border: 0; border-radius: 22px; padding: 18px 14px; background:
+    radial-gradient(120% 70% at 50% 0%, rgba(120,255,190,.16), transparent 60%),
+    radial-gradient(ellipse at 50% 120%, rgba(0,0,0,.55), transparent 60%),
+    repeating-linear-gradient(60deg, rgba(255,255,255,.018) 0 2px, transparent 2px 7px),
+    linear-gradient(180deg, #0f5f45, #0a4233 60%, #06281f);
+  box-shadow: inset 0 0 0 1px rgba(255,224,138,.55), inset 0 0 0 7px rgba(6,20,14,.9), inset 0 0 0 8px rgba(245,197,66,.35), inset 0 0 80px rgba(0,0,0,.6), 0 18px 44px rgba(0,0,0,.6); }
+.gs-main .casino-felt-blue { border: 0; border-radius: 22px; padding: 18px 14px; box-shadow: inset 0 0 0 1px rgba(127,178,255,.6), inset 0 0 0 7px rgba(5,12,28,.9), inset 0 0 80px rgba(0,0,0,.6), 0 18px 44px rgba(0,0,0,.6); }
+@media (min-width: 640px) { .gs-main .casino-felt, .gs-main .casino-felt-blue { padding: 26px; } }
+.gs-main .casino-gold-text { font-size: 1.35rem; letter-spacing: .28em; filter: drop-shadow(0 2px 3px rgba(0,0,0,.6)); }
+/* controls rows never run off a phone screen */
+.gs-main [class*="justify-between"][class*="gap-4"], .gs-main [class*="justify-between"][class*="gap-3"] { flex-wrap: wrap; justify-content: center; }
+.gs-main .overflow-x-auto { scrollbar-width: none; }
+/* glass panels */
+.gs-main .bg-black\/30, .gs-main .bg-black\/40 { background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(0,0,0,.38)); border: 1px solid rgba(255,255,255,.12); border-radius: 18px; backdrop-filter: blur(6px); box-shadow: 0 8px 22px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.12); }
+/* 3D buttons */
+.gs-main button.bg-yellow-500, .gs-main button.bg-yellow-400, .gs-main button.bg-brand-yellow { background: linear-gradient(180deg, #ffe58a, #f5c542 55%, #c98f12); color: #1b1203; border-radius: 999px; font-weight: 900; letter-spacing: .06em; box-shadow: 0 4px 0 #7a5410, 0 10px 18px rgba(245,197,66,.25), inset 0 1px 0 rgba(255,255,255,.6); transition: transform .08s, box-shadow .08s, filter .2s; }
+.gs-main button.bg-green-600, .gs-main button.bg-green-500 { background: linear-gradient(180deg, #8df06c, #35b53a 55%, #1f8a2a); color: #0f2208; font-weight: 900; border-radius: 14px; box-shadow: 0 4px 0 #14611c, 0 10px 18px rgba(53,181,58,.3), inset 0 1px 0 rgba(255,255,255,.55); transition: transform .08s, box-shadow .08s, filter .2s; }
+.gs-main button.bg-red-600, .gs-main button.bg-red-500 { background: linear-gradient(180deg, #ff8a7a, #e0362c 55%, #a31b14); color: #fff; font-weight: 900; border-radius: 14px; box-shadow: 0 4px 0 #6b0f0a, 0 10px 18px rgba(224,54,44,.3), inset 0 1px 0 rgba(255,255,255,.5); transition: transform .08s, box-shadow .08s, filter .2s; }
+.gs-main button.bg-yellow-500:hover:not(:disabled), .gs-main button.bg-yellow-400:hover:not(:disabled), .gs-main button.bg-green-600:hover:not(:disabled), .gs-main button.bg-red-600:hover:not(:disabled) { filter: brightness(1.08); }
+.gs-main button.bg-yellow-500:active:not(:disabled), .gs-main button.bg-yellow-400:active:not(:disabled), .gs-main button.bg-green-600:active:not(:disabled), .gs-main button.bg-red-600:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.4); }
+.gs-main button:disabled { filter: grayscale(.5); opacity: .55; }
+.gs-main .chip { box-shadow: 0 4px 0 rgba(0,0,0,.45), 0 8px 14px rgba(0,0,0,.4), inset 0 0 0 2px rgba(255,255,255,.4), inset 0 2px 6px rgba(255,255,255,.35); }
+.gs-main .pc-face { border-radius: 10px; }
+@media (prefers-reduced-motion: reduce) { .gs-main button { transition: none !important; } }
