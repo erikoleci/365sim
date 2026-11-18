@@ -51,7 +51,20 @@ export function findFixture(fixtures, row) {
   const strict = fixtures.filter((f) => Math.abs(f.start - t) <= SAME_KICKOFF_MS && sameTeam(row.home_team, f.home) && sameTeam(row.away_team, f.away));
   if (strict.length) return strict.length === 1 ? strict[0] : null;
   const loose = fixtures.filter((f) => Math.abs(f.start - t) <= 10 * 60000 && looseTeam(row.home_team, f.home) && looseTeam(row.away_team, f.away));
-  return loose.length === 1 ? loose[0] : null;
+  if (loose.length) return loose.length === 1 ? loose[0] : null;
+  // Pass 3, women's matches: our feed often drops the "W" (Real Madrid v Inter Milano, Manchester City WFC) that API-Football keeps (Real Madrid W v Inter W),
+  // so the qualifier test above refuses them and they never get a result. Only a lone "W / Women" on exactly one of the two names is forgiven, the
+  // kickoff must be within 5 minutes and the same word test applies; a men's fixture of the same clubs at that time would have matched in pass 1.
+  const womenGap = (a, b) => { const qa = teamQualifier(a), qb = teamQualifier(b); return qa === qb || (qa === '' && /^(w|women)$/.test(qb)) || (qb === '' && /^(w|women)$/.test(qa)); };
+  const sameWords = (a, b) => {
+    const wa = words(a).filter((w) => !/^(u\d+|b|c|ii|iii)$/.test(w)), wb = words(b).filter((w) => !/^(u\d+|b|c|ii|iii)$/.test(w));
+    if (!wa.length || !wb.length) return false;
+    const [sm, lg] = wa.length <= wb.length ? [wa, wb] : [wb, wa];
+    return sm.join('').length >= 3 && sm.every((w) => lg.includes(w));
+  };
+  const women = fixtures.filter((f) => Math.abs(f.start - t) <= 5 * 60000 && womenGap(row.home_team, f.home) && womenGap(row.away_team, f.away)
+    && sameWords(row.home_team, f.home) && sameWords(row.away_team, f.away));
+  return women.length === 1 ? women[0] : null;
 }
 
 const minuteOf = (e) => (e && e.time && Number.isFinite(Number(e.time.elapsed)) ? Number(e.time.elapsed) : null);

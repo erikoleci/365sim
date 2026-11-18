@@ -105,3 +105,30 @@ describe('second pass for names that differ by extra or missing words', () => {
     expect(findFixture([{ ...base, start: Date.parse('2026-11-07T11:00:00Z'), home: 'Koge II', away: 'AGF' }], k)).toBeNull();
   });
 });
+
+describe('women\'s matches whose names lost the W in our feed', () => {
+  const t0 = Date.parse('2026-11-18T20:00:00Z');
+  const wf = (o = {}) => ({ id: 7, start: t0, status: 'FT', elapsed: 90, home: 'Real Madrid W', away: 'Inter W', homeScore: 3, awayScore: 1, ...o });
+  const r = (h, a, start = '2026-11-18T20:00:00Z') => ({ home_team: h, away_team: a, start_time: start });
+  it('links Real Madrid v Inter Milano to Real Madrid W v Inter W', () => {
+    expect(findFixture([wf()], r('Real Madrid', 'Inter Milano'))).toMatchObject({ id: 7 });
+  });
+  it('links Hacken Gothenburg v Manchester City WFC to Hacken W v Manchester City W', () => {
+    expect(findFixture([wf({ home: 'Hacken W', away: 'Manchester City W' })], r('Hacken Gothenburg', 'Manchester City WFC'))).toMatchObject({ id: 7 });
+  });
+  it('links Chelsea FC v Paris Saint-Germain to Chelsea W v PSG W', () => {
+    expect(findFixture([wf({ home: 'Chelsea W', away: 'Paris Saint Germain W' })], r('Chelsea FC', 'Paris Saint-Germain'))).toMatchObject({ id: 7 });
+  });
+  it('a men\'s fixture of the same clubs wins and the women\'s one is not used for it', () => {
+    const men = wf({ id: 8, home: 'Real Madrid', away: 'Inter' });
+    expect(findFixture([wf(), men], r('Real Madrid', 'Inter Milano'))).toMatchObject({ id: 8 });
+  });
+  it('refuses a different kickoff, a swapped order and an ambiguous pair', () => {
+    expect(findFixture([wf()], r('Real Madrid', 'Inter Milano', '2026-11-18T20:20:00Z'))).toBeNull();
+    expect(findFixture([wf()], r('Inter Milano', 'Real Madrid'))).toBeNull();
+    expect(findFixture([wf(), wf({ id: 9 })], r('Real Madrid', 'Inter Milano'))).toBeNull();
+  });
+  it('does not forgive a U21 / B team qualifier', () => {
+    expect(findFixture([wf({ home: 'Real Madrid U21', away: 'Inter U21' })], r('Real Madrid', 'Inter Milano'))).toBeNull();
+  });
+});
