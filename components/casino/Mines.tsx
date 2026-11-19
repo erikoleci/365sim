@@ -80,9 +80,9 @@ const Mines: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
         {!playing ? (
           <>
             <ChipBet stake={stake} onChange={setStake} disabled={busy} />
-            <div className="text-xs"><div className="opacity-70 mb-1">Mina</div>
+            <div className="text-xs"><div className="opacity-70 mb-1">Mines</div>
               <select value={mineCount} onChange={(e) => setMineCount(Number(e.target.value))} className="bg-black/50 border border-white/20 rounded px-2 py-1">{[1, 3, 5, 10, 15, 20, 24].map((n) => <option key={n} value={n}>{n}</option>)}</select></div>
-            <button onClick={start} disabled={busy} className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold px-6 py-2 rounded-full disabled:opacity-50">NIS</button>
+            <button onClick={start} disabled={busy} className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold px-6 py-2 rounded-full disabled:opacity-50">START</button>
           </>
         ) : (
           <button onClick={cashout} disabled={busy || opened.length === 0} className="bg-green-600 hover:bg-green-500 text-white font-bold px-6 py-2 rounded-full disabled:opacity-40">MBLIDH {(stake * multiplier).toFixed(2)}</button>

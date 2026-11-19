@@ -141,7 +141,7 @@ async function getBalance(userId) {
 // =====================================================================
 // SLOT GAMES — 5x3 video slots, 10 lines, wild, scatter, free spins (see server/slots/)
 // The result is drawn on the server with the crypto RNG; the browser only shows it. Each game shows its real
-// RTP (~95%). The super admin plays in demo mode: nothing is debited or credited.
+// RTP (~95%). The super admin plays on his own wallet like everybody else (he adds credit to himself in the casino admin tab).
 // =====================================================================
 export const SLOT_STAKES = {
   ALL: [10, 20, 50, 100, 200, 500, 1000, 2000, 5000],
@@ -171,15 +171,12 @@ router.get('/slot-games', async (req, res) => {
     const pg = publicGame(g); const { profile, k } = await scaleOf(slotKey(g.id));
     return { ...pg, rtp: Number((profile.rtp * 100).toFixed(2)), paytable: scaleNumbers(pg.paytable, k), scatterPay: scaleNumbers(pg.scatterPay, k) };
   }));
-  res.json({ games, stakes: SLOT_STAKES, limits: SLOT_LIMITS, demo: isSuperAdmin(req.user.role), playing, simulatedPlayers: sim });
+  res.json({ games, stakes: SLOT_STAKES, limits: SLOT_LIMITS, demo: false, playing, simulatedPlayers: sim });
 });
 
-// Shared by every slot-like game: super admin plays a demo round, everybody else is debited / credited in one transaction.
+// Shared by every slot-like game: everybody (the super admin too) is debited / credited on his own wallet in one transaction.
 // `draw()` returns { payout, freeSpins, ...whatever the client animates }.
 async function runSlotRound(req, res, gameId, stake, currency, draw) {
-  // Super admin: demo round, no wallet involved.
-  if (isSuperAdmin(req.user.role)) return res.json({ ...draw(), demo: true });
-
   const col = walletColumn(currency);
   const client = await pool.connect();
   try {
@@ -799,7 +796,7 @@ router.post('/wheel/spin', async (req, res) => {
 router.get('/tumble/info', async (req, res) => {
   const { profile, k } = await scaleOf('tumble');
   res.json({
-    stakes: SLOT_STAKES, limits: SLOT_LIMITS, demo: isSuperAdmin(req.user.role), cols: tumbleEngine.COLS, rows: tumbleEngine.ROWS, minCluster: tumbleEngine.MIN_CLUSTER,
+    stakes: SLOT_STAKES, limits: SLOT_LIMITS, demo: false, cols: tumbleEngine.COLS, rows: tumbleEngine.ROWS, minCluster: tumbleEngine.MIN_CLUSTER,
     paytable: scaleNumbers(tumbleEngine.PAYTABLE, k), scatterPay: scaleNumbers(tumbleEngine.SCATTER_PAY, k), freeSpins: tumbleEngine.FREE_SPINS, maxWin: profile.maxWinMultiplier,
   });
 });

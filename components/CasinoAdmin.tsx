@@ -39,8 +39,32 @@ const CasinoAdmin: React.FC<CasinoAdminProps> = ({ userBalance, userBalanceEur =
     try { setDisabledGames((await api.adminSetCasinoGames(next)).casinoDisabledGames); } catch (e: any) { alert(e?.message || 'Error'); }
   };
 
+  const [addL, setAddL] = useState('');
+  const [addE, setAddE] = useState('');
+  const [adding, setAdding] = useState(false);
+  const addCredit = async (l: number, e: number) => {
+    if (adding || (l <= 0 && e <= 0)) return;
+    setAdding(true);
+    try { const r = await api.adminSelfCredit(l, e); onSetBalance(r.balance, r.balanceEur); setAddL(''); setAddE(''); }
+    catch (err: any) { alert(err?.message || 'Error'); }
+    finally { setAdding(false); }
+  };
+
   return (
     <div className="space-y-4">
+      <div className="bg-brand-panel border border-brand-yellow/40 rounded p-4">
+        <div className="text-sm font-bold mb-1">Shto kredit vetes</div>
+        <div className="text-xs text-gray-400 mb-3">Kredia jote tani: <b className="text-brand-yellow">{money(userBalance)} L</b> · <b className="text-brand-yellow">{money(userBalanceEur)} €</b>. Kjo shton vetëm te llogaria jote.</div>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {[1000, 10000, 100000].map((v) => <button key={`l${v}`} disabled={adding} onClick={() => addCredit(v, 0)} className="px-3 py-1.5 rounded bg-black/30 border border-[#444] text-xs hover:border-brand-yellow/60">+{v.toLocaleString()} L</button>)}
+          {[100, 1000, 10000].map((v) => <button key={`e${v}`} disabled={adding} onClick={() => addCredit(0, v)} className="px-3 py-1.5 rounded bg-black/30 border border-[#444] text-xs hover:border-brand-yellow/60">+{v.toLocaleString()} €</button>)}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input type="number" min="0" inputMode="decimal" value={addL} onChange={(e) => setAddL(e.target.value)} placeholder="Lek" className="w-28 bg-black/40 border border-[#444] rounded px-2 py-1.5 text-sm" />
+          <input type="number" min="0" inputMode="decimal" value={addE} onChange={(e) => setAddE(e.target.value)} placeholder="Euro" className="w-28 bg-black/40 border border-[#444] rounded px-2 py-1.5 text-sm" />
+          <button disabled={adding || (!(Number(addL) > 0) && !(Number(addE) > 0))} onClick={() => addCredit(Number(addL) || 0, Number(addE) || 0)} className="px-4 py-1.5 rounded bg-brand-yellow text-black text-sm font-bold disabled:opacity-40">Shto</button>
+        </div>
+      </div>
       <div className="bg-brand-panel border border-[#444] rounded p-4">
         <div className="text-sm font-bold mb-2">Who can see the casino</div>
         <div className="flex flex-wrap gap-2">

@@ -1127,6 +1127,10 @@ export async function adminResetCasinoProfile(key: string) {
 }
 export interface CasinoGlobal { hitFrequency: number | null; rtp: number | null }
 export async function adminCasinoGlobal() { return request<CasinoGlobal>('/admin/casino/global'); }
+export async function adminSelfCredit(amount: number, amountEur = 0) {
+  return request<{ balance: number; balanceEur: number }>('/admin/self-credit', { method: 'POST', body: moneyBody(amount, amountEur) });
+}
+
 export async function adminSaveCasinoGlobal(values: { hitFrequency?: number; rtp?: number }) {
   return request<{ global: CasinoGlobal; profiles: CasinoProfile[] }>('/admin/casino/global', { method: 'PUT', body: JSON.stringify(values) });
 }

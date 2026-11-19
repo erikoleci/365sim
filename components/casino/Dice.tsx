@@ -90,7 +90,7 @@ const Dice: React.FC<DiceProps> = ({ onSetBalance, userBalance, onClose }) => {
           <span className="w-12 text-center font-bold">{stake}</span>
           <button disabled={busy} onClick={() => setStake((s) => s + 10)} className="w-8 h-8 rounded bg-black/50">+</button>
         </div>
-        <button onClick={roll} disabled={busy} className="px-8 py-3 rounded-full font-extrabold text-black bg-gradient-to-b from-yellow-300 to-yellow-500 disabled:opacity-50 active:scale-95 transition-transform">{busy ? '...' : 'HIDH'}</button>
+        <button onClick={roll} disabled={busy} className="px-8 py-3 rounded-full font-extrabold text-black bg-gradient-to-b from-yellow-300 to-yellow-500 disabled:opacity-50 active:scale-95 transition-transform">{busy ? '...' : 'ROLL'}</button>
       </div>
     </div>
   );

@@ -108,7 +108,7 @@ const DogTrack: React.FC<Props> = ({ dogs, progress: progressProp, store, runnin
           ))}
         </div>
       )}
-      <div className="absolute bottom-1.5 left-1.5 text-[10px] font-black tracking-widest text-white/80 bg-red-600/80 rounded px-1.5 py-0.5 pointer-events-none">{running ? '● LIVE CAM' : 'TRACK CAM'}</div>
+      <div className="absolute top-1.5 left-1.5 text-[10px] font-black tracking-widest text-white/80 bg-red-600/80 rounded px-1.5 py-0.5 pointer-events-none">{running ? '● LIVE CAM' : 'TRACK CAM'}</div>
       {children && <div className="absolute bottom-2 inset-x-0 text-center font-extrabold text-base sm:text-lg pointer-events-none" style={{ textShadow: '0 2px 6px #000' }}>{children}</div>}
     </div>
   );

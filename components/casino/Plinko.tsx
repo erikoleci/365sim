@@ -57,9 +57,9 @@ const Plinko: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) => {
       {burst > 0 && <CoinBurst key={burst} />}
       <button onClick={onClose} className="absolute top-4 left-4 text-white/50 hover:text-white font-bold z-10">‹ Exit</button>
       <h2 className="font-bold tracking-widest casino-gold-text mb-2">PLINKO</h2>
-      <div className="flex gap-2 mb-2 text-xs">
+      <div className="flex flex-wrap justify-center gap-2 mb-2 text-xs">
         {(['LOW', 'MEDIUM', 'HIGH'] as PlinkoRisk[]).map((r) => <button key={r} disabled={busy} onClick={() => setRisk(r)} className={`px-3 py-1 rounded ${risk === r ? 'bg-yellow-500 text-black font-bold' : 'bg-white/10'}`}>{r}</button>)}
-        {[8, 12, 16].map((n) => <button key={n} disabled={busy} onClick={() => setRows(n)} className={`px-3 py-1 rounded ${rows === n ? 'bg-yellow-500 text-black font-bold' : 'bg-white/10'}`}>{n} rreshta</button>)}
+        {[8, 12, 16].map((n) => <button key={n} disabled={busy} onClick={() => setRows(n)} className={`px-3 py-1 rounded ${rows === n ? 'bg-yellow-500 text-black font-bold' : 'bg-white/10'}`}>{n} rows</button>)}
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-md" style={{ perspective: 600 }}>
         {Array.from({ length: rows }, (_, r) => Array.from({ length: r + 2 }, (_, i) => <circle key={`${r}-${i}`} cx={pegX(r + 1, i)} cy={pegY(r)} r={3} fill="#e5e7eb" />))}

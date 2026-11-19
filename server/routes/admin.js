@@ -1596,6 +1596,21 @@ router.get('/casino/profiles', requireSuperAdmin, async (req, res) => {
   res.json({ profiles: await withMeasured(await getAllProfiles()) });
 });
 // One setting for every game: win chance (hit frequency) and RTP, as fractions (0.2 = 20%). Games follow it unless tuned apart.
+// The super admin adds lek and / or euro to HIS OWN account (to play the casino or test with). Only himself, never anyone else's.
+router.post('/self-credit', requireSuperAdmin, async (req, res) => {
+  const parts = amountParts(req.body);
+  if (!parts || parts.some((p) => p.amount <= 0 || p.amount > 1e9)) return res.status(400).json({ error: 'Shkruaj një shumë pozitive (lek dhe / ose euro)' });
+  const lek = parts.find((p) => p.currency === 'ALL')?.amount ?? 0;
+  const eur = parts.find((p) => p.currency === 'EUR')?.amount ?? 0;
+  // An account that plays only one currency could not use the other one: adding euro opens it for both.
+  await pool.query(
+    `UPDATE users SET balance = balance + $1, balance_eur = balance_eur + $2,
+       account_currency = CASE WHEN $2 > 0 AND account_currency = 'ALL' OR $1 > 0 AND account_currency = 'EUR' THEN 'BOTH' ELSE account_currency END
+     WHERE id = $3`, [lek, eur, req.user.id]);
+  await logAudit(req.user, 'SUPER_SELF_CREDIT', req.user.id, { amounts: parts });
+  const w = await readWallet(req.user.id);
+  res.json({ balance: w.balance, balanceEur: w.balanceEur });
+});
 router.get('/casino/global', requireSuperAdmin, async (req, res) => { res.json(await getGlobalProfile()); });
 router.put('/casino/global', requireSuperAdmin, async (req, res) => {
   try {

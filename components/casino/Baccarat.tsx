@@ -112,7 +112,7 @@ const Baccarat: React.FC<BaccaratProps> = ({ onSetBalance, userBalance, onClose 
             <div className="mb-4"><DealerPhoto dealer={3} mood={mood} size={110} /></div>
 
             {/* Table Area */}
-            <div className="flex justify-between w-full mb-8 px-10 gap-20">
+            <div className="flex justify-between w-full mb-8 px-3 sm:px-10 gap-6 sm:gap-20">
                 {/* Player Area */}
                 <div className="flex-1 flex flex-col items-center">
                     <div className="text-blue-200 font-bold text-xl mb-4 tracking-wider">PLAYER {gameState !== 'BETTING' && calculateScore(playerHand)}</div>
@@ -182,7 +182,7 @@ const Baccarat: React.FC<BaccaratProps> = ({ onSetBalance, userBalance, onClose 
             </div>
 
             {/* Controls */}
-            <div className="bg-black/40 p-4 rounded-xl w-full max-w-2xl flex justify-between items-center border border-white/10">
+            <div className="bg-black/40 p-4 rounded-xl w-full max-w-2xl flex flex-wrap justify-between items-center gap-3 border border-white/10">
                 <div className="text-white">
                     <div className="text-xs opacity-60 uppercase">Balance</div>
                     <div className="text-xl font-bold text-[#d4af37]">{userBalance.toFixed(2)}</div>

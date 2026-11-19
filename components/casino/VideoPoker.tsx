@@ -92,7 +92,7 @@ const VideoPoker: React.FC<VideoPokerProps> = ({ onSetBalance, userBalance, onCl
       </div>
 
       {/* Cards Area */}
-      <div className="flex justify-center gap-2 h-[130px] mb-6">
+      <div className="vp-hand flex justify-center gap-2 h-[130px] mb-6">
           {hand.length === 0 ? (
               // Empty Placeholders
               Array.from({length:5}).map((_, i) => (

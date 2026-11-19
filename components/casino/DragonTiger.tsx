@@ -10,9 +10,9 @@ interface Props { onSetBalance: (balance: number) => void; userBalance: number; 
 type Bet = 'DRAGON' | 'TIGER' | 'TIE';
 type Card = { suit: string; value: string };
 const BETS: { id: Bet; label: string; hint: string; cls: string }[] = [
-  { id: 'DRAGON', label: '🐉 DRAGON', hint: 'paguan 2x', cls: 'bg-red-900/70 border-red-400/60' },
-  { id: 'TIE', label: 'TIE', hint: 'paguan 16x', cls: 'bg-emerald-900/70 border-emerald-400/60' },
-  { id: 'TIGER', label: '🐯 TIGER', hint: 'paguan 2x', cls: 'bg-amber-900/70 border-amber-400/60' },
+  { id: 'DRAGON', label: '🐉 DRAGON', hint: 'pays 2x', cls: 'bg-red-900/70 border-red-400/60' },
+  { id: 'TIE', label: 'TIE', hint: 'pays 16x', cls: 'bg-emerald-900/70 border-emerald-400/60' },
+  { id: 'TIGER', label: '🐯 TIGER', hint: 'pays 2x', cls: 'bg-amber-900/70 border-amber-400/60' },
 ];
 const CardFace: React.FC<{ card: Card | null; label: string }> = ({ card, label }) => (
   <div className="text-center">
@@ -64,7 +64,7 @@ const DragonTiger: React.FC<Props> = ({ onSetBalance, userBalance, onClose }) =>
       <div className="w-full max-w-lg bg-black/30 p-3 rounded-xl border-t border-white/10 flex items-center justify-between gap-3">
         <div><div className="text-xs opacity-70">Balance</div><div className="font-bold text-yellow-400">{userBalance.toFixed(2)}</div></div>
         <ChipBet stake={stake} onChange={setStake} disabled={busy} />
-        <button onClick={deal} disabled={busy} className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold px-6 py-2 rounded-full disabled:opacity-50">NDAJ</button>
+        <button onClick={deal} disabled={busy} className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold px-6 py-2 rounded-full disabled:opacity-50">DEAL</button>
       </div>
     </div>
   );
