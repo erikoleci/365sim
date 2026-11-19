@@ -109,7 +109,7 @@ describe('second pass for names that differ by extra or missing words', () => {
 describe('women\'s matches whose names lost the W in our feed', () => {
   const t0 = Date.parse('2026-11-18T20:00:00Z');
   const wf = (o = {}) => ({ id: 7, start: t0, status: 'FT', elapsed: 90, home: 'Real Madrid W', away: 'Inter W', homeScore: 3, awayScore: 1, ...o });
-  const r = (h, a, start = '2026-11-18T20:00:00Z') => ({ home_team: h, away_team: a, start_time: start });
+  const r = (h, a, start = '2026-11-18T20:00:00Z', league = 'l365_international__uefa_champions_league_women') => ({ home_team: h, away_team: a, start_time: start, league });
   it('links Real Madrid v Inter Milano to Real Madrid W v Inter W', () => {
     expect(findFixture([wf()], r('Real Madrid', 'Inter Milano'))).toMatchObject({ id: 7 });
   });
@@ -127,6 +127,10 @@ describe('women\'s matches whose names lost the W in our feed', () => {
     expect(findFixture([wf()], r('Real Madrid', 'Inter Milano', '2026-11-18T20:20:00Z'))).toBeNull();
     expect(findFixture([wf()], r('Inter Milano', 'Real Madrid'))).toBeNull();
     expect(findFixture([wf(), wf({ id: 9 })], r('Real Madrid', 'Inter Milano'))).toBeNull();
+  });
+  it('a men\'s league row is never linked to a women\'s fixture', () => {
+    expect(findFixture([wf()], r('Real Madrid', 'Inter Milano', '2026-11-18T20:00:00Z', 'l365_spain__laliga'))).toBeNull();
+    expect(findFixture([wf()], { home_team: 'Real Madrid', away_team: 'Inter Milano', start_time: '2026-11-18T20:00:00Z' })).toBeNull();
   });
   it('does not forgive a U21 / B team qualifier', () => {
     expect(findFixture([wf({ home: 'Real Madrid U21', away: 'Inter U21' })], r('Real Madrid', 'Inter Milano'))).toBeNull();

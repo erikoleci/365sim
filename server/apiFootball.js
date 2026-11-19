@@ -53,7 +53,7 @@ export function findFixture(fixtures, row) {
   const loose = fixtures.filter((f) => Math.abs(f.start - t) <= 10 * 60000 && looseTeam(row.home_team, f.home) && looseTeam(row.away_team, f.away));
   if (loose.length) return loose.length === 1 ? loose[0] : null;
   // Pass 3, women's matches: our feed often drops the "W" (Real Madrid v Inter Milano, Manchester City WFC) that API-Football keeps (Real Madrid W v Inter W),
-  // so the qualifier test above refuses them and they never get a result. Only a lone "W / Women" on exactly one of the two names is forgiven, the
+  // so the qualifier test above refuses them and they never get a result. Only for a row whose league is a women's competition, and only a lone "W / Women" on exactly one of the two names is forgiven, the
   // kickoff must be within 5 minutes and the same word test applies; a men's fixture of the same clubs at that time would have matched in pass 1.
   const womenGap = (a, b) => { const qa = teamQualifier(a), qb = teamQualifier(b); return qa === qb || (qa === '' && /^(w|women)$/.test(qb)) || (qb === '' && /^(w|women)$/.test(qa)); };
   const sameWords = (a, b) => {
@@ -62,6 +62,7 @@ export function findFixture(fixtures, row) {
     const [sm, lg] = wa.length <= wb.length ? [wa, wb] : [wb, wa];
     return sm.join('').length >= 3 && sm.every((w) => lg.includes(w));
   };
+  if (!/women|female|femin|frauen|femmes/i.test(String(row.league || ''))) return null; // our own league key says it is a women's competition (l365_international__uefa_champions_league_women)
   const women = fixtures.filter((f) => Math.abs(f.start - t) <= 5 * 60000 && womenGap(row.home_team, f.home) && womenGap(row.away_team, f.away)
     && sameWords(row.home_team, f.home) && sameWords(row.away_team, f.away));
   return women.length === 1 ? women[0] : null;
