@@ -18,9 +18,10 @@ const BigWin: React.FC<{ tier: 1 | 2 | 3; amount: number; format: (v: number) =>
     <div className="bigwin-root" onClick={onDone} role="dialog" aria-label={TITLES[tier]}>
       <div className="bigwin-rays" />
       <CoinBurst count={tier === 3 ? 60 : tier === 2 ? 44 : 30} />
-      <div className="bigwin-card">
+      <div className={`bigwin-card bw-t${tier}`}>
+        <div className="bigwin-ring" aria-hidden />
         <div className={`bigwin-title bg-gradient-to-b ${COLORS[tier]}`}>{TITLES[tier]}</div>
-        <div className="bigwin-amount"><CountUp value={amount} format={format} /></div>
+        <div className="bigwin-amount"><span><CountUp value={amount} format={format} ms={1600} /></span></div>
         <div className="text-[10px] text-white/60 mt-3">tap to continue</div>
       </div>
     </div>

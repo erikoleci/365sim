@@ -154,6 +154,7 @@ const SlotGame: React.FC<{
     if (busy) return;
     if (bal < stake) { setMsg('Insufficient balance.'); return; }
     setBusy(true); setMsg(''); setLastWin(0); setFreeInfo('');
+    try { navigator.vibrate?.(12); } catch { /* not supported */ }
     try {
       spinningRef.current = Array.from({ length: nReels }, () => true);
       const res = await api.casinoSlotSpin(game.id, stake, currency);
@@ -175,7 +176,7 @@ const SlotGame: React.FC<{
       if (demo) setDemoBal((b) => ({ ...b, [currency]: Math.round((b[currency] - stake + res.payout) * 100) / 100 }));
       else if (res.balance !== undefined) onBalances?.(res.balance, res.balanceEur ?? balanceEur);
       setLastWin(res.payout);
-      if (res.payout >= stake * 3) setBurst((n) => n + 1);
+      if (res.payout >= stake * 3) { setBurst((n) => n + 1); try { navigator.vibrate?.(res.payout >= stake * 10 ? [40, 30, 80] : 30); } catch { /* not supported */ } }
       { const tier = winTier(res.payout, stake); if (tier > 0) setBigWin({ tier: tier as 1 | 2 | 3, amount: res.payout }); }
       setMsg(res.payout > 0 ? `You won ${fmt(res.payout, currency)}!` : '');
       if (res.freeSpins > 0) setFreeInfo(`${res.freeSpins} free spins played`);
@@ -241,7 +242,7 @@ const SlotGame: React.FC<{
 
         <div className="sg-stats">
           <div className="sg-stat"><label>Balance</label><b className="tabular-nums">{fmt(bal, currency)}</b></div>
-          <div className="sg-stat sg-stat-win"><label>Win</label><b className="tabular-nums">{lastWin > 0 ? (busy ? fmt(lastWin, currency) : <span key={lastWin} className="win-pop inline-block"><CountUp value={lastWin} format={(n) => fmt(n, currency)} /></span>) : fmt(0, currency)}</b></div>
+          <div className={`sg-stat sg-stat-win${lastWin > 0 ? " on" : ""}`}><label>Win</label><b className="tabular-nums">{lastWin > 0 ? (busy ? fmt(lastWin, currency) : <span key={lastWin} className="win-pop inline-block"><CountUp value={lastWin} format={(n) => fmt(n, currency)} /></span>) : fmt(0, currency)}</b></div>
           <button className="sg-stat sg-stat-bet" onClick={() => setBetOpen(!betOpen)} disabled={busy}><label>Bet ✎</label><b className="tabular-nums">{fmt(stake, currency)}</b></button>
         </div>
         <div className="sg-ticker min-h-[22px] text-center">

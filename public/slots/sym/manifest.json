@@ -1,4 +1,184 @@
 {
+ "arctic-fortune": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "aztec-sun": {
+  "keys": [
+   "CALENDAR",
+   "CORN",
+   "GOLDMASK",
+   "JAGUAR",
+   "MASK",
+   "SCATTER",
+   "SERPENT",
+   "TEMPLE",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "blazing-sevens": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "candy-blast": {
+  "keys": [
+   "CAKE",
+   "CHOCO",
+   "CUPCAKE",
+   "DONUT",
+   "GUMMY",
+   "ICECREAM",
+   "LOLLI",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "desert-explorer": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "diamond-rush": {
+  "keys": [
+   "BLUE",
+   "CROWN",
+   "DIAMOND",
+   "GREEN",
+   "PURPLE",
+   "RING",
+   "SCATTER",
+   "WILD",
+   "YELLOW"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "emerald-clover": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "fire-fruits-40": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "football-fever": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "fruit-carnival": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "gold-miner": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "golden-lady": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
  "hot-fruits": {
   "keys": [
    "BELL",
@@ -14,6 +194,156 @@
   "ext": "webp",
   "bg": false
  },
+ "jester-jackpot": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "jungle-safari": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "lucky-dragon": {
+  "keys": [
+   "BAMBOO",
+   "COOKIE",
+   "DRAGON",
+   "ENVELOPE",
+   "FISH",
+   "LANTERN",
+   "SCATTER",
+   "TIGER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "lucky-seven-wheel": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "mega-hot-100": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "merlin-spell": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "money-rush": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "mystic-wolf": {
+  "keys": [
+   "ARROW",
+   "BEAR",
+   "EAGLE",
+   "FEATHER",
+   "PAW",
+   "SCATTER",
+   "TOTEM",
+   "WILD",
+   "WOLF"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "night-racer": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "ocean-pearls": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
  "pharaoh-gold": {
   "keys": [
    "BEETLE",
@@ -24,6 +354,96 @@
    "PHARAOH",
    "SCATTER",
    "SNAKE",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "pirate-treasure": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "royal-gems": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "samurai-blade": {
+  "keys": [
+   "S1",
+   "S2",
+   "S3",
+   "S4",
+   "S5",
+   "S6",
+   "S7",
+   "SCATTER",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "space-odyssey": {
+  "keys": [
+   "ALIEN",
+   "COMET",
+   "GALAXY",
+   "MOON",
+   "ROCKET",
+   "SATURN",
+   "SCATTER",
+   "STAR",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "viking-fortune": {
+  "keys": [
+   "AXE",
+   "HORN",
+   "ODIN",
+   "RAVEN",
+   "RUNE",
+   "SCATTER",
+   "SHIELD",
+   "SHIP",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "wild-west-gold": {
+  "keys": [
+   "BEER",
+   "BOOT",
+   "CACTUS",
+   "COWBOY",
+   "GOLD",
+   "GUN",
+   "HORSE",
+   "SCATTER",
    "WILD"
   ],
   "ext": "webp",
