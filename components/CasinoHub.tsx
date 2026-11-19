@@ -46,6 +46,12 @@ interface CasinoHubProps {
   showAllGames?: boolean;
 }
 
+// Accent colour of each game page (backdrop glow, bar line, panel edges).
+const ACCENT: Record<string, string> = {
+  blackjack: '#22c58b', roulette: '#ef4444', poker: '#3b82f6', baccarat: '#a855f7', dice: '#06b6d4', plinko: '#f472b6', mines: '#f59e0b', dragontiger: '#f97316',
+  wheel: '#d946ef', keno: '#14b8a6', scratch: '#eab308', tumble: '#ec4899', crash: '#22d3ee', hilo: '#84cc16', holdwin: '#fbbf24', penalty: '#4ade80', tower: '#fb923c',
+  horses: '#a3e635', cups: '#c084fc', liveroulette: '#ef4444', livehorses: '#a3e635', dogs: '#38bdf8', livedogs: '#38bdf8', livecrash: '#22d3ee', livekeno: '#14b8a6', slots: '#f5c542',
+};
 const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, accountCurrency = 'BOTH', onSetBalance, showAllGames = false }) => {
   const euroOnly = accountCurrency === 'EUR';
   const [activeGame, setActiveGame] = useState<'slots' | 'blackjack' | 'roulette' | 'poker' | 'baccarat' | 'dice' | 'plinko' | 'mines' | 'dragontiger' | 'wheel' | 'keno' | 'scratch' | 'tumble' | 'crash' | 'hilo' | 'holdwin' | 'penalty' | 'tower' | 'horses' | 'cups' | 'liveroulette' | 'livehorses' | 'dogs' | 'livedogs' | 'livecrash' | 'livekeno' | null>(null);
@@ -69,6 +75,9 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
       className="fixed bottom-4 right-4 z-[1010] w-11 h-11 rounded-full bg-black/70 border border-yellow-500/50 text-lg shadow-lg hover:bg-black/90 active:scale-95">{music ? '🎵' : '🔇'}</button>
   );
   const close = () => setActiveGame(null);
+  const money = (n: number) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // The bar shows the wallet(s) the account plays with: lek, euro, or both for a lek + euro account.
+  const shellBalance = accountCurrency === 'EUR' ? `${money(userBalanceEur)} €` : accountCurrency === 'BOTH' ? `${money(userBalance)} L · ${money(userBalanceEur)} €` : `${money(userBalance)} L`;
   const b = { userBalance, onSetBalance, onClose: close };
   const gameEl: Record<string, React.ReactNode> = {
     slots: <SlotMachine {...b} />, blackjack: <Blackjack {...b} />, roulette: <Roulette {...b} />, poker: <VideoPoker {...b} />,
@@ -83,8 +92,8 @@ const CasinoHub: React.FC<CasinoHubProps> = ({ userBalance, userBalanceEur = 0, 
   if (activeGame && gameEl[activeGame]) {
     const tile = [...TILES, ...LIVE_TILES].find((x) => x.game === activeGame);
     return (
-      <GameShell title={tile?.name || 'Casino'} onBack={close} extra={musicBtn}
-        balance={`${Number(userBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L`}>
+      <GameShell title={tile?.name || 'Casino'} onBack={close} extra={musicBtn} accent={ACCENT[activeGame]}
+        balance={shellBalance}>
         <GameBoundary key={activeGame} onBack={close}>{gameEl[activeGame]}</GameBoundary>
       </GameShell>
     );

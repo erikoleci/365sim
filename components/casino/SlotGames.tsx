@@ -6,6 +6,7 @@ import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react
 import * as api from '../../services/api';
 import SlotReel from './SlotReel';
 import { slotTheme, THEME_ORN, THEME_METAL } from './slotThemes';
+import { loadSlotArt, clearSlotArt, getBg } from './slotArt';
 import CountUp from './CountUp';
 import CoinBurst from './CoinBurst';
 import SymbolIcon from './SymbolIcon';
@@ -113,6 +114,11 @@ const SlotGame: React.FC<{
   const [bigWin, setBigWin] = useState<{ tier: 1 | 2 | 3; amount: number } | null>(null);
   const [burst, setBurst] = useState(0); // bumps for every win worth celebrating (key of the coin shower)
   const [showPay, setShowPay] = useState(false);
+  const [turbo, setTurbo] = useState(false);
+  const [artVer, setArtVer] = useState(0); // bumps when this game's real artwork has been found (reels redraw with it)
+  useEffect(() => { let on = true; void loadSlotArt(game).then((n) => { if (on && n > 0) setArtVer(1); }); return () => { on = false; clearSlotArt(); }; }, [game]);
+  const [auto, setAuto] = useState(0);
+  const [betOpen, setBetOpen] = useState(false);
   const [snd, setSnd] = useState(soundOn());
   const [use3d, setUse3d] = useState(webglOk);
   const alive = useRef(true);
@@ -157,13 +163,13 @@ const SlotGame: React.FC<{
         const sp = res.spins[i];
         if (i > 0) setFreeInfo(`RROTULLIM FALAS ${i}/${res.spins.length - 1} · x${game.freeSpinMultiplier}`);
         spinningRef.current = Array.from({ length: nReels }, () => true);
-        await animateStop(sp.grid, i > 0);
+        await animateStop(sp.grid, i > 0 || turbo);
         if (!alive.current) return;
         shown += sp.win;
         setLastWin(shown);
         lightUp(sp);
         if (sp.win > 0) sfx.win(sp.win >= stake * 3);
-        if (sp.win > 0) await sleep(i === 0 ? 900 : 650);
+        if (sp.win > 0) await sleep(turbo ? 350 : i === 0 ? 900 : 650);
         else if (i > 0) await sleep(350);
       }
       if (demo) setDemoBal((b) => ({ ...b, [currency]: Math.round((b[currency] - stake + res.payout) * 100) / 100 }));
@@ -182,32 +188,35 @@ const SlotGame: React.FC<{
     }
   };
 
+  const stepBet = (dir: number) => {
+    const list = stakes[currency]; let i = list.findIndex((v) => v >= stake); if (i < 0) i = list.length - 1;
+    const j = Math.min(list.length - 1, Math.max(0, (list[i] === stake ? i : dir > 0 ? i - 1 : i) + dir)); setStake(list[j]);
+  };
+  // Autoplay: next spin after the previous one is fully shown; stops on a big win, a low balance or an error.
+  useEffect(() => {
+    if (auto <= 0) return undefined;
+    if (busy || bigWin) return undefined;
+    if (bal < stake || msg) { setAuto(0); return undefined; }
+    const t = window.setTimeout(() => { setAuto((a) => a - 1); void spin(); }, turbo ? 300 : 800);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto, busy, bigWin, bal, stake, msg]);
+
   const top = Object.keys(game.paytable).filter((k) => k !== 'WILD');
   return (
-    <div className={`sg-root rounded-2xl overflow-hidden relative${busy ? ' sg-busy' : ''}`} data-sgt={slotTheme(game.id)} style={{ background: `radial-gradient(900px 420px at 50% 0%, ${game.color[1]}cc, transparent 70%), linear-gradient(160deg, ${game.color[0]}, ${game.color[1]})` }}>
+    <div className={`sg-root rounded-2xl overflow-hidden relative${busy ? ' sg-busy' : ''}`} data-sgt={slotTheme(game.id)} style={{ background: `${artVer && getBg() ? `linear-gradient(rgba(0,0,0,.35), rgba(0,0,0,.55)), url(${getBg()}) center/cover, ` : ''}radial-gradient(900px 420px at 50% 0%, ${game.color[1]}cc, transparent 70%), linear-gradient(160deg, ${game.color[0]}, ${game.color[1]})` }}>
       {burst > 0 && <CoinBurst key={burst} />}
       {bigWin && <BigWin tier={bigWin.tier} amount={bigWin.amount} format={(v) => fmt(v, currency)} onDone={() => setBigWin(null)} />}
-      <div className="sg-head flex items-center justify-between px-4 py-3">
-        <span className="w-14" aria-hidden />
-        <div className="text-center"><div className="sg-title font-black tracking-wide text-lg sm:text-xl">{game.name}</div><div className="text-[10px] text-brand-yellow tracking-widest uppercase">{game.volatility} · {game.lines} lines</div></div>
-        <div className="flex gap-1.5">
-          <button onClick={() => { setSound(!snd); setSnd(!snd); }} aria-label="Sound" className="sg-pill text-sm">{snd ? '🔊' : '🔇'}</button>
-          <button onClick={() => setShowPay(true)} className="sg-pill text-xs">Paytable</button>
-        </div>
-      </div>
-
-      <div className="p-4">
-        <div className="flex items-center justify-between text-sm mb-3">
-          <div className="flex rounded overflow-hidden border border-white/20">
+      <div className="p-3 sm:p-4">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="sg-cur">
             {(['ALL', 'EUR'] as const).filter((c) => accountCurrency === 'BOTH' || accountCurrency === c).map((c) => (
-              <button key={c} onClick={() => switchCurrency(c)} className={`px-3 py-1 ${currency === c ? 'bg-brand-yellow text-black font-bold' : 'bg-black/30 text-gray-300'}`}>{c === 'ALL' ? 'L' : '€'}</button>
+              <button key={c} onClick={() => switchCurrency(c)} className={currency === c ? 'on' : ''}>{c === 'ALL' ? 'L' : '€'}</button>
             ))}
           </div>
-          <div className="text-white">Balance: <b className="tabular-nums">{fmt(bal, currency)}</b></div>
+          <div className="sg-marquee !m-0" aria-hidden>{THEME_ORN[slotTheme(game.id)][0]} <span>{game.lines} LINES · {game.volatility}</span> {THEME_ORN[slotTheme(game.id)][1]}</div>
         </div>
 
-        <div className="bulbs w-full" />
-        <div className="sg-marquee" aria-hidden>{THEME_ORN[slotTheme(game.id)][0]} {game.symbols.WILD} {game.symbols.SCATTER} <span>{game.lines} LINES · {game.volatility}</span> {game.symbols.SCATTER} {game.symbols.WILD} {THEME_ORN[slotTheme(game.id)][1]}</div>
         <div className="flex items-center gap-2">
 <div className="flex-1 min-w-0 cabinet-glow sg-cabinet">
           {(() => {
@@ -221,7 +230,7 @@ const SlotGame: React.FC<{
             if (!use3d) return cssReels;
             return (
               <Suspense fallback={cssReels}>
-                <Reels3D grid={grid} spinning={spinning} lit={lit} pool={Object.values(game.symbols)} colors={game.color as [string, string]} metal={THEME_METAL[slotTheme(game.id)]} onFail={() => setUse3d(false)} />
+                <Reels3D key={artVer} grid={grid} spinning={spinning} lit={lit} pool={Object.values(game.symbols)} colors={game.color as [string, string]} metal={THEME_METAL[slotTheme(game.id)]} onFail={() => setUse3d(false)} />
               </Suspense>
             );
           })()}
@@ -229,16 +238,35 @@ const SlotGame: React.FC<{
           <SlotLever onPull={spin} disabled={busy || bal < stake} className="shrink-0 hidden sm:block" />
         </div>
 
-        <div className="sg-ticker h-12 flex flex-col items-center justify-center text-center">
+
+        <div className="sg-stats">
+          <div className="sg-stat"><label>Balance</label><b className="tabular-nums">{fmt(bal, currency)}</b></div>
+          <div className="sg-stat sg-stat-win"><label>Win</label><b className="tabular-nums">{lastWin > 0 ? (busy ? fmt(lastWin, currency) : <span key={lastWin} className="win-pop inline-block"><CountUp value={lastWin} format={(n) => fmt(n, currency)} /></span>) : fmt(0, currency)}</b></div>
+          <button className="sg-stat sg-stat-bet" onClick={() => setBetOpen(!betOpen)} disabled={busy}><label>Bet ✎</label><b className="tabular-nums">{fmt(stake, currency)}</b></button>
+        </div>
+        <div className="sg-ticker min-h-[22px] text-center">
           {freeInfo && <div className="text-xs font-bold text-cyan-300">{freeInfo}</div>}
-          {(lastWin > 0 || msg) && <div className={`text-xl font-black ${lastWin > 0 ? 'sg-wintext' : 'text-red-300'}`}>{busy && lastWin > 0 ? `Win: ${fmt(lastWin, currency)}` : lastWin > 0 ? <span key={lastWin} className="win-pop inline-block">You won <CountUp value={lastWin} format={(n) => fmt(n, currency)} />!</span> : msg}</div>}
+          {msg && !lastWin && <div className="text-sm font-bold text-red-300">{msg}</div>}
         </div>
 
-        <div className="mb-3"><StakeInput value={stake} onChange={setStake} min={stakes[currency][0]} max={currency === 'EUR' ? 10000000 : 100000000} presets={stakes[currency]} unit={currency === 'EUR' ? '€' : 'L'} balance={bal} disabled={busy} /></div>
-        <button onClick={spin} disabled={busy || bal < stake} className="sg-spin">
-          {busy ? '...' : `SPIN · ${stake} ${currency === 'EUR' ? '€' : 'L'}`}
-        </button>
-        <div className="text-[10px] text-center text-gray-400 mt-2">3 or more {game.symbols.SCATTER} ({game.scatterName}) award free spins. {game.symbols.WILD} ({game.wildName}) substitutes for symbols.</div>
+        {betOpen && <div className="mb-2"><StakeInput value={stake} onChange={setStake} min={stakes[currency][0]} max={currency === 'EUR' ? 10000000 : 100000000} presets={stakes[currency]} unit={currency === 'EUR' ? '€' : 'L'} balance={bal} disabled={busy} /></div>}
+
+        <div className="sg-dock">
+          <div className="sg-side">
+            <button onClick={() => setShowPay(true)} className="sg-mini" aria-label="Paytable">i</button>
+            <button onClick={() => setTurbo(!turbo)} className={`sg-mini ${turbo ? 'on' : ''}`} aria-label="Turbo">⚡</button>
+          </div>
+          <button className="sg-step" disabled={busy} onClick={() => stepBet(-1)} aria-label="Lower bet">−</button>
+          <button onClick={spin} disabled={busy || bal < stake} className="sg-spin-round" aria-label="Spin">
+            <span>{busy ? '' : '▶'}</span>
+          </button>
+          <button className="sg-step" disabled={busy} onClick={() => stepBet(1)} aria-label="Raise bet">+</button>
+          <div className="sg-side">
+            <button onClick={() => { if (auto > 0) setAuto(0); else if (!busy) setAuto(25); }} className={`sg-mini ${auto > 0 ? 'on' : ''}`} aria-label="Autoplay">{auto > 0 ? auto : 'A'}</button>
+            <button onClick={() => { setSound(!snd); setSnd(!snd); }} aria-label="Sound" className="sg-mini">{snd ? '🔊' : '🔇'}</button>
+          </div>
+        </div>
+        <div className="text-[10px] text-center text-gray-400 mt-3">3+ {game.symbols.SCATTER} ({game.scatterName}) = free spins · {game.symbols.WILD} ({game.wildName}) substitutes</div>
       </div>
 
       {showPay && (

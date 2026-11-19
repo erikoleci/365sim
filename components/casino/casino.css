@@ -232,3 +232,71 @@
   --pat: radial-gradient(circle,#fff 1px,transparent 2px) 0 0/30px 30px; --pat-op:.12; }
 .sg-root[data-sgt=sport] { --frame: linear-gradient(145deg,#fff,#d9d9d9 30%,#4a8f3a 55%,#fff 80%,#2f6f25); --accent:#8cff6b; --glow: rgba(120,255,100,.4); --rad: 12px; --fw: 6px; --btn: linear-gradient(180deg,#fff27a,#f2c80a 55%,#a88a00); --btn-d:#6a5600; --btn-glow: rgba(242,200,10,.45); --btn-ink:#1a1600; --title: linear-gradient(180deg,#fff,#d6ffc9 55%,#4fbf3a); --track:.12em; --case: uppercase;
   --pat: repeating-linear-gradient(90deg,#fff 0 40px,transparent 40px 80px); --pat-op:.05; }
+
+/* ---- shared modern look for every casino game page (applies inside GameShell only) ---- */
+.gs-main .casino-felt { border: 0; border-radius: 22px; padding: 18px 14px; background:
+    radial-gradient(120% 70% at 50% 0%, rgba(120,255,190,.16), transparent 60%),
+    radial-gradient(ellipse at 50% 120%, rgba(0,0,0,.55), transparent 60%),
+    repeating-linear-gradient(60deg, rgba(255,255,255,.018) 0 2px, transparent 2px 7px),
+    linear-gradient(180deg, #0f5f45, #0a4233 60%, #06281f);
+  box-shadow: inset 0 0 0 1px rgba(255,224,138,.55), inset 0 0 0 7px rgba(6,20,14,.9), inset 0 0 0 8px rgba(245,197,66,.35), inset 0 0 80px rgba(0,0,0,.6), 0 18px 44px rgba(0,0,0,.6); }
+.gs-main .casino-felt-blue { border: 0; border-radius: 22px; padding: 18px 14px; box-shadow: inset 0 0 0 1px rgba(127,178,255,.6), inset 0 0 0 7px rgba(5,12,28,.9), inset 0 0 80px rgba(0,0,0,.6), 0 18px 44px rgba(0,0,0,.6); }
+@media (min-width: 640px) { .gs-main .casino-felt, .gs-main .casino-felt-blue { padding: 26px; } }
+.gs-main .casino-gold-text { font-size: 1.35rem; letter-spacing: .28em; filter: drop-shadow(0 2px 3px rgba(0,0,0,.6)); }
+/* controls rows never run off a phone screen */
+.gs-main [class*="justify-between"][class*="gap-4"], .gs-main [class*="justify-between"][class*="gap-3"] { flex-wrap: wrap; justify-content: center; }
+.gs-main .overflow-x-auto { scrollbar-width: none; }
+/* glass panels */
+.gs-main .bg-black\/30, .gs-main .bg-black\/40 { background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(0,0,0,.38)); border: 1px solid rgba(255,255,255,.12); border-radius: 18px; backdrop-filter: blur(6px); box-shadow: 0 8px 22px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.12); }
+/* 3D buttons */
+.gs-main button.bg-yellow-500, .gs-main button.bg-yellow-400, .gs-main button.bg-brand-yellow { background: linear-gradient(180deg, #ffe58a, #f5c542 55%, #c98f12); color: #1b1203; border-radius: 999px; font-weight: 900; letter-spacing: .06em; box-shadow: 0 4px 0 #7a5410, 0 10px 18px rgba(245,197,66,.25), inset 0 1px 0 rgba(255,255,255,.6); transition: transform .08s, box-shadow .08s, filter .2s; }
+.gs-main button.bg-green-600, .gs-main button.bg-green-500 { background: linear-gradient(180deg, #8df06c, #35b53a 55%, #1f8a2a); color: #0f2208; font-weight: 900; border-radius: 14px; box-shadow: 0 4px 0 #14611c, 0 10px 18px rgba(53,181,58,.3), inset 0 1px 0 rgba(255,255,255,.55); transition: transform .08s, box-shadow .08s, filter .2s; }
+.gs-main button.bg-red-600, .gs-main button.bg-red-500 { background: linear-gradient(180deg, #ff8a7a, #e0362c 55%, #a31b14); color: #fff; font-weight: 900; border-radius: 14px; box-shadow: 0 4px 0 #6b0f0a, 0 10px 18px rgba(224,54,44,.3), inset 0 1px 0 rgba(255,255,255,.5); transition: transform .08s, box-shadow .08s, filter .2s; }
+.gs-main button.bg-yellow-500:hover:not(:disabled), .gs-main button.bg-yellow-400:hover:not(:disabled), .gs-main button.bg-green-600:hover:not(:disabled), .gs-main button.bg-red-600:hover:not(:disabled) { filter: brightness(1.08); }
+.gs-main button.bg-yellow-500:active:not(:disabled), .gs-main button.bg-yellow-400:active:not(:disabled), .gs-main button.bg-green-600:active:not(:disabled), .gs-main button.bg-red-600:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.4); }
+.gs-main button:disabled { filter: grayscale(.5); opacity: .55; }
+.gs-main .chip { box-shadow: 0 4px 0 rgba(0,0,0,.45), 0 8px 14px rgba(0,0,0,.4), inset 0 0 0 2px rgba(255,255,255,.4), inset 0 2px 6px rgba(255,255,255,.35); }
+.gs-main .pc-face { border-radius: 10px; }
+@media (prefers-reduced-motion: reduce) { .gs-main button { transition: none !important; } }
+
+/* ---- 2026 stage: aurora backdrop, neon edges, glass stages (colour comes from --acc set per game) ---- */
+.gs-root { --acc: #f5c542; background:
+    radial-gradient(900px 520px at 85% -8%, color-mix(in srgb, var(--acc) 34%, transparent), transparent 70%),
+    radial-gradient(800px 560px at -10% 18%, color-mix(in srgb, var(--acc) 18%, #6d28d9 20%), transparent 70%),
+    radial-gradient(700px 500px at 50% 115%, color-mix(in srgb, var(--acc) 22%, transparent), transparent 70%),
+    #06060b; }
+.gs-bar { background: linear-gradient(180deg, rgba(10,10,16,.88), rgba(10,10,16,.66)); backdrop-filter: blur(14px); border-bottom: 1px solid color-mix(in srgb, var(--acc) 55%, transparent); box-shadow: 0 1px 0 rgba(255,255,255,.05), 0 8px 28px color-mix(in srgb, var(--acc) 20%, transparent); }
+.gs-title { background: linear-gradient(180deg, #fff, color-mix(in srgb, var(--acc) 70%, #fff)); -webkit-background-clip: text; background-clip: text; color: transparent; letter-spacing: .14em; text-transform: uppercase; font-size: 15px; }
+.gs-back { background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 55%, #fff), var(--acc)); color: #05050a; box-shadow: 0 2px 0 color-mix(in srgb, var(--acc) 45%, #000), 0 6px 16px color-mix(in srgb, var(--acc) 35%, transparent); }
+.gs-bal { color: #fff; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); border-radius: 999px; padding: 5px 12px; }
+/* plain game pages (no felt table) become a glass stage */
+.gs-main > div:not(.casino-felt):not(.casino-felt-blue):not([class*="lb-"]) { position: relative; border-radius: 26px; padding: 16px 14px; background: linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.02) 40%, rgba(0,0,0,.28)); border: 1px solid color-mix(in srgb, var(--acc) 45%, rgba(255,255,255,.12)); box-shadow: 0 0 0 1px rgba(0,0,0,.5), 0 0 38px color-mix(in srgb, var(--acc) 22%, transparent), 0 22px 50px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.14); backdrop-filter: blur(10px); }
+.gs-main > div:not(.casino-felt):not(.casino-felt-blue):not([class*="lb-"]) h1, .gs-main > div:not(.casino-felt):not(.casino-felt-blue):not([class*="lb-"]) h2 { background: linear-gradient(180deg, #fff, color-mix(in srgb, var(--acc) 65%, #fff)); -webkit-background-clip: text; background-clip: text; color: transparent; letter-spacing: .18em; text-transform: uppercase; }
+/* felt tables pick up the accent as a glow line too */
+.gs-main .casino-felt { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 60%, #fff 10%), inset 0 0 0 7px rgba(6,20,14,.9), inset 0 0 0 8px color-mix(in srgb, var(--acc) 40%, transparent), inset 0 0 80px rgba(0,0,0,.6), 0 0 40px color-mix(in srgb, var(--acc) 25%, transparent), 0 18px 44px rgba(0,0,0,.6); }
+/* inputs and chips of stake controls */
+.gs-main input[type=text], .gs-main input[type=number], .gs-main select { background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.18); border-radius: 12px; color: #fff; }
+.gs-main input:focus, .gs-main select:focus { outline: none; border-color: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 30%, transparent); }
+
+/* ---- slot game: modern HUD (stats, bet steppers, round spin button) ---- */
+.sg-cur { display: inline-flex; border-radius: 999px; padding: 3px; background: rgba(0,0,0,.4); border: 1px solid rgba(255,255,255,.14); }
+.sg-cur button { padding: 3px 12px; border-radius: 999px; font-weight: 800; font-size: 13px; color: #cbd5e1; }
+.sg-cur button.on { background: var(--accent); color: #111; }
+.sg-stats { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 8px; margin-top: 10px; }
+.sg-stat { text-align: left; padding: 7px 10px; border-radius: 14px; background: linear-gradient(180deg, rgba(255,255,255,.09), rgba(0,0,0,.35)); border: 1px solid rgba(255,255,255,.14); box-shadow: inset 0 1px 0 rgba(255,255,255,.14); min-width: 0; }
+.sg-stat label { display: block; font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: #9ca3af; }
+.sg-stat b { display: block; font-size: 15px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sg-stat-win b { color: var(--win); text-shadow: 0 0 12px var(--glow); }
+.sg-stat-bet { cursor: pointer; border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.sg-dock { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 4px; }
+.sg-side { display: flex; flex-direction: column; gap: 8px; }
+.sg-mini { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 14px; color: #fff; background: linear-gradient(180deg, rgba(255,255,255,.2), rgba(255,255,255,.05)); border: 1px solid rgba(255,255,255,.25); box-shadow: 0 3px 0 rgba(0,0,0,.45); }
+.sg-mini.on { background: var(--accent); color: #111; box-shadow: 0 0 16px var(--glow), 0 3px 0 rgba(0,0,0,.45); }
+.sg-step { width: 48px; height: 48px; border-radius: 50%; font-size: 26px; font-weight: 900; line-height: 1; color: #fff; background: linear-gradient(180deg, rgba(255,255,255,.22), rgba(0,0,0,.3)); border: 1px solid rgba(255,255,255,.28); box-shadow: 0 4px 0 rgba(0,0,0,.5); }
+.sg-step:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,.5); }
+.sg-step:disabled { opacity: .5; }
+.sg-spin-round { width: 92px; height: 92px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font-size: 36px; color: var(--btn-ink); background: radial-gradient(circle at 35% 28%, rgba(255,255,255,.7), transparent 38%), var(--btn); border: 5px solid rgba(255,255,255,.55); box-shadow: 0 7px 0 var(--btn-d), 0 14px 30px var(--btn-glow), inset 0 -6px 12px rgba(0,0,0,.25); transition: transform .08s, box-shadow .08s; }
+.sg-spin-round:active:not(:disabled) { transform: translateY(5px); box-shadow: 0 2px 0 var(--btn-d), 0 6px 14px var(--btn-glow), inset 0 -6px 12px rgba(0,0,0,.25); }
+.sg-spin-round:disabled { filter: grayscale(.45) brightness(.8); }
+.sg-spin-round:disabled span { display: block; width: 28px; height: 28px; border-radius: 50%; border: 4px solid rgba(0,0,0,.3); border-top-color: rgba(0,0,0,.75); animation: sg-turn .7s linear infinite; }
+@keyframes sg-turn { to { transform: rotate(360deg); } }

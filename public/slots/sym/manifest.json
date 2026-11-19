@@ -1,0 +1,32 @@
+{
+ "hot-fruits": {
+  "keys": [
+   "BELL",
+   "CHERRY",
+   "GRAPE",
+   "LEMON",
+   "ORANGE",
+   "SCATTER",
+   "SEVEN",
+   "WATERMELON",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ },
+ "pharaoh-gold": {
+  "keys": [
+   "BEETLE",
+   "EYE",
+   "FALCON",
+   "JAR",
+   "PALM",
+   "PHARAOH",
+   "SCATTER",
+   "SNAKE",
+   "WILD"
+  ],
+  "ext": "webp",
+  "bg": false
+ }
+}

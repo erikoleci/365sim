@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import symbolMap from '../../../utils/symbolMap.json';
+import { getArt } from '../slotArt';
 
 // The five reels of a video slot as real 3D drums (Three.js). Loaded only when a slot is opened (React.lazy in
 // SlotGames, and `three` itself is a dynamic import inside this file), so nothing else in the site pays for it.
@@ -81,22 +82,39 @@ const Reels3D: React.FC<Props> = ({ grid, spinning, lit, pool, colors, metal: me
         const hit = texCache.get(sym); if (hit) return hit;
         const c = document.createElement('canvas'); c.width = 256; c.height = 256;
         const ctx = c.getContext('2d')!;
+        let hue = 0; for (let i = 0; i < sym.length; i += 1) hue = (hue * 31 + sym.charCodeAt(i)) % 360;
+        const rr = (x: number, y: number, w: number, h: number, r: number) => { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); };
+        const artUrl = getArt(sym);
         const paint = (img?: HTMLImageElement) => {
+          ctx.clearRect(0, 0, 256, 256);
+          if (artUrl) { // real artwork fills the whole face
+            ctx.fillStyle = bg1; ctx.fillRect(0, 0, 256, 256);
+            if (img) ctx.drawImage(img, 0, 0, 256, 256);
+            return;
+          }
           const g = ctx.createLinearGradient(0, 0, 0, 256); g.addColorStop(0, bg0); g.addColorStop(1, bg1);
           ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 256);
-          ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.lineWidth = 6; ctx.strokeRect(5, 5, 246, 246);
-          if (img) ctx.drawImage(img, 36, 36, 184, 184);
-          else { ctx.font = '150px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(sym, 128, 140); }
+          // glossy gem tile in a colour of its own
+          ctx.save(); rr(16, 16, 224, 224, 44); ctx.clip();
+          const t = ctx.createRadialGradient(128, 96, 10, 128, 130, 170); t.addColorStop(0, `hsl(${hue},58%,36%)`); t.addColorStop(1, `hsl(${hue},55%,11%)`);
+          ctx.fillStyle = t; ctx.fillRect(0, 0, 256, 256);
+          const gl = ctx.createLinearGradient(0, 16, 0, 140); gl.addColorStop(0, 'rgba(255,255,255,0.42)'); gl.addColorStop(1, 'rgba(255,255,255,0)');
+          ctx.fillStyle = gl; ctx.fillRect(16, 16, 224, 124);
+          ctx.restore();
+          const edge = ctx.createLinearGradient(0, 16, 0, 240); edge.addColorStop(0, 'rgba(255,255,255,0.85)'); edge.addColorStop(0.5, `hsla(${hue},80%,70%,0.5)`); edge.addColorStop(1, 'rgba(0,0,0,0.55)');
+          ctx.strokeStyle = edge; ctx.lineWidth = 6; rr(16, 16, 224, 224, 44); ctx.stroke();
+          if (img) { ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 7; ctx.drawImage(img, 42, 36, 172, 172); ctx.restore(); }
+          else { ctx.font = '140px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(sym, 128, 138); }
         };
         paint();
         const tex = new THREE.CanvasTexture(c);
         tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = maxAniso;
         texCache.set(sym, tex);
         const file = MAP[sym];
-        if (file) {
+        if (artUrl || file) {
           const img = new Image();
           img.onload = () => { if (dead) return; paint(img); tex.needsUpdate = true; wake.current(); };
-          img.src = `/symbols/${file}.svg`;
+          img.src = artUrl || `/symbols/${file}.svg`;
         }
         return tex;
       };
