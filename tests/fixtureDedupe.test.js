@@ -151,3 +151,26 @@ describe('dedupeMatches - the final score travels with the FINISHED status', () 
     expect(dedupeMatches([cat, twin])[0].score).toBeUndefined();
   });
 });
+
+describe('club written with and without its legal prefix (SSC Napoli / Napoli)', () => {
+  it('is one fixture: the live record without odds and the half-time record with odds merge into one row', () => {
+    const live = base({ id: 'l365-1', homeTeam: 'SSC Napoli', awayTeam: 'Torino FC', markets: [], liveHomeScore: 0, liveAwayScore: 0, currentMinute: '45:59', currentMinuteUpdatedAt: 1791646491714, liveStatus: '3' });
+    const withOdds = base({ id: 'l365-2', homeTeam: 'Napoli', awayTeam: 'Torino', markets: [{ options: opt(30) }] });
+    const merged = dedupeMatches([live, withOdds]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].markets[0].options).toHaveLength(30);
+  });
+  it('AS Monaco / Monaco, AJ Auxerre / Auxerre, RC Strasbourg / Strasbourg, AS Roma / Roma are the same club', () => {
+    for (const [a, b] of [['AS Monaco', 'Monaco'], ['AJ Auxerre', 'Auxerre'], ['RC Strasbourg', 'Strasbourg'], ['AS Roma', 'Roma'], ['SS Lazio', 'Lazio']]) {
+      expect(sameFixture({ homeTeam: a, awayTeam: 'Brest' }, { homeTeam: b, awayTeam: 'Brest' })).toBe(true);
+    }
+  });
+  it('different clubs stay different', () => {
+    for (const [a, b] of [['AS Roma', 'Lazio'], ['Napoli', 'AS Roma'], ['Inter', 'AS Monaco'], ['SSC Napoli', 'Torino']]) {
+      expect(sameFixture({ homeTeam: a, awayTeam: 'X Team' }, { homeTeam: b, awayTeam: 'X Team' })).toBe(false);
+    }
+  });
+  it('a youth or women side is still not the senior side', () => {
+    expect(sameFixture({ homeTeam: 'AS Roma W', awayTeam: 'Brest' }, { homeTeam: 'Roma', awayTeam: 'Brest' })).toBe(false);
+  });
+});
