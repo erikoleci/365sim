@@ -11,6 +11,7 @@ vi.hoisted(function () {
   delete process.env.LONDON365_FULL;
   delete process.env.LONDON365_LEAGUES;
   delete process.env.LONDON365_INTERNATIONAL_EXTRA;
+  process.env.LONDON365_WOMEN = '0'; // these cases check the old "women's leagues are not offered" rule
   process.env.LONDON365_DETAIL_DELAY_MS = '0';
   return true;
 });

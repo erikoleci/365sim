@@ -33,11 +33,11 @@ describe('LONDON365_ONLY_COUNTRIES=England, France,Spain , Italy,GERMANY + MAJOR
     expect(l365.leagueRejectionReason('U23 Premier League 2', 'England')).toBe('minor-league');
     expect(l365.leagueRejectionReason('Regionalliga West', 'Germany')).toBe('minor-league');
   });
-  it('LONDON365_INTERNATIONAL_EXTRA is an explicit opt-in (FIFA / World Cup), still never youth or women\'s', () => {
+  it('LONDON365_INTERNATIONAL_EXTRA is an explicit opt-in (FIFA / World Cup), still never youth', () => {
     expect(l365.leagueRejectionReason('FIFA World Cup', 'International')).toBeNull();
     expect(l365.leagueRejectionReason('World Cup Qualification', 'International')).toBeNull();
     expect(l365.leagueRejectionReason('FIFA U20 World Cup', 'International')).toBe('international-not-major');
-    expect(l365.leagueRejectionReason("FIFA Women's World Cup", 'International')).toBe('international-not-major');
+    expect(l365.leagueRejectionReason("FIFA Women's World Cup", 'International')).toBeNull(); // women's football is offered
   });
 });
 

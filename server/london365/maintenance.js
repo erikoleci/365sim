@@ -8,7 +8,7 @@ import { resetLiveTracker } from '../liveTracker.js';
 import { ENABLED, DETAIL_DELAY_MS, sleep, EXCLUDED_COUNTRIES, ONLY_COUNTRIES } from './config.js';
 import { ensureMarketNamesLoaded, isSparseEvent, fetchLiveRows, fetchDetailRows, hydrateRowNames, countOutcomes, buildEvent, marketNameById } from './markets.js';
 import { COUNTRY_NAMES_BY_LENGTH_DESC, COUNTRY_NAME_TO_TOKEN, slugDash, leagueCountryToken } from './leagueKeys.js';
-import { isAllowedInternationalCompetition, isMinorLeague, isSecondTierDomesticLeague, isYouthTeam } from './leagueRules.js';
+import { isAllowedInternationalCompetition, isMinorLeague, isSecondTierDomesticLeague, isYouthTeam, ALLOW_WOMEN } from './leagueRules.js';
 import { setLastImportAt } from './importState.js';
 import { leagueById, leagueNameIndex, countryMapCache } from './leagueRegistry.js';
 
@@ -95,7 +95,7 @@ export const STALE_LEAGUE_KEYWORDS = [
   'catarinense', 'mineiro', 'baiano', 'cearense', 'potiguar', 'goiano',
   'alagoano', 'capixaba', 'sergipano', 'paraense', 'matogrossense',
   'pernambucano', 'copa_do_brasil',
-  'u19', 'u20', 'u21', 'u23', 'women', 'youth', 'junior', 'reserve',
+  'u19', 'u20', 'u21', 'u23', ...(ALLOW_WOMEN ? [] : ['women']), 'youth', 'junior', 'reserve',
   'amateur', 'academy', 'friendly', 'esoccer', 'virtual', 'simulated',
 ];
 export async function purgeStaleLeagues() {

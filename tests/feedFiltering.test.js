@@ -66,9 +66,9 @@ describe('isAllowedByCountryFilter (shared by the live REST loop and the socket 
     expect(l365.isAllowedByCountryFilter({ league: 'x' }, known('International', 'FIFA World Cup'))).toBe(false);
     expect(l365.isAllowedByCountryFilter({ league: 'x' }, known('International', 'Copa Libertadores'))).toBe(false);
   });
-  it('drops youth / women variants of an allowed competition', () => {
+  it('drops youth variants of an allowed competition, keeps women\'s', () => {
     expect(l365.isAllowedByCountryFilter({ league: 'x' }, known('International', 'UEFA Youth League'))).toBe(false);
-    expect(l365.isAllowedByCountryFilter({ league: 'x' }, known('International', 'UEFA Women\'s Champions League'))).toBe(false);
+    expect(l365.isAllowedByCountryFilter({ league: 'x' }, known('International', 'UEFA Women\'s Champions League'))).toBe(true); // women's football is offered
   });
   it('an UNRESOLVED league is judged by its name: a UEFA competition is kept (used to fall through to token "uefa" and be dropped)', () => {
     expect(l365.isAllowedByCountryFilter({ league: 'UEFA Champions League' }, null)).toBe(true);
