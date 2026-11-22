@@ -44,10 +44,14 @@ if (process.env.LONDON365_INTERNATIONAL_EXTRA) {
 // League" or "UEFA Women's Champions League" can never ride in on the word UEFA.
 export function isAllowedInternationalCompetition(leagueName) {
   const name = String(leagueName || '');
-  if (MINOR_LEAGUE_PATTERN.test(name)) return false;
+  if (isMinorName(name)) return false;
   return isEuropeanInternationalCompetition(name) || (INTERNATIONAL_EXTRA_RE ? INTERNATIONAL_EXTRA_RE.test(name) : false);
 }
-export const MINOR_LEAGUE_PATTERN = /\bu-?1[0-9]\b|\bu-?2[0-3]\b|\byouth\b|\bjunior\b|\breserves?\b|\bwomen'?s?\b|\bfemale\b|\bfeminin[ao]?\b|\bamateur\b|\bacademy\b|\bjeugd\b|\bjugend\b|\bjeunes?\b|\bjuvenil(es)?\b|\bgiovanili\b|\bprimavera\b|\bfriendl(y|ies)\b|\besoccer\b|\be-?soccer\b|\bsimulated\b|\bvirtual\b/i;
+// Women's football is offered by default (the provider scores and prices those matches live); LONDON365_WOMEN=0 brings the old
+// "never offered" rule back. Youth / reserve sides are still never offered.
+export const ALLOW_WOMEN = (process.env.LONDON365_WOMEN || '1') !== '0';
+export const WOMEN_LEAGUE_PATTERN = /\bwomen'?s?\b|\bfemale\b|\bfeminin[ao]?\b/i;
+export const MINOR_LEAGUE_PATTERN = /\bu-?1[0-9]\b|\bu-?2[0-3]\b|\byouth\b|\bjunior\b|\breserves?\b|\bamateur\b|\bacademy\b|\bjeugd\b|\bjugend\b|\bjeunes?\b|\bjuvenil(es)?\b|\bgiovanili\b|\bprimavera\b|\bfriendl(y|ies)\b|\besoccer\b|\be-?soccer\b|\bsimulated\b|\bvirtual\b/i;
 // Brazil specifically has ~25 STATE championships running in parallel
 // (Serie A/B/C/D are the national ones worth keeping; everything named
 // after a state — Gaucho, Carioca, Paulista, Mineiro, Baiano, Amazonense,
@@ -80,17 +84,18 @@ export function isSecondTierDomesticLeague(name, countryToken) {
   if (!pattern) return false; // no built-in second-tier pattern for this country -> unaffected
   return pattern.test(String(name || ''));
 }
+function isMinorName(s) { return MINOR_LEAGUE_PATTERN.test(s) || (!ALLOW_WOMEN && WOMEN_LEAGUE_PATTERN.test(s)); }
 export function isMinorLeague(name, countryName) {
   if (!MAJOR_LEAGUES_ONLY) return false;
   const n = String(name || '');
-  if (MINOR_LEAGUE_PATTERN.test(n)) return true;
+  if (isMinorName(n)) return true;
   if (LOWER_DIVISION_PATTERN.test(n)) return true;
   if (EXTRA_EXCLUDE_RE && EXTRA_EXCLUDE_RE.test(n)) return true;
   // The country bucket itself can be amateur/youth-only (e.g. "Austria
   // Amateur", "Germany Amateur", "England Amateur", "International Youth"
   // from CONFIRMED_COUNTRY_IDS) even when a league's own name inside it
   // doesn't contain any of those words (e.g. "Regionalliga West").
-  if (MINOR_LEAGUE_PATTERN.test(String(countryName || ''))) return true;
+  if (isMinorName(String(countryName || ''))) return true;
   if ((countryName || '').toLowerCase() === 'brazil' && BRAZIL_STATE_LEAGUE_PATTERN.test(n) && !/copa do brasil/i.test(n)) return true;
   return false;
 }
@@ -148,8 +153,10 @@ export function logLondon365FilterConfig() {
 }
 // Youth and women's sides are named in the team itself ("Jeugd Royal Francs Borains"): the provider lists them in an ordinary league,
 // takes bets, but usually never scores them (no result, no clock), so their tickets could never close. Not offered at all.
-export const YOUTH_TEAM_PATTERN = /\b(jeugd|jugend|jeunes?|juvenil(es)?|giovanili|primavera|youth|u-?1[0-9]|u-?2[0-3]|women'?s?|femenin\w*|feminin\w*|femmes|frauen|ladies)\b|\(w\)/i;
-export function isYouthTeam(name) { return YOUTH_TEAM_PATTERN.test(String(name || '')); }
+export const YOUTH_TEAM_PATTERN = /\b(jeugd|jugend|jeunes?|juvenil(es)?|giovanili|primavera|youth|u-?1[0-9]|u-?2[0-3])\b/i;
+export const WOMEN_TEAM_PATTERN = /\b(women'?s?|femenin\w*|feminin\w*|femmes|frauen|ladies)\b|\(w\)/i;
+export function isWomenTeam(name) { return WOMEN_TEAM_PATTERN.test(String(name || '')); }
+export function isYouthTeam(name) { if (ALL_MATCHES) return false; const n = String(name || ''); return YOUTH_TEAM_PATTERN.test(n) || (!ALLOW_WOMEN && WOMEN_TEAM_PATTERN.test(n)); }
 export function isAllowedByCountryFilter(g, resolvedLeague) {
   if (g && (isYouthTeam(g.home_team) || isYouthTeam(g.away_team))) return false;
   if (!ONLY_COUNTRIES.size) return true; // whitelist explicitly disabled ('*')
