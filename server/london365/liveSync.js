@@ -21,6 +21,45 @@ import { upsertMatch, recordGoalIfChanged } from './persist.js';
 import { leagueKeyFromCountry } from './leagueKeys.js';
 import { endTwinVerdict } from '../liveTwin.js';
 
+// ---- feed watch (log only) -------------------------------------------------------------------------------------------------
+// "Is the provider sending it?" For every match somebody has a pending ticket on that kicked off a while ago but still has no live
+// data, say once in the log whether the provider's live list had it and whether our filter let it in. Nothing here changes a match.
+const feedSeen = new Map(); // 'l365-<id>' -> { verdict, name, league, at }
+export function noteFeedGame(id, g, verdict) {
+  if (feedSeen.size > 4000) feedSeen.clear();
+  feedSeen.set(id, { verdict, name: (g.home_team || '?') + ' v ' + (g.away_team || '?'), league: g.league || '', at: Date.now(), hasScore: g.score != null || g.home_score != null, hasMinute: g.current_minute != null });
+}
+export const feedVerdictFor = (id, now = Date.now()) => {
+  const f = feedSeen.get(id);
+  if (!f || now - f.at > 5 * 60000) return { verdict: 'NOT_IN_PROVIDER_LIVE_LIST' };
+  return f;
+};
+const feedWatchLogged = new Map(); // id -> ms
+let feedWatchAt = 0;
+export async function runFeedWatch(now = Date.now()) {
+  if (now - feedWatchAt < 2 * 60000) return 0;
+  feedWatchAt = now;
+  let n = 0;
+  try {
+    const { rows } = await pool.query(
+      `SELECT DISTINCT m.id, m.home_team, m.away_team, m.league, m.start_time, m.status FROM matches_cache m
+         JOIN bet_selections bs ON bs.match_id = m.id AND bs.status = 'PENDING'
+        WHERE m.id LIKE 'l365-%' AND m.status <> 'FINISHED' AND m.live_minute IS NULL AND m.live_home_score IS NULL
+          AND m.start_time::timestamptz BETWEEN $1::timestamptz AND $2::timestamptz`,
+      [new Date(now - 4 * 3600000).toISOString(), new Date(now - 8 * 60000).toISOString()]);
+    for (const r of rows) {
+      if (now - (feedWatchLogged.get(r.id) || 0) < 30 * 60000) continue;
+      feedWatchLogged.set(r.id, now);
+      const v = feedVerdictFor(r.id, now);
+      const min = Math.round((now - Date.parse(r.start_time)) / 60000);
+      console.warn('[feed-watch] ' + r.id + ' ' + r.home_team + ' v ' + r.away_team + ' (' + r.league + ') kicked off ' + min + ' min ago, has a pending ticket and NO live data: provider live list = ' + v.verdict + (v.name ? ' as "' + v.name + '" / ' + v.league : ''));
+      n++;
+    }
+    if (feedWatchLogged.size > 500) feedWatchLogged.clear();
+  } catch (err) { console.error('[feed-watch] failed:', err.message); }
+  return n;
+}
+
 const resultListSample = { at: 0, len: 0, text: '' };
 // Twin check before a record is closed from its own score (see endTwinVerdict). Cannot tell -> wait, never settle on a guess.
 async function endTwinVerdictFor(row) {
@@ -235,7 +274,8 @@ export async function syncLondon365LiveOnce() {
       // re-deriving it from a second, differently-shaped copy of the same
       // information — a match can only reach isTrackedGame() by having
       // already cleared this same filter once.
-      if (!isTrackedGame('l365-' + g.id) && !isAllowedByCountryFilter(g, resolvedLeagueEarly) && !isTicketedFixture(g)) return;
+      if (!isTrackedGame('l365-' + g.id) && !isAllowedByCountryFilter(g, resolvedLeagueEarly) && !isTicketedFixture(g)) { noteFeedGame('l365-' + g.id, g, 'DROPPED_BY_FILTER'); return; }
+      noteFeedGame('l365-' + g.id, g, 'ACCEPTED');
       liveIds.add('l365-' + g.id);
       liveSeen++;
       // The provider's own list of corners / cards (see providerEvents.js): logged even when the game-details socket delivers nothing.
@@ -432,6 +472,7 @@ export async function syncLondon365LiveOnce() {
   // admin status page). getLondon365Status() reads this first.
   pruneDetailAt(new Set(Array.from(liveIds, (id) => String(id).replace(/^l365-/, ''))));
   noteLiveSyncCompleted();
+  void runFeedWatch();
   if (liveSeen) console.log('[london365] live cycle: ' + gamesSynced + '/' + liveSeen + ' games synced, ' + detailFailures + ' detail fetch failures, ' + detailFetched + ' full refreshes, ' + noMinute + ' without minute, ' + noScore + ' without score, ' + noOdds + ' without odds');
   return { games: gamesSynced };
 }
