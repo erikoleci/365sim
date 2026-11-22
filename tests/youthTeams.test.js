@@ -20,3 +20,15 @@ describe('youth sides are not offered (the feed never scores them)', () => {
     expect(MINOR_LEAGUE_PATTERN.test('Belgium Jeugd Competitie')).toBe(true);
   });
 });
+
+describe('LONDON365_ALL_MATCHES=1 blocks nothing by team name', () => {
+  it('youth and women sides are offered', async () => {
+    const { vi } = await import('vitest');
+    vi.resetModules();
+    process.env.LONDON365_ALL_MATCHES = '1';
+    try {
+      const m = await import('../server/london365/leagueRules.js');
+      for (const n of ['Ajax U19', 'Jeugd Sporting Hasselt', 'Lazio (W)']) expect(m.isYouthTeam(n), n).toBe(false);
+    } finally { delete process.env.LONDON365_ALL_MATCHES; vi.resetModules(); }
+  });
+});

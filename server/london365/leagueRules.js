@@ -156,7 +156,7 @@ export function logLondon365FilterConfig() {
 export const YOUTH_TEAM_PATTERN = /\b(jeugd|jugend|jeunes?|juvenil(es)?|giovanili|primavera|youth|u-?1[0-9]|u-?2[0-3])\b/i;
 export const WOMEN_TEAM_PATTERN = /\b(women'?s?|femenin\w*|feminin\w*|femmes|frauen|ladies)\b|\(w\)/i;
 export function isWomenTeam(name) { return WOMEN_TEAM_PATTERN.test(String(name || '')); }
-export function isYouthTeam(name) { const n = String(name || ''); return YOUTH_TEAM_PATTERN.test(n) || (!ALLOW_WOMEN && WOMEN_TEAM_PATTERN.test(n)); }
+export function isYouthTeam(name) { if (ALL_MATCHES) return false; const n = String(name || ''); return YOUTH_TEAM_PATTERN.test(n) || (!ALLOW_WOMEN && WOMEN_TEAM_PATTERN.test(n)); }
 export function isAllowedByCountryFilter(g, resolvedLeague) {
   if (g && (isYouthTeam(g.home_team) || isYouthTeam(g.away_team))) return false;
   if (!ONLY_COUNTRIES.size) return true; // whitelist explicitly disabled ('*')

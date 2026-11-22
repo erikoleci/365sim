@@ -5,7 +5,7 @@ import pool, { setKV } from '../db.js';
 import { getSubscribedGameDetailsIds, unsubscribeGameDetails } from '../london365Socket.js';
 import { forgetLiveState } from '../london365GameDetails.js';
 import { resetLiveTracker } from '../liveTracker.js';
-import { ENABLED, DETAIL_DELAY_MS, sleep, EXCLUDED_COUNTRIES, ONLY_COUNTRIES } from './config.js';
+import { ENABLED, ALL_MATCHES, DETAIL_DELAY_MS, sleep, EXCLUDED_COUNTRIES, ONLY_COUNTRIES } from './config.js';
 import { ensureMarketNamesLoaded, isSparseEvent, fetchLiveRows, fetchDetailRows, hydrateRowNames, countOutcomes, buildEvent, marketNameById } from './markets.js';
 import { COUNTRY_NAMES_BY_LENGTH_DESC, COUNTRY_NAME_TO_TOKEN, slugDash, leagueCountryToken } from './leagueKeys.js';
 import { isAllowedInternationalCompetition, isMinorLeague, isSecondTierDomesticLeague, isYouthTeam, ALLOW_WOMEN } from './leagueRules.js';
@@ -99,6 +99,7 @@ export const STALE_LEAGUE_KEYWORDS = [
   'amateur', 'academy', 'friendly', 'esoccer', 'virtual', 'simulated',
 ];
 export async function purgeStaleLeagues() {
+  if (ALL_MATCHES) return; // "every match the provider carries" is on: nothing is stale by name
   // ONE statement (a single scan) instead of one ILIKE '%kw%' DELETE per
   // keyword (~40 sequential full scans on every boot -- and this deploy
   // restarts often). Keywords contain only [a-z0-9_], so the alternation is
