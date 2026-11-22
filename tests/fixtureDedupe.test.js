@@ -180,3 +180,16 @@ describe('club written with and without its legal prefix (SSC Napoli / Napoli)',
     expect(sameFixture({ homeTeam: 'AS Roma W', awayTeam: 'Brest' }, { homeTeam: 'Roma', awayTeam: 'Brest' })).toBe(false);
   });
 });
+
+import { displayClubName } from '../server/fixtureDedupe.js';
+describe('displayClubName: the player sees the club without its legal prefix', () => {
+  it('SSC Napoli -> Napoli, SL Benfica -> Benfica, SCU Torreense -> Torreense', () => {
+    expect(displayClubName('SSC Napoli')).toBe('Napoli');
+    expect(displayClubName('SL Benfica')).toBe('Benfica');
+    expect(displayClubName('SCU Torreense')).toBe('Torreense');
+    expect(displayClubName('AS Roma')).toBe('Roma');
+  });
+  it('leaves other names alone (no prefix, short remainder, a number)', () => {
+    for (const n of ['Napoli', 'Manchester City', 'Arsenal FC', 'AS Io', 'SV 07 Elversberg', 'Benfica B', '']) expect(displayClubName(n), n).toBe(n);
+  });
+});

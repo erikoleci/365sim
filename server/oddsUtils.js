@@ -11,6 +11,7 @@
 
 import { getBetBlockReason, settlementRuleRequired, hidePlayerOdds } from './marketRules.js';
 import { certainOutcomeReason } from './liveCertainty.js';
+import { displayClubName } from './fixtureDedupe.js';
 
 export const MARKET_LABELS = {
   h2h: { name: '1X2 - Fituesi', category: 'main' },
@@ -302,8 +303,8 @@ export function mapEventToMatch(row) {
     league: row.league,
     leagueId: row.league_id ?? undefined,
     countryId: row.country_id ?? undefined,
-    homeTeam: row.home_team,
-    awayTeam: row.away_team,
+    homeTeam: displayClubName(row.home_team),
+    awayTeam: displayClubName(row.away_team),
     // Real crest URL when the source provider supplies one (API-Football
     // does; The Odds API and others don't). Left undefined otherwise —
     // never filled with a stock/placeholder image here, the frontend

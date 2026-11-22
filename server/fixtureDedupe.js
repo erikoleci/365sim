@@ -166,6 +166,13 @@ function looseSameName(a, b) {
 // "Auxerre", "RC Strasbourg" / "Strasbourg". (fc / sc / ac / cf ... are already dropped by normTeam.) Only a prefix followed by a real
 // name word (4+ letters) is dropped, and it is only used to compare a name that HAS a prefix with one that has none or another.
 const CLUB_PREFIX_RE = /^(?:ssc|ssd|ss|asd|as|us|rc|aj|ogc|ca|ssv|tsv|vfb|vfl|tsg|fsv|scu|sl|gd|cs|bsc|sv|sg|kv|rsc|rfc)\s+(?=\S{4,})/;
+// What the player sees: the club without its legal prefix ("SSC Napoli" -> "Napoli", "SL Benfica" -> "Benfica"). Display only: the stored
+// name is untouched, and a ticket still finds its match because sameTeam already treats both spellings as one club.
+const CLUB_PREFIX_DISPLAY_RE = new RegExp(CLUB_PREFIX_RE.source, 'i');
+export function displayClubName(name) {
+  const s = String(name ?? '');
+  return s.replace(CLUB_PREFIX_DISPLAY_RE, '').trim() || s;
+}
 const dropClubPrefix = (n) => n.replace(CLUB_PREFIX_RE, '');
 
 function sameTeamRaw(x, y) {
