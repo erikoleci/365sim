@@ -165,6 +165,12 @@ describe('club written with and without its legal prefix (SSC Napoli / Napoli)',
       expect(sameFixture({ homeTeam: a, awayTeam: 'Brest' }, { homeTeam: b, awayTeam: 'Brest' })).toBe(true);
     }
   });
+  it('SCU Torreense / Torreense and SL Benfica / Benfica are the same fixture (Portugal Cup, two league names)', () => {
+    expect(sameFixture({ homeTeam: 'Torreense', awayTeam: 'Benfica' }, { homeTeam: 'SCU Torreense', awayTeam: 'SL Benfica' })).toBe(true);
+  });
+  it('a prefix does not merge two different clubs (Sporting Braga vs SL Benfica stays apart from Benfica Castelo Branco)', () => {
+    expect(sameFixture({ homeTeam: 'SL Benfica', awayTeam: 'Braga' }, { homeTeam: 'Benfica Castelo Branco', awayTeam: 'Braga' })).toBe(false);
+  });
   it('different clubs stay different', () => {
     for (const [a, b] of [['AS Roma', 'Lazio'], ['Napoli', 'AS Roma'], ['Inter', 'AS Monaco'], ['SSC Napoli', 'Torino']]) {
       expect(sameFixture({ homeTeam: a, awayTeam: 'X Team' }, { homeTeam: b, awayTeam: 'X Team' })).toBe(false);

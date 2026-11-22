@@ -165,7 +165,7 @@ function looseSameName(a, b) {
 // One feed writes the club with its legal prefix, the other without: "SSC Napoli" / "Napoli", "AS Monaco" / "Monaco", "AJ Auxerre" /
 // "Auxerre", "RC Strasbourg" / "Strasbourg". (fc / sc / ac / cf ... are already dropped by normTeam.) Only a prefix followed by a real
 // name word (4+ letters) is dropped, and it is only used to compare a name that HAS a prefix with one that has none or another.
-const CLUB_PREFIX_RE = /^(?:ssc|ssd|ss|asd|as|us|rc|aj|ogc|ca|ssv|tsv|vfb|vfl|tsg|fsv)\s+(?=\S{4,})/;
+const CLUB_PREFIX_RE = /^(?:ssc|ssd|ss|asd|as|us|rc|aj|ogc|ca|ssv|tsv|vfb|vfl|tsg|fsv|scu|sl|gd|cs|bsc|sv|sg|kv|rsc|rfc)\s+(?=\S{4,})/;
 const dropClubPrefix = (n) => n.replace(CLUB_PREFIX_RE, '');
 
 function sameTeamRaw(x, y) {
@@ -178,6 +178,7 @@ function sameTeamRaw(x, y) {
   const px = dropClubPrefix(nx), py = dropClubPrefix(ny);
   if (px === nx && py === ny) return false;
   if (px.length < 4 || py.length < 4) return false;
+  if (px.split(' ').length !== py.split(' ').length) return false; // the prefix path only joins names of the same length (SL Benfica must not join Benfica Castelo Branco)
   if (foldVowelE(px) === foldVowelE(py)) return true;
   if (differsByOneUnrelatedWord(px, py)) return false;
   return teamSim(px, py) >= 0.8 || abbrevEqual(px, py) || looseSameName(px, py);
