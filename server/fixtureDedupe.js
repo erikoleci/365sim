@@ -173,6 +173,15 @@ export function displayClubName(name) {
   const s = String(name ?? '');
   return s.replace(CLUB_PREFIX_DISPLAY_RE, '').trim() || s;
 }
+// A short all-letters name that is the initials of the other's words: "PSG" / "Paris Saint-Germain". The provider's live feed
+// writes some clubs that way, and the two records of one match stayed apart (one with the live prices, one without).
+// Only when the long name has at least three words, so "AS Roma" / "ASR" style guesses never fire on short names.
+function initialsOfOther(short, long) {
+  if (!/^[a-z]{2,4}$/.test(short)) return false;
+  const words = long.split(' ').filter(Boolean);
+  if (words.length < 3 || words.length > 5) return false;
+  return words.map((w) => w[0]).join('') === short;
+}
 const dropClubPrefix = (n) => n.replace(CLUB_PREFIX_RE, '');
 
 function sameTeamRaw(x, y) {
@@ -182,6 +191,7 @@ function sameTeamRaw(x, y) {
   if (nx.length >= 4 && foldVowelE(nx) === foldVowelE(ny)) return true; // spelling only (ø / ö written oe)
   if (differsByOneUnrelatedWord(nx, ny)) return false;
   if (teamSim(nx, ny) >= 0.8 || abbrevEqual(nx, ny) || looseSameName(nx, ny)) return true;
+  if (initialsOfOther(nx, ny) || initialsOfOther(ny, nx)) return true; // "PSG" = Paris Saint-Germain
   const px = dropClubPrefix(nx), py = dropClubPrefix(ny);
   if (px === nx && py === ny) return false;
   if (px.length < 4 || py.length < 4) return false;

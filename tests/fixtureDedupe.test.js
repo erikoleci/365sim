@@ -193,3 +193,14 @@ describe('displayClubName: the player sees the club without its legal prefix', (
     for (const n of ['Napoli', 'Manchester City', 'Arsenal FC', 'AS Io', 'SV 07 Elversberg', 'Benfica B', '']) expect(displayClubName(n), n).toBe(n);
   });
 });
+
+describe('a club written as its initials by one feed (PSG / Paris Saint-Germain)', () => {
+  it('PSG - Roma and Paris Saint-Germain - AS Roma are one fixture', () => {
+    expect(sameFixture({ homeTeam: 'PSG', awayTeam: 'Roma' }, { homeTeam: 'Paris Saint-Germain', awayTeam: 'AS Roma' })).toBe(true);
+  });
+  it('does not join unrelated names (PSG v Paris FC, PSV v Paris Saint-Germain, two-word names)', () => {
+    expect(sameFixture({ homeTeam: 'PSG', awayTeam: 'Roma' }, { homeTeam: 'Paris FC', awayTeam: 'AS Roma' })).toBe(false);
+    expect(sameFixture({ homeTeam: 'PSV', awayTeam: 'Roma' }, { homeTeam: 'Paris Saint-Germain', awayTeam: 'AS Roma' })).toBe(false);
+    expect(sameFixture({ homeTeam: 'RBL', awayTeam: 'Roma' }, { homeTeam: 'RB Leipzig', awayTeam: 'AS Roma' })).toBe(false);
+  });
+});
