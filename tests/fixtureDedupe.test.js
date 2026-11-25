@@ -215,3 +215,17 @@ describe('a legal tag after the name (Lille / Lille OSC)', () => {
     expect(sameFixture({ homeTeam: 'Lille U19', awayTeam: 'Bayern Munich U19' }, { homeTeam: 'Lille OSC', awayTeam: 'Bayern Munich' })).toBe(false);
   });
 });
+
+describe('same kick-off, one side the same club, the other side a related name (loose join)', () => {
+  const mk = (id, h, a, t = '2026-11-25T20:00:00Z') => ({ id, startTime: t, status: 'LIVE', homeTeam: h, awayTeam: a, markets: [{ options: [{ odds: 2 }] }] });
+  it('joins Man Utd / Manchester United, Lille / Lille Metropole and PSG when the other side is the same', () => {
+    expect(dedupeMatches([mk('a', 'Sporting', 'Man Utd'), mk('b', 'Sporting CP', 'Manchester United')]).length).toBe(1);
+    expect(dedupeMatches([mk('a', 'Lille OSC', 'Bayern Munich'), mk('b', 'Lille Metropole', 'Bayern Munich')]).length).toBe(1);
+  });
+  it('keeps apart: different kick-off, unrelated other side, women / youth sides', () => {
+    expect(dedupeMatches([mk('a', 'Lille', 'Bayern Munich'), mk('b', 'Lille', 'Bayern Munich', '2026-11-25T23:30:00Z')]).length).toBe(2);
+    expect(dedupeMatches([mk('a', 'Lille', 'Bayern Munich'), mk('b', 'Lille', 'Nantes')]).length).toBe(2);
+    expect(dedupeMatches([mk('a', 'Lille', 'Bayern Munich'), mk('b', 'Lille (W)', 'Bayern Munich (W)')]).length).toBe(2);
+    expect(dedupeMatches([mk('a', 'Lille', 'Bayern Munich'), mk('b', 'Lille U19', 'Bayern Munich U19')]).length).toBe(2);
+  });
+});

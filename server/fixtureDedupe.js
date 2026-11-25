@@ -242,6 +242,42 @@ export function sameFixture(a, b) {
   return direct || swapped;
 }
 
+// Names the two feeds write differently, joined by what cannot differ: a club plays ONE match at a time. Kick-off within 10 minutes
+// and one side is the same club (sameTeam) means the same fixture, provided the other sides are at least related names: they share
+// a word, or the first three letters of a word of 4+ letters ("Man Utd" / "Manchester United"), or one is the initials of the other.
+// This catches the next odd spelling without listing it. Same qualifier rules as sameTeam (women, U19, B team never join the senior side).
+const LOOSE_WINDOW_MS = 10 * 60 * 1000;
+const stemsCache = new Map();
+function nameStems(name) {
+  const key = String(name || '');
+  let v = stemsCache.get(key);
+  if (!v) {
+    v = new Set();
+    for (const w of normTeam(key).split(' ')) if (w.length >= 4) v.add(w.slice(0, 3));
+    for (const w of nameWords(key)) v.add(w);
+    if (stemsCache.size > 20000) stemsCache.clear();
+    stemsCache.set(key, v);
+  }
+  return v;
+}
+function relatedNames(x, y) {
+  if (teamQualifier(x) !== teamQualifier(y)) return false;
+  const nx = stripQualifier(normTeam(x)), ny = stripQualifier(normTeam(y));
+  if (nx.length < 2 || ny.length < 2) return false;
+  if (initialsOfOther(nx, ny) || initialsOfOther(ny, nx)) return true;
+  const sx = nameStems(x), sy = nameStems(y);
+  for (const w of sx) if (sy.has(w)) return true;
+  return false;
+}
+export function sameFixtureLoose(a, b) {
+  const pairs = [[a.homeTeam, b.homeTeam, a.awayTeam, b.awayTeam], [a.homeTeam, b.awayTeam, a.awayTeam, b.homeTeam]];
+  for (const [x1, y1, x2, y2] of pairs) {
+    if (sameTeam(x1, y1) && relatedNames(x2, y2)) return true;
+    if (sameTeam(x2, y2) && relatedNames(x1, y1)) return true;
+  }
+  return false;
+}
+
 const STATUS_RANK = { UPCOMING: 0, LIVE: 1, FINISHED: 2 };
 
 // How much real provider live data a row carries. An estimated minute (wall-clock
@@ -272,7 +308,7 @@ export function dedupeMatches(list, onMerge) {
       for (let gi = ordered ? lo : 0; gi < groups.length; gi++) {
         const g = groups[gi];
         if (Math.abs(t - g.time) > WINDOW_MS) continue;
-        if (sameFixture(g.rep, m)) {
+        if (sameFixture(g.rep, m) || (Math.abs(t - g.time) <= LOOSE_WINDOW_MS && sameFixtureLoose(g.rep, m))) {
           g.candidates.push(m);
           placed = true;
           break;
