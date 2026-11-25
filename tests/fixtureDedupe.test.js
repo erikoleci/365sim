@@ -204,3 +204,14 @@ describe('a club written as its initials by one feed (PSG / Paris Saint-Germain)
     expect(sameFixture({ homeTeam: 'RBL', awayTeam: 'Roma' }, { homeTeam: 'RB Leipzig', awayTeam: 'AS Roma' })).toBe(false);
   });
 });
+
+describe('a legal tag after the name (Lille / Lille OSC)', () => {
+  it('Lille - Bayern Munich and Lille OSC - Bayern Munich are one fixture', () => {
+    expect(sameFixture({ homeTeam: 'Lille', awayTeam: 'Bayern Munich' }, { homeTeam: 'Lille OSC', awayTeam: 'Bayern Munich' })).toBe(true);
+    expect(sameFixture({ homeTeam: 'Hertha', awayTeam: 'Bayern Munich' }, { homeTeam: 'Hertha BSC', awayTeam: 'Bayern Munich' })).toBe(true);
+  });
+  it('does not join different clubs', () => {
+    expect(sameFixture({ homeTeam: 'Lille', awayTeam: 'Bayern Munich' }, { homeTeam: 'Lille Metropole', awayTeam: 'Bayern Munich' })).toBe(false);
+    expect(sameFixture({ homeTeam: 'Lille U19', awayTeam: 'Bayern Munich U19' }, { homeTeam: 'Lille OSC', awayTeam: 'Bayern Munich' })).toBe(false);
+  });
+});

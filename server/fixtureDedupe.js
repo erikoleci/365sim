@@ -183,6 +183,15 @@ function initialsOfOther(short, long) {
   return words.map((w) => w[0]).join('') === short;
 }
 const dropClubPrefix = (n) => n.replace(CLUB_PREFIX_RE, '');
+// The same legal tag written AFTER the name by one feed: "Lille" / "Lille OSC", "Hertha" / "Hertha BSC". Only these tags, only as the
+// last word, and only when the name before it is a single real word (4+ letters), so "Lille OSC" never joins "Lille Metropole" etc.
+const CLUB_SUFFIX_RE = /^(\S{4,})\s+(?:osc|hsc|bsc|ssc|rsc|tsg|vfb|vfl)$/;
+function sameWithoutSuffix(nx, ny) {
+  const mx = nx.match(CLUB_SUFFIX_RE), my = ny.match(CLUB_SUFFIX_RE);
+  if (mx && !my) return mx[1] === ny;
+  if (my && !mx) return my[1] === nx;
+  return false;
+}
 
 function sameTeamRaw(x, y) {
   if (teamQualifier(x) !== teamQualifier(y)) return false;
@@ -192,6 +201,7 @@ function sameTeamRaw(x, y) {
   if (differsByOneUnrelatedWord(nx, ny)) return false;
   if (teamSim(nx, ny) >= 0.8 || abbrevEqual(nx, ny) || looseSameName(nx, ny)) return true;
   if (initialsOfOther(nx, ny) || initialsOfOther(ny, nx)) return true; // "PSG" = Paris Saint-Germain
+  if (sameWithoutSuffix(nx, ny)) return true; // "Lille" = "Lille OSC"
   const px = dropClubPrefix(nx), py = dropClubPrefix(ny);
   if (px === nx && py === ny) return false;
   if (px.length < 4 || py.length < 4) return false;
