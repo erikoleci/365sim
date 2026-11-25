@@ -15,3 +15,18 @@ describe('vcSampler', () => {
     expect(r.unlabelled[0].example.match).toBe('C - D');
   });
 });
+
+import { recordVcChange, getVcHistory } from '../server/vcSampler.js';
+describe('vc history per match', () => {
+  it('keeps only CHANGES, newest first, searchable by team name', () => {
+    __resetVcSamplesForTests();
+    recordVcChange('m1', '11000', { match: 'PSG - Roma', score: '1-1', t: '3600' });
+    recordVcChange('m1', '11000', { match: 'PSG - Roma', score: '1-1', t: '3601' });
+    recordVcChange('m1', '21023', { match: 'PSG - Roma', score: '1-1', t: '3650', label: 'Penallti' });
+    recordVcChange('m2', '11000', { match: 'Inter - Stuttgart', score: '0-0', t: '1' });
+    const h = getVcHistory('roma');
+    expect(h.length).toBe(1);
+    expect(h[0].changes.map((c) => c.vc)).toEqual(['21023', '11000']);
+    expect(getVcHistory('')).toEqual([]);
+  });
+});

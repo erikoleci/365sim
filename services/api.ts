@@ -721,6 +721,8 @@ export interface VcCodeRow { code: string; label: string | null; count: number; 
 export interface VcCodesReport { now: string; unlabelled: VcCodeRow[]; labelled: VcCodeRow[] }
 export interface FeedFrame { at: number; eid: string; changed: string[]; from: Record<string, string | null>; frame: Record<string, string> }
 export async function adminFetchFeedFrames() { return request<{ frames: FeedFrame[]; socketEvents?: { socket: string; event: string; count: number; samples: string[] }[] }>('/admin/feed-frames'); }
+export interface VcHistoryReport { now: string; matches: { id: string; match: string; changes: { at: number; vc: string; label: string | null; score: string | null; t: string | null }[] }[] }
+export async function adminFetchVcHistory(q: string) { return request<VcHistoryReport>('/admin/vc-history?q=' + encodeURIComponent(q)); }
 export async function adminFetchVcCodes() { return request<VcCodesReport>('/admin/vc-codes'); }
 export interface ProviderLabelsReport { checked: string[]; errors: string[]; matches: { source: string; word: string; around: string; pairs: { code: string; text: string }[] }[] }
 export async function adminFetchProviderLabels() { return request<ProviderLabelsReport>('/admin/provider-labels'); }
