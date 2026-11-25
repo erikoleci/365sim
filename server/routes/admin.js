@@ -1,7 +1,7 @@
 import { findProviderLabels } from '../providerLabels.js';
 import { buildDayAudit } from '../dayAudit.js';
 import { correctBatch } from '../resultCorrection.js';
-import { getVcSamples } from '../vcSampler.js';
+import { getVcSamples, getVcHistory } from '../vcSampler.js';
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
@@ -1354,6 +1354,11 @@ router.get('/recent-errors', (req, res) => {
 });
 
 // VC (live action) codes seen from the feed with counts: unlabelled ones, rarest first (a penalty is rare).
+// Every VC change of the matches whose name contains ?q= (newest first): find the code that came before a penalty / goal.
+router.get('/vc-history', (req, res) => {
+  res.json({ now: new Date().toISOString(), matches: getVcHistory(req.query.q) });
+});
+
 router.get('/vc-codes', (req, res) => {
   res.json({ now: new Date().toISOString(), ...getVcSamples() });
 });

@@ -37,7 +37,7 @@
 // unverified fields above.
 
 import { halfSql } from './eventHalf.js';
-import { recordVcSample } from './vcSampler.js';
+import { recordVcSample, recordVcChange } from './vcSampler.js';
 import { buildTeamIndex, normTeam, resolveTeamsFuzzy } from './teamIndex.js';
 import pool from './db.js';
 import { pushCardEvent, pushLiveTick } from './ws.js';
@@ -562,6 +562,7 @@ async function applyGameDetailsNow(raw) {
   if (decodedAction && decodedAction.kind === 'penalty') setPenaltyLock(matchId, nowMs);
   else if (decodedAction || (score && (score.home !== row.live_home_score || score.away !== row.live_away_score))) clearPenaltyLock(matchId);
   recordVcSample(attrs.VC, decodedAction && decodedAction.label, { match: `${attrs.H} - ${attrs.A}`, score: attrs.SC, t: attrs.T });
+  recordVcChange(matchId, attrs.VC, { match: `${attrs.H} - ${attrs.A}`, label: decodedAction && decodedAction.label, score: attrs.SC, t: attrs.T });
   observeVcFrame(eid, attrs, Boolean(decodedAction), { match: `${attrs.H} - ${attrs.A}` });
   const vcText = String(attrs.VC ?? '').trim();
   if (vcText && !decodedAction && !unmappedVcSeen.has(vcText) && unmappedVcSeen.size < UNMAPPED_VC_CAP) {

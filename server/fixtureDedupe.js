@@ -173,7 +173,25 @@ export function displayClubName(name) {
   const s = String(name ?? '');
   return s.replace(CLUB_PREFIX_DISPLAY_RE, '').trim() || s;
 }
+// A short all-letters name that is the initials of the other's words: "PSG" / "Paris Saint-Germain". The provider's live feed
+// writes some clubs that way, and the two records of one match stayed apart (one with the live prices, one without).
+// Only when the long name has at least three words, so "AS Roma" / "ASR" style guesses never fire on short names.
+function initialsOfOther(short, long) {
+  if (!/^[a-z]{2,4}$/.test(short)) return false;
+  const words = long.split(' ').filter(Boolean);
+  if (words.length < 3 || words.length > 5) return false;
+  return words.map((w) => w[0]).join('') === short;
+}
 const dropClubPrefix = (n) => n.replace(CLUB_PREFIX_RE, '');
+// The same legal tag written AFTER the name by one feed: "Lille" / "Lille OSC", "Hertha" / "Hertha BSC". Only these tags, only as the
+// last word, and only when the name before it is a single real word (4+ letters), so "Lille OSC" never joins "Lille Metropole" etc.
+const CLUB_SUFFIX_RE = /^(\S{4,})\s+(?:osc|hsc|bsc|ssc|rsc|tsg|vfb|vfl)$/;
+function sameWithoutSuffix(nx, ny) {
+  const mx = nx.match(CLUB_SUFFIX_RE), my = ny.match(CLUB_SUFFIX_RE);
+  if (mx && !my) return mx[1] === ny;
+  if (my && !mx) return my[1] === nx;
+  return false;
+}
 
 function sameTeamRaw(x, y) {
   if (teamQualifier(x) !== teamQualifier(y)) return false;
@@ -182,6 +200,8 @@ function sameTeamRaw(x, y) {
   if (nx.length >= 4 && foldVowelE(nx) === foldVowelE(ny)) return true; // spelling only (ø / ö written oe)
   if (differsByOneUnrelatedWord(nx, ny)) return false;
   if (teamSim(nx, ny) >= 0.8 || abbrevEqual(nx, ny) || looseSameName(nx, ny)) return true;
+  if (initialsOfOther(nx, ny) || initialsOfOther(ny, nx)) return true; // "PSG" = Paris Saint-Germain
+  if (sameWithoutSuffix(nx, ny)) return true; // "Lille" = "Lille OSC"
   const px = dropClubPrefix(nx), py = dropClubPrefix(ny);
   if (px === nx && py === ny) return false;
   if (px.length < 4 || py.length < 4) return false;
@@ -222,6 +242,42 @@ export function sameFixture(a, b) {
   return direct || swapped;
 }
 
+// Names the two feeds write differently, joined by what cannot differ: a club plays ONE match at a time. Kick-off within 10 minutes
+// and one side is the same club (sameTeam) means the same fixture, provided the other sides are at least related names: they share
+// a word, or the first three letters of a word of 4+ letters ("Man Utd" / "Manchester United"), or one is the initials of the other.
+// This catches the next odd spelling without listing it. Same qualifier rules as sameTeam (women, U19, B team never join the senior side).
+const LOOSE_WINDOW_MS = 10 * 60 * 1000;
+const stemsCache = new Map();
+function nameStems(name) {
+  const key = String(name || '');
+  let v = stemsCache.get(key);
+  if (!v) {
+    v = new Set();
+    for (const w of normTeam(key).split(' ')) if (w.length >= 4) v.add(w.slice(0, 3));
+    for (const w of nameWords(key)) v.add(w);
+    if (stemsCache.size > 20000) stemsCache.clear();
+    stemsCache.set(key, v);
+  }
+  return v;
+}
+function relatedNames(x, y) {
+  if (teamQualifier(x) !== teamQualifier(y)) return false;
+  const nx = stripQualifier(normTeam(x)), ny = stripQualifier(normTeam(y));
+  if (nx.length < 2 || ny.length < 2) return false;
+  if (initialsOfOther(nx, ny) || initialsOfOther(ny, nx)) return true;
+  const sx = nameStems(x), sy = nameStems(y);
+  for (const w of sx) if (sy.has(w)) return true;
+  return false;
+}
+export function sameFixtureLoose(a, b) {
+  const pairs = [[a.homeTeam, b.homeTeam, a.awayTeam, b.awayTeam], [a.homeTeam, b.awayTeam, a.awayTeam, b.homeTeam]];
+  for (const [x1, y1, x2, y2] of pairs) {
+    if (sameTeam(x1, y1) && relatedNames(x2, y2)) return true;
+    if (sameTeam(x2, y2) && relatedNames(x1, y1)) return true;
+  }
+  return false;
+}
+
 const STATUS_RANK = { UPCOMING: 0, LIVE: 1, FINISHED: 2 };
 
 // How much real provider live data a row carries. An estimated minute (wall-clock
@@ -252,7 +308,7 @@ export function dedupeMatches(list, onMerge) {
       for (let gi = ordered ? lo : 0; gi < groups.length; gi++) {
         const g = groups[gi];
         if (Math.abs(t - g.time) > WINDOW_MS) continue;
-        if (sameFixture(g.rep, m)) {
+        if (sameFixture(g.rep, m) || (Math.abs(t - g.time) <= LOOSE_WINDOW_MS && sameFixtureLoose(g.rep, m))) {
           g.candidates.push(m);
           placed = true;
           break;

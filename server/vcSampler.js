@@ -30,4 +30,39 @@ export function getVcSamples() {
   return { unlabelled: all.filter((x) => !x.label), labelled: all.filter((x) => x.label) };
 }
 
-export function __resetVcSamplesForTests() { seen.clear(); }
+// Per-match history of VC CHANGES: the sample above keeps one example per code, so a rare code (a penalty) is
+// seen without the time it came. Here every change of VC of a match is kept with score and clock, newest last, so a
+// penalty can be looked up by team name afterwards. Memory only, bounded: 150 changes per match, 400 matches.
+const HIST_PER_MATCH = 150;
+const HIST_MATCHES = 400;
+const history = new Map(); // matchId -> { match, last, list: [{ at, vc, label, score, t }] }
+
+export function recordVcChange(matchId, vc, ctx) {
+  const s = String(vc ?? '').trim();
+  if (!matchId || !/^\d{4,5}$/.test(s)) return;
+  let h = history.get(matchId);
+  if (!h) {
+    if (history.size >= HIST_MATCHES) history.delete(history.keys().next().value);
+    h = { match: (ctx && ctx.match) || String(matchId), last: null, list: [] };
+    history.set(matchId, h);
+  }
+  if (h.last === s) return;
+  h.last = s;
+  if (ctx && ctx.match) h.match = ctx.match;
+  h.list.push({ at: Date.now(), vc: s, label: (ctx && ctx.label) || null, score: ctx && ctx.score != null ? String(ctx.score) : null, t: ctx && ctx.t != null ? String(ctx.t) : null });
+  if (h.list.length > HIST_PER_MATCH) h.list.shift();
+}
+
+export function getVcHistory(query) {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return [];
+  const out = [];
+  for (const [id, h] of history) {
+    if (!h.match.toLowerCase().includes(q)) continue;
+    out.push({ id, match: h.match, changes: h.list.slice().reverse() });
+    if (out.length >= 6) break;
+  }
+  return out;
+}
+
+export function __resetVcSamplesForTests() { seen.clear(); history.clear(); }

@@ -11,6 +11,14 @@ const VcCodesPanel: React.FC = () => {
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('');
   const [busy, setBusy] = useState(false);
+  const [hist, setHist] = useState<api.VcHistoryReport | null>(null);
+  const loadHist = async () => {
+    if (!filter.trim()) { setError('Shkruaj emrin e skuadrës te kërkimi (p.sh. Inter)'); return; }
+    setBusy(true);
+    try { setHist(await api.adminFetchVcHistory(filter.trim())); setError(''); }
+    catch (e: any) { setError(e?.message || 'Gabim'); }
+    finally { setBusy(false); }
+  };
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -35,6 +43,7 @@ const VcCodesPanel: React.FC = () => {
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <input className="input w-64" placeholder="Kërko ndeshje ose kod (p.sh. San Marcos)" value={filter} onChange={(e) => setFilter(e.target.value)} />
         <button className="text-xs px-3 py-2 rounded bg-green-700 hover:bg-green-600 font-bold" onClick={load} disabled={busy}>Rifresko</button>
+        <button className="text-xs px-3 py-2 rounded bg-brand-yellow text-black font-bold" onClick={loadHist} disabled={busy}>Historiku i kodeve të ndeshjes</button>
         <button className="text-xs px-3 py-2 rounded bg-[#333] hover:bg-[#444] font-bold" onClick={loadLabels} disabled={busy}>Emrat nga provider-i</button>
       </div>
       <div className="text-[11px] text-brand-textMuted mb-3">
@@ -64,6 +73,24 @@ const VcCodesPanel: React.FC = () => {
             {rows.length === 0 && <tr><td colSpan={8} className="py-4 text-center text-brand-textMuted">Asnjë kod.</td></tr>}
           </tbody>
         </table></div>
+      )}
+      {hist && (
+        <div className="mt-5">
+          <div className="text-xs font-bold mb-1">Historiku i kodeve (çdo ndryshim, më i fundit lart). Penallti: kodi që del pak para golit, kur rezultati nuk ka ndryshuar ende.</div>
+          {hist.matches.length === 0 && <div className="text-xs text-brand-textMuted">Asnjë ndeshje me këtë emër (historiku fillon kur nis serveri dhe vetëm për ndeshjet live).</div>}
+          {hist.matches.map((m) => (
+            <div key={m.id} className="mb-3">
+              <div className="text-brand-yellow font-bold text-xs">{m.match}</div>
+              <div className="max-h-72 overflow-y-auto text-[11px] font-mono">
+                {m.changes.map((c, i) => (
+                  <div key={i} className="border-b border-[#333] py-0.5">
+                    {new Date(c.at).toLocaleTimeString()} · <b>{c.vc}</b> {c.label ? `(${c.label})` : '(pa emër)'} · {c.score ?? '-'} · {c.t ?? '-'}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
       {labels && (
         <div className="mt-5">
