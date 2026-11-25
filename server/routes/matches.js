@@ -179,6 +179,7 @@ async function fetchUpcomingMatchRowsPaged() {
 // a quiet night. What must be fresh (minutes, scores, live odds) comes from GET /live and the WebSocket on top of it.
 const MATCHES_MAX_STALE_MS = 10 * 60 * 1000;
 const MATCHES_WARM_EVERY_MS = 15 * 1000;
+const MATCHES_REQUEST_REFRESH_MIN_AGE_MS = 60 * 1000; // a request only starts a rebuild of a copy at least this old
 const refreshesInFlight = new Map(); // key -> Promise<body>
 let lastListRequestAt = 0;
 let lastListLogAt = 0;
@@ -234,7 +235,10 @@ router.get('/', wrap(async (req, res) => {
   const age = cached ? Date.now() - cached.computedAt : Infinity;
   if (cached && age < MATCHES_CACHE_TTL_MS) return sendMatchesEntry(req, res, cached);
   if (cached && age < MATCHES_MAX_STALE_MS) {
-    refreshMatchesList(league).catch(() => {}); // fresh copy for the next one; this one is served now
+    // A rebuild reads the raw JSON of ~2000 matches (6-8 s of database time). Started by EVERY request older than 8 s it kept the
+    // database busy most of the time and starved the match page (markets, events). The warm loop below already refreshes it
+    // every minute while people are on the site, and live data (clock, score, odds) comes from /live and the WebSocket.
+    if (age >= MATCHES_REQUEST_REFRESH_MIN_AGE_MS) refreshMatchesList(league).catch(() => {});
     return sendMatchesEntry(req, res, cached);
   }
   try {
