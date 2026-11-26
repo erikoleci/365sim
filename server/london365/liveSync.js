@@ -407,7 +407,7 @@ export async function syncLondon365LiveOnce() {
     bump('endDetection.ran');
     const endQueryStartedAt = Date.now();
     const { rows } = await pool.query(
-      "SELECT id, home_team, away_team, league, live_home_score, live_away_score, live_minute, live_minute_updated_at, start_time, fetched_at FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
+      "SELECT id, home_team, away_team, league, live_home_score, live_away_score, live_minute, live_status, live_minute_updated_at, start_time, fetched_at FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
     );
     retainLiveKnown(rows.map((r) => r.id), endQueryStartedAt);
     for (const row of rows) {
@@ -455,7 +455,8 @@ export async function syncLondon365LiveOnce() {
         unsubscribeGameDetails(row.id);
         noteMatchStatus(row.id, 'FINISHED');
         forgetLiveRow(row.id);
-        console.warn('[london365] ' + row.id + ' left the live feed without ever having a score/clock -- closed WITHOUT settling bets (settle manually if any are pending)');
+        console.warn('[london365] ' + row.id + ' left the live feed without ever having a score/clock -- closed WITHOUT settling bets (settle manually if any are pending)'
+          + ' [state at closing: minute=' + JSON.stringify(row.live_minute) + ' score=' + JSON.stringify(row.live_home_score) + '-' + JSON.stringify(row.live_away_score) + ' live_status=' + JSON.stringify(row.live_status) + ' start=' + row.start_time + ' misses=' + misses + ' fetched_at=' + row.fetched_at + ']');
         continue;
       }
       // Missing from the live list is not proof that it is over (a provider hiccup
