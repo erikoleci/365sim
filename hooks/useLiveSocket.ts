@@ -86,7 +86,9 @@ export function useLiveSocket({ enabled, setMatches, setDetailMatchFull, reloadM
           liveAwayScore: tick.awayScore ?? m.liveAwayScore,
           currentMinute: tick.minute ?? m.currentMinute,
           currentMinuteUpdatedAt: tick.minute != null ? (tick.minuteUpdatedAt ?? serverNowStamp()) : m.currentMinuteUpdatedAt,
-          liveAction: tick.hasAction ? tick.action : m.liveAction,
+          // The last action stays on the pitch until a NEWER action arrives: a tick with no action ("quiet" frame) used to blank
+          // it a moment after it appeared. The break clears it, so the first half's last action does not reappear after it.
+          liveAction: tick.liveStatus === 'HT' ? undefined : (tick.hasAction && tick.action ? tick.action : m.liveAction),
           // HT / 1H / 2H from the tick: the clock stops at half time and runs again the moment the
           // second half starts, without waiting for the list refresh.
           liveStatus: tick.liveStatus !== undefined ? tick.liveStatus : m.liveStatus,
