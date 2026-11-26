@@ -1679,6 +1679,66 @@ export async function rebindLegsToLiveTwin({ now = Date.now() } = {}) {
   return { reboundLegs };
 }
 
+// ---- legs on a FINISHED pre-match twin that has the final score but none of the live data ---------------------
+// The pre-match record gets its final score from the provider, but the half-time score, the goal / corner log and the
+// statistics are written to the in-play record. A leg on the pre-match record that needs them (half-time markets, goal
+// timeline, Nth corner ...) can then never be decided, because settlement reads the data of the match the leg points at.
+// Example (25 Nov): "Inter Milano - Stuttgart" kept the final 2-0 but no corner log; four other legs stayed "Hapur" for days.
+// Candidates for such a leg: finished records of the same fixture that hold MORE event rows (or a half-time score the
+// leg's record lacks). The same twin test as above picks one; two equally good twins link nothing.
+export function twinCandidatesWithMoreData(leg, candidates) {
+  const legEvents = Number(leg.ev_count || 0);
+  const legHasHt = leg.ht_home != null;
+  return (candidates || []).filter((c) => c.id !== leg.match_id
+    && (Number(c.ev_count || 0) > legEvents || (c.ht_home != null && !legHasHt)));
+}
+
+export async function rebindDatalessLegsToLiveTwin({ now = Date.now() } = {}) {
+  const { rows: legs } = await pool.query(
+    `SELECT bs.id, bs.bet_id, bs.match_id, bs.match_home, bs.match_away, bs.market_name,
+            m.start_time, m.league, m.status AS match_status, m.ht_home,
+            (SELECT COUNT(*) FROM match_events e WHERE e.match_id = m.id) AS ev_count,
+            b.created_at AS bet_created_at
+       FROM bet_selections bs
+       JOIN bets b ON b.id = bs.bet_id AND b.status IN ('PENDING', 'LOST')
+       JOIN matches_cache m ON m.id = bs.match_id
+      WHERE bs.status = 'PENDING' AND m.status = 'FINISHED' AND m.result_home IS NOT NULL AND m.result_away IS NOT NULL`
+  );
+  if (legs.length === 0) return { reboundLegs: 0 };
+  const { rows: candidates } = await pool.query(
+    `SELECT m.id, m.home_team, m.away_team, m.start_time, m.league, m.status, m.result_home, m.result_away,
+            m.live_home_score, m.live_away_score, m.live_minute, m.ht_home,
+            (SELECT COUNT(*) FROM match_events e WHERE e.match_id = m.id) AS ev_count
+       FROM matches_cache m WHERE m.status = 'FINISHED' AND m.id LIKE 'l365-%'
+        AND m.start_time::timestamptz > now() - interval '10 days'`
+  );
+  let reboundLegs = 0;
+  const reboundTwins = new Set();
+  for (const leg of legs) {
+    const twin = pickLiveTwin(leg, twinCandidatesWithMoreData(leg, candidates), now);
+    if (!twin) continue;
+    const r = await pool.query(`UPDATE bet_selections SET match_id = $1 WHERE id = $2 AND status = 'PENDING'`, [twin, leg.id]);
+    if (r.rowCount) {
+      reboundLegs++;
+      reboundTwins.add(twin);
+      console.log('[settle] leg ' + leg.id + ' (' + leg.match_home + ' v ' + leg.match_away + ', "' + leg.market_name + '") sat on a finished record without the live data: moved ' + leg.match_id + ' -> ' + twin);
+    }
+  }
+  for (const twinId of reboundTwins) {
+    const c = candidates.find((x) => x.id === twinId);
+    const h = c && (c.result_home ?? c.live_home_score);
+    const a = c && (c.result_away ?? c.live_away_score);
+    if (h == null || a == null) continue;
+    try {
+      await settleMatch(twinId, Number(h), Number(a), { force: true });
+      console.log('[settle] settled legs moved onto ' + twinId + ' with ' + h + '-' + a);
+    } catch (err) {
+      console.error('[settle] settling moved legs on ' + twinId + ' failed (retried next sweep):', err.message);
+    }
+  }
+  return { reboundLegs };
+}
+
 // Catch-all: ANY leg still PENDING whose match is FINISHED with a stored final score gets settled, whatever the
 // ticket's status is. A ticket lost on its first leg used to leave its other legs open for ever ("Hapur") because
 // the sweeps only looked at open tickets; and a finished match settled earlier is skipped by settleMatch, so legs

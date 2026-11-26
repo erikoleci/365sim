@@ -40,7 +40,7 @@ import { getMatchesResponseCacheSize } from './routes/matches.js';
 import { startKeepAliveSelfPing } from './keepAlive.js';
 import { startFeedStatsLog } from './feedStats.js';
 import { hydrateBetMatchIds } from './oddsHistoryPolicy.js';
-import { settleStuckBets, recoverFinishedWithoutResult, settleNextEventLegs, settleFirstHalfLegs, settleLostLiveLegs, rebindLegsToLiveRecord, rebindLegsToLiveTwin, settleOpenLegsOfFinishedMatches } from './matchSettlement.js';
+import { settleStuckBets, recoverFinishedWithoutResult, settleNextEventLegs, settleFirstHalfLegs, settleLostLiveLegs, rebindLegsToLiveRecord, rebindLegsToLiveTwin, rebindDatalessLegsToLiveTwin, settleOpenLegsOfFinishedMatches } from './matchSettlement.js';
 import { settleFromFallback } from './resultsFallback.js';
 import { installCpuProfileSignal } from './cpuProfiler.js';
 import { startTicketedFixtureLoop } from './london365/ticketedFixtures.js';
@@ -405,6 +405,8 @@ async function start() {
     // Settle everything a rule can decide; what no rule can decide stays open for the admin (no automatic refund).
     rebindLegsToLiveTwin()
       .then(function (r) { if (r.reboundLegs) console.log('[settle] rebind sweep: ' + JSON.stringify(r)); })
+      .then(function () { return rebindDatalessLegsToLiveTwin(); })
+      .then(function (r) { if (r && r.reboundLegs) console.log('[settle] dataless rebind sweep: ' + JSON.stringify(r)); })
       .then(function () { return settleOpenLegsOfFinishedMatches(); })
       .then(function () { return settleFromFallback(); })
       .then(function () { return recoverFinishedWithoutResult(); })

@@ -24,3 +24,22 @@ describe('pickLiveTwin', () => {
     expect(pickLiveTwin(leg, [{ ...twin, start_time: '2026-11-02T18:00:00.000Z' }], now)).toBeNull();
   });
 });
+
+import { twinCandidatesWithMoreData } from '../server/matchSettlement.js';
+describe('legs on a finished pre-match record without the live data', () => {
+  const nowT = Date.parse('2026-11-26T08:00:00Z');
+  const leg = { match_id: 'l365-5281947', match_home: 'Inter Milano', match_away: 'VfB Stuttgart', start_time: '2026-11-25T20:00:00.000Z', bet_created_at: Date.parse('2026-11-25T20:58:00Z'), ev_count: 2, ht_home: 0 };
+  const live = { id: 'l365-5342704', home_team: 'Inter Milan', away_team: 'VfB Stuttgart', start_time: '2026-11-25T20:00:00.000Z', status: 'FINISHED', result_home: 2, result_away: 0, ev_count: 25, ht_home: 0 };
+  it('offers only records that hold more event rows', () => {
+    expect(twinCandidatesWithMoreData(leg, [live, { ...live, id: 'x', ev_count: 1 }, { ...live, id: leg.match_id }]).map((c) => c.id)).toEqual(['l365-5342704']);
+  });
+  it('offers a record with a half-time score when the leg record has none', () => {
+    expect(twinCandidatesWithMoreData({ ...leg, ev_count: 0, ht_home: null }, [{ ...live, ev_count: 0 }]).length).toBe(1);
+    expect(twinCandidatesWithMoreData({ ...leg, ev_count: 0, ht_home: 0 }, [{ ...live, ev_count: 0 }]).length).toBe(0);
+  });
+  it('moves the leg to the live record and never to another fixture', () => {
+    expect(pickLiveTwin(leg, twinCandidatesWithMoreData(leg, [live]), nowT)).toBe('l365-5342704');
+    const other = { ...live, id: 'o', home_team: 'Juventus', away_team: 'Benfica' };
+    expect(pickLiveTwin(leg, twinCandidatesWithMoreData(leg, [other]), nowT)).toBeNull();
+  });
+});
