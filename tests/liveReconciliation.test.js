@@ -74,3 +74,16 @@ describe('reviveWronglyClosedMatch - a game closed without a result that the pro
     expect(db.query).not.toHaveBeenCalled();
   });
 });
+
+import { hadLiveEvidence } from '../server/london365.js';
+describe('hadLiveEvidence - a game with live events on record was playing, it is not closed as "never went live"', () => {
+  const dbOf = (events, stats) => ({ query: vi.fn(async (sql) => ({ rows: /match_events/.test(sql) ? (events ? [{}] : []) : (stats ? [{}] : []) })) });
+  it('is true with a logged event or live statistics, false with neither', async () => {
+    expect(await hadLiveEvidence('l365-1', { db: dbOf(true, false) })).toBe(true);
+    expect(await hadLiveEvidence('l365-1', { db: dbOf(false, true) })).toBe(true);
+    expect(await hadLiveEvidence('l365-1', { db: dbOf(false, false) })).toBe(false);
+  });
+  it('answers "it was live" when the database cannot be asked (never closes on a guess)', async () => {
+    expect(await hadLiveEvidence('l365-1', { db: { query: vi.fn(async () => { throw new Error('down'); }) } })).toBe(true);
+  });
+});

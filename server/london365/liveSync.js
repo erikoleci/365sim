@@ -75,6 +75,17 @@ async function endTwinVerdictFor(row) {
   } catch { return { action: 'wait' }; }
 }
 export const SKIP_END_DETECTION = Symbol('skip-end-detection');
+// A match that has logged live events (goal, card, corner...) or live statistics WAS live: it is never "a match that never went
+// live". Besiktas - Hapoel Beer Sheva (2026-11-26) had two yellow cards logged, dropped out of the list at 31', and was closed
+// by the "no score/clock" branch of the end detection; its tickets were then decided on a stale picture.
+export async function hadLiveEvidence(id, { db = pool } = {}) {
+  try {
+    const ev = await db.query('SELECT 1 FROM match_events WHERE match_id = $1 LIMIT 1', [id]);
+    if (ev.rows && ev.rows.length) return true;
+    const st = await db.query('SELECT 1 FROM live_statistics WHERE match_id = $1 LIMIT 1', [id]);
+    return Boolean(st.rows && st.rows.length);
+  } catch { return true; } // cannot tell: the safe answer is "it was live" (not closed)
+}
 // A live game that dropped out of the provider's list for a few cycles is closed by the end detection below; when it was
 // closed WITHOUT a result (never settled, no final score) and the provider lists it live again with a score and a clock, it
 // was not over: put it back to LIVE (Besiktas - Hapoel Beer Sheva, 2026-11-26: closed at 31', back at half-time, stayed FINISHED
@@ -444,6 +455,13 @@ export async function syncLondon365LiveOnce() {
         } catch (err) {
           console.error('[london365] auto-settle ' + row.id + ' failed:', err.message);
         }
+        continue;
+      }
+      if (!hasRealLiveResult(row) && !canSettleFromLiveScore(row) && !overdue && await hadLiveEvidence(row.id)) {
+        // It has live events on record: it was playing. Keep it LIVE and look again next cycle (the provider may list it again);
+        // the overdue rule closes it for good when it is really over.
+        bump('endDetection.deferred_had_live_events');
+        if (shouldLogMissingLive('evidence:' + row.id)) console.warn('[london365] ' + row.id + ' left the live feed with no usable score/clock but has live events on record: kept LIVE, not closed');
         continue;
       }
       if (!hasRealLiveResult(row) && !canSettleFromLiveScore(row)) {
