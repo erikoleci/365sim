@@ -290,6 +290,38 @@ function leagueQualifier(league) {
   return q.join('|');
 }
 const bareName = (n) => stripQualifier(normTeam(n));
+// Spelling variants on BOTH sides ("Shortan Guzor - Olympic Mobiuz" / "PFC Shurtan - Olimpik Mobiuz"): after dropping words every club has
+// (pfc, fc, united, olimpik ...) one side must be almost the same name (>= 0.9 of its letter pairs) and the other clearly related (>= 0.5).
+// Measured on a real day of the feed: the real twin scored 1.00 / 0.57, every pair of different matches stayed under 0.45.
+const GENERIC_WORDS = new Set(['pfc', 'fk', 'fc', 'utd', 'united', 'city', 'town', 'club', 'sc', 'ac', 'u20', 'u19', 'u21', 'w', 'women', 'real', 'sporting', 'athletic', 'atletico', 'dynamo', 'dinamo', 'olympic', 'olimpik']);
+const coreGramsCache = new Map(); // name -> Set of letter pairs of its core name (null when nothing is left)
+function coreGrams(name) {
+  const key = String(name || '');
+  let g = coreGramsCache.get(key);
+  if (g === undefined) {
+    const n = normTeam(key).split(' ').filter((w) => w && !GENERIC_WORDS.has(w)).join(' ');
+    if (!n) g = null;
+    else { const t = ' ' + n + ' '; g = new Set(); for (let i = 0; i < t.length - 1; i++) g.add(t.slice(i, i + 2)); }
+    if (coreGramsCache.size > 20000) coreGramsCache.clear();
+    coreGramsCache.set(key, g);
+  }
+  return g;
+}
+function coreSim(x, y) {
+  const ga = coreGrams(x), gb = coreGrams(y);
+  if (!ga || !gb) return 0;
+  let c = 0;
+  for (const t of ga) if (gb.has(t)) c++;
+  return (2 * c) / (ga.size + gb.size);
+}
+export function sameFixtureFuzzy(a, b) {
+  const orient = (x1, y1, x2, y2) => {
+    if (teamQualifier(x1) !== teamQualifier(y1) || teamQualifier(x2) !== teamQualifier(y2)) return false;
+    const s1 = coreSim(x1, y1), s2 = coreSim(x2, y2);
+    return (Math.max(s1, s2) >= 0.9 && Math.min(s1, s2) >= 0.5);
+  };
+  return orient(a.homeTeam, b.homeTeam, a.awayTeam, b.awayTeam) || orient(a.homeTeam, b.awayTeam, a.awayTeam, b.homeTeam);
+}
 export function sameFixtureByLeagueQualifier(a, b) {
   const qa = leagueQualifier(a.league);
   if (!qa || qa !== leagueQualifier(b.league)) return false;
@@ -327,7 +359,7 @@ export function dedupeMatches(list, onMerge) {
       for (let gi = ordered ? lo : 0; gi < groups.length; gi++) {
         const g = groups[gi];
         if (Math.abs(t - g.time) > WINDOW_MS) continue;
-        if (sameFixture(g.rep, m) || (Math.abs(t - g.time) <= LOOSE_WINDOW_MS && (sameFixtureLoose(g.rep, m) || sameFixtureByLeagueQualifier(g.rep, m)))) {
+        if (sameFixture(g.rep, m) || (Math.abs(t - g.time) <= LOOSE_WINDOW_MS && (sameFixtureLoose(g.rep, m) || sameFixtureByLeagueQualifier(g.rep, m) || sameFixtureFuzzy(g.rep, m)))) {
           g.candidates.push(m);
           placed = true;
           break;

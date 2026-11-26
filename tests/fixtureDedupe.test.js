@@ -254,3 +254,20 @@ describe('qualifier lost in the team names but kept in the league (women U19)', 
     expect(r.length).toBe(2);
   });
 });
+
+describe('spelling variants on both sides (fuzzy join, real feed day)', () => {
+  const mk = (id, h, a, t = '2026-11-26T10:00:00Z') => ({ id, startTime: t, status: 'LIVE', homeTeam: h, awayTeam: a, markets: [{ options: [{ odds: 2 }] }] });
+  it('joins Shortan Guzor - Olympic Mobiuz with PFC Shurtan - Olimpik Mobiuz', () => {
+    expect(dedupeMatches([mk('a', 'Shortan Guzor', 'Olympic Mobiuz'), mk('b', 'PFC Shurtan', 'Olimpik Mobiuz')]).length).toBe(1);
+  });
+  it('keeps apart the different matches the real feed day had at the same time', () => {
+    const pairs = [
+      [['Yadanarbon FC U20', 'Ayeyawady Utd U20'], ['Myawady FC U20', 'Yangon City U20']],
+      [['Persiba Bantul', 'Persinga Ngawi'], ['Persekabpas', 'PSN Ngada']],
+      [['Donggala United', 'Persikutim United'], ['Gresik United', 'Persibangga Purbalingga']],
+      [['Jong Ajax Amsterdam', 'Heracles Almelo'], ['Jong FC Utrecht', 'Almere City FC']],
+      [['Hapoel Acre FC', 'Maccabi Herzliya'], ['Maccabi Achi Nazareth FC', 'MS Football Hapoel Kiryat Yam']],
+    ];
+    for (const [x, y] of pairs) expect(dedupeMatches([mk('a', x[0], x[1]), mk('b', y[0], y[1])]).length).toBe(2);
+  });
+});

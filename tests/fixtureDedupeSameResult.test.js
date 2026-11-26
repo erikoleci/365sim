@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dedupeMatches, sameTeam, __sameTeamRaw, normTeam, sameFixtureLoose } from '../server/fixtureDedupe.js';
+import { dedupeMatches, sameTeam, __sameTeamRaw, normTeam, sameFixtureLoose, sameFixtureByLeagueQualifier, sameFixtureFuzzy } from '../server/fixtureDedupe.js';
 
 // The optimised dedupe (remembered name comparisons, old groups skipped) must give EXACTLY the groups of the plain algorithm.
 const CLUBS = [
@@ -24,7 +24,7 @@ function refGroups(list) {
     const t = Date.parse(m.startTime);
     let placed = false;
     if (!Number.isNaN(t)) {
-      for (const g of groups) { if (Math.abs(t - g.time) > WINDOW) continue; if (sf(g.rep, m) || (Math.abs(t - g.time) <= 10 * 60 * 1000 && sameFixtureLoose(g.rep, m))) { g.c.push(m.id); placed = true; break; } }
+      for (const g of groups) { if (Math.abs(t - g.time) > WINDOW) continue; if (sf(g.rep, m) || (Math.abs(t - g.time) <= 10 * 60 * 1000 && (sameFixtureLoose(g.rep, m) || sameFixtureByLeagueQualifier(g.rep, m) || sameFixtureFuzzy(g.rep, m)))) { g.c.push(m.id); placed = true; break; } }
     }
     if (!placed) groups.push({ rep: m, c: [m.id], time: t });
   }
