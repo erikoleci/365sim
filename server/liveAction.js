@@ -47,6 +47,9 @@ const ACTIONS = {
   // Penalty (owner-observed 2026-11-12, Ghana v Somalia: penalty missed at minute 14; the panel showed ONE new code, 1023,
   // first seen at T=839 s = 13:59, home side, score stayed 0-0). One sighting: confirm with the next penalty (vc-penalty-candidates).
   '1023': { kind: 'penalty', label: 'Penallti' },
+  // Owner-confirmed 2026-11-26, Marseille v Levski Sofia: penalty scored by Gouiri at 28'. Codes before the goal (11003):
+  // 11008 (-89s), 21005 (-34s, the away yellow card), 11008 (-33s). The owner named 11008 as the penalty.
+  '1008': { kind: 'penalty', label: 'Penallti' },
   '1024': { kind: 'throw_in', label: 'Rivënie anësore' },
   '1025': { kind: 'injury', label: 'Dëmtim' }, // player injured (owner-confirmed; seen VC="1025", FC Van v Gandzasar Kapan, T=3717)
   '1234': { kind: 'offside', label: 'Pozicion jashtë loje' },

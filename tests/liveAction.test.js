@@ -22,6 +22,11 @@ describe('decodeLiveAction', () => {
     expect(decodeLiveAction('21025')).toMatchObject({ side: 'away', kind: 'injury' });
   });
 
+  it('decodes 1008 as a penalty (Marseille v Levski, penalty goal at 28:08)', () => {
+    expect(decodeLiveAction('11008')).toMatchObject({ side: 'home', kind: 'penalty', label: 'Penallti' });
+    expect(decodeLiveAction('21008')).toMatchObject({ side: 'away', kind: 'penalty' });
+    expect(decodeLiveAction('1008')).toEqual({ side: null, kind: 'penalty', label: 'Penallti' });
+  });
   it('decodes 1023 as a penalty (Ghana v Somalia, missed penalty at minute 14), with or without a team digit', () => {
     expect(decodeLiveAction('1023')).toEqual({ side: null, kind: 'penalty', label: 'Penallti' });
     expect(decodeLiveAction('11023')).toMatchObject({ side: 'home', kind: 'penalty' });
