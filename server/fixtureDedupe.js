@@ -278,6 +278,25 @@ export function sameFixtureLoose(a, b) {
   return false;
 }
 
+// A record whose TEAM names lost their qualifier ("Serbia" / "Azerbaijan" in a women's U19 qualifier) while the other record keeps it
+// ("Serbia U19 (W)"): the league still says women / U19. When both leagues name the same qualifier(s), the names are compared without
+// qualifiers, at the same kick-off (10 min). Two leagues without any qualifier never take this path.
+function leagueQualifier(league) {
+  const l = String(league || '').toLowerCase();
+  const q = [];
+  if (/women|ladies|feminin/.test(l)) q.push('women');
+  const u = l.match(/(?:^|[^a-z0-9])u[\s_-]?(\d{2})(?![0-9])/);
+  if (u) q.push('u' + u[1]);
+  return q.join('|');
+}
+const bareName = (n) => stripQualifier(normTeam(n));
+export function sameFixtureByLeagueQualifier(a, b) {
+  const qa = leagueQualifier(a.league);
+  if (!qa || qa !== leagueQualifier(b.league)) return false;
+  const ok = (x, y) => sameTeam(bareName(x), bareName(y));
+  return (ok(a.homeTeam, b.homeTeam) && ok(a.awayTeam, b.awayTeam)) || (ok(a.homeTeam, b.awayTeam) && ok(a.awayTeam, b.homeTeam));
+}
+
 const STATUS_RANK = { UPCOMING: 0, LIVE: 1, FINISHED: 2 };
 
 // How much real provider live data a row carries. An estimated minute (wall-clock
@@ -308,7 +327,7 @@ export function dedupeMatches(list, onMerge) {
       for (let gi = ordered ? lo : 0; gi < groups.length; gi++) {
         const g = groups[gi];
         if (Math.abs(t - g.time) > WINDOW_MS) continue;
-        if (sameFixture(g.rep, m) || (Math.abs(t - g.time) <= LOOSE_WINDOW_MS && sameFixtureLoose(g.rep, m))) {
+        if (sameFixture(g.rep, m) || (Math.abs(t - g.time) <= LOOSE_WINDOW_MS && (sameFixtureLoose(g.rep, m) || sameFixtureByLeagueQualifier(g.rep, m)))) {
           g.candidates.push(m);
           placed = true;
           break;

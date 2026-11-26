@@ -229,3 +229,28 @@ describe('same kick-off, one side the same club, the other side a related name (
     expect(dedupeMatches([mk('a', 'Lille', 'Bayern Munich'), mk('b', 'Lille U19', 'Bayern Munich U19')]).length).toBe(2);
   });
 });
+
+describe('qualifier lost in the team names but kept in the league (women U19)', () => {
+  const mk = (id, h, a, league, t = '2026-11-26T10:00:00Z') => ({ id, startTime: t, status: 'LIVE', homeTeam: h, awayTeam: a, league, markets: [{ options: [{ odds: 2 }] }] });
+  it('joins Serbia U19 (W) with Serbia when both leagues are women U19', () => {
+    const r = dedupeMatches([
+      mk('a', 'Serbia', 'Azerbaijan', 'l365_international-youth__u19_european_championship_women_qualification'),
+      mk('b', 'Serbia U19 (W)', 'Azerbaijan U19 (W)', 'l365_other__u19_euro_championship_qual_women'),
+    ]);
+    expect(r.length).toBe(1);
+  });
+  it('keeps the senior national match apart when its league has no qualifier', () => {
+    const r = dedupeMatches([
+      mk('a', 'Serbia', 'Azerbaijan', 'l365_international__world_cup_qualification'),
+      mk('b', 'Serbia U19 (W)', 'Azerbaijan U19 (W)', 'l365_other__u19_euro_championship_qual_women'),
+    ]);
+    expect(r.length).toBe(2);
+  });
+  it('different kick-off stays apart', () => {
+    const r = dedupeMatches([
+      mk('a', 'Serbia', 'Azerbaijan', 'x_u19_women_q'),
+      mk('b', 'Serbia U19 (W)', 'Azerbaijan U19 (W)', 'y_u19_women_q', '2026-11-26T14:00:00Z'),
+    ]);
+    expect(r.length).toBe(2);
+  });
+});
