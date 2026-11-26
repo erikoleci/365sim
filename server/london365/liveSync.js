@@ -279,7 +279,7 @@ export async function syncLondon365LiveOnce() {
       liveIds.add('l365-' + g.id);
       liveSeen++;
       // The provider's own list of corners / cards (see providerEvents.js): logged even when the game-details socket delivers nothing.
-      if (g.result_list) await ingestProviderEvents('l365-' + g.id, g.result_list, g.current_minute).catch((err) => console.error('[london365] provider events ' + g.id + ' failed:', err.message));
+      if (g.result_list) await ingestProviderEvents('l365-' + g.id, g.result_list, g.current_minute, { score: (() => { const m = /^(\d+)\s*-\s*(\d+)$/.exec(String(g.result || '').trim()); return m ? { home: Number(m[1]), away: Number(m[2]) } : null; })() }).catch((err) => console.error('[london365] provider events ' + g.id + ' failed:', err.message));
       // Each game processed independently: one malformed/failing game must
       // never abort the whole sync cycle. Before this, an uncaught error
       // here (e.g. a bad upsert) threw past this loop entirely, skipping

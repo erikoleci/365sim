@@ -40,3 +40,41 @@ describe('provider result_list', () => {
     expect(getProviderCorners('l365-3')).toBe(null); // no corner in the list proves nothing about "0 corners"
   });
 });
+
+const { providerGoals, missingGoals } = await import('../server/london365/providerEvents.js');
+// Real list: Persika Karanganyar - Persipa Pati 3-0 (goals 19', 34', 43' for the home side; type 1 = goal confirmed 2026-11-26).
+const GOALS = '2,2,1,329593585,1,05:00;1,1,1,329595805,1,19:00;1,1,2,329597910,1,34:00;1,1,3,329599222,1,43:00;5,0,0,329599995,2,3-0;';
+describe('goals from the provider list', () => {
+  it('reads goals with the running score', () => {
+    expect(providerGoals(GOALS).map((g) => g.side + g.minute + ':' + g.score)).toEqual(['home19:1-0', 'home34:2-0', 'home43:3-0']);
+    expect(providerGoals('1,2,1,1,1,06:00;1,1,1,2,1,10:00;1,2,2,3,1,45:00;').map((g) => g.score)).toEqual(['0-1', '1-1', '1-2']);
+  });
+  it('finds only the goals the log lacks', () => {
+    const l = providerGoals(GOALS);
+    expect(missingGoals(l, [19]).map((g) => g.minute)).toEqual([34, 43]);
+    expect(missingGoals(l, [34, 43, 19])).toEqual([]);
+    expect(missingGoals(l, [])).toHaveLength(3);
+  });
+  const run = async (score, goalRows) => {
+    __resetProviderEventsForTests();
+    const inserted = [];
+    const db = { query: vi.fn(async (sql, p) => {
+      if (sql.startsWith('SELECT type')) return { rows: goalRows };
+      if (sql.startsWith('SELECT home_team')) return { rows: [{ home_team: 'Persika', away_team: 'Persipa' }] };
+      inserted.push(p); return { rows: [] };
+    }) };
+    const n = await ingestProviderEvents('l365-9', GOALS, '47:30', { db, now: 10_000_000, score });
+    return { n, inserted };
+  };
+  it('recovers missing goals when the list agrees with the live score', async () => {
+    const { inserted } = await run({ home: 3, away: 0 }, [{ type: 'GOAL', team: 'Persika', detail: '1-0', minute: 19 }]);
+    const goals = inserted.filter((p) => p[2] === 'Persika');
+    expect(goals.map((p) => p[1] + ':' + p[3])).toEqual(['34:2-0', '43:3-0']);
+  });
+  it('adds nothing when the list and the live score disagree or nothing is missing', async () => {
+    expect((await run({ home: 2, away: 0 }, [])).inserted.filter((p) => p[2] === 'Persika')).toEqual([]);
+    expect((await run(null, [])).inserted.filter((p) => p[2] === 'Persika')).toEqual([]);
+    const full = [19, 34, 43].map((m) => ({ type: 'GOAL', team: 'Persika', detail: 'x', minute: m }));
+    expect((await run({ home: 3, away: 0 }, full)).inserted.filter((p) => p[2] === 'Persika')).toEqual([]);
+  });
+});
