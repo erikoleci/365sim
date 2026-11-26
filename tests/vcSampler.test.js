@@ -30,3 +30,17 @@ describe('vc history per match', () => {
     expect(getVcHistory('')).toEqual([]);
   });
 });
+
+import { getRecentVc } from '../server/vcSampler.js';
+describe('recent vc before a goal', () => {
+  it('returns the last changes of one match, oldest first, with seconds before now', () => {
+    __resetVcSamplesForTests();
+    recordVcChange('g1', '11000', { match: 'A - B' });
+    recordVcChange('g1', '21023', { match: 'A - B' });
+    recordVcChange('g2', '11000', { match: 'C - D' });
+    const r = getRecentVc('g1');
+    expect(r.map((x) => x.vc)).toEqual(['11000', '21023']);
+    expect(r[0].s).toBeGreaterThanOrEqual(0);
+    expect(getRecentVc('nope')).toEqual([]);
+  });
+});

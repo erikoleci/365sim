@@ -1359,6 +1359,14 @@ router.get('/vc-history', (req, res) => {
   res.json({ now: new Date().toISOString(), matches: getVcHistory(req.query.q) });
 });
 
+// The codes that came before each goal (kept 14 days): which goal was a penalty, read the codes just before it.
+router.get('/goal-vc', async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  const { rows } = await pool.query(
+    `SELECT match_name AS match, minute, score, codes, created_at FROM goal_vc_log WHERE ($1 = '' OR match_name ILIKE '%' || $1 || '%') ORDER BY created_at DESC LIMIT 40`, [q]);
+  res.json({ now: new Date().toISOString(), goals: rows });
+});
+
 router.get('/vc-codes', (req, res) => {
   res.json({ now: new Date().toISOString(), ...getVcSamples() });
 });

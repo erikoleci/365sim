@@ -211,6 +211,19 @@ export async function initDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_match_events_match ON match_events (match_id, created_at);
 
+    -- The VC codes the feed sent in the minutes BEFORE each goal (one small row per goal), so a penalty code can be found
+    -- afterwards even after a restart: tell which goal was a penalty, read the codes that preceded it.
+    CREATE TABLE IF NOT EXISTS goal_vc_log (
+      id SERIAL PRIMARY KEY,
+      match_id TEXT NOT NULL,
+      match_name TEXT,
+      minute TEXT,
+      score TEXT,
+      codes JSONB,
+      created_at BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_goal_vc_log_created ON goal_vc_log (created_at);
+
     -- Live in-play stats snapshot per match (one row per match, overwritten
     -- on each poll) — possession/shots/corners/xG for the live stats panel.
     CREATE TABLE IF NOT EXISTS live_statistics (
@@ -605,6 +618,11 @@ export async function cleanupOldData() {
     results.match_events = (await pool.query(
       'DELETE FROM match_events WHERE created_at < $1',
       [now - matchEventsWindow * day]
+    )).rowCount;
+
+    results.goal_vc_log = (await pool.query(
+      'DELETE FROM goal_vc_log WHERE created_at < $1',
+      [now - 14 * day]
     )).rowCount;
 
     results.audit_log = (await pool.query(

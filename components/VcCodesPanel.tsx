@@ -12,6 +12,13 @@ const VcCodesPanel: React.FC = () => {
   const [filter, setFilter] = useState('');
   const [busy, setBusy] = useState(false);
   const [hist, setHist] = useState<api.VcHistoryReport | null>(null);
+  const [goals, setGoals] = useState<api.GoalVcReport | null>(null);
+  const loadGoals = async () => {
+    setBusy(true);
+    try { setGoals(await api.adminFetchGoalVc(filter.trim())); setError(''); }
+    catch (e: any) { setError(e?.message || 'Gabim'); }
+    finally { setBusy(false); }
+  };
   const loadHist = async () => {
     if (!filter.trim()) { setError('Shkruaj emrin e skuadrës te kërkimi (p.sh. Inter)'); return; }
     setBusy(true);
@@ -44,6 +51,7 @@ const VcCodesPanel: React.FC = () => {
         <input className="input w-64" placeholder="Kërko ndeshje ose kod (p.sh. San Marcos)" value={filter} onChange={(e) => setFilter(e.target.value)} />
         <button className="text-xs px-3 py-2 rounded bg-green-700 hover:bg-green-600 font-bold" onClick={load} disabled={busy}>Rifresko</button>
         <button className="text-xs px-3 py-2 rounded bg-brand-yellow text-black font-bold" onClick={loadHist} disabled={busy}>Historiku i kodeve të ndeshjes</button>
+        <button className="text-xs px-3 py-2 rounded bg-brand-yellow text-black font-bold" onClick={loadGoals} disabled={busy}>Golat me kodet para tyre</button>
         <button className="text-xs px-3 py-2 rounded bg-[#333] hover:bg-[#444] font-bold" onClick={loadLabels} disabled={busy}>Emrat nga provider-i</button>
       </div>
       <div className="text-[11px] text-brand-textMuted mb-3">
@@ -73,6 +81,20 @@ const VcCodesPanel: React.FC = () => {
             {rows.length === 0 && <tr><td colSpan={8} className="py-4 text-center text-brand-textMuted">Asnjë kod.</td></tr>}
           </tbody>
         </table></div>
+      )}
+      {goals && (
+        <div className="mt-5">
+          <div className="text-xs font-bold mb-1">Golat e fundit me kodet e 5 minutave para tyre (ruhen 14 ditë, edhe pas rinisjes). Gjej golin që ishte penallti dhe shiko kodin që del para tij pa u ndryshuar rezultati.</div>
+          {goals.goals.length === 0 && <div className="text-xs text-brand-textMuted">Asnjë gol i regjistruar (kërkimi sipas emrit të skuadrës, ose ende s'ka gola pas deploy-it).</div>}
+          <div className="max-h-96 overflow-y-auto text-[11px] font-mono">
+            {goals.goals.map((g, i) => (
+              <div key={i} className="border-b border-[#333] py-1">
+                <span className="text-brand-yellow font-bold">{g.match}</span> · {g.minute ?? '-'} · {g.score} · {new Date(Number(g.created_at)).toLocaleTimeString()}
+                <div className="break-all">{(g.codes || []).map((c) => `${c.vc}${c.label ? '(' + c.label + ')' : ''}@-${c.s}s`).join('  ') || '(pa kode)'}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
       {hist && (
         <div className="mt-5">

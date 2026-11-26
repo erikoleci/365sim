@@ -37,7 +37,7 @@
 // unverified fields above.
 
 import { halfSql } from './eventHalf.js';
-import { recordVcSample, recordVcChange } from './vcSampler.js';
+import { recordVcSample, recordVcChange, getRecentVc } from './vcSampler.js';
 import { buildTeamIndex, normTeam, resolveTeamsFuzzy } from './teamIndex.js';
 import pool from './db.js';
 import { pushCardEvent, pushLiveTick } from './ws.js';
@@ -684,6 +684,13 @@ async function applyGameDetailsNow(raw) {
     if (`${score.home}-${score.away}` !== before) {
       const team = Math.sign(score.home - (row.live_home_score || 0)) === 1 ? 'home' : 'away';
       console.log(`[live-event] GOAL EID=${eid} team=${team} score=${score.home}-${score.away} minute=${minuteDisplay || '?'}`);
+      // The codes sent in the 5 minutes before this goal, kept in the database (one small row per goal).
+      try {
+        Promise.resolve(pool.query(
+          'INSERT INTO goal_vc_log (match_id, match_name, minute, score, codes, created_at) VALUES ($1,$2,$3,$4,$5,$6)',
+          [matchId, `${attrs.H} - ${attrs.A}`, minuteDisplay || null, `${score.home}-${score.away}`, JSON.stringify(getRecentVc(matchId)), Date.now()]
+        )).catch(() => {});
+      } catch { /* logging only: never affects the goal */ }
     }
   }
 

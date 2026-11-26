@@ -53,6 +53,14 @@ export function recordVcChange(matchId, vc, ctx) {
   if (h.list.length > HIST_PER_MATCH) h.list.shift();
 }
 
+// The last `limit` VC changes of one match inside the last `sinceMs`, oldest first, as seconds BEFORE now.
+export function getRecentVc(matchId, sinceMs = 5 * 60 * 1000, limit = 14) {
+  const h = history.get(matchId);
+  if (!h) return [];
+  const now = Date.now();
+  return h.list.filter((c) => now - c.at <= sinceMs).slice(-limit).map((c) => ({ s: Math.round((now - c.at) / 1000), vc: c.vc, label: c.label || null }));
+}
+
 export function getVcHistory(query) {
   const q = String(query || '').trim().toLowerCase();
   if (!q) return [];

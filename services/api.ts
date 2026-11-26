@@ -723,6 +723,8 @@ export interface FeedFrame { at: number; eid: string; changed: string[]; from: R
 export async function adminFetchFeedFrames() { return request<{ frames: FeedFrame[]; socketEvents?: { socket: string; event: string; count: number; samples: string[] }[] }>('/admin/feed-frames'); }
 export interface VcHistoryReport { now: string; matches: { id: string; match: string; changes: { at: number; vc: string; label: string | null; score: string | null; t: string | null }[] }[] }
 export async function adminFetchVcHistory(q: string) { return request<VcHistoryReport>('/admin/vc-history?q=' + encodeURIComponent(q)); }
+export interface GoalVcReport { now: string; goals: { match: string; minute: string | null; score: string; codes: { s: number; vc: string; label: string | null }[]; created_at: string | number }[] }
+export async function adminFetchGoalVc(q: string) { return request<GoalVcReport>('/admin/goal-vc?q=' + encodeURIComponent(q)); }
 export async function adminFetchVcCodes() { return request<VcCodesReport>('/admin/vc-codes'); }
 export interface ProviderLabelsReport { checked: string[]; errors: string[]; matches: { source: string; word: string; around: string; pairs: { code: string; text: string }[] }[] }
 export async function adminFetchProviderLabels() { return request<ProviderLabelsReport>('/admin/provider-labels'); }
