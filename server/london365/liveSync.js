@@ -75,6 +75,22 @@ async function endTwinVerdictFor(row) {
   } catch { return { action: 'wait' }; }
 }
 export const SKIP_END_DETECTION = Symbol('skip-end-detection');
+// A live game that dropped out of the provider's list for a few cycles is closed by the end detection below; when it was
+// closed WITHOUT a result (never settled, no final score) and the provider lists it live again with a score and a clock, it
+// was not over: put it back to LIVE (Besiktas - Hapoel Beer Sheva, 2026-11-26: closed at 31', back at half-time, stayed FINISHED
+// and hidden). Never touches a match that has a final result, or one that started more than 3 h ago.
+export async function reviveWronglyClosedMatch(id, { minute, score, db = pool } = {}) {
+  const m = parseInt(String(minute || ''), 10);
+  if (!score || score.home == null || score.away == null || !Number.isFinite(m) || m < 1 || m > 125) return false;
+  const { rows } = await db.query(
+    `UPDATE matches_cache SET status = 'LIVE'
+      WHERE id = $1 AND status = 'FINISHED' AND result_home IS NULL AND result_away IS NULL
+        AND start_time::text ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND NOW() - start_time::text::timestamptz <= INTERVAL '3 hours'
+      RETURNING id`, [id]);
+  const done = Boolean(rows && rows.length);
+  if (done) console.log('[london365] ' + id + ' was closed without a result but the provider lists it live again (' + minute + ', ' + score.home + '-' + score.away + '): back to LIVE');
+  return done;
+}
 // Pure decision logic, exported for direct testing: should a match that's
 // marked LIVE in the DB but missing from the provider's current live list
 // be settled as finished right now?
@@ -348,6 +364,7 @@ export async function syncLondon365LiveOnce() {
         // league instead of landing on its real name.
         const resolvedLeague = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
         const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : leagueKeyFromCountry(null, g.league || ''), 'LIVE', score, { minute: minute, apiStatus: apiStatus }, resolvedLeague ? { id: resolvedLeague.id, countryId: resolvedLeague.countryId } : undefined);
+        await reviveWronglyClosedMatch(ev.id, { minute, score }).catch((err) => console.error('[london365] revive ' + g.id + ' failed:', err.message));
         await recordGoalIfChanged(ev, score, minute, prev);
         gamesSynced++;
       } catch (err) {
