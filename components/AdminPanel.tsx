@@ -244,7 +244,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, allBets, onCreateUser, o
 
       <div className="p-3 sm:p-6">
         {activeTab === 'pending' ? (
-          <PendingLegsPanel />
+          <PendingLegsPanel canReopen={viewerIsSuper} />
         ) : activeTab === 'markets' ? (
           <MarketReportPanel />
         ) : activeTab === 'dashboard' ? (
