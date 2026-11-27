@@ -1782,6 +1782,7 @@ export async function settleOpenLegsOfFinishedMatches() {
 // Anything weaker stays PENDING; nothing is settled on an invented or early score.
 export const SETTLE_MIN_ELAPSED_MS = 105 * 60 * 1000;
 const SETTLE_MIN_CLOCK_MINUTE = 88;
+const SETTLE_DROP_GRACE_MS = Math.max(0, Number(process.env.SETTLE_DROP_GRACE_MS ?? 120000));
 const PROJECTED_END_MINUTE = 92; // clock minute + silence since its last update
 
 // SETTLE_SCORE_WITHOUT_CLOCK_AFTER_MIN (default 130; 0 = off): a match whose provider score is stored but whose
@@ -1809,7 +1810,13 @@ export function canSettleFromLiveScore(row, now = Date.now()) {
     return trustAfter > 0 && Number.isFinite(kickoffAt) && now - kickoffAt >= trustAfter;
   }
   const minute = minuteOf(row.live_minute);
-  if (minute != null && minute >= SETTLE_MIN_CLOCK_MINUTE) return true;
+  if (minute != null && minute >= SETTLE_MIN_CLOCK_MINUTE) {
+    // The clock reached the end, but a match the feed has JUST dropped may still be in stoppage time: a goal after the drop was
+    // paid out on the old score (Dayrout 1-2 -> 1-3, Primeiro de Agosto 1-1 -> 1-2, ... 26.11). Wait until the clock has been
+    // silent for the grace period; a clock that is still moving is a match still being played.
+    const stamp = Number(row.live_minute_updated_at);
+    return !(Number.isFinite(stamp) && stamp > 0 && now - stamp < SETTLE_DROP_GRACE_MS);
+  }
   // The clock froze (the feed stopped sending minutes) and the match then left the feed: project the clock forward from
   // the moment it was last updated. A match frozen at 61' that has been silent for 31+ minutes is over -- without this
   // its tickets waited for the 105 minute / 3 hour fallbacks.

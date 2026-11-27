@@ -843,3 +843,13 @@ describe('mergeStoredWithEvents - a counter that fell behind (server restart) is
     expect(mergeStoredWithEvents({ cornersHome: 3 }, undefined)).toEqual({ cornersHome: 3 });
   });
 });
+
+import { canSettleFromLiveScore } from '../server/matchSettlement.js';
+describe('canSettleFromLiveScore - grace for a match the feed has just dropped (stoppage-time goals)', () => {
+  const now = Date.parse('2026-11-26T15:00:00Z');
+  const row = (stampAgoMs, minute = '90') => ({ live_home_score: 1, live_away_score: 2, live_minute: minute, live_minute_updated_at: stampAgoMs == null ? null : now - stampAgoMs, start_time: new Date(now - 100 * 60000).toISOString() });
+  it('clock at the end but updated 30 s ago: not yet (it may still be in stoppage time)', () => { expect(canSettleFromLiveScore(row(30000), now)).toBe(false); });
+  it('clock silent for 3 minutes: settle', () => { expect(canSettleFromLiveScore(row(180000), now)).toBe(true); });
+  it('no clock stamp known: settle as before', () => { expect(canSettleFromLiveScore(row(null), now)).toBe(true); });
+  it('clock below the end is unchanged', () => { expect(canSettleFromLiveScore(row(180000, '70'), now)).toBe(false); });
+});
