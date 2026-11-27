@@ -290,3 +290,23 @@ describe('short name + city against the full name with the city in its other for
     expect(sameTeam('Inter Turku', 'Internazionale Milano')).toBe(false);
   });
 });
+
+describe('legal tags and spellings that kept two records of one match apart (Hajduk - Truidense, 2026-11-26)', () => {
+  it('HNK Hajduk Split = Hajduk Split and St. Truidense VV = Sint-Truidense, and the two records merge', async () => {
+    const { sameTeam, dedupeMatches } = await import('../server/fixtureDedupe.js');
+    expect(sameTeam('HNK Hajduk Split', 'Hajduk Split')).toBe(true);
+    expect(sameTeam('St. Truidense VV', 'Sint-Truidense')).toBe(true);
+    const t = '2026-11-26T20:00:00.000Z';
+    expect(dedupeMatches([
+      { id: 'l365-5297280', homeTeam: 'HNK Hajduk Split', awayTeam: 'St. Truidense VV', startTime: t, status: 'UPCOMING', markets: [] },
+      { id: 'l365-5345118', homeTeam: 'Hajduk Split', awayTeam: 'Sint-Truidense', startTime: t, status: 'FINISHED', markets: [] },
+    ])).toHaveLength(1);
+  });
+  it('does not join different clubs that share a tag', async () => {
+    const { sameTeam } = await import('../server/fixtureDedupe.js');
+    expect(sameTeam('NK Celje', 'NK Maribor')).toBe(false);
+    expect(sameTeam('HNK Rijeka', 'HNK Hajduk Split')).toBe(false);
+    expect(sameTeam('Sint-Truidense', 'KRC Genk')).toBe(false);
+    expect(sameTeam('VV Dongen', 'VV Gemert')).toBe(false);
+  });
+});

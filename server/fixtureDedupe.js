@@ -42,7 +42,8 @@ function normTeamRaw(s) {
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/^1\.?\s/, '') // "1. FC Koeln" / "FC Koeln"
     .replace(/\b(praha|muenchen|munchen|wien|kobenhavn|bruxelles|brussel|antwerpen|lisboa|cologne)\b/g, (w) => CITY_ALIAS[w]) // the same city, written differently by the two providers
-    .replace(/\b(fc|cf|sc|ac|afc|fk|if|bk|sk|cd|sd|ud|club)\b/g, ' ')
+    .replace(/\bsint\b/g, 'st') // Dutch / Belgian "Sint-Truidense" = "St. Truidense"
+    .replace(/\b(fc|cf|sc|ac|afc|fk|if|bk|sk|cd|sd|ud|club|hnk|nk|vv)\b/g, ' ') // legal tags: Croatian HNK / NK, Dutch VV
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 }
