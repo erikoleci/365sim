@@ -34,6 +34,10 @@ const mocks = vi.hoisted(function () {
       if (row) { row.raw_json = params[1]; row.fetched_at = params[2]; }
       return Promise.resolve({ rows: [], rowCount: row ? 1 : 0 });
     }
+    if (s.indexOf("UPDATE matches_cache SET status = 'LIVE'") === 0) {
+      // reviveWronglyClosedMatch: only a FINISHED row without a final result comes back; none of these fixtures is one
+      return Promise.resolve({ rows: [], rowCount: 0 });
+    }
     if (s.indexOf('UPDATE matches_cache SET status') === 0) {
       const row = store.get(params[0]);
       let updated = 0;

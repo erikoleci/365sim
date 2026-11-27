@@ -75,6 +75,33 @@ async function endTwinVerdictFor(row) {
   } catch { return { action: 'wait' }; }
 }
 export const SKIP_END_DETECTION = Symbol('skip-end-detection');
+// A match that has logged live events (goal, card, corner...) or live statistics WAS live: it is never "a match that never went
+// live". Besiktas - Hapoel Beer Sheva (2026-11-26) had two yellow cards logged, dropped out of the list at 31', and was closed
+// by the "no score/clock" branch of the end detection; its tickets were then decided on a stale picture.
+export async function hadLiveEvidence(id, { db = pool } = {}) {
+  try {
+    const ev = await db.query('SELECT 1 FROM match_events WHERE match_id = $1 LIMIT 1', [id]);
+    if (ev.rows && ev.rows.length) return true;
+    const st = await db.query('SELECT 1 FROM live_statistics WHERE match_id = $1 LIMIT 1', [id]);
+    return Boolean(st.rows && st.rows.length);
+  } catch { return true; } // cannot tell: the safe answer is "it was live" (not closed)
+}
+// A live game that dropped out of the provider's list for a few cycles is closed by the end detection below; when it was
+// closed WITHOUT a result (never settled, no final score) and the provider lists it live again with a score and a clock, it
+// was not over: put it back to LIVE (Besiktas - Hapoel Beer Sheva, 2026-11-26: closed at 31', back at half-time, stayed FINISHED
+// and hidden). Never touches a match that has a final result, or one that started more than 3 h ago.
+export async function reviveWronglyClosedMatch(id, { minute, score, db = pool } = {}) {
+  const m = parseInt(String(minute || ''), 10);
+  if (!score || score.home == null || score.away == null || !Number.isFinite(m) || m < 1 || m > 125) return false;
+  const { rows } = await db.query(
+    `UPDATE matches_cache SET status = 'LIVE'
+      WHERE id = $1 AND status = 'FINISHED' AND result_home IS NULL AND result_away IS NULL
+        AND start_time::text ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND NOW() - start_time::text::timestamptz <= INTERVAL '3 hours'
+      RETURNING id`, [id]);
+  const done = Boolean(rows && rows.length);
+  if (done) console.log('[london365] ' + id + ' was closed without a result but the provider lists it live again (' + minute + ', ' + score.home + '-' + score.away + '): back to LIVE');
+  return done;
+}
 // Pure decision logic, exported for direct testing: should a match that's
 // marked LIVE in the DB but missing from the provider's current live list
 // be settled as finished right now?
@@ -348,6 +375,7 @@ export async function syncLondon365LiveOnce() {
         // league instead of landing on its real name.
         const resolvedLeague = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
         const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : leagueKeyFromCountry(null, g.league || ''), 'LIVE', score, { minute: minute, apiStatus: apiStatus }, resolvedLeague ? { id: resolvedLeague.id, countryId: resolvedLeague.countryId } : undefined);
+        await reviveWronglyClosedMatch(ev.id, { minute, score }).catch((err) => console.error('[london365] revive ' + g.id + ' failed:', err.message));
         await recordGoalIfChanged(ev, score, minute, prev);
         gamesSynced++;
       } catch (err) {
@@ -390,7 +418,7 @@ export async function syncLondon365LiveOnce() {
     bump('endDetection.ran');
     const endQueryStartedAt = Date.now();
     const { rows } = await pool.query(
-      "SELECT id, home_team, away_team, league, live_home_score, live_away_score, live_minute, live_minute_updated_at, start_time, fetched_at FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
+      "SELECT id, home_team, away_team, league, live_home_score, live_away_score, live_minute, live_status, live_minute_updated_at, start_time, fetched_at FROM matches_cache WHERE id LIKE 'l365-%' AND status = 'LIVE'"
     );
     retainLiveKnown(rows.map((r) => r.id), endQueryStartedAt);
     for (const row of rows) {
@@ -429,6 +457,13 @@ export async function syncLondon365LiveOnce() {
         }
         continue;
       }
+      if (!hasRealLiveResult(row) && !canSettleFromLiveScore(row) && !overdue && await hadLiveEvidence(row.id)) {
+        // It has live events on record: it was playing. Keep it LIVE and look again next cycle (the provider may list it again);
+        // the overdue rule closes it for good when it is really over.
+        bump('endDetection.deferred_had_live_events');
+        if (shouldLogMissingLive('evidence:' + row.id)) console.warn('[london365] ' + row.id + ' left the live feed with no usable score/clock but has live events on record: kept LIVE, not closed');
+        continue;
+      }
       if (!hasRealLiveResult(row) && !canSettleFromLiveScore(row)) {
         // Never had a real score/clock: close it (it leaves every LIVE list) but do
         // NOT settle bets with an invented 0-0 -- they stay PENDING for the admin.
@@ -438,7 +473,8 @@ export async function syncLondon365LiveOnce() {
         unsubscribeGameDetails(row.id);
         noteMatchStatus(row.id, 'FINISHED');
         forgetLiveRow(row.id);
-        console.warn('[london365] ' + row.id + ' left the live feed without ever having a score/clock -- closed WITHOUT settling bets (settle manually if any are pending)');
+        console.warn('[london365] ' + row.id + ' left the live feed without ever having a score/clock -- closed WITHOUT settling bets (settle manually if any are pending)'
+          + ' [state at closing: minute=' + JSON.stringify(row.live_minute) + ' score=' + JSON.stringify(row.live_home_score) + '-' + JSON.stringify(row.live_away_score) + ' live_status=' + JSON.stringify(row.live_status) + ' start=' + row.start_time + ' misses=' + misses + ' fetched_at=' + row.fetched_at + ']');
         continue;
       }
       // Missing from the live list is not proof that it is over (a provider hiccup
