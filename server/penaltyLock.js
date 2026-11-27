@@ -2,10 +2,14 @@
 // the match shows a padlock until play resumes). Zero imports on purpose: used from the feed consumer (sets / clears it)
 // and from marketRules.js (reads it at placement time and when the board marks options closed).
 //
-// Set when the provider's pitch code says "penalty" (VC x1236, see liveAction.js); cleared by the next real action
-// (anything else the feed decodes), by a goal, by the final whistle, or by the safety cap below, so a feed that goes
-// quiet can never leave a match locked for good.
-const MAX_MS = Number(process.env.PENALTY_LOCK_MAX_MS) > 0 ? Number(process.env.PENALTY_LOCK_MAX_MS) : 150000;
+// Set when the provider's pitch code says "penalty" (VC x1008 awarded / x1023, see liveAction.js). It is lifted ONLY by
+// a code that proves play went on after the kick: a goal (also a score change), a throw-in, a corner, a dangerous attack,
+// a goal kick, the half-time / full-time whistle. Possession, plain attacks, free kicks, unknown codes... arrive while the
+// penalty is still being reviewed (VAR, protests, treatment), so they do NOT lift it. The safety cap below is a last resort
+// so a feed that goes quiet can never leave a match locked for good (default 5 minutes, PENALTY_LOCK_MAX_MS to change it).
+const MAX_MS = Number(process.env.PENALTY_LOCK_MAX_MS) > 0 ? Number(process.env.PENALTY_LOCK_MAX_MS) : 300000;
+const RELEASE_KINDS = new Set(['goal', 'throw_in', 'corner', 'dangerous_attack', 'back_line_restart', 'half_time', 'full_time']);
+export const releasesPenaltyLock = (kind) => RELEASE_KINDS.has(kind);
 const CAP = 2000;
 const locks = new Map(); // bare match id -> lock start (ms)
 

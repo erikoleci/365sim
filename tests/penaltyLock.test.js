@@ -17,8 +17,8 @@ describe('penalty betting pause', () => {
   });
   it('never stays locked for good: the safety cap releases it', () => {
     setPenaltyLock('555', T0);
-    expect(isPenaltyLocked('555', T0 + 149000)).toBe(true);
-    expect(isPenaltyLocked('555', T0 + 151000)).toBe(false);
+    expect(isPenaltyLocked('555', T0 + 299000)).toBe(true);
+    expect(isPenaltyLocked('555', T0 + 301000)).toBe(false);
   });
   it('closes every market of that match only, with its own reason', () => {
     setPenaltyLock('l365-555', T0);
@@ -31,5 +31,15 @@ describe('penalty betting pause', () => {
     setPenaltyLock('555', T0);
     clearPenaltyLock('555');
     expect(getBetBlockReason(row, market, sel, T0 + 1000)).not.toBe('PENALTY_PAUSE');
+  });
+});
+
+import { releasesPenaltyLock } from '../server/penaltyLock.js';
+describe('which codes lift the penalty pause', () => {
+  it('goal, throw-in, corner, dangerous attack, goal kick and the whistles lift it', () => {
+    for (const k of ['goal', 'throw_in', 'corner', 'dangerous_attack', 'back_line_restart', 'half_time', 'full_time']) expect(releasesPenaltyLock(k)).toBe(true);
+  });
+  it('possession, plain attack, free kick, offside, substitution, unknown do NOT', () => {
+    for (const k of ['possession', 'attack', 'free_kick', 'offside', 'substitution', 'injury', 'shot_on_target', 'penalty', undefined]) expect(releasesPenaltyLock(k)).toBe(false);
   });
 });

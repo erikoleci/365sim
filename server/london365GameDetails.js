@@ -61,7 +61,7 @@ import { isHalfTimeLatched, enterHalfTime, maybeReleaseHalfTime, __resetHalfTime
 import { queueClockWrite } from './clockWrites.js';
 import { sampleFeedKeys, recordEventFrame } from './feedKeySampler.js';
 import { announceGoalIfChanged, clearGoalAnnounced } from './goalAnnouncer.js';
-import { setPenaltyLock, clearPenaltyLock, __resetPenaltyLockForTests } from './penaltyLock.js';
+import { setPenaltyLock, clearPenaltyLock, releasesPenaltyLock, __resetPenaltyLockForTests } from './penaltyLock.js';
 export { parseGameDetails };
 
 function parseScore(sc) {
@@ -558,9 +558,9 @@ async function applyGameDetailsNow(raw) {
     if (found) { foundNow = makeAction(found[0], found[1]); recent = { ...foundNow, until: nowMs + 7000 }; }
   }
   const decodedAction = decodeLiveAction(attrs.VC);
-  // Betting pause while a penalty is taken: set on the penalty code, cleared by the next decoded action, a goal or the whistle.
+  // Betting pause while a penalty is taken: set on the penalty code, lifted only by a goal, throw-in, corner, dangerous attack, goal kick or a whistle (see penaltyLock.js).
   if (decodedAction && decodedAction.kind === 'penalty') setPenaltyLock(matchId, nowMs);
-  else if (decodedAction || (score && (score.home !== row.live_home_score || score.away !== row.live_away_score))) clearPenaltyLock(matchId);
+  else if ((decodedAction && releasesPenaltyLock(decodedAction.kind)) || (score && (score.home !== row.live_home_score || score.away !== row.live_away_score))) clearPenaltyLock(matchId);
   recordVcSample(attrs.VC, decodedAction && decodedAction.label, { match: `${attrs.H} - ${attrs.A}`, score: attrs.SC, t: attrs.T });
   recordVcChange(matchId, attrs.VC, { match: `${attrs.H} - ${attrs.A}`, label: decodedAction && decodedAction.label, score: attrs.SC, t: attrs.T });
   observeVcFrame(eid, attrs, Boolean(decodedAction), { match: `${attrs.H} - ${attrs.A}` });
