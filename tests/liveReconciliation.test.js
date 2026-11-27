@@ -87,3 +87,15 @@ describe('hadLiveEvidence - a game with live events on record was playing, it is
     expect(await hadLiveEvidence('l365-1', { db: { query: vi.fn(async () => { throw new Error('down'); }) } })).toBe(true);
   });
 });
+
+import { isLateScoreChange } from '../server/london365/liveSync.js';
+describe('isLateScoreChange - a closed match the provider lists again with another score', () => {
+  const fin = { status: 'FINISHED', live_home_score: 1, live_away_score: 1 };
+  it('flags a different score on a FINISHED match', () => { expect(isLateScoreChange(fin, { home: 1, away: 2 })).toBe(true); });
+  it('same score, LIVE match, missing data: no flag', () => {
+    expect(isLateScoreChange(fin, { home: 1, away: 1 })).toBe(false);
+    expect(isLateScoreChange({ ...fin, status: 'LIVE' }, { home: 2, away: 1 })).toBe(false);
+    expect(isLateScoreChange(null, { home: 2, away: 1 })).toBe(false);
+    expect(isLateScoreChange({ status: 'FINISHED', live_home_score: null, live_away_score: null }, { home: 1, away: 0 })).toBe(false);
+  });
+});
