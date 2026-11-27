@@ -826,3 +826,20 @@ describe('next corner / card / goal with the counter taken at the bet', () => {
     expect(await r({ query: async () => ({ rows: [] }) }, 'm1', 'corner')).toBeNull();
   });
 });
+
+import { mergeStoredWithEvents } from '../server/matchSettlement.js';
+describe('mergeStoredWithEvents - a counter that fell behind (server restart) is raised to the event log', () => {
+  it('Inter - Stuttgart: stored corners 10-5, event log 11-6 -> 11-6; cards equal stay', () => {
+    const stored = { cornersHome: 10, cornersAway: 5, cardsHome: 2, cardsAway: 1, yellowHome: 2, yellowAway: 1, redHome: 0, redAway: 0 };
+    const ev = { cornersHome: 11, cornersAway: 6, cardsHome: 2, cardsAway: 1, yellowHome: 2, yellowAway: 1, redHome: 0, redAway: 0 };
+    expect(mergeStoredWithEvents(stored, ev)).toEqual({ ...ev });
+  });
+  it('a log with FEWER events never lowers the stored counter', () => {
+    const merged = mergeStoredWithEvents({ cornersHome: 9, cornersAway: 4 }, { cornersHome: 5, cornersAway: 4, cardsHome: 1 });
+    expect(merged.cornersHome).toBe(9); expect(merged.cornersAway).toBe(4);
+  });
+  it('works with only one side present', () => {
+    expect(mergeStoredWithEvents(undefined, { cornersHome: 3 })).toEqual({ cornersHome: 3 });
+    expect(mergeStoredWithEvents({ cornersHome: 3 }, undefined)).toEqual({ cornersHome: 3 });
+  });
+});
