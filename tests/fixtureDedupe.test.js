@@ -271,3 +271,22 @@ describe('spelling variants on both sides (fuzzy join, real feed day)', () => {
     for (const [x, y] of pairs) expect(dedupeMatches([mk('a', x[0], x[1]), mk('b', y[0], y[1])]).length).toBe(2);
   });
 });
+
+describe('short name + city against the full name with the city in its other form', () => {
+  it('KuPS Kuopio is Kuopion Palloseura, and the two records of the match merge', async () => {
+    const { sameTeam, dedupeMatches } = await import('../server/fixtureDedupe.js');
+    expect(sameTeam('KuPS Kuopio', 'Kuopion Palloseura')).toBe(true);
+    expect(sameTeam('Kuopion Palloseura', 'KuPS Kuopio')).toBe(true);
+    const t = '2026-11-26T20:00:00.000Z';
+    expect(dedupeMatches([
+      { id: 'l365-5297277', homeTeam: 'SC Braga', awayTeam: 'Kuopion Palloseura', startTime: t, status: 'UPCOMING', markets: [] },
+      { id: 'l365-5345110', homeTeam: 'Braga', awayTeam: 'KuPS Kuopio', startTime: t, status: 'FINISHED', markets: [] },
+    ])).toHaveLength(1);
+  });
+  it('does not join different clubs', async () => {
+    const { sameTeam } = await import('../server/fixtureDedupe.js');
+    expect(sameTeam('KuPS Kuopio', 'Kuopion Kalpa')).toBe(false);
+    expect(sameTeam('HJK Helsinki', 'Kuopion Palloseura')).toBe(false);
+    expect(sameTeam('Inter Turku', 'Internazionale Milano')).toBe(false);
+  });
+});

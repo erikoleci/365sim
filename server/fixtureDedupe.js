@@ -182,6 +182,18 @@ function initialsOfOther(short, long) {
   if (words.length < 3 || words.length > 5) return false;
   return words.map((w) => w[0]).join('') === short;
 }
+// "KuPS Kuopio" / "Kuopion Palloseura": one feed writes the club's short name + the city, the other the full name with the city in its
+// Finnish form. Only this narrow shape: A = [short, city], B = [cityForm, rest], where the city is the start of B's first word, the short
+// name (3-5 letters) begins like B's first word and is made of letters of B in order. Two plain different clubs do not fit it.
+function shortPlusCityOfOther(a, b) {
+  const ta = a.split(' ').filter(Boolean); const tb = b.split(' ').filter(Boolean);
+  if (ta.length !== 2 || tb.length !== 2) return false;
+  const [x, w] = ta; const [y, z] = tb;
+  if (!/^[a-z]{3,5}$/.test(x) || w.length < 5 || !y.startsWith(w) || y === w) return false;
+  if (x.slice(0, 2) !== y.slice(0, 2)) return false;
+  let i = 0; for (const ch of y + z) if (i < x.length && ch === x[i]) i++;
+  return i === x.length;
+}
 const dropClubPrefix = (n) => n.replace(CLUB_PREFIX_RE, '');
 // The same legal tag written AFTER the name by one feed: "Lille" / "Lille OSC", "Hertha" / "Hertha BSC". Only these tags, only as the
 // last word, and only when the name before it is a single real word (4+ letters), so "Lille OSC" never joins "Lille Metropole" etc.
@@ -202,6 +214,7 @@ function sameTeamRaw(x, y) {
   if (teamSim(nx, ny) >= 0.8 || abbrevEqual(nx, ny) || looseSameName(nx, ny)) return true;
   if (initialsOfOther(nx, ny) || initialsOfOther(ny, nx)) return true; // "PSG" = Paris Saint-Germain
   if (sameWithoutSuffix(nx, ny)) return true; // "Lille" = "Lille OSC"
+  if (shortPlusCityOfOther(nx, ny) || shortPlusCityOfOther(ny, nx)) return true; // "KuPS Kuopio" = "Kuopion Palloseura"
   const px = dropClubPrefix(nx), py = dropClubPrefix(ny);
   if (px === nx && py === ny) return false;
   if (px.length < 4 || py.length < 4) return false;
