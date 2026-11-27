@@ -393,8 +393,8 @@ async function start() {
   // fetch failed (provider rate limits on hosting). Without this, most
   // LondonPro365 matches on Render only show the sparse 1-4 list-level
   // markets instead of the full catalog.
-  setTimeout(function () { repairSparseEvents({ limit: 40 }).catch(function () {}); }, 45 * 1000);
-  setInterval(function () { repairSparseEvents({ limit: 40 }).catch(function () {}); }, 3 * 60 * 1000);
+  setTimeout(function () { repairSparseEvents({ limit: 40 }).catch(function (e) { console.error('[job] repairSparseEvents failed:', (e && e.message) || e); }); }, 45 * 1000);
+  setInterval(function () { repairSparseEvents({ limit: 40 }).catch(function (e) { console.error('[job] repairSparseEvents failed:', (e && e.message) || e); }); }, 3 * 60 * 1000);
 
   startClockWriteFlusher(); // batched persistence of the derived live clock
 
@@ -492,8 +492,8 @@ async function start() {
   // Prevent the free-tier PG storage cap from filling up with unbounded
   // append-only history (odds_history, match_events, audit_log) and stale
   // finished matches. First run 2 min after boot, then every 6 hours.
-  setTimeout(function () { cleanupOldData().catch(function () {}); }, 2 * 60 * 1000);
-  setInterval(function () { cleanupOldData().catch(function () {}); }, 6 * 60 * 60 * 1000);
+  setTimeout(function () { cleanupOldData().catch(function (e) { console.error('[job] cleanupOldData failed:', (e && e.message) || e); }); }, 2 * 60 * 1000);
+  setInterval(function () { cleanupOldData().catch(function (e) { console.error('[job] cleanupOldData failed:', (e && e.message) || e); }); }, 6 * 60 * 60 * 1000);
   // See server/keepAlive.js — stops the free-tier "S'arritem te lidhemi me
   // serverin" / stuck-on-"Duke ngarkuar..." symptom by keeping Render from
   // ever spinning the service down in the first place, instead of only
