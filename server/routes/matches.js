@@ -251,7 +251,7 @@ router.get('/', wrap(async (req, res) => {
 }));
 
 // Warm copy for the first visitor after a (re)start, and kept fresh while somebody has asked for the list lately.
-setTimeout(() => { refreshMatchesList('').catch(() => {}); }, 3000).unref?.();
+setTimeout(() => { refreshMatchesList('').catch((e) => { console.error('[matches] list refresh failed:', (e && e.message) || e); }); }, 3000).unref?.();
 let lastWarmAt = 0;
 setInterval(() => {
   const idle = Date.now() - lastListRequestAt;
@@ -261,7 +261,7 @@ setInterval(() => {
   const due = (idle < 5 * 60 * 1000 && age >= 60 * 1000) || (idle < 30 * 60 * 1000 && age >= 5 * 60 * 1000) || age >= 8 * 60 * 1000;
   if (!due) return;
   lastWarmAt = Date.now();
-  refreshMatchesList('').catch(() => {});
+  refreshMatchesList('').catch((e) => { console.error('[matches] list refresh failed:', (e && e.message) || e); });
 }, MATCHES_WARM_EVERY_MS).unref?.();
 
 // Only what changed since the browser's last look: a new match, a match that went live, a first clock reading.
