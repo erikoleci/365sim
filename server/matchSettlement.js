@@ -165,16 +165,26 @@ export async function loadMatchStats(client, matchId) {
   return pen.penaltiesHome + pen.penaltiesAway > 0 ? pen : base; // never invent a stats object just to carry zeros
 }
 
-// Stored counters win; a counter the stats row does not have (or a match without any stats row) is filled from the events.
+// Counters of a finished match: the stored (socket) counters, raised to the event log wherever the log has MORE. The counters live in memory
+// while a match is on and fall behind when the server restarts mid-match (Inter - Stuttgart, 25 Nov: stored corners 10-5, event log 11-6,
+// the real match 11-6, and the "8th corner" ticket stayed open). The log comes from the provider's own list, one row per event, so
+// a log that has more is never wrong, and one that has fewer is simply incomplete and leaves the stored value alone.
+const STAT_KEYS = ['cornersHome', 'cornersAway', 'cardsHome', 'cardsAway', 'yellowHome', 'yellowAway', 'redHome', 'redAway'];
+export function mergeStoredWithEvents(stored, evFinal) {
+  if (!stored) return evFinal;
+  if (!evFinal) return stored;
+  const out = { ...evFinal, ...Object.fromEntries(Object.entries(stored).filter(([, v]) => v != null)) };
+  for (const k of STAT_KEYS) {
+    const a = stored[k]; const b = evFinal[k];
+    if (a != null && b != null && Number.isFinite(Number(a)) && Number.isFinite(Number(b))) out[k] = Math.max(Number(a), Number(b));
+  }
+  return out;
+}
 async function loadMatchStatsBase(client, matchId) {
   const stored = await loadStoredMatchStats(client, matchId);
-  const need = ['cornersHome', 'cornersAway', 'cardsHome', 'cardsAway'];
-  if (stored && need.every((k) => stored[k] != null)) return stored;
   const ev = await loadEventCounters(client, matchId).catch(() => undefined);
   if (!ev) return stored;
-  const out = { ...ev.final };
-  if (stored) for (const [k, v] of Object.entries(stored)) if (v != null) out[k] = v;
-  return out;
+  return mergeStoredWithEvents(stored, ev.final);
 }
 
 // Half-time counters: the snapshot taken at the break when there is one, otherwise the first-half events.
