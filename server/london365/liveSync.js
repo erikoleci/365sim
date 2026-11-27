@@ -102,6 +102,14 @@ export async function reviveWronglyClosedMatch(id, { minute, score, db = pool } 
   if (done) console.log('[london365] ' + id + ' was closed without a result but the provider lists it live again (' + minute + ', ' + score.home + '-' + score.away + '): back to LIVE');
   return done;
 }
+// A match we already closed (FINISHED) that the provider lists again with a DIFFERENT score than the one we closed on: the
+// closing was early (Dayrout, Primeiro de Agosto, Mawlai... all ended 1 goal or more short of the live score). Pure check on the
+// row upsertMatch already read, so it costs no extra query. It only reports; tickets are never touched automatically.
+export function isLateScoreChange(prev, score) {
+  if (!prev || !score || String(prev.status || '').toUpperCase() !== 'FINISHED') return false;
+  if (prev.live_home_score == null || prev.live_away_score == null) return false;
+  return Number(score.home) !== Number(prev.live_home_score) || Number(score.away) !== Number(prev.live_away_score);
+}
 // Pure decision logic, exported for direct testing: should a match that's
 // marked LIVE in the DB but missing from the provider's current live list
 // be settled as finished right now?
@@ -375,6 +383,7 @@ export async function syncLondon365LiveOnce() {
         // league instead of landing on its real name.
         const resolvedLeague = (g.league_id != null && leagueById.get(String(g.league_id))) || resolveLeagueByName(g.league);
         const prev = await upsertMatch(ev, resolvedLeague ? resolvedLeague.key : leagueKeyFromCountry(null, g.league || ''), 'LIVE', score, { minute: minute, apiStatus: apiStatus }, resolvedLeague ? { id: resolvedLeague.id, countryId: resolvedLeague.countryId } : undefined);
+        if (isLateScoreChange(prev, score)) console.warn('[late-score] ' + ev.id + ' (' + g.home_team + ' - ' + g.away_team + ') was closed on ' + prev.live_home_score + '-' + prev.live_away_score + ' but the provider lists it again at ' + minute + ' with ' + score.home + '-' + score.away + ' (live_status=' + JSON.stringify(prev.live_status) + ')');
         await reviveWronglyClosedMatch(ev.id, { minute, score }).catch((err) => console.error('[london365] revive ' + g.id + ' failed:', err.message));
         await recordGoalIfChanged(ev, score, minute, prev);
         gamesSynced++;
