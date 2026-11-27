@@ -11,6 +11,7 @@ import { readLiveCorners, readLiveCards } from '../matchSettlement.js';
 import { settleMatch, recomputeBetStatus, creditWithLedger, refundAdminForWin, settleStuckBets, recoverFinishedWithoutResult, explainSettleBlock, wouldSettleNow } from '../matchSettlement.js';
 import { missedLiveCycles } from '../london365/liveState.js';
 import { logAudit } from '../auditLog.js';
+import { reopenMatch } from '../matchReopen.js';
 import { getAllProfiles, saveProfile, resetProfile, getGlobalProfile, saveGlobalProfile, PROFILE_KEYS, slotKey } from '../casinoProfiles.js';
 import { SLOT_GAMES } from '../slots/games.js';
 import { computeMarketCoverage } from '../marketCoverageScan.js';
@@ -1225,6 +1226,19 @@ router.post('/matches/:id/settle', async (req, res) => {
   const result = await settleMatch(req.params.id, homeScore, awayScore, { force: true });
   await logAudit(req.user, 'MATCH_SETTLE', req.params.id, { homeScore, awayScore, ...result });
   res.json({ ok: true, ...result });
+});
+
+// Bring a match that was closed by mistake (FINISHED, no final result) back to LIVE: the live sync takes it up again. Tickets are not touched.
+router.post('/matches/:id/reopen', requireSuperAdmin, async (req, res) => {
+  try {
+    const out = await reopenMatch(req.params.id);
+    if (!out.ok) return res.status(out.code === 'NOT_FOUND' ? 404 : out.code === 'PROVIDER_UNREACHABLE' ? 502 : 409).json({ error: out.error, code: out.code });
+    await logAudit(req.user, 'MATCH_REOPEN', req.params.id, { pendingLegs: out.pendingLegs, decidedLegs: out.decidedLegs });
+    res.json(out);
+  } catch (err) {
+    console.error('[admin] reopen match failed:', err.message);
+    res.status(500).json({ error: 'Nuk u rihap ndeshja' });
+  }
 });
 
 // Tickets the rules cannot decide (penalties, unknown markets...): finished matches (or ones that

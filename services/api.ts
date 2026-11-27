@@ -534,6 +534,10 @@ export async function adminSettleLegs(body: { matchId: string; marketName: strin
   return request<{ ok: boolean; legs: number; bets: number }>('/admin/legs/settle', { method: 'POST', body: JSON.stringify(body) });
 }
 
+export async function adminReopenMatch(matchId: string) {
+  return request<{ ok: boolean; home: string; away: string; pendingLegs: number; decidedLegs: number; note: string | null }>(`/admin/matches/${encodeURIComponent(matchId)}/reopen`, { method: 'POST' });
+}
+
 export interface AdminMarketCoverage {
   summary: { markets: number; autoSettled: number; withoutRule: number; betLegsWithoutRule: number; pendingLegsWithoutRule: number };
   markets: { name: string; legs: number; pending: number; matches: number; autoSettles: boolean; samples?: string[] }[];

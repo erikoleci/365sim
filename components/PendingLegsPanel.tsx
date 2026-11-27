@@ -6,10 +6,11 @@ import * as api from '../services/api';
  * with an unknown meaning...). One row = one match + market + selection; the buttons decide every
  * ticket leg of that row at once (the tickets are then paid / closed exactly like automatic ones).
  */
-const PendingLegsPanel: React.FC = () => {
+const PendingLegsPanel: React.FC<{ canReopen?: boolean }> = ({ canReopen = false }) => {
   const [rows, setRows] = useState<api.AdminPendingLeg[] | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
+  const [note, setNote] = useState('');
 
   const load = useCallback(() => {
     api.adminFetchPendingLegs().then((r) => setRows(r.legs)).catch((e) => setError(e?.message || 'Nuk u ngarkua'));
@@ -31,6 +32,20 @@ const PendingLegsPanel: React.FC = () => {
     }
   };
 
+  const reopen = async (r: api.AdminPendingLeg) => {
+    if (!window.confirm(`${r.match_home} - ${r.match_away}\nNdeshja do të rihapet si LIVE dhe sistemi e merr sërish nga ofruesi. Biletat nuk preken. Vazhdo?`)) return;
+    setBusy('reopen|' + r.match_id);
+    try {
+      const out = await api.adminReopenMatch(r.match_id);
+      setNote(`U rihap: ${out.home} - ${out.away} (${out.pendingLegs} bileta në pritje)${out.note ? '. ' + out.note : ''}`);
+      load();
+    } catch (e: any) {
+      setError(e?.message || 'Dështoi');
+    } finally {
+      setBusy('');
+    }
+  };
+
   if (error) return <div className="text-red-400 text-sm">{error}</div>;
   if (!rows) return <div className="text-brand-textMuted text-sm">Loading...</div>;
   if (rows.length === 0) return <div className="text-brand-textMuted text-sm">Asnjë bilet pezull për ndeshje të mbaruara.</div>;
@@ -40,6 +55,7 @@ const PendingLegsPanel: React.FC = () => {
       <div className="text-xs text-brand-textMuted">
         Këto janë tregje që sistemi nuk i mbyll dot vetë. Zgjidh rezultatin për çdo rresht (p.sh. penallti: "Po" fitues dhe "Jo" humbës).
       </div>
+      {note && <div className="text-xs text-brand-accent">{note}</div>}
       {rows.map((r) => {
         const key = `${r.match_id}|${r.market_name}|${r.selection_name}`;
         return (
@@ -64,6 +80,11 @@ const PendingLegsPanel: React.FC = () => {
                   );
                 })}
               </div>
+            )}
+            {canReopen && r.match_status === 'FINISHED' && r.result_home == null && (
+              <button disabled={busy === 'reopen|' + r.match_id} onClick={() => reopen(r)} className="mt-2 w-full min-h-[40px] rounded border border-brand-accent text-brand-accent font-bold text-sm">
+                Rihap ndeshjen (u mbyll pa rezultat)
+              </button>
             )}
             <div className="flex gap-2 mt-2">
               <button disabled={busy === key} onClick={() => decide(r, 'WON')} className="flex-1 min-h-[44px] rounded bg-brand-accent text-black font-bold text-sm">Fitues</button>
